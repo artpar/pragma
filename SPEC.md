@@ -1,1058 +1,682 @@
-# gogent — Technical Specification
+# gogent — Entity Model & Relationships
 
 ## Context
 
-Porting Pragma TypeScript CLI (57 tools, ~1,900 files) to Go. This document specifies the **exact type system, method signatures, design patterns, and reflection strategy** — everything down to parameter names and return types. No code, but a complete contract.
+Before writing code, we need the complete domain model: entities, relationships, processes, and how they compose. Critically, the system must be **LLM-generic** — work with Anthropic, OpenAI, Google, or any future provider. The current SPEC.md has Anthropic-specific types (`api.ContentBlock`, `api.StreamEvent`, `api.Client`). This plan replaces that with a provider-agnostic core.
 
-**Core philosophy**: Struct tags are the single source of truth. Reflection at startup generates all boilerplate (JSON schemas, permission closures, tool descriptors). Zero reflection at runtime — all hot paths use pre-built closures and cached data.
-
----
-
-## Part 0: Persistence Strategy (How This Plan Survives Sessions)
-
-This plan file (`/Users/artpar/.pragma/plans/...`) is ephemeral. On exit, persist to **4 durable locations**:
-
-### 0.1 In-Repo Spec: `SPEC.md` (root of repo)
-
-Copy this entire technical specification into `/Users/artpar/workspace/code/gogent/SPEC.md` and commit it. This is the **authoritative contract** — any future session reads this first. It contains:
-- All struct definitions with exact fields and tags
-- All method signatures with exact params and return types
-- Design patterns mapped to components
-- Reflection strategy
-- Library choices
-
-Update `SPEC.md` whenever a type or signature changes during implementation. It stays in sync with the code.
-
-### 0.2 AGENT.md (already exists — add reference)
-
-Add to `.pragma/AGENT.md`:
-```
-## Authoritative Spec
-- Full type system, method signatures, reflection strategy: see `/SPEC.md`
-- Any future session MUST read SPEC.md before writing code
-- If code diverges from SPEC.md, update SPEC.md (spec follows code, not the other way around)
-```
-
-### 0.3 Memory Files (cross-session recall)
-
-Update memory to point to SPEC.md:
-- `architecture_decisions.md` — add: "Full spec in /SPEC.md, ADRs in .pragma/AGENT.md"
-- `project_gogent_port.md` — add: "Read SPEC.md before coding. All types, methods, patterns defined there."
-
-### 0.4 Agile Task Descriptions (already done)
-
-Each task in the GOGENT kanban already references TS source files. Add: "See SPEC.md Part 3.X for Go type definitions" to Phase 1-5 task descriptions.
-
-### Session Start Protocol (Updated)
-
-Every future session:
-1. `Read /Users/artpar/workspace/code/gogent/SPEC.md` — the contract
-2. `Read /Users/artpar/workspace/code/gogent/.pragma/AGENT.md` — ADRs + conventions
-3. `mcp__agile__task_query GOGENT filter:{status:"in_progress"}` — incomplete work
-4. Start coding
-
-### When SPEC.md Changes
-
-If during implementation a type or method needs to change:
-1. Change the code
-2. Update SPEC.md to match
-3. Commit both together: `GOGENT-XX: update Foo type + spec`
-
-SPEC.md is a **living document**, not a frozen contract. Code is truth, spec documents truth.
+**The rule**: Translation to/from any LLM wire format happens ONLY inside Provider adapters. Every other package uses internal model types exclusively.
 
 ---
 
-## Part 1: Struct Tag Vocabulary
+## Part 1: LLM API Differences (Research)
 
-Every struct tag used in the project. This is the tag language.
+These differences drive the entity design:
 
-| Tag | On | Example | Purpose |
+| Aspect | Anthropic | OpenAI | Google Gemini |
 |---|---|---|---|
-| `json:"name,omitempty"` | All fields | `json:"pattern"` | JSON serialization (encoding/json) |
-| `schema:"required"` | Tool input fields | `schema:"required"` | JSON Schema: marks field as required |
-| `desc:"..."` | Tool input fields | `desc:"The glob pattern to match"` | JSON Schema: description property |
-| `enum:"a,b,c"` | Tool input fields | `enum:"content,files_with_matches,count"` | JSON Schema: enum constraint |
-| `default:"value"` | Tool input fields | `default:"."` | JSON Schema: default value |
-| `merge:"strategy"` | Settings fields | `merge:"append"` | Config merge: replace\|append\|deep |
-| `min:"N"` | Tool input fields | `min:"0"` | JSON Schema: minimum |
-| `max:"N"` | Tool input fields | `max:"600000"` | JSON Schema: maximum |
+| **System prompt** | separate `system` field | `{role: "system"}` message | `systemInstruction` field |
+| **Tool call** | content block `{type: "tool_use", id, name, input}` | `tool_calls[{id, function:{name, arguments:string}}]` | part `{functionCall:{name, args}}` |
+| **Tool result** | `{type: "tool_result", tool_use_id}` in USER msg | `{role: "tool", tool_call_id}` separate msg | `{role: "function"}` with `functionResponse` |
+| **Stop signal** | `end_turn` / `tool_use` | `stop` / `tool_calls` | `STOP` / `FUNCTION_CALL` |
+| **Streaming** | SSE: message_start/content_block_delta/etc | SSE: choices[0].delta | REST streaming |
+| **Tool schema** | `{name, description, input_schema}` | `{type:"function", function:{name, description, parameters}}` | `{functionDeclarations:[{name, description, parameters}]}` |
+| **Thinking** | `{type: "thinking"}` content block | `reasoning_content` (o-series) | `thinkingConfig` |
+| **Tool call IDs** | `toolu_xxx` | `call_xxx` | none (positional) |
+| **Tool input format** | JSON object | JSON string (needs parse) | JSON object |
 
 ---
 
-## Part 2: Libraries (Final)
+## Part 2: Package Layout (Revised)
 
-| Library | Import Path | Purpose | Reflection Role |
+```
+internal/
+  model/              ← NEW: Provider-agnostic domain types (the core)
+    content.go        ← ContentPart sealed interface + 5 variants
+    message.go        ← Message, Role, SystemPrompt
+    conversation.go   ← Conversation (ordered messages + metadata)
+    tool.go           ← ToolDef (name + schema for API requests)
+    response.go       ← Response (normalized LLM output)
+    usage.go          ← TokenUsage, Pricing, CostTracker
+    stop.go           ← StopReason enum
+    agent.go          ← Agent definition
+
+  provider/           ← NEW: Provider interface + streaming types
+    provider.go       ← Provider interface, RequestParams, StreamChunk, Feature
+    anthropic/        ← Anthropic adapter (translates model ↔ Anthropic wire)
+    openai/           ← OpenAI adapter (translates model ↔ OpenAI wire)
+    google/           ← Google adapter (translates model ↔ Google wire)
+
+  tool/               ← Tool system (UNCHANGED interface, references model/)
+  tools/              ← Tool implementations (UNCHANGED)
+  query/              ← Agentic loop (references model/ + provider/)
+  permission/         ← Permission system (UNCHANGED)
+  app/                ← AppState + StateStore (references model/)
+  tui/                ← Bubbletea TUI (references model/)
+  config/             ← Settings + merge
+  context/            ← System prompt builder
+  session/            ← Persistence (references model/)
+  task/               ← Background tasks
+  mcp/                ← MCP client + tool adapter
+  cli/                ← Cobra CLI wiring
+  util/               ← Pure utilities
+```
+
+**Dependency rule**: Only `internal/provider/anthropic/`, `internal/provider/openai/`, `internal/provider/google/` know about wire formats. Everything else imports only `internal/model/` and `internal/provider/` (the interface).
+
+---
+
+## Part 3: Core Entities
+
+### 3.1 ContentPart (sealed, 5 variants)
+
+`internal/model/content.go`
+
+```
+type ContentType string
+const (
+    ContentText       ContentType = "text"
+    ContentImage      ContentType = "image"
+    ContentToolCall   ContentType = "tool_call"
+    ContentToolResult ContentType = "tool_result"
+    ContentThinking   ContentType = "thinking"
+)
+
+type ContentPart interface {
+    contentPartSealed()
+    PartType() ContentType
+}
+```
+
+| Variant | Fields | JSON tags | Notes |
 |---|---|---|---|
-| cobra | `github.com/spf13/cobra` | CLI framework | None |
-| anthropic-sdk-go | `github.com/anthropics/anthropic-sdk-go` | Claude API | None |
-| bubbletea | `github.com/charmbracelet/bubbletea` | TUI | None |
-| lipgloss | `github.com/charmbracelet/lipgloss` | Styling | None |
-| bubbles | `github.com/charmbracelet/bubbles` | TUI components (textarea, viewport, spinner) | None |
-| mcp-go | `github.com/mark3labs/mcp-go` | MCP protocol | None |
-| doublestar | `github.com/bmatcuk/doublestar/v4` | Glob `**` patterns | None |
-| websocket | `nhooyr.io/websocket` | WebSocket | None |
-| errgroup | `golang.org/x/sync/errgroup` | Concurrent tool batches | None |
-| uuid | `github.com/google/uuid` | Task IDs | None |
-| slog | `log/slog` (stdlib) | Structured logging | None |
-| reflect | `reflect` (stdlib) | Schema gen, tool registration, config merge | **Core** |
+| `TextPart` | `Text string` | `json:"text"` | Plain text content |
+| `ImagePart` | `MimeType string`, `Data []byte` | `json:"mime_type"`, `json:"data"` | Raw bytes, provider base64-encodes |
+| `ToolCallPart` | `ID string`, `Name string`, `Input json.RawMessage` | `json:"id"`, `json:"name"`, `json:"input"` | ID is internal UUID, provider maps to wire ID |
+| `ToolResultPart` | `ToolCallID string`, `Content string`, `IsError bool` | `json:"tool_call_id"`, `json:"content"`, `json:"is_error,omitempty"` | ToolCallID correlates to ToolCallPart.ID |
+| `ThinkingPart` | `Text string` | `json:"text"` | Reasoning trace (if provider supports) |
 
-**No other libraries.** Everything else is stdlib.
+Custom JSON marshal/unmarshal dispatches on `"type"` discriminator field.
 
----
+**Key decisions**:
+- `ToolCallPart.Input` is `json.RawMessage` (parsed JSON object). Anthropic sends object, OpenAI sends string — the provider parses it before emitting.
+- `ImagePart.Data` is raw `[]byte`. Provider encodes to base64 or whatever format needed.
+- `ToolCallPart.ID` is an internal UUID. Provider adapters maintain bidirectional ID mapping (internal ↔ wire).
 
-## Part 3: Package Architecture (with exact types)
+### 3.2 Message
 
-### 3.1 `internal/tool/` — Tool System (Reflection Core)
-
-#### Struct Tag → JSON Schema Generator
+`internal/model/message.go`
 
 ```
-func GenerateSchema[T any]() json.RawMessage
-```
-- Reflects on struct type `T` at registration time
-- Reads `json`, `schema`, `desc`, `enum`, `default`, `min`, `max` tags
-- Produces JSON Schema as `json.RawMessage` — cached, never regenerated
-- Panics if tags are malformed (fail-fast at startup)
+type Role string
+const (
+    RoleUser      Role = "user"
+    RoleAssistant Role = "assistant"
+)
 
-Internal helper (unexported):
-```
-func parseStructTags(t reflect.Type) []SchemaField
-```
-
-```
-type SchemaField struct {
-    Name        string      // from json tag (first component)
-    GoName      string      // Go field name (for error messages)
-    Type        string      // JSON Schema type: "string"|"number"|"boolean"|"integer"|"array"|"object"
-    ItemType    string      // for arrays: item type
-    Description string      // from desc tag
-    Required    bool        // from schema:"required"
-    Enum        []string    // from enum tag, split on ","
-    Default     any         // from default tag, parsed to match Type
-    Minimum     *float64    // from min tag
-    Maximum     *float64    // from max tag
-    Omitempty   bool        // from json:",omitempty"
-}
-```
-
-#### Tool Interface (Minimal — 3 required methods)
-
-```
-type Tool[I any, O any] interface {
-    Name() string
-    Description() string
-    Run(ctx context.Context, input I, snap StateSnapshot) (O, error)
-}
-```
-
-- `I` = input struct (tags generate JSON Schema)
-- `O` = output struct (auto-rendered to ContentBlock)
-- `StateSnapshot` = `app.AppState` value copy (read-only, crosses boundaries)
-
-**That's it.** Everything else is discovered via optional interfaces.
-
-#### Optional Interfaces (type-asserted in Register, not reflected)
-
-```
-type ReadonlyTool interface {
-    IsReadonly() bool
-}
-
-type ConcurrentTool interface {
-    IsConcurrent() bool
-}
-
-type DestructiveTool interface {
-    IsDestructive() bool
-}
-
-type PathTool[I any] interface {
-    ExtractPath(input I) string
-}
-
-type CustomPermission[I any] interface {
-    CheckPermission(ctx context.Context, input I, perm *permission.Checker) (permission.Decision, error)
-}
-
-type CustomValidator[I any] interface {
-    Validate(input I, snap StateSnapshot) error
-}
-
-type CustomRenderer[O any] interface {
-    RenderResult(output O) string
-}
-
-type SearchClassifier[I any] interface {
-    ClassifySearch(input I) (isSearch bool, isRead bool, isList bool)
-}
-
-type ActivityDescriber[I any] interface {
-    ActivityDescription(input I) string
-}
-
-type SummaryProvider[I any] interface {
-    Summary(input I) string
-}
-
-type PermissionMatcher[I any] interface {
-    MatchPermissionPattern(input I, pattern string) bool
-}
-
-type BackgroundCapable interface {
-    SupportsBackground() bool
-}
-
-type Aliased interface {
-    Aliases() []string
-}
-
-type Searchable interface {
-    SearchHint() string
-}
-
-type Deferrable interface {
-    ShouldDefer() bool
-}
-```
-
-#### Descriptor (type-erased, stored in Registry)
-
-```
-type Descriptor struct {
-    Name           string
-    Aliases        []string
-    Description    string
-    SearchHint     string
-    InputSchema    json.RawMessage
-    MaxResultChars int
-    Readonly       bool
-    Concurrent     bool
-    Destructive    bool
-    IsAgent        bool
-    ShouldDefer    bool
-    Invoke         func(ctx context.Context, raw json.RawMessage, snap StateSnapshot) (string, error)
-    CheckPerm      func(ctx context.Context, raw json.RawMessage, perm *permission.Checker) (permission.Decision, error)
-    GetActivity    func(raw json.RawMessage) string
-    GetSummary     func(raw json.RawMessage) string
-    ClassifySearch func(raw json.RawMessage) (bool, bool, bool)
-    MatchPerm      func(raw json.RawMessage, pattern string) bool
-}
-```
-
-Every `func(... json.RawMessage ...)` closure is built by `Register` — it deserializes JSON into the concrete `I` type internally.
-
-#### Registry
-
-```
-type Registry struct {
-    tools   map[string]*Descriptor
-    aliases map[string]string        // alias → canonical name
-    mu      sync.RWMutex
-}
-
-func NewRegistry() *Registry
-func Register[I any, O any](r *Registry, t Tool[I, O])
-func (r *Registry) Get(name string) (*Descriptor, bool)
-func (r *Registry) All() []*Descriptor
-func (r *Registry) APIToolParams() []api.ToolParam
-func (r *Registry) DeferredToolParams() []api.ToolParam
-func (r *Registry) EagerToolParams() []api.ToolParam
-```
-
-**What `Register` does (reflection at startup)**:
-1. `GenerateSchema[I]()` → produces `InputSchema json.RawMessage`
-2. Type-assert `t` against every optional interface → set flags
-3. Build `Invoke` closure: `json.Unmarshal(raw, &input)` → optional `Validate` → `Run` → optional `RenderResult` or default `json.Marshal(output)`
-4. Build `CheckPerm` closure: if `CustomPermission` → use it; elif `PathTool` → extract path + default filesystem check; else → allow
-5. Build `GetActivity`, `GetSummary`, `ClassifySearch`, `MatchPerm` closures similarly
-6. Store `Descriptor` in map keyed by `Name()` and all `Aliases()`
-
-#### Orchestrator
-
-```
-type Orchestrator struct {
-    registry *Registry
-    perms    *permission.Checker
-}
-
-func NewOrchestrator(reg *Registry, perms *permission.Checker) *Orchestrator
-func (o *Orchestrator) Execute(
-    ctx context.Context,
-    calls []api.ToolUseBlock,
-    snap StateSnapshot,
-) ([]api.ToolResultBlock, error)
-```
-
-`Execute` partitions calls:
-- Calls where `Descriptor.Concurrent == true` → run in parallel via `errgroup.Group`
-- Calls where `Descriptor.Concurrent == false` → run serially after concurrent batch
-- For each call: `CheckPerm` → if denied, return error result → else `Invoke` → wrap in `ToolResultBlock`
-
----
-
-### 3.2 `internal/api/` — Claude API Types
-
-#### Content Blocks (sealed)
-
-```
-type ContentBlock interface {
-    contentBlockSealed()
-    BlockType() string
-}
-
-type TextBlock struct {
-    Type string `json:"type"`       // "text"
-    Text string `json:"text"`
-}
-func (TextBlock) contentBlockSealed() {}
-func (TextBlock) BlockType() string   { return "text" }
-
-type ToolUseBlock struct {
-    Type  string          `json:"type"`  // "tool_use"
-    ID    string          `json:"id"`
-    Name  string          `json:"name"`
-    Input json.RawMessage `json:"input"`
-}
-func (ToolUseBlock) contentBlockSealed() {}
-func (ToolUseBlock) BlockType() string   { return "tool_use" }
-
-type ToolResultBlock struct {
-    Type      string `json:"type"`        // "tool_result"
-    ToolUseID string `json:"tool_use_id"`
-    Content   string `json:"content"`
-    IsError   bool   `json:"is_error,omitempty"`
-}
-func (ToolResultBlock) contentBlockSealed() {}
-func (ToolResultBlock) BlockType() string   { return "tool_result" }
-
-type ThinkingBlock struct {
-    Type     string `json:"type"`     // "thinking"
-    Thinking string `json:"thinking"`
-}
-func (ThinkingBlock) contentBlockSealed() {}
-func (ThinkingBlock) BlockType() string   { return "thinking" }
-
-type ImageBlock struct {
-    Type   string      `json:"type"`   // "image"
-    Source ImageSource `json:"source"`
-}
-type ImageSource struct {
-    Type      string `json:"type"`       // "base64"
-    MediaType string `json:"media_type"`
-    Data      string `json:"data"`
-}
-func (ImageBlock) contentBlockSealed() {}
-func (ImageBlock) BlockType() string   { return "image" }
-```
-
-Custom JSON marshal/unmarshal on `ContentBlock` dispatches on `"type"` field.
-
-#### Messages
-
-```
 type Message struct {
-    Role    string         `json:"role"`    // "user"|"assistant"
-    Content []ContentBlock `json:"content"`
+    ID        string        `json:"id"`
+    Role      Role          `json:"role"`
+    Content   []ContentPart `json:"content"`
+    Timestamp time.Time     `json:"timestamp"`
+    Flags     MessageFlags  `json:"flags,omitempty"`
+}
+
+type MessageFlags struct {
+    IsInternal       bool `json:"is_internal,omitempty"`
+    IsCompactSummary bool `json:"is_compact_summary,omitempty"`
+    IsMeta           bool `json:"is_meta,omitempty"`
 }
 ```
 
-No sealed interface for messages — just a struct with `Role` discriminator. Simpler, and the API only has 2 roles.
+**Only 2 roles.** Tool results live as `ToolResultPart` inside a `RoleUser` message. The provider adapter handles translation:
+- Anthropic: stays as-is (tool_result blocks in user message)
+- OpenAI: extracts ToolResultParts into separate `{role: "tool"}` messages
+- Google: extracts into `{role: "function"}` messages
 
-#### Usage
+**MessageFlags**: `IsInternal` messages are never sent to the LLM (progress, status). `IsCompactSummary` marks compaction summaries. `IsMeta` marks metadata injections.
+
+### 3.3 SystemPrompt
 
 ```
-type Usage struct {
-    InputTokens              int `json:"input_tokens"`
-    OutputTokens             int `json:"output_tokens"`
-    CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
-    CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+type SystemPrompt struct {
+    Blocks []SystemBlock `json:"blocks"`
+}
+
+type SystemBlock struct {
+    Text      string `json:"text"`
+    Cacheable bool   `json:"cacheable,omitempty"`
 }
 ```
 
-#### Tool Param (for API request)
+Provider-agnostic. Cacheable is a hint:
+- Anthropic: `cache_control: {type: "ephemeral"}`
+- OpenAI: ignored (or their caching mechanism)
+- Google: context caching API
+
+### 3.4 Conversation
+
+`internal/model/conversation.go`
 
 ```
-type ToolParam struct {
+type Conversation struct {
+    ID        string       `json:"id"`
+    Messages  []Message    `json:"messages"`
+    System    SystemPrompt `json:"system"`
+    Model     string       `json:"model"`
+    Provider  string       `json:"provider"`
+    WorkDir   string       `json:"work_dir"`
+    ParentID  string       `json:"parent_id,omitempty"`
+    CreatedAt time.Time    `json:"created_at"`
+    UpdatedAt time.Time    `json:"updated_at"`
+}
+
+func NewConversation(system SystemPrompt, model string, provider string, workDir string) Conversation
+func (c *Conversation) Append(msg Message)
+func (c Conversation) Fork(newID string) Conversation
+func (c Conversation) APIMessages() []Message
+```
+
+- `Fork()` deep-copies messages for sub-agent isolation. Sets `ParentID`.
+- `APIMessages()` filters out `IsInternal` messages — returns only what should go to the LLM.
+- `Provider` field records which provider was used (for session restore + cost tracking).
+
+### 3.5 ToolDef (for LLM requests)
+
+`internal/model/tool.go`
+
+```
+type ToolDef struct {
     Name        string          `json:"name"`
     Description string          `json:"description"`
     InputSchema json.RawMessage `json:"input_schema"`
 }
 ```
 
-#### Stream Events (sealed)
+This is what `tool.Registry.ToolDefs()` returns. The provider translates to its format:
+- Anthropic: `{name, description, input_schema}` (direct)
+- OpenAI: `{type: "function", function: {name, description, parameters}}`
+- Google: `{functionDeclarations: [{name, description, parameters}]}`
+
+### 3.6 Response (normalized LLM output)
+
+`internal/model/response.go`
 
 ```
-type StreamEvent interface {
-    streamEventSealed()
-    EventType() string
-}
-
-type MessageStartEvent struct {
-    Type    string  `json:"type"`    // "message_start"
-    Message Message `json:"message"` // partial, has model/id
-}
-
-type ContentBlockStartEvent struct {
-    Type         string       `json:"type"`          // "content_block_start"
-    Index        int          `json:"index"`
-    ContentBlock ContentBlock `json:"content_block"`
-}
-
-type ContentBlockDeltaEvent struct {
-    Type  string     `json:"type"`  // "content_block_delta"
-    Index int        `json:"index"`
-    Delta BlockDelta `json:"delta"`
-}
-
-type BlockDelta struct {
-    Type        string `json:"type"`                   // "text_delta"|"input_json_delta"|"thinking_delta"
-    Text        string `json:"text,omitempty"`
-    PartialJSON string `json:"partial_json,omitempty"`
-    Thinking    string `json:"thinking,omitempty"`
-}
-
-type ContentBlockStopEvent struct {
-    Type  string `json:"type"`  // "content_block_stop"
-    Index int    `json:"index"`
-}
-
-type MessageDeltaEvent struct {
-    Type  string       `json:"type"`  // "message_delta"
-    Delta MessageDelta `json:"delta"`
-    Usage Usage        `json:"usage"`
-}
-
-type MessageDelta struct {
-    StopReason string `json:"stop_reason"`
-}
-
-type MessageStopEvent struct {
-    Type string `json:"type"` // "message_stop"
+type Response struct {
+    ID         string        `json:"id"`
+    Model      string        `json:"model"`
+    Content    []ContentPart `json:"content"`
+    StopReason StopReason    `json:"stop_reason"`
+    Usage      TokenUsage    `json:"usage"`
 }
 ```
 
-Each implements `streamEventSealed()` and `EventType()`.
+Every provider call resolves to this. The query engine never sees wire format.
 
-#### Client
+### 3.7 StopReason
 
-```
-type Client struct {
-    apiKey  string
-    model   string
-    baseURL string
-    http    *http.Client
-}
-
-type ClientOption func(*Client)
-
-func NewClient(apiKey string, model string, opts ...ClientOption) *Client
-func WithBaseURL(url string) ClientOption
-func WithHTTPClient(c *http.Client) ClientOption
-
-func (c *Client) Stream(ctx context.Context, params MessageParams) (<-chan StreamEvent, error)
-
-type MessageParams struct {
-    Model       string         `json:"model"`
-    MaxTokens   int            `json:"max_tokens"`
-    Messages    []Message      `json:"messages"`
-    System      []SystemBlock  `json:"system,omitempty"`
-    Tools       []ToolParam    `json:"tools,omitempty"`
-    Temperature *float64       `json:"temperature,omitempty"`
-    Metadata    *Metadata      `json:"metadata,omitempty"`
-}
-
-type SystemBlock struct {
-    Type         string        `json:"type"`          // "text"
-    Text         string        `json:"text"`
-    CacheControl *CacheControl `json:"cache_control,omitempty"`
-}
-
-type CacheControl struct {
-    Type string `json:"type"` // "ephemeral"
-}
-
-type Metadata struct {
-    UserID string `json:"user_id,omitempty"`
-}
-```
-
-#### Errors
+`internal/model/stop.go`
 
 ```
-var (
-    ErrRateLimited   = errors.New("rate limited")
-    ErrOverloaded    = errors.New("overloaded")
-    ErrPromptTooLong = errors.New("prompt too long")
-    ErrAuthFailed    = errors.New("authentication failed")
-    ErrRetryable     = errors.New("retryable error")
+type StopReason string
+const (
+    StopEndTurn   StopReason = "end_turn"
+    StopToolUse   StopReason = "tool_use"
+    StopMaxTokens StopReason = "max_tokens"
+    StopError     StopReason = "error"
 )
-
-type APIError struct {
-    StatusCode int
-    Type       string `json:"type"`
-    Message    string `json:"message"`
-}
-func (e *APIError) Error() string
-func (e *APIError) Unwrap() error  // returns appropriate sentinel
 ```
 
----
+Each provider maps its native stop reason:
+- Anthropic: `end_turn→StopEndTurn`, `tool_use→StopToolUse`, `max_tokens→StopMaxTokens`
+- OpenAI: `stop→StopEndTurn`, `tool_calls→StopToolUse`, `length→StopMaxTokens`
+- Google: `STOP→StopEndTurn`, `FUNCTION_CALL→StopToolUse`, `MAX_TOKENS→StopMaxTokens`
 
-### 3.3 `internal/app/` — State
+### 3.8 TokenUsage + Pricing + CostTracker
 
-#### StateStore (generic, ADR-002)
-
-```
-type StateStore[T any] struct {
-    mu    sync.RWMutex
-    state T
-    subs  []func(T)
-}
-
-func NewStateStore[T any](initial T) *StateStore[T]
-func (s *StateStore[T]) Snapshot() T
-func (s *StateStore[T]) Update(fn func(*T))
-func (s *StateStore[T]) Subscribe(fn func(T)) func()
-```
-
-#### AppState
+`internal/model/usage.go`
 
 ```
-type AppState struct {
-    Settings       config.Settings
-    Verbose        bool
-    Model          string
-    SessionModel   string            // override for this session
-    WorkingDir     string
-    SessionID      string
-    IsInteractive  bool
-    IsPlanMode     bool
-    IsBriefOnly    bool
-
-    Permission     PermissionState
-    Tasks          map[string]TaskEntry
-    MCP            MCPState
-    Plugins        PluginState
-    Agents         AgentState
-    Notifications  NotificationState
-    Hooks          HookState
-    TokenUsage     TokenUsage
-
-    ThinkingEnabled bool
-}
-
-type PermissionState struct {
-    Mode                   string                     // "default"|"bypass"|"plan"
-    AllowRules             map[string][]PermissionRule // source → rules
-    DenyRules              map[string][]PermissionRule
-    AdditionalWorkingDirs  map[string]string           // path → source
-}
-
-type PermissionRule struct {
-    Tool    string `json:"tool"`
-    Pattern string `json:"pattern"`
-}
-
-type TaskEntry struct {
-    ID             string
-    Type           string     // "bash"|"agent"|"remote"|"teammate"|"workflow"|"monitor"|"dream"
-    Status         string     // "pending"|"running"|"completed"|"failed"|"killed"
-    Description    string
-    ToolUseID      string
-    OutputFile     string
-    OutputOffset   int64
-    StartTime      int64
-    EndTime        int64
-    IsBackgrounded bool
-    Cancel         context.CancelFunc `json:"-"`
-}
-
-type MCPState struct {
-    Clients        []MCPConnection
-    ToolNames      []string
-    Resources      map[string][]MCPResource
-}
-
-type MCPConnection struct {
-    Name   string
-    Status string // "connected"|"failed"|"pending"|"needs_auth"|"disabled"
-}
-
-type MCPResource struct {
-    URI      string `json:"uri"`
-    Name     string `json:"name"`
-    MimeType string `json:"mimeType,omitempty"`
-    Server   string `json:"server"`
-}
-
-type PluginState struct {
-    Enabled  []string
-    Disabled []string
-    Errors   []string
-}
-
-type AgentState struct {
-    Definitions  map[string]AgentDef
-    Colors       map[string]string
-    NameRegistry map[string]string // name → agent ID
-}
-
-type AgentDef struct {
-    Name        string
-    Description string
-    Model       string
-    Tools       []string
-    SystemPrompt string
-}
-
-type NotificationState struct {
-    Current *Notification
-    Queue   []Notification
-}
-
-type Notification struct {
-    Title   string
-    Message string
-    Type    string // "info"|"warning"|"error"
-}
-
-type HookState struct {
-    SessionStarted bool
-    Errors         []string
-}
-
 type TokenUsage struct {
-    InputTokens              int
-    OutputTokens             int
-    CacheCreationInputTokens int
-    CacheReadInputTokens     int
-    TotalCostUSD             float64
+    InputTokens              int `json:"input_tokens"`
+    OutputTokens             int `json:"output_tokens"`
+    CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+    CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+}
+
+type Pricing struct {
+    InputPerMToken       float64 `json:"input_per_m_token"`
+    OutputPerMToken      float64 `json:"output_per_m_token"`
+    CacheCreatePerMToken float64 `json:"cache_create_per_m_token,omitempty"`
+    CacheReadPerMToken   float64 `json:"cache_read_per_m_token,omitempty"`
+}
+
+type CostEntry struct {
+    Timestamp time.Time  `json:"timestamp"`
+    Model     string     `json:"model"`
+    Provider  string     `json:"provider"`
+    Usage     TokenUsage `json:"usage"`
+    CostUSD   float64    `json:"cost_usd"`
+}
+
+type CostTracker struct { mu sync.Mutex; entries []CostEntry; totalUSD float64 }
+
+func NewCostTracker() *CostTracker
+func (ct *CostTracker) Record(model string, provider string, usage TokenUsage, pricing Pricing)
+func (ct *CostTracker) TotalUSD() float64
+func (ct *CostTracker) Snapshot() []CostEntry
+```
+
+Cache fields are zero for providers that don't support caching.
+
+### 3.9 Agent
+
+`internal/model/agent.go`
+
+```
+type Agent struct {
+    ID           string   `json:"id"`
+    Name         string   `json:"name"`
+    Description  string   `json:"description"`
+    Model        string   `json:"model"`
+    Provider     string   `json:"provider,omitempty"`
+    Tools        []string `json:"tools,omitempty"`
+    SystemPrompt string   `json:"system_prompt,omitempty"`
 }
 ```
 
-`StateSnapshot` is an alias:
-```
-type StateSnapshot = AppState
-```
+Agents are definitions loaded from `.pragma/agents/`. At runtime, spawning an agent = fork conversation + create Engine with agent's config. The `Provider` field allows sub-agents to use a different LLM entirely.
 
 ---
 
-### 3.4 `internal/permission/` — Permission System
+## Part 4: Provider Interface (The Translation Boundary)
+
+`internal/provider/provider.go`
+
+### 4.1 Provider Interface
 
 ```
-type Decision int
+type Provider interface {
+    Name() string
+    Stream(ctx context.Context, params RequestParams) (<-chan StreamChunk, error)
+    Complete(ctx context.Context, params RequestParams) (model.Response, error)
+    SupportsFeature(feature Feature) bool
+    Pricing(modelID string) model.Pricing
+}
+
+type Feature string
 const (
-    Allow Decision = iota
-    Deny
-    Ask
+    FeaturePrefixCaching Feature = "prefix_caching"
+    FeatureThinking      Feature = "thinking"
+    FeatureImages        Feature = "images"
+    FeatureToolUse       Feature = "tool_use"
+    FeatureStreaming      Feature = "streaming"
 )
+```
 
-type Category int
-const (
-    Read Category = iota
-    Write
-    Execute
-    Network
-)
+### 4.2 RequestParams (internal types IN)
 
-type Checker struct {
-    state   *app.StateStore[app.AppState]
-    askUser func(toolName string, detail string) (bool, error)
+```
+type RequestParams struct {
+    Model       string              `json:"model"`
+    MaxTokens   int                 `json:"max_tokens"`
+    Messages    []model.Message     `json:"messages"`
+    System      model.SystemPrompt  `json:"system"`
+    Tools       []model.ToolDef     `json:"tools,omitempty"`
+    Temperature *float64            `json:"temperature,omitempty"`
+    Thinking    *ThinkingConfig     `json:"thinking,omitempty"`
 }
 
-func NewChecker(state *app.StateStore[app.AppState], askUser func(string, string) (bool, error)) *Checker
-func (c *Checker) Evaluate(ctx context.Context, cat Category, toolName string, path string) (Decision, error)
-func (c *Checker) AddAllowRule(source string, rule app.PermissionRule)
-func (c *Checker) AddDenyRule(source string, rule app.PermissionRule)
-func MatchWildcard(pattern string, value string) bool
+type ThinkingConfig struct {
+    Enabled      bool `json:"enabled"`
+    BudgetTokens int  `json:"budget_tokens,omitempty"`
+}
+```
+
+### 4.3 StreamChunk (internal types OUT)
+
+```
+type StreamChunk struct {
+    TextDelta         string
+    ThinkingDelta     string
+    ToolCallStart     *model.ToolCallPart
+    ToolCallInputDelta *ToolCallDelta
+    Done              *StreamDone
+    Error             error
+}
+
+type ToolCallDelta struct {
+    ToolCallID string
+    JSONDelta  string
+}
+
+type StreamDone struct {
+    StopReason model.StopReason
+    Usage      model.TokenUsage
+}
+```
+
+**Flat struct, not sealed interface.** Only one field is non-zero per chunk. Cheaper than interface boxing for high-frequency channel values.
+
+### 4.4 ID Mapping (inside each provider adapter)
+
+```
+// Inside internal/provider/anthropic/
+type IDMapper struct {
+    mu             sync.RWMutex
+    internalToWire map[string]string  // our UUID → toolu_xxx
+    wireToInternal map[string]string  // toolu_xxx → our UUID
+}
+
+func (m *IDMapper) ToWire(internalID string) string
+func (m *IDMapper) ToInternal(wireID string) string
+func (m *IDMapper) RegisterPair(internalID string, wireID string)
+```
+
+When provider receives tool call from LLM with wire ID `toolu_abc`:
+1. Generate internal UUID
+2. Register pair
+3. Emit `ToolCallPart{ID: internalUUID}`
+
+When sending tool result back:
+1. Look up wire ID from internal UUID
+2. Send `{tool_use_id: "toolu_abc"}` in wire format
+
+For Google (no explicit IDs): synthesize wire ID from `{name}_{index}`.
+
+---
+
+## Part 5: Entity Relationships
+
+```
+┌─────────────┐
+│    Agent     │ (definition, loadable from .pragma/agents/)
+│ name, model  │
+│ tools, prompt│
+└──────┬──────┘
+       │ spawns (forks conversation + creates Engine)
+       ▼
+┌─────────────────────────────────────────────────────┐
+│                     Engine                           │
+│ provider: Provider ←── translation boundary          │
+│ registry: *Registry                                  │
+│ orchestrator: *Orchestrator                          │
+│ conversation: Conversation                           │
+│ costTracker: *CostTracker                           │
+│                                                      │
+│ Run(ctx, userMessage) → <-chan LoopEvent             │
+└───────────┬─────────────────────────┬───────────────┘
+            │                         │
+            ▼                         ▼
+┌───────────────────┐    ┌─────────────────────────┐
+│   Conversation    │    │     Provider             │
+│                   │    │ (interface)              │
+│ ID, ParentID?     │    │                          │
+│ System: SystemPrompt   │ Stream(RequestParams)    │
+│ Messages: []Message│   │  → <-chan StreamChunk    │
+│ Model, Provider   │    │                          │
+│ WorkDir           │    │ Implementations:         │
+│                   │    │ ├─ anthropic.Provider    │
+│ Fork() → new Conv │    │ ├─ openai.Provider      │
+│ Append(msg)       │    │ └─ google.Provider      │
+│ APIMessages()     │    └─────────────────────────┘
+└───────┬───────────┘
+        │ contains
+        ▼
+┌──────────────────────────────────────────────────┐
+│                   Message                         │
+│ ID (UUID), Role (user|assistant), Timestamp       │
+│ Flags: {IsInternal, IsCompactSummary, IsMeta}    │
+│ Content: []ContentPart                            │
+│   ├─ TextPart{Text}                              │
+│   ├─ ImagePart{MimeType, Data}                   │
+│   ├─ ToolCallPart{ID, Name, Input}  ──────┐     │
+│   ├─ ToolResultPart{ToolCallID, Content} ◄─┘     │
+│   └─ ThinkingPart{Text}             (correlates) │
+└──────────────────────────────────────────────────┘
+
+┌──────────────────┐     ┌──────────────────────────┐
+│   tool.Registry  │     │   tool.Descriptor        │
+│                  │     │                          │
+│ tools: map[name] ├────►│ Name, InputSchema        │
+│                  │     │ Invoke(ctx, json, snap)  │
+│ ToolDefs() →     │     │ CheckPerm(ctx, json, chk)│
+│  []model.ToolDef │     │ Flags: readonly,         │
+└──────────────────┘     │   concurrent, destructive│
+                         └──────────────────────────┘
+
+┌──────────────────────────────────────────────────┐
+│              tool.Orchestrator                     │
+│                                                    │
+│ Execute(ctx, []ToolCallPart, snap)                │
+│   → []ToolResultPart                              │
+│                                                    │
+│ 1. Partition: concurrent[] vs serial[]            │
+│ 2. Run concurrent via errgroup.Group              │
+│ 3. Run serial sequentially                        │
+│ 4. For each: CheckPerm → Invoke → wrap result    │
+└──────────────────────────────────────────────────┘
+```
+
+### Correlation Chain
+
+```
+ToolCallPart.ID (internal UUID)
+    │
+    ├─ Provider maps to wire ID (toolu_xxx / call_xxx / positional)
+    │   via IDMapper inside provider adapter
+    │
+    └─ ToolResultPart.ToolCallID matches ToolCallPart.ID
+        │
+        └─ Orchestrator returns results in same order as calls
 ```
 
 ---
 
-### 3.5 `internal/query/` — Agentic Loop
+## Part 6: Processes (Step-by-Step)
 
-#### Loop Events (sealed)
+### 6.1 Agentic Loop
 
 ```
-type LoopEvent interface {
-    loopEventSealed()
+Engine.Run(ctx, userMessage) → <-chan LoopEvent:
+
+  goroutine:
+    1. Create user Message{Role: User, Content: [TextPart{userMessage}]}
+    2. Append to conversation
+    3. LOOP:
+       a. Build RequestParams{
+            Model: config.Model,
+            MaxTokens: config.MaxTokens,
+            Messages: conversation.APIMessages(),  // filters IsInternal
+            System: conversation.System,
+            Tools: registry.ToolDefs(),
+            Temperature: config.Temperature,
+            Thinking: config.Thinking,
+          }
+       b. chunks, err := provider.Stream(ctx, params)
+       c. Accumulate chunks into Response:
+          - TextDelta → emit TextEvent, accumulate text
+          - ThinkingDelta → emit ThinkingEvent, accumulate thinking
+          - ToolCallStart → start accumulator for this tool call
+          - ToolCallInputDelta → append JSON to accumulator
+          - Done → finalize Response
+          - Error → emit ErrorEvent, break
+       d. Build assistant Message from Response.Content
+       e. Append to conversation
+       f. costTracker.Record(usage, pricing)
+       g. If StopReason == EndTurn or MaxTokens:
+          → emit TurnCompleteEvent, break
+       h. If StopReason == ToolUse:
+          → Extract []ToolCallPart from assistant message
+          → Emit ToolCallEvent for each
+          → results := orchestrator.Execute(ctx, toolCalls, stateSnapshot)
+          → Emit ToolResultEvent for each
+          → Build user Message with ToolResultParts
+          → Append to conversation
+          → Continue LOOP
+    4. Close channel
+```
+
+### 6.2 Tool Execution
+
+```
+Orchestrator.Execute(ctx, calls []ToolCallPart, snap) → []ToolResultPart:
+
+  1. PARTITION by registry lookup:
+     concurrent = calls where Descriptor.Concurrent == true
+     serial     = calls where Descriptor.Concurrent == false
+
+  2. RUN CONCURRENT (errgroup.Group):
+     For each call in concurrent:
+       g.Go → executeSingle(ctx, call, snap)
+     g.Wait()
+
+  3. RUN SERIAL:
+     For each call in serial:
+       executeSingle(ctx, call, snap)
+
+  4. RETURN all results (order preserved)
+
+  executeSingle(ctx, call, snap) → ToolResultPart:
+    a. desc := registry.Get(call.Name)
+       If not found → ToolResultPart{ToolCallID: call.ID, Content: "unknown tool", IsError: true}
+    b. decision := desc.CheckPerm(ctx, call.Input, permChecker)
+       If Deny → ToolResultPart{..., Content: "permission denied", IsError: true}
+       If Ask → prompt user via TUI; if denied → error result
+    c. output, err := desc.Invoke(ctx, call.Input, snap)
+       If err → ToolResultPart{..., Content: err.Error(), IsError: true}
+    d. Return ToolResultPart{ToolCallID: call.ID, Content: output}
+```
+
+### 6.3 Compaction
+
+```
+Compact(conversation, budgetTokens, provider) → Conversation:
+
+  1. est := conversation.TokenEstimate()
+  2. If est <= budgetTokens → return (no-op)
+  3. Protected: first message + last 4 messages
+  4. Compactable: messages[1 : len-4]
+  5. Build summary request via provider.Complete():
+     "Summarize this conversation concisely: ..."
+  6. Replace compactable range with:
+     Message{Role: User, Content: [TextPart{"[Previous summary]: " + summary}],
+             Flags: {IsCompactSummary: true}}
+  7. Return compacted conversation
+```
+
+Uses the same Provider interface — works with any LLM.
+
+### 6.4 Caching
+
+```
+Caching is a provider-level optimization:
+
+  1. SystemBlock.Cacheable = true → hint to provider
+  2. Provider translates:
+     - Anthropic: adds cache_control: {type: "ephemeral"}
+     - OpenAI: uses implicit prefix caching (no action needed)
+     - Google: uses context caching API
+  3. Usage.CacheCreationInputTokens / CacheReadInputTokens reported back
+  4. CostTracker records savings
+
+Internal model doesn't change. Caching is transparent.
+```
+
+### 6.5 Streaming (Chunk → Response Accumulation)
+
+```
+accumulateStream(chunks <-chan StreamChunk) → Response:
+
+  textBuf := strings.Builder{}
+  thinkBuf := strings.Builder{}
+  toolCalls := map[string]*accumulator{}  // keyed by internal UUID
+  var usage TokenUsage
+  var stopReason StopReason
+
+  for chunk := range chunks:
+    if chunk.TextDelta != "":       textBuf.WriteString(chunk.TextDelta)
+    if chunk.ThinkingDelta != "":   thinkBuf.WriteString(chunk.ThinkingDelta)
+    if chunk.ToolCallStart != nil:  toolCalls[tc.ID] = new accumulator
+    if chunk.ToolCallInputDelta:    toolCalls[id].inputBuf.WriteString(delta)
+    if chunk.Done != nil:           usage, stopReason = chunk.Done values
+    if chunk.Error != nil:          return error
+
+  Build []ContentPart from accumulators
+  Return Response{Content, StopReason, Usage}
+```
+
+### 6.6 Session Persistence
+
+```
+Session{
+  ID, CreatedAt, UpdatedAt
+  Conversation: model.Conversation  // stored in internal format, not wire format
+  CostEntries: []CostEntry
 }
 
-type TextEvent struct{ Text string }
-type ThinkingEvent struct{ Text string }
-type ToolCallEvent struct{ Name string; ID string; Input json.RawMessage }
-type ToolResultEvent struct{ ID string; Content string; IsError bool }
-type TurnCompleteEvent struct{ StopReason string; Usage api.Usage }
-type ErrorEvent struct{ Err error }
+Save: JSON marshal Conversation (ContentPart dispatched on "type" field)
+Load: JSON unmarshal → Conversation with full ContentPart types restored
+Resume: Load session → create Engine with session.Conversation.Provider → continue
 
-// Each implements loopEventSealed()
+Sessions stored in internal format = theoretically portable across providers.
 ```
 
-#### Config
+### 6.7 Sub-Agent Spawning
 
 ```
-type Config struct {
-    Model         string
-    MaxTokens     int
-    MaxTurns      int      // 0 = unlimited
-    SystemPrompt  string
-    Tools         []api.ToolParam
-    Temperature   *float64
-}
-```
+SpawnSubAgent(parent Conversation, agent Agent, providerFactory, registry):
 
-#### Engine
+  1. child := parent.Fork(newID)            // deep copy + new ID + parent link
+     OR child := NewConversation(...)        // clean slate for isolated agents
+  2. child.Model = agent.Model
+  3. child.Provider = agent.Provider (or parent's)
+  4. child.System = SystemPrompt{Blocks: [{Text: agent.SystemPrompt}]}
+  5. scopedReg := registry.Scoped(agent.Tools)  // only allowed tools
+  6. prov := providerFactory(agent.Provider, agent.Model)
+  7. engine := NewEngine(prov, scopedReg, orchestrator, store, config)
+  8. return engine.Run(ctx, task)
 
-```
-type Engine struct {
-    client       *api.Client
-    registry     *tool.Registry
-    orchestrator *tool.Orchestrator
-    store        *app.StateStore[app.AppState]
-    config       Config
-}
-
-func NewEngine(
-    client *api.Client,
-    registry *tool.Registry,
-    orchestrator *tool.Orchestrator,
-    store *app.StateStore[app.AppState],
-    config Config,
-) *Engine
-
-func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent
-func (e *Engine) RunWithMessages(ctx context.Context, messages []api.Message) <-chan LoopEvent
-```
-
-`Run` internals (goroutine writes to channel, ADR-004):
-1. Build `[]api.Message` with system prompt + user message
-2. Loop:
-   a. `client.Stream(ctx, params)` → read `StreamEvent` channel
-   b. Forward `TextEvent`/`ThinkingEvent` as delta arrives
-   c. Accumulate `ToolUseBlock`s from stream
-   d. If `stop_reason == "end_turn"` → send `TurnCompleteEvent` → close channel
-   e. If `stop_reason == "tool_use"` → `orchestrator.Execute(calls)` → send `ToolCallEvent`/`ToolResultEvent` → append to messages → loop
-   f. Decrement `MaxTurns` if set → close channel if exhausted
-
----
-
-### 3.6 `internal/config/` — Settings with Merge Tags
-
-```
-type Settings struct {
-    Model              string            `json:"model"              merge:"replace"`
-    MaxTokens          int               `json:"maxTokens"          merge:"replace"`
-    CustomInstructions string            `json:"customInstructions" merge:"replace"`
-    Temperature        *float64          `json:"temperature"        merge:"replace"`
-    ApiKey             string            `json:"apiKey"             merge:"replace"`
-    BaseURL            string            `json:"baseURL"            merge:"replace"`
-    AllowedTools       []string          `json:"allowedTools"       merge:"append"`
-    DeniedTools        []string          `json:"deniedTools"        merge:"append"`
-    AllowedPaths       []string          `json:"allowedPaths"       merge:"append"`
-    DeniedPaths        []string          `json:"deniedPaths"        merge:"append"`
-    Hooks              map[string][]Hook `json:"hooks"              merge:"deep"`
-    Permissions        PermSettings      `json:"permissions"        merge:"deep"`
-    MCPServers         map[string]MCPServerConfig `json:"mcpServers" merge:"deep"`
-}
-
-type Hook struct {
-    Command string `json:"command"`
-    Pattern string `json:"pattern,omitempty"`
-    Timeout int    `json:"timeout,omitempty"`
-}
-
-type PermSettings struct {
-    DefaultMode string   `json:"defaultMode,omitempty"`
-    Allow       []string `json:"allow,omitempty"   merge:"append"`
-    Deny        []string `json:"deny,omitempty"    merge:"append"`
-}
-
-type MCPServerConfig struct {
-    Type    string            `json:"type"`              // "stdio"|"sse"|"http"
-    Command string            `json:"command,omitempty"` // stdio
-    Args    []string          `json:"args,omitempty"`    // stdio
-    URL     string            `json:"url,omitempty"`     // sse/http
-    Env     map[string]string `json:"env,omitempty"`
-    Headers map[string]string `json:"headers,omitempty"`
-}
-
-func LoadSettings(globalPath string, projectPath string, localPath string) (Settings, error)
-func MergeSettings(base Settings, overlay Settings) Settings
-func mergeByTag(base reflect.Value, overlay reflect.Value)
-```
-
-`MergeSettings` reflects on each field:
-- `merge:"replace"` → if overlay field is non-zero, use it
-- `merge:"append"` → append overlay slice to base slice
-- `merge:"deep"` → recursively merge maps / nested structs
-
----
-
-### 3.7 `internal/tui/` — Bubbletea TUI
-
-```
-type Model struct {
-    store        *app.StateStore[app.AppState]
-    eventCh      <-chan query.LoopEvent
-    input        textarea.Model
-    viewport     viewport.Model
-    spinner      spinner.Model
-    blocks       []RenderedBlock
-    width        int
-    height       int
-    mode         Mode
-    permPrompt   *PermissionPrompt
-}
-
-type Mode int
-const (
-    ModeInput Mode = iota
-    ModeScrolling
-    ModePermission
-)
-
-type RenderedBlock struct {
-    Role    string // "user"|"assistant"|"tool"|"error"
-    Content string
-    Style   lipgloss.Style
-}
-
-type PermissionPrompt struct {
-    ToolName string
-    Detail   string
-    Respond  chan<- bool
-}
-
-func NewModel(store *app.StateStore[app.AppState]) Model
-func (m Model) Init() tea.Cmd
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd)
-func (m Model) View() string
-```
-
-Tea messages bridging query loop → TUI:
-```
-type StreamTextMsg struct{ Text string }
-type StreamThinkingMsg struct{ Text string }
-type ToolCallMsg struct{ Name string; ID string }
-type ToolResultMsg struct{ ID string; Content string; IsError bool }
-type TurnDoneMsg struct{ StopReason string }
-type ErrorMsg struct{ Err error }
-type PermissionAskMsg struct{ ToolName string; Detail string; Respond chan<- bool }
+Sub-agent can use a completely different LLM provider + model.
+Results flow back as ToolResultPart in parent conversation.
 ```
 
 ---
 
-### 3.8 `internal/cli/` — CLI Wiring
+## Part 7: What Changes from Current SPEC.md
 
-```
-func RootCmd() *cobra.Command
-func RunInteractive(ctx context.Context, store *app.StateStore[app.AppState], engine *query.Engine) error
-func RunOnce(ctx context.Context, store *app.StateStore[app.AppState], engine *query.Engine, prompt string) error
-```
-
----
-
-### 3.9 `internal/context/` — System Prompt Construction
-
-```
-type Builder struct {
-    settings config.Settings
-    workDir  string
-    claudeMD string
-    gitInfo  string
-    platform string
-}
-
-func NewBuilder(settings config.Settings, workDir string) *Builder
-func (b *Builder) Build() []api.SystemBlock
-func LoadClaudeMD(dir string) (string, error)
-func GetGitInfo(dir string) (string, error)
-func GetPlatformInfo() string
-```
+| Current (Anthropic-specific) | New (LLM-generic) |
+|---|---|
+| `internal/api/` package | Split → `internal/model/` + `internal/provider/` |
+| `api.ContentBlock` (tool_use, tool_result) | `model.ContentPart` (ToolCallPart, ToolResultPart) |
+| `api.StreamEvent` (Anthropic SSE types) | `provider.StreamChunk` (flat struct, one field set) |
+| `api.Client.Stream()` | `provider.Provider.Stream()` |
+| `api.MessageParams` | `provider.RequestParams` |
+| `api.SystemBlock{CacheControl}` | `model.SystemBlock{Cacheable bool}` |
+| `api.ToolParam` | `model.ToolDef` |
+| `api.Message{Role, Content}` | `model.Message{ID, Role, Content, Timestamp, Flags}` |
+| No stop reason normalization | `model.StopReason` enum mapped per provider |
+| No ID mapping | `IDMapper` inside each provider adapter |
+| Hardcoded Anthropic client | `provider.Provider` interface, pluggable |
+| Session stores API format | Session stores `model.Conversation` (portable) |
 
 ---
 
-### 3.10 `internal/mcp/` — MCP Client + Tool Adapter (ADR-005)
+## Part 8: Persistence of THIS Plan
 
-```
-type Transport interface {
-    Send(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
-    Close() error
-}
-
-type StdioTransport struct { cmd *exec.Cmd; stdin io.Writer; stdout *bufio.Scanner }
-type SSETransport struct { url string; client *http.Client }
-
-func NewStdioTransport(command string, args []string, env []string) (*StdioTransport, error)
-func NewSSETransport(url string) (*SSETransport, error)
-
-type Client struct {
-    transport Transport
-    name      string
-}
-
-func NewClient(name string, transport Transport) *Client
-func (c *Client) ListTools(ctx context.Context) ([]ToolDef, error)
-func (c *Client) CallTool(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error)
-func (c *Client) ListResources(ctx context.Context) ([]Resource, error)
-func (c *Client) ReadResource(ctx context.Context, uri string) (json.RawMessage, error)
-func (c *Client) Close() error
-
-type ToolDef struct {
-    Name        string          `json:"name"`
-    Description string          `json:"description"`
-    InputSchema json.RawMessage `json:"inputSchema"`
-}
-
-type Resource struct {
-    URI      string `json:"uri"`
-    Name     string `json:"name"`
-    MimeType string `json:"mimeType,omitempty"`
-}
-```
-
-**MCP Tool Adapter** — wraps MCP tools as `tool.Descriptor` (single path, ADR-005):
-```
-func RegisterMCPTools(ctx context.Context, reg *tool.Registry, client *Client, prefix string) error
-```
-
-This calls `client.ListTools()`, creates a `tool.Descriptor` for each, and registers it. The `Invoke` closure calls `client.CallTool()`. After registration, MCP tools are indistinguishable from built-in tools.
+On exit plan mode, write this to:
+1. **`/SPEC.md`** in repo — overwrite Part 3 (Package Architecture) with the entity model
+2. **`.pragma/AGENT.md`** — add entity model reference
+3. **Memory** — update project memory with "LLM-generic, see SPEC.md"
 
 ---
 
-### 3.11 `internal/session/` — Persistence
+## Verification
 
-```
-type Session struct {
-    ID        string        `json:"id"`
-    CreatedAt time.Time     `json:"created_at"`
-    UpdatedAt time.Time     `json:"updated_at"`
-    Messages  []api.Message `json:"messages"`
-    Model     string        `json:"model"`
-    WorkDir   string        `json:"work_dir"`
-    Summary   string        `json:"summary"`
-}
-
-type Store struct {
-    dir string
-}
-
-func NewStore(dir string) *Store
-func (s *Store) Save(session Session) error
-func (s *Store) Load(id string) (Session, error)
-func (s *Store) List() ([]Session, error)
-```
-
----
-
-### 3.12 `internal/task/` — Background Tasks
-
-```
-type State int
-const (
-    Pending State = iota
-    Running
-    Completed
-    Failed
-    Killed
-)
-
-type Manager struct {
-    store *app.StateStore[app.AppState]
-}
-
-func NewManager(store *app.StateStore[app.AppState]) *Manager
-func (m *Manager) Create(id string, taskType string, desc string, toolUseID string) app.TaskEntry
-func (m *Manager) Start(ctx context.Context, id string, run func(ctx context.Context, outputFile string) error) error
-func (m *Manager) Kill(id string) error
-func (m *Manager) Get(id string) (app.TaskEntry, bool)
-func (m *Manager) List(filter *string) []app.TaskEntry
-func (m *Manager) ReadOutput(id string, offset int64, block bool, timeout time.Duration) (string, int64, error)
-func GenerateID(taskType string) string
-```
-
----
-
-## Part 4: Design Patterns → Components
-
-| Pattern | Component | How It Works |
-|---|---|---|
-| **Struct tags → JSON Schema** | `tool.GenerateSchema[T]()` | Reflect on `T`'s fields, read json/schema/desc/enum/default/min/max tags, produce JSON Schema bytes |
-| **Optional interface discovery** | `tool.Register[I,O]()` | Type-assert tool against 14 optional interfaces, set Descriptor flags, build closures |
-| **Type-erased closures** | `tool.Descriptor.Invoke` | Closure captures `I`/`O` types, deserializes JSON → `I`, calls `Run`, serializes `O` → string |
-| **Sealed interfaces** | `api.ContentBlock`, `api.StreamEvent`, `query.LoopEvent` | Unexported marker method prevents external implementation |
-| **Channel generators** | `query.Engine.Run()`, `api.Client.Stream()` | Goroutine writes to chan, caller reads with `for range`, producer closes (ADR-004) |
-| **Functional state updates** | `app.StateStore[T].Update(func(*T))` | Write lock → mutate in place → unlock → notify subscribers (ADR-002) |
-| **Values as boundaries** | `StateSnapshot`, `json.RawMessage`, `ToolResultBlock` | Structs cross goroutine/package boundaries as values, never pointers (ADR-003) |
-| **Config merge via reflection** | `config.MergeSettings()` | Read `merge` tag per field, apply replace/append/deep strategy |
-| **Constructor DI** | `query.NewEngine(...)` | All deps passed as params, no globals, no init() side effects (ADR-006) |
-| **Sentinel errors** | `api.ErrRateLimited` etc. | `errors.New` + `fmt.Errorf("%w")` + `errors.Is` (ADR-007) |
-| **Adapter pattern** | `mcp.RegisterMCPTools()` | MCP tools → `tool.Descriptor`, single path, no `isMcp` checks (ADR-005) |
-| **Elm architecture** | `tui.Model` | bubbletea `Init/Update/View`, events from query loop arrive as `tea.Msg` |
-
----
-
-## Part 5: Reflection Usage Summary
-
-**3 places, all at startup, all cached:**
-
-1. **`tool.Register[I,O]()`** — reflects on input struct `I` to generate JSON Schema from tags. Type-asserts tool against optional interfaces. Builds type-erased closures.
-
-2. **`tool.GenerateSchema[T]()`** — called by Register. Walks struct fields via `reflect.TypeOf`, reads tags, builds JSON Schema object, marshals to `json.RawMessage`.
-
-3. **`config.MergeSettings()`** — reflects on `Settings` struct fields, reads `merge` tags, applies strategy per field.
-
-**Zero reflection at runtime.** All hot paths (tool invocation, permission checking, streaming, rendering) use pre-built closures and cached data.
-
----
-
-## Part 6: What You Write Per Tool (Minimal Code)
-
-For a typical tool like GlobTool:
-
-```
-// 1. Input struct with tags (SINGLE SOURCE OF TRUTH for schema)
-type Input struct {
-    Pattern string `json:"pattern" schema:"required" desc:"The glob pattern to match files against"`
-    Path    string `json:"path,omitempty"             desc:"The directory to search in"`
-}
-
-// 2. Output struct
-type Output struct {
-    Files     []string `json:"filenames"`
-    Count     int      `json:"numFiles"`
-    Truncated bool     `json:"truncated"`
-    DurationMs int64   `json:"durationMs"`
-}
-
-// 3. Tool struct (zero fields for simple tools)
-type GlobTool struct{}
-
-// 4. Three required methods
-func (*GlobTool) Name() string { ... }
-func (*GlobTool) Description() string { ... }
-func (*GlobTool) Run(ctx context.Context, input Input, snap StateSnapshot) (Output, error) { ... }
-
-// 5. Optional one-liner interfaces
-func (*GlobTool) IsReadonly() bool { ... }     // true
-func (*GlobTool) IsConcurrent() bool { ... }   // true
-func (*GlobTool) ExtractPath(input Input) string { ... }
-func (*GlobTool) Summary(input Input) string { ... }
-```
-
-**That's it.** No JSON Schema definition. No permission boilerplate. No result mapping. No registration code. Reflection handles all of that from the struct tags.
-
-Compare to TS where GlobTool is ~200 lines with Zod schema, mapToolResultToToolResultBlockParam, renderToolResultMessage, renderToolUseMessage, checkPermissions, etc.
-
----
-
-## Part 7: Verification
-
-After implementation:
-- `go build ./...` — compiles
-- `go test ./internal/tool/ -run TestGenerateSchema` — struct tags → correct JSON Schema
-- `go test ./internal/tool/ -run TestRegister` — Register builds correct Descriptor
-- `go test ./internal/config/ -run TestMergeSettings` — merge tags work correctly
-- `gogent -p "what is 2+2"` — end-to-end non-interactive
-- `gogent -p "list files in ."` — tool use works
-- `gogent` — interactive REPL launches
+- JSON round-trip tests for every ContentPart variant (marshal → unmarshal → compare)
+- ID mapping tests: internal UUID ↔ wire ID for each provider
+- Provider adapter tests: model types → wire format → model types
+- Agentic loop test: mock provider → verify ToolCallPart/ToolResultPart correlation
+- Compaction test: conversation exceeds budget → compact → verify token reduction
+- Session test: save conversation with mixed ContentParts → restore → verify equality
+- Multi-provider test: same conversation played through Anthropic and OpenAI adapters
