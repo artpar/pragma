@@ -2,14 +2,48 @@
 
 Go port of the Pragma TypeScript CLI. LLM-generic — works with Anthropic, OpenAI, Google, or any provider.
 
+## Quick Start
+
+```bash
+# Run with a prompt
+export ANTHROPIC_API_KEY=your-key
+go run ./cmd/gogent -p "What is 2+2?"
+
+# With options
+go run ./cmd/gogent -p "Explain Go channels" \
+  --model claude-haiku-4-5-20251001 \
+  --system-prompt "Be concise" \
+  --max-tokens 200 \
+  --verbose
+```
+
 ## Status
 
-**Phase 2 complete + bug sweep** — Anthropic provider adapter: streaming, retry, caching, message normalization, model registry. Post-phase audit fixed 5 bugs (signature accumulation, event kind mismatch, redacted thinking round-trip, PauseTurn stop reason, DecisionAsk passthrough), 3 latent issues, and 3 tech debt items.
+**Phase 3 complete** — gogent is runnable. Non-interactive mode works end-to-end: config loading, streaming agentic loop with tool execution, Cobra CLI.
+
+## CLI Flags
+
+| Flag | Description |
+|---|---|
+| `-p, --prompt` | Prompt text (required for non-interactive) |
+| `--model` | Model name (default: claude-sonnet-4-20250514) |
+| `--provider` | Provider name (default: anthropic) |
+| `--api-key` | API key (or set `ANTHROPIC_API_KEY` env var) |
+| `--system-prompt` | System prompt override |
+| `--max-tokens` | Max output tokens (default: 16384) |
+| `--temperature` | Sampling temperature (0.0–1.0) |
+| `--thinking` | Enable extended thinking |
+| `--thinking-budget` | Thinking token budget (default: 10000) |
+| `--verbose` | Verbose event logging to stderr |
+| `--record` | Record events to `gogent-recording.jsonl` |
 
 ## Architecture
 
 ```
+cmd/gogent/           CLI entry point (Cobra root command + wiring)
 internal/
+  config/             Config loading with 3-scope merge (global → project → CLI)
+  query/              Engine + agentic loop (stream → accumulate → tool exec → loop)
   model/              Pure domain types (ContentPart, Message, Conversation, Response, ToolDef)
   provider/           Provider interface + AccumulateStream utility
   provider/anthropic/ Anthropic adapter (translate, stream, retry, cache, normalize)
@@ -27,10 +61,11 @@ Every package follows a strict dependency DAG. Only provider adapters know wire 
 - **Sealed interfaces** (ADR-001): Unexported marker methods create closed type sets
 - **RWMutex StateStore** (ADR-002): Single mutation path, value semantics on read
 - **json.RawMessage for schemas** (ADR-003): Zero transform between definition and API call
-- **Channel-based generators** (ADR-004): `<-chan StreamChunk` replaces AsyncGenerator
+- **Channel-based generators** (ADR-004): `<-chan StreamChunk` / `<-chan LoopEvent` replaces AsyncGenerator
 - **Constructor-based DI** (ADR-006): No globals, no singletons, everything wired in main
 - **Sentinel errors** (ADR-007): `errors.Is` checking, never string matching
 - **ThinkingPart.Signature** (ADR-008): Provider attestation survives session persistence
+- **StopPauseTurn** (ADR-010): Continuation signal preserved through the agentic loop
 
 ## Observability
 
@@ -39,9 +74,11 @@ All observability flows through `internal/observe/EventBus`. No ad-hoc logging. 
 ## Running Tests
 
 ```bash
-go test ./internal/...           # all tests
-go test ./internal/... -race     # with race detector
-go test ./internal/archtest/     # architecture enforcement only
+go test ./...                   # all tests (11 packages)
+go test ./internal/... -race    # with race detector
+go test ./internal/archtest/    # architecture enforcement only
+go test ./internal/query/ -v    # query loop tests (17 test cases)
+go test ./internal/config/ -v   # config merge + load tests
 ```
 
 ## Spec
@@ -53,7 +90,7 @@ See [SPEC.md](SPEC.md) for the full entity model, provider interface, processes,
 | Library | Purpose |
 |---|---|
 | `golang.org/x/sync/errgroup` | Concurrent tool execution |
-| `github.com/spf13/cobra` | CLI framework (Phase 3+) |
+| `github.com/spf13/cobra` | CLI framework |
+| `github.com/anthropics/anthropic-sdk-go` | Claude API adapter |
 | `github.com/charmbracelet/bubbletea` | TUI framework (Phase 6+) |
-| `github.com/anthropics/anthropic-sdk-go` | Claude API adapter (Phase 2+) |
 | `github.com/mark3labs/mcp-go` | MCP protocol (Phase 11+) |
