@@ -65,6 +65,23 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 		}
 	}
 
+	// Safety gate: dangerous paths force DecisionAsk regardless of mode.
+	// This check runs BEFORE acceptEdits (matching TS reference: step 4 before step 6).
+	// Only applies to file-path content (starts with / or ~), not commands or domains.
+	// Skipped for ModeBypassPermissions — user explicitly opted out of all checks.
+	if rc.mode != ModeBypassPermissions && content != "" && isFilePath(content) {
+		for _, absPath := range resolvePathsForCheck(content, rc.workDir) {
+			if IsDangerousPath(absPath, rc.workDir) {
+				rc.emitRuleMatched(toolName, "", "dangerous_path", string(DecisionAsk))
+				return CheckResult{
+					Decision: DecisionAsk,
+					Reason:   "dangerous path: " + filepath.Base(absPath),
+					Content:  content,
+				}
+			}
+		}
+	}
+
 	// No rule matched — check acceptEdits mode before falling through
 	if rc.mode == ModeAcceptEdits {
 		if decision, ok := rc.acceptEditsDecision(toolName, content); ok {
@@ -130,18 +147,15 @@ func (rc *RuleChecker) acceptEditsDecision(toolName, content string) (Decision, 
 	if content == "" {
 		return DecisionAllow, true
 	}
-	// File tools: allow only if path is within workDir
-	absContent := content
-	if !filepath.IsAbs(absContent) {
-		absContent = filepath.Join(rc.workDir, absContent)
-	}
-	absContent = filepath.Clean(absContent)
+	// File tools: allow only if ALL resolved paths (including symlink targets)
+	// are within workDir. A symlink pointing outside workDir must not auto-allow.
 	workDir := filepath.Clean(rc.workDir)
-	if strings.HasPrefix(absContent, workDir+string(filepath.Separator)) || absContent == workDir {
-		return DecisionAllow, true
+	for _, absPath := range resolvePathsForCheck(content, rc.workDir) {
+		if !strings.HasPrefix(absPath, workDir+string(filepath.Separator)) && absPath != workDir {
+			return "", false
+		}
 	}
-	// Path outside workDir: ask
-	return "", false
+	return DecisionAllow, true
 }
 
 func (rc *RuleChecker) emitRuleMatched(toolName, pattern, source, decision string) {

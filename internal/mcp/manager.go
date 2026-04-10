@@ -13,18 +13,20 @@ const maxConcurrentStdio = 5
 
 // Manager handles multiple MCP server connections.
 type Manager struct {
-	clients  map[string]*Client
-	mu       sync.RWMutex
-	bus      *observe.EventBus
-	registry *tool.Registry
+	clients         map[string]*Client
+	registeredTools map[string][]string // server name → registered tool names
+	mu              sync.RWMutex
+	bus             *observe.EventBus
+	registry        *tool.Registry
 }
 
 // NewManager creates a Manager.
 func NewManager(bus *observe.EventBus, registry *tool.Registry) *Manager {
 	return &Manager{
-		clients:  make(map[string]*Client),
-		bus:      bus,
-		registry: registry,
+		clients:         make(map[string]*Client),
+		registeredTools: make(map[string][]string),
+		bus:             bus,
+		registry:        registry,
 	}
 }
 
@@ -102,10 +104,10 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 // RegisterTools lists tools from all connected servers and registers
 // MCPToolAdapters in the tool.Registry.
 func (m *Manager) RegisterTools(ctx context.Context) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	for _, client := range m.clients {
+	for name, client := range m.clients {
 		if !client.Connected() {
 			continue
 		}
@@ -122,6 +124,7 @@ func (m *Manager) RegisterTools(ctx context.Context) error {
 			continue
 		}
 
+		var registered []string
 		for _, info := range tools {
 			adapter := NewMCPToolAdapter(client, info)
 			if err := m.registry.Register(adapter); err != nil {
@@ -132,28 +135,28 @@ func (m *Manager) RegisterTools(ctx context.Context) error {
 					ErrorType:    "register_tool_error",
 					ErrorMessage: fmt.Sprintf("failed to register mcp tool %q: %v", adapter.Name(), err),
 				})
+			} else {
+				registered = append(registered, adapter.Name())
 			}
 		}
+		m.registeredTools[name] = registered
 	}
 
 	return nil
 }
 
 // DisconnectAll disconnects all servers and unregisters their tools.
+// Uses tracked tool names from registration — no re-listing required.
 func (m *Manager) DisconnectAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	for name, client := range m.clients {
-		// Unregister tools from this server
-		if client.Connected() {
-			if tools, err := client.ListTools(context.Background()); err == nil {
-				for _, info := range tools {
-					fullName := BuildToolName(name, info.Name)
-					m.registry.Unregister(fullName)
-				}
-			}
+		// Unregister tools using tracked names (no ListTools call needed)
+		for _, toolName := range m.registeredTools[name] {
+			m.registry.Unregister(toolName)
 		}
+		delete(m.registeredTools, name)
 		_ = client.Disconnect()
 	}
 	m.clients = make(map[string]*Client)

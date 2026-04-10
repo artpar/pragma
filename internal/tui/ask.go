@@ -48,7 +48,9 @@ func (d *askDialog) Update(msg tea.Msg) tea.Cmd {
 		resp := d.response
 		d.active = false
 		d.response = nil
-		resp <- answer
+		if resp != nil {
+			resp <- answer
+		}
 		return nil
 	case tea.KeyBackspace:
 		s := d.answer.String()

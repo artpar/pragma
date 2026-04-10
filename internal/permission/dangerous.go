@@ -1,6 +1,7 @@
 package permission
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -69,4 +70,53 @@ func IsDangerousPath(absPath, workDir string) bool {
 	}
 
 	return false
+}
+
+// isFilePath returns true if a permission content string looks like a file path
+// rather than a shell command or domain. File tools extract paths that start
+// with "/" (absolute) or "~" (home-relative).
+func isFilePath(content string) bool {
+	return strings.HasPrefix(content, "/") || strings.HasPrefix(content, "~")
+}
+
+// resolvePathsForCheck returns all paths that should be checked for permissions:
+// the cleaned original path and, if it's a symlink, the resolved target.
+// This prevents symlink-based permission bypasses (GitHub issues #5938, #23960, #10252).
+func resolvePathsForCheck(content, workDir string) []string {
+	absPath := content
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(workDir, absPath)
+	}
+	absPath = filepath.Clean(absPath)
+
+	paths := []string{absPath}
+
+	// Resolve symlinks — EvalSymlinks follows the full chain.
+	// Errors (file doesn't exist yet, permission denied) are ignored;
+	// the original path is still checked.
+	resolved, err := filepath.EvalSymlinks(absPath)
+	if err == nil && resolved != absPath {
+		paths = append(paths, resolved)
+	}
+
+	// Also check if any parent directory is a symlink pointing elsewhere.
+	// filepath.EvalSymlinks on the full path already handles this, but
+	// for files that don't exist yet, check the parent.
+	if os.IsNotExist(ignoreStat(absPath)) {
+		parentResolved, err := filepath.EvalSymlinks(filepath.Dir(absPath))
+		if err == nil {
+			resolvedViaParent := filepath.Join(parentResolved, filepath.Base(absPath))
+			if resolvedViaParent != absPath && resolvedViaParent != resolved {
+				paths = append(paths, resolvedViaParent)
+			}
+		}
+	}
+
+	return paths
+}
+
+// ignoreStat returns the error from os.Stat (for IsNotExist checks).
+func ignoreStat(path string) error {
+	_, err := os.Stat(path)
+	return err
 }
