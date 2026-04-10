@@ -117,7 +117,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
 			if e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
 				compResult, compErr := e.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
-				if compErr != nil {
+				if compErr != nil && ctx.Err() == nil {
+					// Only count real failures, not context cancellation (Ctrl+C)
 					tripped := e.autoTracker.RecordFailure()
 					if tripped {
 						e.bus.Emit(observe.ErrorOccurred{
@@ -286,7 +287,9 @@ func (e *Engine) consumeStream(
 	for _, id := range toolOrder {
 		acc := toolCalls[id]
 		raw := json.RawMessage(acc.inputBuf.String())
-		if len(raw) > 0 && !json.Valid(raw) {
+		if len(raw) == 0 {
+			raw = json.RawMessage("{}")
+		} else if !json.Valid(raw) {
 			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
 		}
 		parts = append(parts, model.ToolCallPart{

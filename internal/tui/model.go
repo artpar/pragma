@@ -313,8 +313,9 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 
 	case query.ThinkingEvent:
+		m.flushStreamBuf()
 		m.outputBuf.WriteString(thinkingStyle.Render(e.Text))
-		m.viewport.SetContent(m.outputBuf.String() + m.streamBuf.String())
+		m.viewport.SetContent(m.outputBuf.String())
 		m.viewport.GotoBottom()
 
 	case query.ToolCallEvent:

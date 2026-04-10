@@ -188,9 +188,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		markdown = fmt.Sprintf("[Binary content: %s, %d bytes]", contentType, len(body))
 	}
 
-	// Truncate
+	// Truncate (deduct marker length so result stays within limit)
+	const truncMarker = "\n\n[Content truncated]"
 	if len(markdown) > maxMarkdownChars {
-		markdown = markdown[:maxMarkdownChars] + "\n\n[Content truncated]"
+		markdown = markdown[:maxMarkdownChars-len(truncMarker)] + truncMarker
 	}
 
 	// Cache the markdown content
@@ -291,27 +292,54 @@ func resolveAndCheckSSRF(hostname string) (string, error) {
 	return firstValid, nil
 }
 
+// maxRedirects is the maximum number of HTTP redirects to follow.
+const maxRedirects = 5
+
 // pinnedHTTPClient returns an HTTP client whose transport resolves the given
 // hostname to pinnedIP, preventing DNS rebinding between SSRF check and fetch.
+// Every redirect target is validated against SSRF rules before following.
 func pinnedHTTPClient(hostname, pinnedIP string) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
+
+	// pinned tracks hostname→IP mappings. Starts with the initial hostname.
+	// Redirect targets are validated and added on follow.
+	pinned := map[string]string{hostname: pinnedIP}
+
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return dialer.DialContext(ctx, network, addr)
 			}
-			if host == hostname {
-				addr = net.JoinHostPort(pinnedIP, port)
+			if ip, ok := pinned[host]; ok {
+				addr = net.JoinHostPort(ip, port)
 			}
 			return dialer.DialContext(ctx, network, addr)
 		},
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout:  30 * time.Second,
-		MaxIdleConns:           1,
-		IdleConnTimeout:        30 * time.Second,
+		TLSHandshakeTimeout:  10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		MaxIdleConns:          1,
+		IdleConnTimeout:       30 * time.Second,
 	}
-	return &http.Client{Transport: transport}
+
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxRedirects {
+				return fmt.Errorf("stopped after %d redirects", maxRedirects)
+			}
+			redirectHost := req.URL.Hostname()
+			if _, ok := pinned[redirectHost]; ok {
+				return nil // already validated
+			}
+			validIP, err := resolveAndCheckSSRF(redirectHost)
+			if err != nil {
+				return fmt.Errorf("redirect to %s blocked: %w", redirectHost, err)
+			}
+			pinned[redirectHost] = validIP
+			return nil
+		},
+	}
 }
 
 // isPrivateIP checks if an IP is loopback, private, link-local, or a cloud metadata endpoint.
