@@ -15,6 +15,7 @@ import (
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/provider/anthropic"
+	groqprov "github.com/artpar/gogent/internal/provider/groq"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/session"
 	"github.com/artpar/gogent/internal/sysprompt"
@@ -49,7 +50,7 @@ func main() {
 
 	root.Flags().StringP("prompt", "p", "", "prompt to send (required for non-interactive mode)")
 	root.Flags().String("model", "", "model name")
-	root.Flags().String("provider", "", "provider name (anthropic)")
+	root.Flags().String("provider", "", "provider name (anthropic, groq)")
 	root.Flags().String("api-key", "", "API key")
 	root.Flags().String("system-prompt", "", "system prompt")
 	root.Flags().Int("max-tokens", 0, "max output tokens")
@@ -100,7 +101,12 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		cfg.MaxTokens = 16384
 	}
 	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+		switch cfg.Provider {
+		case "groq":
+			cfg.APIKey = os.Getenv("GROQ_API_KEY")
+		default:
+			cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
 	}
 
 	// Determine if resuming or new session
@@ -111,7 +117,11 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--prompt/-p is required (or use --resume to continue a session)")
 	}
 	if cfg.APIKey == "" {
-		return fmt.Errorf("API key required: set --api-key or ANTHROPIC_API_KEY environment variable")
+		envVar := "ANTHROPIC_API_KEY"
+		if cfg.Provider == "groq" {
+			envVar = "GROQ_API_KEY"
+		}
+		return fmt.Errorf("API key required: set --api-key or %s environment variable", envVar)
 	}
 
 	// 3. Create EventBus
@@ -430,6 +440,8 @@ func createProvider(cfg config.Config, bus *observe.EventBus) provider.Provider 
 	switch cfg.Provider {
 	case "anthropic":
 		return anthropic.New(cfg.APIKey, bus)
+	case "groq":
+		return groqprov.New(cfg.APIKey, bus)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown provider %q, falling back to anthropic\n", cfg.Provider)
 		return anthropic.New(cfg.APIKey, bus)

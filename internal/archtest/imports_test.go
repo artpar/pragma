@@ -19,6 +19,7 @@ func TestNoDirectProviderImports(t *testing.T) {
 		"github.com/artpar/gogent/internal/provider/anthropic",
 		"github.com/artpar/gogent/internal/provider/openai",
 		"github.com/artpar/gogent/internal/provider/google",
+		"github.com/artpar/gogent/internal/provider/groq",
 	}
 
 	for _, file := range files {
@@ -27,7 +28,8 @@ func TestNoDirectProviderImports(t *testing.T) {
 		// Provider adapters themselves are allowed
 		if strings.Contains(rel, "internal/provider/anthropic") ||
 			strings.Contains(rel, "internal/provider/openai") ||
-			strings.Contains(rel, "internal/provider/google") {
+			strings.Contains(rel, "internal/provider/google") ||
+			strings.Contains(rel, "internal/provider/groq") {
 			continue
 		}
 
