@@ -120,6 +120,12 @@ func TestPackageDependencyDAG(t *testing.T) {
 			"internal/sysprompt",
 			"internal/permission",
 		},
+		"internal/tui/": {
+			"internal/provider",
+			"internal/sysprompt",
+			"internal/cli",
+			"internal/session",
+		},
 	}
 
 	internalDir := filepath.Join(root, "internal")
