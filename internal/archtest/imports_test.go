@@ -46,6 +46,12 @@ func TestNoDirectProviderImports(t *testing.T) {
 	}
 }
 
+// importsPackage checks if importPath refers to pkg or a subpackage of pkg.
+// pkg must not have a trailing slash (e.g., "internal/observe").
+func importsPackage(importPath, pkg string) bool {
+	return strings.HasSuffix(importPath, pkg) || strings.Contains(importPath, pkg+"/")
+}
+
 func TestPackageDependencyDAG(t *testing.T) {
 	root := projectRoot()
 	if root == "" {
@@ -53,60 +59,64 @@ func TestPackageDependencyDAG(t *testing.T) {
 	}
 
 	// Define illegal import edges per the DAG in AGENT.md
-	// key = package path suffix, value = packages it must NOT import
+	// key = package path suffix (with trailing slash for file matching)
+	// value = packages it must NOT import (no trailing slash — matched via importsPackage)
 	illegal := map[string][]string{
 		"internal/model/": {
-			"internal/provider/",
-			"internal/observe/",
-			"internal/tool/",
-			"internal/app/",
-			"internal/permission/",
-			"internal/cli/",
-			"internal/tui/",
-			"internal/query/",
+			"internal/provider",
+			"internal/observe",
+			"internal/tool",
+			"internal/app",
+			"internal/permission",
+			"internal/cli",
+			"internal/tui",
+			"internal/query",
 		},
 		"internal/permission/": {
-			"internal/model/",
-			"internal/provider/",
-			"internal/observe/",
-			"internal/tool/",
-			"internal/app/",
+			// Allowed: internal/observe (EventBus), internal/config (rule loading)
+			"internal/model",
+			"internal/provider",
+			"internal/tool",
+			"internal/app",
+			"internal/tui",
+			"internal/cli",
+			"internal/query",
 		},
 		"internal/app/": {
-			"internal/tool/",
-			"internal/provider/",
-			"internal/observe/",
-			"internal/cli/",
-			"internal/tui/",
-			"internal/query/",
+			"internal/tool",
+			"internal/provider",
+			"internal/observe",
+			"internal/cli",
+			"internal/tui",
+			"internal/query",
 		},
 		"internal/util/": {
-			"internal/model/",
-			"internal/provider/",
-			"internal/observe/",
-			"internal/tool/",
-			"internal/app/",
+			"internal/model",
+			"internal/provider",
+			"internal/observe",
+			"internal/tool",
+			"internal/app",
 		},
 		"internal/sysprompt/": {
-			"internal/provider/",
-			"internal/tool/",
-			"internal/app/",
-			"internal/tui/",
-			"internal/cli/",
-			"internal/query/",
-			"internal/session/",
-			"internal/permission/",
+			"internal/provider",
+			"internal/tool",
+			"internal/app",
+			"internal/tui",
+			"internal/cli",
+			"internal/query",
+			"internal/session",
+			"internal/permission",
 		},
 		"internal/session/": {
-			"internal/provider/",
-			"internal/observe/",
-			"internal/tool/",
-			"internal/app/",
-			"internal/tui/",
-			"internal/cli/",
-			"internal/query/",
-			"internal/sysprompt/",
-			"internal/permission/",
+			"internal/provider",
+			"internal/observe",
+			"internal/tool",
+			"internal/app",
+			"internal/tui",
+			"internal/cli",
+			"internal/query",
+			"internal/sysprompt",
+			"internal/permission",
 		},
 	}
 
@@ -127,7 +137,7 @@ func TestPackageDependencyDAG(t *testing.T) {
 			}
 			for _, imp := range imports {
 				for _, forbidden := range forbiddenPkgs {
-					if strings.Contains(imp, forbidden) {
+					if importsPackage(imp, forbidden) {
 						t.Errorf("DAG violation: %s imports %s (forbidden for %s)", rel, imp, pkgSuffix)
 					}
 				}

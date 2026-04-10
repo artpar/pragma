@@ -2,6 +2,8 @@ package permission
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/artpar/gogent/internal/observe"
@@ -63,7 +65,19 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 		}
 	}
 
-	// No rule matched — fall through to mode default
+	// No rule matched — check acceptEdits mode before falling through
+	if rc.mode == ModeAcceptEdits {
+		if decision, ok := rc.acceptEditsDecision(toolName, content); ok {
+			rc.emitRuleMatched(toolName, "", "mode_accept_edits", string(decision))
+			return CheckResult{
+				Decision: decision,
+				Reason:   "acceptEdits mode: auto-allow read/write tools in project directory",
+				Content:  content,
+			}
+		}
+	}
+
+	// Fall through to mode default
 	decision := rc.modeDefault()
 	rc.emitRuleMatched(toolName, "", "mode_default", string(decision))
 	return CheckResult{
@@ -93,6 +107,41 @@ func (rc *RuleChecker) modeDefault() Decision {
 	default: // ModeDefault, ModeAcceptEdits
 		return DecisionAsk
 	}
+}
+
+// acceptEditsTools are the tools that ModeAcceptEdits auto-allows when the content
+// (file path) is within the project working directory. Bash is always "ask".
+var acceptEditsTools = map[string]bool{
+	"Read":         true,
+	"Edit":         true,
+	"Write":        true,
+	"Glob":         true,
+	"Grep":         true,
+	"NotebookEdit": true,
+}
+
+// acceptEditsDecision checks if acceptEdits mode should auto-allow this tool.
+// Returns (decision, true) if a decision was made, or (_, false) to fall through.
+func (rc *RuleChecker) acceptEditsDecision(toolName, content string) (Decision, bool) {
+	if !acceptEditsTools[toolName] {
+		return "", false
+	}
+	// Read-only tools with no path content: allow (they're safe)
+	if content == "" {
+		return DecisionAllow, true
+	}
+	// File tools: allow only if path is within workDir
+	absContent := content
+	if !filepath.IsAbs(absContent) {
+		absContent = filepath.Join(rc.workDir, absContent)
+	}
+	absContent = filepath.Clean(absContent)
+	workDir := filepath.Clean(rc.workDir)
+	if strings.HasPrefix(absContent, workDir+string(filepath.Separator)) || absContent == workDir {
+		return DecisionAllow, true
+	}
+	// Path outside workDir: ask
+	return "", false
 }
 
 func (rc *RuleChecker) emitRuleMatched(toolName, pattern, source, decision string) {

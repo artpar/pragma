@@ -175,8 +175,11 @@ func TestFileReadTool_ImageFile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"base64:image/png:") {
-		t.Errorf("expected base64 image result, got: %s", result.Content)
+	if !strings.Contains(result.Content, "Image file: test.png") {
+		t.Errorf("expected image description, got: %s", result.Content)
+	}
+	if len(result.Supplements) != 1 {
+		t.Fatalf("expected 1 ImagePart supplement, got %d", len(result.Supplements))
 	}
 }
 

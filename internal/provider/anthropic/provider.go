@@ -244,6 +244,8 @@ func estimateTokens(params provider.RequestParams) int {
 				total += len(p.Text) / 4
 			case model.ImagePart:
 				total += 1000
+			case model.DocumentPart:
+				total += len(p.Data) / 4
 			}
 		}
 	}

@@ -169,6 +169,17 @@ func (p *Provider) dispatchEvent(
 
 	case "message_stop":
 		// Done already sent on message_delta
+
+	default:
+		if bus != nil && event.Type != "" {
+			bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
+				Severity:     "warn",
+				Component:    "anthropic_stream",
+				ErrorType:    "unknown_event_type",
+				ErrorMessage: "unhandled stream event type: " + event.Type,
+			})
+		}
 	}
 }
 

@@ -35,6 +35,10 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 }
 
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
+	maxTurns := e.config.MaxTurns
+	if maxTurns <= 0 {
+		maxTurns = DefaultMaxTurns
+	}
 
 	// 1. Create and append user message
 	userMsg := model.Message{
@@ -48,7 +52,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	})
 
 	// 2. LOOP
-	for {
+	for range maxTurns {
 		if err := ctx.Err(); err != nil {
 			ch <- ErrorEvent{Err: fmt.Errorf("context cancelled: %w", model.ErrContextCancelled)}
 			return
@@ -157,6 +161,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			return
 		}
 	}
+	// Loop exhausted maxTurns without a terminal stop reason
+	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
 }
 
 // toolAccumulator collects streaming fragments for a single tool call.

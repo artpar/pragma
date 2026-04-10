@@ -119,8 +119,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	}
 	fetchURL := u.String()
 
-	// SSRF protection: resolve hostname and block private/loopback IPs
-	if err := checkSSRF(u.Hostname()); err != nil {
+	// SSRF protection: resolve hostname, block private/loopback IPs, and pin
+	// the resolved address so the HTTP client cannot be DNS-rebinded to a
+	// different (private) IP between our check and the actual connection.
+	pinnedAddr, err := resolveAndCheckSSRF(u.Hostname())
+	if err != nil {
 		return tool.InvokeResult{Content: err.Error()}, nil
 	}
 
@@ -148,7 +151,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		return marshalResult(fr), nil
 	}
 
-	// Fetch
+	// Fetch using a client that pins DNS to the already-validated IP
 	httpCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
 
@@ -158,7 +161,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	}
 	req.Header.Set("User-Agent", "gogent/1.0 (AI coding assistant)")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := pinnedHTTPClient(u.Hostname(), pinnedAddr)
+	resp, err := client.Do(req)
 	if err != nil {
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to fetch URL: %v", err)}, nil
 	}
@@ -262,22 +266,53 @@ func marshalResult(fr fetchResult) tool.InvokeResult {
 	return tool.InvokeResult{Content: string(data)}
 }
 
-// checkSSRF resolves the hostname and rejects private, loopback, and metadata IPs.
-func checkSSRF(hostname string) error {
+// resolveAndCheckSSRF resolves the hostname, rejects private/loopback/metadata IPs,
+// and returns the first valid IP for connection pinning (prevents DNS rebinding).
+func resolveAndCheckSSRF(hostname string) (string, error) {
 	ips, err := net.LookupHost(hostname)
 	if err != nil {
-		return fmt.Errorf("DNS resolution failed for %s: %v", hostname, err)
+		return "", fmt.Errorf("DNS resolution failed for %s: %v", hostname, err)
 	}
+	var firstValid string
 	for _, ipStr := range ips {
 		ip := net.ParseIP(ipStr)
 		if ip == nil {
 			continue
 		}
 		if isPrivateIP(ip) {
-			return fmt.Errorf("URL resolves to private/reserved IP address (%s) — request blocked for security", ipStr)
+			return "", fmt.Errorf("URL resolves to private/reserved IP address (%s) — request blocked for security", ipStr)
+		}
+		if firstValid == "" {
+			firstValid = ipStr
 		}
 	}
-	return nil
+	if firstValid == "" {
+		return "", fmt.Errorf("DNS resolution returned no usable addresses for %s", hostname)
+	}
+	return firstValid, nil
+}
+
+// pinnedHTTPClient returns an HTTP client whose transport resolves the given
+// hostname to pinnedIP, preventing DNS rebinding between SSRF check and fetch.
+func pinnedHTTPClient(hostname, pinnedIP string) *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return dialer.DialContext(ctx, network, addr)
+			}
+			if host == hostname {
+				addr = net.JoinHostPort(pinnedIP, port)
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout:  30 * time.Second,
+		MaxIdleConns:           1,
+		IdleConnTimeout:        30 * time.Second,
+	}
+	return &http.Client{Transport: transport}
 }
 
 // isPrivateIP checks if an IP is loopback, private, link-local, or a cloud metadata endpoint.

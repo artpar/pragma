@@ -8,10 +8,15 @@ import (
 	"github.com/artpar/gogent/internal/tool"
 )
 
+// DefaultMaxTurns is the maximum number of agentic loop iterations before
+// the engine stops to prevent runaway tool-calling loops.
+const DefaultMaxTurns = 100
+
 // EngineConfig holds query engine parameters derived from config + CLI flags.
 type EngineConfig struct {
 	Model       string
 	MaxTokens   int
+	MaxTurns    int // 0 means use DefaultMaxTurns
 	Temperature *float64
 	Thinking    *provider.ThinkingConfig
 }

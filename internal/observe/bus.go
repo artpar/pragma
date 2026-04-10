@@ -3,6 +3,7 @@ package observe
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // Subscriber processes events from the EventBus.
@@ -19,6 +20,7 @@ type EventBus struct {
 	buffer      chan Event
 	done        chan struct{}
 	drainOnce   sync.Once
+	closed      atomic.Bool
 }
 
 // NewEventBus creates an EventBus with the given buffer size and starts
@@ -34,7 +36,14 @@ func NewEventBus(bufferSize int) *EventBus {
 
 // Emit sends an event to the buffer. Blocks if the buffer is full
 // (backpressure — better than silent drop per SPEC.md).
+// Safe to call concurrently with Drain — silently drops events after shutdown.
 func (b *EventBus) Emit(event Event) {
+	if b.closed.Load() {
+		return
+	}
+	// Recover from send-on-closed-channel in the tiny race window between
+	// the closed check above and Drain closing the channel.
+	defer func() { recover() }()
 	b.buffer <- event
 }
 
@@ -59,6 +68,7 @@ func (b *EventBus) Subscribe(sub Subscriber) func() {
 // Call on shutdown.
 func (b *EventBus) Drain() {
 	b.drainOnce.Do(func() {
+		b.closed.Store(true)
 		close(b.buffer)
 		<-b.done
 	})

@@ -2,7 +2,6 @@ package fileread
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -41,7 +40,7 @@ var blockedDevicePaths = map[string]bool{
 	"/dev/fd/2":    true,
 }
 
-// Image extensions that can be returned as base64.
+// Image extensions returned as native ImagePart supplements.
 var imageExtensions = map[string]string{
 	".png":  "image/png",
 	".jpg":  "image/jpeg",
@@ -163,13 +162,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("file is too large (%d bytes). Use offset and limit to read specific portions", info.Size())
 	}
 
-	// Image handling
+	// Image handling — return as native ImagePart supplement for provider optimization
 	if mimeType, isImage := imageExtensions[ext]; isImage {
-		result, err := readImage(filePath, mimeType, info.Size())
-		if err != nil {
-			return tool.InvokeResult{}, err
-		}
-		return tool.InvokeResult{Content: result}, nil
+		return readImage(filePath, mimeType, info.Size())
 	}
 
 	// PDF handling
@@ -185,13 +180,20 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	return tool.InvokeResult{Content: result}, nil
 }
 
-func readImage(filePath, mimeType string, size int64) (string, error) {
+func readImage(filePath, mimeType string, size int64) (tool.InvokeResult, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("read image: %w", err)
+		return tool.InvokeResult{}, fmt.Errorf("read image: %w", err)
 	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return fmt.Sprintf("Image file: %s (%d bytes)\nbase64:%s:%s", filepath.Base(filePath), size, mimeType, encoded), nil
+	return tool.InvokeResult{
+		Content: fmt.Sprintf("Image file: %s (%d bytes)", filepath.Base(filePath), size),
+		Supplements: []model.ContentPart{
+			model.ImagePart{
+				MimeType: mimeType,
+				Data:     data,
+			},
+		},
+	}, nil
 }
 
 // readPDF reads a PDF file. For small PDFs, it sends the full PDF as a DocumentPart
@@ -225,7 +227,7 @@ func readPDF(ctx context.Context, filePath, displayPath string, size int64, page
 			formatSize(size), formatSize(pdfMaxRawSize), pdfMaxPagesPerRead)
 	}
 
-	// Read full PDF as base64, send as document supplement
+	// Read full PDF, send as document supplement (provider base64-encodes on wire)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return tool.InvokeResult{}, fmt.Errorf("read PDF: %w", err)
@@ -250,14 +252,17 @@ func readPDFPages(ctx context.Context, filePath, displayPath string, pages strin
 		return tool.InvokeResult{}, err
 	}
 
-	pageCount := last - first + 1
+	// For open-ended ranges (last == -1), cap at first + maxPages - 1 so extraction
+	// reads at most pdfMaxPagesPerRead pages. For closed ranges, validate the count.
 	if last == -1 {
-		pageCount = pdfMaxPagesPerRead + 1 // open-ended: will be validated after pdfinfo
-	}
-	if pageCount > pdfMaxPagesPerRead {
-		return tool.InvokeResult{}, fmt.Errorf(
-			"page range \"%s\" exceeds maximum of %d pages per request. Please use a smaller range.",
-			pages, pdfMaxPagesPerRead)
+		last = first + pdfMaxPagesPerRead - 1
+	} else {
+		pageCount := last - first + 1
+		if pageCount > pdfMaxPagesPerRead {
+			return tool.InvokeResult{}, fmt.Errorf(
+				"page range \"%s\" exceeds maximum of %d pages per request. Please use a smaller range.",
+				pages, pdfMaxPagesPerRead)
+		}
 	}
 
 	// Try pdftoppm for page extraction as images
