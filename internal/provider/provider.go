@@ -48,12 +48,13 @@ type ThinkingConfig struct {
 // Flat struct — exactly one field is non-zero per chunk.
 // Cheaper than interface boxing for high-frequency channel values.
 type StreamChunk struct {
-	TextDelta          string
-	ThinkingDelta      string
-	ToolCallStart      *model.ToolCallPart
-	ToolCallInputDelta *ToolCallDelta
-	Done               *StreamDone
-	Error              error
+	TextDelta              string
+	ThinkingDelta          string
+	ThinkingSignatureDelta string
+	ToolCallStart          *model.ToolCallPart
+	ToolCallInputDelta     *ToolCallDelta
+	Done                   *StreamDone
+	Error                  error
 }
 
 // ToolCallDelta carries incremental JSON for an in-progress tool call.

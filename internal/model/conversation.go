@@ -24,7 +24,7 @@ type Conversation struct {
 func NewConversation(system SystemPrompt, model string, provider string, workDir string) Conversation {
 	now := time.Now()
 	return Conversation{
-		ID:        newUUID(),
+		ID:        NewUUID(),
 		Messages:  nil,
 		System:    system,
 		Model:     model,
@@ -108,7 +108,8 @@ func deepCopyContentPart(part ContentPart) ContentPart {
 	}
 }
 
-func newUUID() string {
+// NewUUID generates a v4 UUID string.
+func NewUUID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4

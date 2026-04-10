@@ -66,8 +66,12 @@ func (ToolResultPart) contentPartSealed() {}
 func (ToolResultPart) PartType() ContentType { return ContentToolResult }
 
 // ThinkingPart holds the LLM's reasoning trace (if the provider supports it).
+// Signature is a provider attestation (e.g., Anthropic's cryptographic proof)
+// that must be sent back in conversation history. Empty for providers that
+// don't use signatures.
 type ThinkingPart struct {
-	Text string `json:"text"`
+	Text      string `json:"text"`
+	Signature string `json:"signature,omitempty"`
 }
 
 func (ThinkingPart) contentPartSealed() {}

@@ -46,6 +46,10 @@ func TestContentPartRoundTrip(t *testing.T) {
 			name: "ThinkingPart",
 			part: ThinkingPart{Text: "Let me think about this..."},
 		},
+		{
+			name: "ThinkingPart/with_signature",
+			part: ThinkingPart{Text: "reasoning trace", Signature: "sig_abc123"},
+		},
 	}
 
 	for _, tt := range tests {

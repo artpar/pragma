@@ -4,19 +4,20 @@ Go port of the Pragma TypeScript CLI. LLM-generic — works with Anthropic, Open
 
 ## Status
 
-**Phase 1 complete** — Foundation types, provider interface, event system, tool infrastructure, architecture tests.
+**Phase 2 complete** — Anthropic provider adapter: streaming, retry, caching, message normalization, model registry.
 
 ## Architecture
 
 ```
 internal/
-  model/        Pure domain types (ContentPart, Message, Conversation, Response, ToolDef)
-  provider/     Provider interface — the only translation boundary
-  observe/      EventBus backbone — logging, recording, metrics, audit, replay
-  permission/   Permission types (Checker interface, Decision, Rule)
-  tool/         Tool Descriptor interface, Registry, Orchestrator
-  app/          AppState + thread-safe StateStore
-  archtest/     Architecture enforcement tests (go/parser scans)
+  model/              Pure domain types (ContentPart, Message, Conversation, Response, ToolDef)
+  provider/           Provider interface + AccumulateStream utility
+  provider/anthropic/ Anthropic adapter (translate, stream, retry, cache, normalize)
+  observe/            EventBus backbone — logging, recording, metrics, audit, replay
+  permission/         Permission types (Checker interface, Decision, Rule)
+  tool/               Tool Descriptor interface, Registry, Orchestrator
+  app/                AppState + thread-safe StateStore
+  archtest/           Architecture enforcement tests (go/parser scans)
 ```
 
 Every package follows a strict dependency DAG. Only provider adapters know wire formats. Everything else uses `internal/model/` types exclusively.
@@ -29,6 +30,7 @@ Every package follows a strict dependency DAG. Only provider adapters know wire 
 - **Channel-based generators** (ADR-004): `<-chan StreamChunk` replaces AsyncGenerator
 - **Constructor-based DI** (ADR-006): No globals, no singletons, everything wired in main
 - **Sentinel errors** (ADR-007): `errors.Is` checking, never string matching
+- **ThinkingPart.Signature** (ADR-008): Provider attestation survives session persistence
 
 ## Observability
 

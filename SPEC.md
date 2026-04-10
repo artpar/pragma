@@ -93,7 +93,7 @@ type ContentPart interface {
 | `ImagePart` | `MimeType string`, `Data []byte` | `json:"mime_type"`, `json:"data"` | Raw bytes, provider base64-encodes |
 | `ToolCallPart` | `ID string`, `Name string`, `Input json.RawMessage` | `json:"id"`, `json:"name"`, `json:"input"` | ID is internal UUID, provider maps to wire ID |
 | `ToolResultPart` | `ToolCallID string`, `Content string`, `IsError bool` | `json:"tool_call_id"`, `json:"content"`, `json:"is_error,omitempty"` | ToolCallID correlates to ToolCallPart.ID |
-| `ThinkingPart` | `Text string` | `json:"text"` | Reasoning trace (if provider supports) |
+| `ThinkingPart` | `Text string`, `Signature string` | `json:"text"`, `json:"signature,omitempty"` | Reasoning trace + provider attestation signature |
 
 Custom JSON marshal/unmarshal dispatches on `"type"` discriminator field.
 
