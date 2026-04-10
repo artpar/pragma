@@ -46,12 +46,12 @@ internal/
     openai/           ← OpenAI adapter (translates model ↔ OpenAI wire)
     google/           ← Google adapter (translates model ↔ Google wire)
 
-  tool/               ← Tool system (UNCHANGED interface, references model/)
-  tools/              ← Tool implementations (UNCHANGED)
-  query/              ← Agentic loop (references model/ + provider/)
+  tool/               ← Tool system (Descriptor interface, Registry, Orchestrator, Asker)
+  tools/              ← Tool implementations (19 tools — see list below)
+  query/              ← Agentic loop (stream → tool execute → continue), plan mode filtering
   permission/         ← Permission system (rule-based checker, content matching, dangerous paths)
-  app/                ← AppState + StateStore (references model/)
-  tui/                ← Bubbletea TUI (references model/)
+  app/                ← AppState (TodoItem, PlanMode) + StateStore (references model/)
+  tui/                ← Bubbletea TUI (permission dialog, ask dialog, streaming display)
   config/             ← Settings + merge + path resolution (~/.gogent/)
   sysprompt/          ← System prompt builder (AGENT.md loading, env detection, block composition)
   session/            ← Session persistence (save/load/list to ~/.gogent/sessions/)
@@ -59,7 +59,7 @@ internal/
   mcp/                ← MCP client + tool adapter
   compact/            ← Context window management, compaction service, auto-compaction
   slash/              ← Slash command framework + built-in commands
-  cli/                ← Cobra CLI wiring
+  cli/                ← Cobra CLI wiring (deps, tools, run modes, flags)
   util/               ← Pure utilities
 ```
 

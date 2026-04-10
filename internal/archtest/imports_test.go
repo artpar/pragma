@@ -25,11 +25,12 @@ func TestNoDirectProviderImports(t *testing.T) {
 	for _, file := range files {
 		rel, _ := filepath.Rel(root, file)
 
-		// Provider adapters themselves are allowed
+		// Provider adapters and cli (wiring layer) are allowed
 		if strings.Contains(rel, "internal/provider/anthropic") ||
 			strings.Contains(rel, "internal/provider/openai") ||
 			strings.Contains(rel, "internal/provider/google") ||
-			strings.Contains(rel, "internal/provider/groq") {
+			strings.Contains(rel, "internal/provider/groq") ||
+			strings.Contains(rel, "internal/cli/") {
 			continue
 		}
 

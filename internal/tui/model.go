@@ -40,6 +40,7 @@ type Model struct {
 	viewport   viewport.Model
 	input      inputComponent
 	perm       permissionDialog
+	ask        askDialog
 	toolbar    toolbar
 
 	// Streaming state
@@ -104,6 +105,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PermResponseMsg:
 		return m.handlePermResponse(msg)
 
+	case AskRequestMsg:
+		return m.handleAskRequest(msg)
+
 	case SlashResultMsg:
 		return m.handleSlashResult(msg)
 
@@ -112,6 +116,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Pass unhandled messages to active components
+	if m.ask.active {
+		return m, nil // ask dialog only handles key messages
+	}
 	if m.perm.active {
 		cmd := m.perm.Update(msg)
 		return m, cmd
@@ -136,6 +143,12 @@ func (m Model) View() string {
 	// Permission dialog (if active)
 	if m.perm.active {
 		b.WriteString(m.perm.View())
+		b.WriteString("\n")
+	}
+
+	// Ask dialog (if active)
+	if m.ask.active {
+		b.WriteString(m.ask.View())
 		b.WriteString("\n")
 	}
 
@@ -200,11 +213,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := m.perm.Update(msg)
 			return m, cmd
 		}
+		if m.ask.active {
+			// Esc in ask dialog — ignore (user must answer)
+			return m, nil
+		}
 	}
 
 	// Delegate to active component
 	if m.perm.active {
 		cmd := m.perm.Update(msg)
+		return m, cmd
+	}
+	if m.ask.active {
+		cmd := m.ask.Update(msg)
+		if !m.ask.active {
+			// Ask dialog just completed — restore status
+			if m.streaming {
+				m.toolbar.SetStatus("streaming...")
+			} else {
+				m.toolbar.SetStatus("ready")
+			}
+		}
 		return m, cmd
 	}
 
@@ -352,6 +381,13 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, waitForEvent(m.eventCh)
+}
+
+// handleAskRequest shows the ask dialog for a tool question.
+func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
+	m.ask.Show(&msg)
+	m.toolbar.SetStatus("waiting for answer...")
+	return m, nil
 }
 
 // handlePermRequest shows the permission dialog.

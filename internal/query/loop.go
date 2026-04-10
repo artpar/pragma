@@ -62,12 +62,17 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		snap := e.store.Snapshot()
 
 		// a. Build RequestParams
+		tools := e.registry.ToolDefs()
+		if snap.PlanMode {
+			tools = e.filterReadOnlyTools(tools)
+		}
+
 		params := provider.RequestParams{
 			Model:       e.config.Model,
 			MaxTokens:   e.config.MaxTokens,
 			Messages:    snap.Conversation.APIMessages(),
 			System:      snap.Conversation.System,
-			Tools:       e.registry.ToolDefs(),
+			Tools:       tools,
 			Temperature: e.config.Temperature,
 			Thinking:    e.config.Thinking,
 		}
@@ -305,6 +310,19 @@ func (e *Engine) consumeStream(
 		StopReason: done.StopReason,
 		Usage:      done.Usage,
 	}, nil
+}
+
+// filterReadOnlyTools returns only tool defs whose Flags().ReadOnly is true.
+// Used in plan mode to restrict the LLM to non-mutating tools.
+func (e *Engine) filterReadOnlyTools(tools []model.ToolDef) []model.ToolDef {
+	filtered := make([]model.ToolDef, 0, len(tools))
+	for _, td := range tools {
+		desc, ok := e.registry.Get(td.Name)
+		if ok && desc.Flags().ReadOnly {
+			filtered = append(filtered, td)
+		}
+	}
+	return filtered
 }
 
 // extractToolCalls filters ToolCallPart values from a slice of ContentParts.

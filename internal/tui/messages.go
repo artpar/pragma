@@ -40,5 +40,12 @@ type SlashResultMsg struct {
 	Err    error
 }
 
+// AskRequestMsg signals that a tool goroutine needs to ask the user a question.
+// The TUI renders a question dialog and sends the answer back on the Response channel.
+type AskRequestMsg struct {
+	Question string
+	Response chan<- string
+}
+
 // sessionSavedMsg signals that a session save completed.
 type sessionSavedMsg struct{}

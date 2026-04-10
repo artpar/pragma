@@ -30,6 +30,10 @@ func (s *StateStore) Snapshot() AppState {
 		t := *s.state.Thinking
 		snap.Thinking = &t
 	}
+	if len(s.state.Todos) > 0 {
+		snap.Todos = make([]TodoItem, len(s.state.Todos))
+		copy(snap.Todos, s.state.Todos)
+	}
 	return snap
 }
 

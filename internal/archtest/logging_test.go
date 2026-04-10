@@ -27,9 +27,10 @@ func TestNoAdHocLogging(t *testing.T) {
 	for _, file := range files {
 		rel, _ := filepath.Rel(root, file)
 
-		// observe/ and tui/ are allowed to use direct output
+		// observe/, tui/, and cli/ are allowed to use direct output
 		if strings.Contains(rel, "internal/observe/") ||
-			strings.Contains(rel, "internal/tui/") {
+			strings.Contains(rel, "internal/tui/") ||
+			strings.Contains(rel, "internal/cli/") {
 			continue
 		}
 
