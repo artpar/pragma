@@ -180,6 +180,77 @@ func TestConversationAPIMessages(t *testing.T) {
 	}
 }
 
+func TestConversationDeepCopy(t *testing.T) {
+	conv := NewConversation(
+		SystemPrompt{Blocks: []SystemBlock{{Text: "sys"}}},
+		"model", "prov", "/tmp",
+	)
+	conv.Append(Message{
+		ID:        "msg-1",
+		Role:      RoleUser,
+		Content:   []ContentPart{TextPart{Text: "original"}},
+		Timestamp: time.Now(),
+	})
+
+	cp := conv.DeepCopy()
+
+	// Same ID and timestamps
+	if cp.ID != conv.ID {
+		t.Errorf("DeepCopy ID: got %q, want %q", cp.ID, conv.ID)
+	}
+	if !cp.CreatedAt.Equal(conv.CreatedAt) {
+		t.Error("DeepCopy should preserve CreatedAt")
+	}
+	if !cp.UpdatedAt.Equal(conv.UpdatedAt) {
+		t.Error("DeepCopy should preserve UpdatedAt")
+	}
+
+	// Mutate copy — original unchanged
+	cp.Append(Message{
+		ID:        "msg-2",
+		Role:      RoleAssistant,
+		Content:   []ContentPart{TextPart{Text: "added"}},
+		Timestamp: time.Now(),
+	})
+	if len(conv.Messages) != 1 {
+		t.Errorf("original should still have 1 message, got %d", len(conv.Messages))
+	}
+}
+
+func TestAPIMessagesReturnsEmptyNotNil(t *testing.T) {
+	conv := NewConversation(SystemPrompt{}, "model", "prov", "/tmp")
+	msgs := conv.APIMessages()
+	if msgs == nil {
+		t.Error("APIMessages() returned nil, want empty non-nil slice")
+	}
+	if len(msgs) != 0 {
+		t.Errorf("APIMessages() returned %d messages, want 0", len(msgs))
+	}
+}
+
+func TestNewConversationMessagesNotNil(t *testing.T) {
+	conv := NewConversation(SystemPrompt{}, "model", "prov", "/tmp")
+	if conv.Messages == nil {
+		t.Error("NewConversation().Messages should be non-nil empty slice, got nil")
+	}
+}
+
+func TestDeepCopyNilToolCallInput(t *testing.T) {
+	conv := NewConversation(SystemPrompt{}, "model", "prov", "/tmp")
+	conv.Append(Message{
+		ID:        "msg-1",
+		Role:      RoleAssistant,
+		Content:   []ContentPart{ToolCallPart{ID: "tc-1", Name: "Bash", Input: nil}},
+		Timestamp: time.Now(),
+	})
+
+	forked := conv.Fork("fork-1")
+	tc := forked.Messages[0].Content[0].(ToolCallPart)
+	if tc.Input != nil {
+		t.Errorf("nil Input should remain nil after deep copy, got %v", tc.Input)
+	}
+}
+
 func TestConversationRoundTrip(t *testing.T) {
 	conv := NewConversation(
 		SystemPrompt{Blocks: []SystemBlock{{Text: "sys", Cacheable: true}}},

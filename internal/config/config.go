@@ -85,7 +85,8 @@ func readFile(path string) (Config, error) {
 }
 
 // merge applies non-zero fields from overlay onto base.
-// String: non-empty wins. Int: non-zero wins. Pointer: non-nil wins. Bool: true wins.
+// String: non-empty wins. Int: non-zero wins. Pointer: non-nil wins.
+// Bool: true wins — project config cannot override global true→false.
 func merge(base, overlay Config) Config {
 	result := base
 

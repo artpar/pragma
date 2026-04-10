@@ -14,9 +14,12 @@ import (
 
 // buildWireParams converts internal RequestParams to Anthropic MessageNewParams.
 // The IDMapper is pre-populated with synthetic wire IDs for history tool calls.
-func buildWireParams(params provider.RequestParams, mapper *IDMapper) sdk.MessageNewParams {
+func buildWireParams(params provider.RequestParams, mapper *IDMapper) (sdk.MessageNewParams, error) {
 	normalized := normalizeMessages(params.Messages)
-	msgs := messagesToWire(normalized, mapper)
+	msgs, err := messagesToWire(normalized, mapper)
+	if err != nil {
+		return sdk.MessageNewParams{}, err
+	}
 	system := systemToWire(params.System)
 	tools := toolsToWire(params.Tools)
 
@@ -47,7 +50,7 @@ func buildWireParams(params provider.RequestParams, mapper *IDMapper) sdk.Messag
 		p.Thinking = thinkingToWire(params.Thinking, modelInfo, known)
 	}
 
-	return p
+	return p, nil
 }
 
 // thinkingToWire translates internal ThinkingConfig to the SDK's union type.
@@ -72,16 +75,20 @@ func thinkingToWire(cfg *provider.ThinkingConfig, info ModelInfo, known bool) sd
 }
 
 // messagesToWire converts a slice of internal Messages to SDK MessageParams.
-func messagesToWire(msgs []model.Message, mapper *IDMapper) []sdk.MessageParam {
+func messagesToWire(msgs []model.Message, mapper *IDMapper) ([]sdk.MessageParam, error) {
 	out := make([]sdk.MessageParam, 0, len(msgs))
 	for _, m := range msgs {
-		out = append(out, messageToWire(m, mapper))
+		mp, err := messageToWire(m, mapper)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, mp)
 	}
-	return out
+	return out, nil
 }
 
 // messageToWire converts a single internal Message to an SDK MessageParam.
-func messageToWire(m model.Message, mapper *IDMapper) sdk.MessageParam {
+func messageToWire(m model.Message, mapper *IDMapper) (sdk.MessageParam, error) {
 	role := sdk.MessageParamRoleUser
 	if m.Role == model.RoleAssistant {
 		role = sdk.MessageParamRoleAssistant
@@ -90,10 +97,14 @@ func messageToWire(m model.Message, mapper *IDMapper) sdk.MessageParam {
 	blocks := make([]sdk.ContentBlockParamUnion, 0, len(m.Content))
 	for _, part := range m.Content {
 		var block sdk.ContentBlockParamUnion
+		var err error
 		if m.Role == model.RoleAssistant {
-			block = contentPartToWireAssistant(part, mapper)
+			block, err = contentPartToWireAssistant(part, mapper)
 		} else {
-			block = contentPartToWireUser(part, mapper)
+			block, err = contentPartToWireUser(part, mapper)
+		}
+		if err != nil {
+			return sdk.MessageParam{}, err
 		}
 		blocks = append(blocks, block)
 	}
@@ -101,37 +112,36 @@ func messageToWire(m model.Message, mapper *IDMapper) sdk.MessageParam {
 	return sdk.MessageParam{
 		Role:    role,
 		Content: blocks,
-	}
+	}, nil
 }
 
 // contentPartToWireUser converts an internal ContentPart to an SDK block
 // suitable for a user message.
-func contentPartToWireUser(part model.ContentPart, mapper *IDMapper) sdk.ContentBlockParamUnion {
+func contentPartToWireUser(part model.ContentPart, mapper *IDMapper) (sdk.ContentBlockParamUnion, error) {
 	switch p := part.(type) {
 	case model.TextPart:
-		return sdk.NewTextBlock(p.Text)
+		return sdk.NewTextBlock(p.Text), nil
 	case model.ImagePart:
 		encoded := base64.StdEncoding.EncodeToString(p.Data)
-		return sdk.NewImageBlockBase64(p.MimeType, encoded)
+		return sdk.NewImageBlockBase64(p.MimeType, encoded), nil
 	case model.ToolResultPart:
 		wireID := mapper.ToWire(p.ToolCallID)
 		if wireID == "" {
 			wireID = syntheticWireID(p.ToolCallID)
 			mapper.RegisterPair(p.ToolCallID, wireID)
 		}
-		return sdk.NewToolResultBlock(wireID, p.Content, p.IsError)
+		return sdk.NewToolResultBlock(wireID, p.Content, p.IsError), nil
 	default:
-		// Fallback: emit as text
-		return sdk.NewTextBlock(fmt.Sprintf("[unsupported content type in user message: %T]", part))
+		return sdk.NewTextBlock(fmt.Sprintf("[unsupported content type in user message: %T]", part)), nil
 	}
 }
 
 // contentPartToWireAssistant converts an internal ContentPart to an SDK block
 // suitable for an assistant message.
-func contentPartToWireAssistant(part model.ContentPart, mapper *IDMapper) sdk.ContentBlockParamUnion {
+func contentPartToWireAssistant(part model.ContentPart, mapper *IDMapper) (sdk.ContentBlockParamUnion, error) {
 	switch p := part.(type) {
 	case model.TextPart:
-		return sdk.NewTextBlock(p.Text)
+		return sdk.NewTextBlock(p.Text), nil
 	case model.ToolCallPart:
 		wireID := mapper.ToWire(p.ID)
 		if wireID == "" {
@@ -141,19 +151,21 @@ func contentPartToWireAssistant(part model.ContentPart, mapper *IDMapper) sdk.Co
 		// Input is json.RawMessage — unmarshal to any for SDK
 		var input any
 		if len(p.Input) > 0 {
-			_ = json.Unmarshal(p.Input, &input)
+			if err := json.Unmarshal(p.Input, &input); err != nil {
+				return sdk.ContentBlockParamUnion{}, fmt.Errorf("malformed tool input JSON for %s: %w", p.Name, err)
+			}
 		}
 		if input == nil {
 			input = map[string]any{}
 		}
-		return sdk.NewToolUseBlock(wireID, input, p.Name)
+		return sdk.NewToolUseBlock(wireID, input, p.Name), nil
 	case model.ThinkingPart:
 		if p.Redacted {
-			return sdk.NewRedactedThinkingBlock(p.RedactedData)
+			return sdk.NewRedactedThinkingBlock(p.RedactedData), nil
 		}
-		return sdk.NewThinkingBlock(p.Signature, p.Text)
+		return sdk.NewThinkingBlock(p.Signature, p.Text), nil
 	default:
-		return sdk.NewTextBlock(fmt.Sprintf("[unsupported content type in assistant message: %T]", part))
+		return sdk.NewTextBlock(fmt.Sprintf("[unsupported content type in assistant message: %T]", part)), nil
 	}
 }
 

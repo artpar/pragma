@@ -302,7 +302,7 @@ type Provider interface {
     Stream(ctx context.Context, params RequestParams) (<-chan StreamChunk, error)
     Complete(ctx context.Context, params RequestParams) (model.Response, error)
     SupportsFeature(feature Feature) bool
-    Pricing(modelID string) model.Pricing
+    Pricing(modelID string) (model.Pricing, bool)  // ADR-012: Go map-lookup pattern
 }
 
 type Feature string
@@ -354,6 +354,7 @@ type ToolCallDelta struct {
 type StreamDone struct {
     StopReason model.StopReason
     Usage      model.TokenUsage
+    Model      string
 }
 ```
 

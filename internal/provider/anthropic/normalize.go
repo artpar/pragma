@@ -89,7 +89,7 @@ func ensureToolResultPairing(msgs []model.Message) []model.Message {
 				})
 			}
 			synth := model.Message{
-				ID:      "synthetic-tool-result",
+				ID:      model.NewUUID(),
 				Role:    model.RoleUser,
 				Content: results,
 			}
@@ -109,7 +109,7 @@ func ensureToolResultPairing(msgs []model.Message) []model.Message {
 				})
 			}
 			synth := model.Message{
-				ID:      "synthetic-tool-result",
+				ID:      model.NewUUID(),
 				Role:    model.RoleUser,
 				Content: results,
 			}

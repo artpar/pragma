@@ -77,19 +77,23 @@ func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	return false
 }
 
-// Pricing returns pricing info for a known model, or zero for unknown models.
-func (p *Provider) Pricing(modelID string) model.Pricing {
+// Pricing returns pricing info for a known model.
+// Returns false if the model is not recognized.
+func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 	if info, ok := LookupModel(modelID); ok {
-		return info.Pricing
+		return info.Pricing, true
 	}
-	return model.Pricing{}
+	return model.Pricing{}, false
 }
 
 // Complete sends a non-streaming request and returns the complete response.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
-	wireParams := buildWireParams(params, mapper)
+	wireParams, err := buildWireParams(params, mapper)
+	if err != nil {
+		return model.Response{}, fmt.Errorf("building wire params: %w", err)
+	}
 	applyCacheBreakpoints(&wireParams)
 
 	traceID := observe.NewTraceID()
@@ -106,7 +110,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	start := time.Now()
 	var msg *sdk.Message
 
-	err := p.withRetry(ctx, traceID, spanID, func(attempt int) error {
+	err = p.withRetry(ctx, traceID, spanID, func(attempt int) error {
 		var apiErr error
 		msg, apiErr = p.client.Messages.New(ctx, wireParams)
 		return apiErr
@@ -138,7 +142,10 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
-	wireParams := buildWireParams(params, mapper)
+	wireParams, err := buildWireParams(params, mapper)
+	if err != nil {
+		return nil, fmt.Errorf("building wire params: %w", err)
+	}
 	applyCacheBreakpoints(&wireParams)
 
 	traceID := observe.NewTraceID()

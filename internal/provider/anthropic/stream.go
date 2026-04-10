@@ -18,6 +18,7 @@ type streamState struct {
 	blockToolIDs map[int64]string // index → internal UUID
 	startTime    time.Time
 	doneSent     bool
+	model        string
 }
 
 // startStream begins consuming an Anthropic SSE stream and writing StreamChunks
@@ -42,13 +43,42 @@ func (p *Provider) startStream(
 			startTime:    time.Now(),
 		}
 
-		p.consumeStream(ctx, stream, mapper, ch, state, bus, traceID, spanID)
+		// Idle timeout watchdog — cancels stream if no events arrive within idleTimeout
+		streamCtx := ctx
+		var idleCh chan struct{}
+		if p.idleTimeout > 0 {
+			var watchCancel context.CancelFunc
+			streamCtx, watchCancel = context.WithCancel(ctx)
+			defer watchCancel()
+			idleCh = make(chan struct{}, 1)
+			go func() {
+				timer := time.NewTimer(p.idleTimeout)
+				defer timer.Stop()
+				for {
+					select {
+					case <-idleCh:
+						if !timer.Stop() {
+							<-timer.C
+						}
+						timer.Reset(p.idleTimeout)
+					case <-timer.C:
+						watchCancel()
+						return
+					case <-streamCtx.Done():
+						return
+					}
+				}
+			}()
+		}
+
+		p.consumeStream(streamCtx, stream, mapper, ch, state, bus, traceID, spanID, idleCh)
 	}()
 
 	return ch
 }
 
 // consumeStream processes SSE events and emits StreamChunks.
+// idleCh may be nil if idle timeout is disabled.
 func (p *Provider) consumeStream(
 	ctx context.Context,
 	stream *ssestream.Stream[sdk.MessageStreamEventUnion],
@@ -57,10 +87,18 @@ func (p *Provider) consumeStream(
 	state *streamState,
 	bus *observe.EventBus,
 	traceID, spanID string,
+	idleCh chan<- struct{},
 ) {
 	var lastEventEmit time.Time
 
 	for stream.Next() {
+		// Reset idle timeout watchdog
+		if idleCh != nil {
+			select {
+			case idleCh <- struct{}{}:
+			default:
+			}
+		}
 		if ctx.Err() != nil {
 			ch <- provider.StreamChunk{Error: ctx.Err()}
 			return
@@ -83,6 +121,14 @@ func (p *Provider) consumeStream(
 	// Check for stream error
 	if err := stream.Err(); err != nil {
 		classified := classifyError(err)
+		if bus != nil {
+			bus.Emit(observe.APIRequestFailed{
+				EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
+				ErrorType:    classified.errorType,
+				ErrorMessage: classified.wrapped.Error(),
+				Retryable:    classified.retryable,
+			})
+		}
 		ch <- provider.StreamChunk{Error: classified.wrapped}
 		return
 	}
@@ -104,7 +150,10 @@ func (p *Provider) dispatchEvent(
 ) {
 	switch event.Type {
 	case "message_start":
-		// Nothing to emit; state tracked in provider.go via usage on message_delta
+		// Capture model from the initial message
+		if string(event.Message.Model) != "" {
+			state.model = string(event.Message.Model)
+		}
 
 	case "content_block_start":
 		p.handleBlockStart(event, mapper, ch, state)
@@ -129,8 +178,11 @@ func (p *Provider) handleBlockStart(
 	ch chan<- provider.StreamChunk,
 	state *streamState,
 ) {
-	idx := event.Index
 	blockType := event.ContentBlock.Type
+	if blockType == "" {
+		return
+	}
+	idx := event.Index
 	state.blockTypes[idx] = blockType
 
 	switch blockType {
@@ -150,6 +202,15 @@ func (p *Provider) handleBlockStart(
 	case "text", "thinking":
 		// Track but don't emit a chunk
 
+	case "redacted_thinking":
+		// Redacted thinking arrives as a complete block (no deltas).
+		// Emit directly — accumulator appends as ThinkingPart{Redacted: true}.
+		ch <- provider.StreamChunk{
+			RedactedThinkingBlock: &provider.RedactedThinking{
+				Data: event.ContentBlock.Data,
+			},
+		}
+
 	default:
 		// Unknown block type — ignore
 	}
@@ -167,7 +228,10 @@ func (p *Provider) handleBlockDelta(
 
 	case "input_json_delta":
 		idx := event.Index
-		internalID := state.blockToolIDs[idx]
+		internalID, ok := state.blockToolIDs[idx]
+		if !ok {
+			return // orphaned delta — block start was skipped or unknown
+		}
 		ch <- provider.StreamChunk{
 			ToolCallInputDelta: &provider.ToolCallDelta{
 				ToolCallID: internalID,
@@ -206,6 +270,7 @@ func (p *Provider) handleMessageDelta(
 		Done: &provider.StreamDone{
 			StopReason: stopReason,
 			Usage:      usage,
+			Model:      state.model,
 		},
 	}
 	state.doneSent = true

@@ -3,6 +3,7 @@ package anthropic
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,7 +39,17 @@ func classifyError(err error) classifiedError {
 		return classifyAPIError(apiErr)
 	}
 
-	// Connection-level errors (ECONNRESET, EPIPE, etc.)
+	// Connection-level errors: type-based checks first, string fallback
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		return classifiedError{
+			wrapped:   fmt.Errorf("connection error: %w", ErrServerError),
+			retryable: true,
+			errorType: "connection",
+		}
+	}
+
+	// String fallback for errors that don't wrap net.OpError
 	msg := err.Error()
 	if strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "broken pipe") ||

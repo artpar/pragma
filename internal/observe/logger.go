@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -29,10 +30,12 @@ const (
 
 // Logger is a Subscriber that writes formatted event output.
 type Logger struct {
-	writer io.Writer
-	level  Level
-	topics map[string]bool // nil = all topics
-	format Format
+	writer   io.Writer
+	level    Level
+	topics   map[string]bool // nil = all topics
+	format   Format
+	mu       sync.Mutex
+	writeErr error
 }
 
 // NewLogger creates a Logger subscriber.
@@ -68,25 +71,51 @@ func (l *Logger) HandleEvent(event Event) {
 }
 
 func (l *Logger) writeJSON(event Event) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	data, err := json.Marshal(event)
 	if err != nil {
+		l.writeErr = err
 		return
 	}
 	data = append(data, '\n')
-	_, _ = l.writer.Write(data)
+	if _, err := l.writer.Write(data); err != nil {
+		l.writeErr = err
+	} else {
+		l.writeErr = nil
+	}
 }
 
 func (l *Logger) writeText(event Event) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	ts := event.EventTimestamp().Format(time.RFC3339)
 	line := fmt.Sprintf("[%s] %s trace=%s span=%s\n",
 		ts, event.EventKind(), event.EventTraceID(), event.EventSpanID())
-	_, _ = l.writer.Write([]byte(line))
+	if _, err := l.writer.Write([]byte(line)); err != nil {
+		l.writeErr = err
+	} else {
+		l.writeErr = nil
+	}
 }
 
 func (l *Logger) writeCompact(event Event) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	line := fmt.Sprintf("%s %s\n",
 		event.EventTimestamp().Format("15:04:05"), event.EventKind())
-	_, _ = l.writer.Write([]byte(line))
+	if _, err := l.writer.Write([]byte(line)); err != nil {
+		l.writeErr = err
+	} else {
+		l.writeErr = nil
+	}
+}
+
+// Err returns the first write error encountered, if any.
+func (l *Logger) Err() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.writeErr
 }
 
 // eventLevel maps event kinds to log levels.

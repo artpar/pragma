@@ -57,6 +57,14 @@ func TestResponseRoundTrip(t *testing.T) {
 	}
 }
 
+func TestUnmarshalResponseInvalidStopReason(t *testing.T) {
+	data := []byte(`{"id":"r1","model":"m","content":[],"stop_reason":"invalid_reason","usage":{"input_tokens":0,"output_tokens":0}}`)
+	var resp Response
+	if err := json.Unmarshal(data, &resp); err == nil {
+		t.Error("expected error for invalid stop_reason, got nil")
+	}
+}
+
 func TestResponseEndTurn(t *testing.T) {
 	resp := Response{
 		ID:    "resp-2",

@@ -35,7 +35,7 @@ func TestPermissionAuditCompleteness(t *testing.T) {
 			}
 
 			hasCheckPerm := false
-			hasEmit := false
+			hasPermissionEmit := false
 
 			ast.Inspect(fn, func(inner ast.Node) bool {
 				call, ok := inner.(*ast.CallExpr)
@@ -50,14 +50,27 @@ func TestPermissionAuditCompleteness(t *testing.T) {
 				case "CheckPerm":
 					hasCheckPerm = true
 				case "Emit":
-					hasEmit = true
+					// Check if Emit argument is a permission event type
+					if len(call.Args) > 0 {
+						if comp, ok := call.Args[0].(*ast.CompositeLit); ok {
+							if sel, ok := comp.Type.(*ast.SelectorExpr); ok {
+								name := sel.Sel.Name
+								if name == "ToolPermissionChecked" ||
+									name == "PermissionDenialEnforced" ||
+									name == "ToolPermissionPrompted" ||
+									name == "PermissionEscalated" {
+									hasPermissionEmit = true
+								}
+							}
+						}
+					}
 				}
 				return true
 			})
 
-			if hasCheckPerm && !hasEmit {
+			if hasCheckPerm && !hasPermissionEmit {
 				pos := fset.Position(fn.Pos())
-				t.Errorf("%s:%d function %s calls CheckPerm but never emits an event",
+				t.Errorf("%s:%d function %s calls CheckPerm but never emits a permission event (ToolPermissionChecked/PermissionDenialEnforced)",
 					rel, pos.Line, fn.Name.Name)
 			}
 			return true

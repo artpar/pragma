@@ -14,11 +14,23 @@ func NewStateStore(initial AppState) *StateStore {
 	return &StateStore{state: initial}
 }
 
-// Snapshot returns a copy of the current state.
+// Snapshot returns a deep copy of the current state.
+// The Conversation is deep-copied so the caller cannot observe or
+// mutate the store's internal data through the returned snapshot.
 func (s *StateStore) Snapshot() AppState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.state
+	snap := s.state
+	snap.Conversation = s.state.Conversation.DeepCopy()
+	if s.state.Temperature != nil {
+		t := *s.state.Temperature
+		snap.Temperature = &t
+	}
+	if s.state.Thinking != nil {
+		t := *s.state.Thinking
+		snap.Thinking = &t
+	}
+	return snap
 }
 
 // Update applies a mutation function under write lock.

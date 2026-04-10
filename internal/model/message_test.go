@@ -77,6 +77,14 @@ func TestMessageFlagsOmitEmpty(t *testing.T) {
 	}
 }
 
+func TestUnmarshalMessageInvalidRole(t *testing.T) {
+	data := []byte(`{"id":"m1","role":"system","content":[],"timestamp":"2026-04-10T00:00:00Z"}`)
+	var msg Message
+	if err := json.Unmarshal(data, &msg); err == nil {
+		t.Error("expected error for invalid role 'system', got nil")
+	}
+}
+
 func TestSystemPromptRoundTrip(t *testing.T) {
 	sp := SystemPrompt{
 		Blocks: []SystemBlock{

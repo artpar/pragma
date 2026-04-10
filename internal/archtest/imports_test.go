@@ -31,11 +31,6 @@ func TestNoDirectProviderImports(t *testing.T) {
 			continue
 		}
 
-		// CLI wiring is allowed to import providers
-		if strings.Contains(rel, "internal/cli/") {
-			continue
-		}
-
 		imports, err := parseImports(file)
 		if err != nil {
 			continue

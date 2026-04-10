@@ -46,6 +46,12 @@ func (r *Response) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("unmarshal response content: %w", err)
 	}
+	switch raw.StopReason {
+	case StopEndTurn, StopToolUse, StopMaxTokens, StopPauseTurn, StopError, "":
+		// valid
+	default:
+		return fmt.Errorf("unmarshal response: invalid stop_reason %q", raw.StopReason)
+	}
 	r.ID = raw.ID
 	r.Model = raw.Model
 	r.Content = parts

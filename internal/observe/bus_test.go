@@ -133,6 +133,59 @@ func TestEventBusConcurrentEmit(t *testing.T) {
 	}
 }
 
+func TestEventBusBackpressureBlocks(t *testing.T) {
+	// Buffer size 1 — second Emit should block until first is consumed
+	bus := NewEventBus(1)
+	sub := &collectingSub{}
+	bus.Subscribe(sub)
+
+	bus.Emit(testEvent("ConversationStarted"))
+	bus.Emit(testEvent("ConversationStarted"))
+	bus.Drain()
+
+	// Both events must arrive — no drops
+	if sub.count() != 2 {
+		t.Errorf("got %d events, want 2 (backpressure must not drop)", sub.count())
+	}
+}
+
+func TestPanickedSubscriberDoesNotCrashBus(t *testing.T) {
+	bus := NewEventBus(100)
+
+	// Panicking subscriber
+	bus.Subscribe(subscriberFunc(func(event Event) {
+		panic("test panic")
+	}))
+
+	// Normal subscriber that should still receive events
+	good := &collectingSub{}
+	bus.Subscribe(good)
+
+	bus.Emit(testEvent("ConversationStarted"))
+	bus.Emit(testEvent("ConversationStarted"))
+	bus.Drain()
+
+	if good.count() != 2 {
+		t.Errorf("good subscriber got %d events, want 2 (panicking sub must not crash bus)", good.count())
+	}
+}
+
+func TestEventBusDrainIdempotent(t *testing.T) {
+	bus := NewEventBus(100)
+	sub := &collectingSub{}
+	bus.Subscribe(sub)
+
+	bus.Emit(testEvent("ConversationStarted"))
+
+	// Double drain must not panic
+	bus.Drain()
+	bus.Drain()
+
+	if sub.count() != 1 {
+		t.Errorf("got %d events, want 1", sub.count())
+	}
+}
+
 // subscriberFunc adapts a function to the Subscriber interface.
 type subscriberFunc func(Event)
 

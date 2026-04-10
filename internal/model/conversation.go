@@ -25,7 +25,7 @@ func NewConversation(system SystemPrompt, model string, provider string, workDir
 	now := time.Now()
 	return Conversation{
 		ID:        NewUUID(),
-		Messages:  nil,
+		Messages:  []Message{},
 		System:    system,
 		Model:     model,
 		Provider:  provider,
@@ -75,10 +75,43 @@ func (c Conversation) Fork(newID string) Conversation {
 	}
 }
 
+// DeepCopy creates a full deep copy of the conversation, preserving all fields.
+// Unlike Fork, this does not change ID, timestamps, or parent link.
+func (c Conversation) DeepCopy() Conversation {
+	msgs := make([]Message, len(c.Messages))
+	for i, m := range c.Messages {
+		content := make([]ContentPart, len(m.Content))
+		for j, part := range m.Content {
+			content[j] = deepCopyContentPart(part)
+		}
+		msgs[i] = Message{
+			ID:        m.ID,
+			Role:      m.Role,
+			Content:   content,
+			Timestamp: m.Timestamp,
+			Flags:     m.Flags,
+		}
+	}
+	blocks := make([]SystemBlock, len(c.System.Blocks))
+	copy(blocks, c.System.Blocks)
+
+	return Conversation{
+		ID:        c.ID,
+		Messages:  msgs,
+		System:    SystemPrompt{Blocks: blocks},
+		Model:     c.Model,
+		Provider:  c.Provider,
+		WorkDir:   c.WorkDir,
+		ParentID:  c.ParentID,
+		CreatedAt: c.CreatedAt,
+		UpdatedAt: c.UpdatedAt,
+	}
+}
+
 // APIMessages returns messages that should be sent to the LLM,
 // filtering out internal messages.
 func (c Conversation) APIMessages() []Message {
-	var out []Message
+	out := make([]Message, 0, len(c.Messages))
 	for _, m := range c.Messages {
 		if !m.Flags.IsInternal {
 			out = append(out, m)
@@ -96,22 +129,27 @@ func deepCopyContentPart(part ContentPart) ContentPart {
 		copy(data, p.Data)
 		return ImagePart{MimeType: p.MimeType, Data: data}
 	case ToolCallPart:
-		input := make(json.RawMessage, len(p.Input))
-		copy(input, p.Input)
+		var input json.RawMessage
+		if p.Input != nil {
+			input = make(json.RawMessage, len(p.Input))
+			copy(input, p.Input)
+		}
 		return ToolCallPart{ID: p.ID, Name: p.Name, Input: input}
 	case ToolResultPart:
 		return p
 	case ThinkingPart:
 		return p
 	default:
-		return part
+		panic("deepCopyContentPart: unknown ContentPart type")
 	}
 }
 
 // NewUUID generates a v4 UUID string.
 func NewUUID() string {
 	var b [16]byte
-	_, _ = rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // variant 2
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",

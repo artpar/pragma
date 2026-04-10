@@ -55,7 +55,7 @@ func (tp *testProvider) Complete(_ context.Context, params provider.RequestParam
 
 func (tp *testProvider) SupportsFeature(_ provider.Feature) bool { return true }
 
-func (tp *testProvider) Pricing(_ string) model.Pricing { return tp.pricing }
+func (tp *testProvider) Pricing(_ string) (model.Pricing, bool) { return tp.pricing, true }
 
 // errorProvider returns an error from Stream().
 type errorProvider struct {
@@ -64,7 +64,7 @@ type errorProvider struct {
 
 func (ep *errorProvider) Name() string                            { return "error-test" }
 func (ep *errorProvider) SupportsFeature(_ provider.Feature) bool { return true }
-func (ep *errorProvider) Pricing(_ string) model.Pricing          { return model.Pricing{} }
+func (ep *errorProvider) Pricing(_ string) (model.Pricing, bool)  { return model.Pricing{}, false }
 func (ep *errorProvider) Complete(_ context.Context, _ provider.RequestParams) (model.Response, error) {
 	return model.Response{}, ep.err
 }

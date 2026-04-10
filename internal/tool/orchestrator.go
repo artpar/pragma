@@ -85,10 +85,18 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			ic := ic
 			g.Go(func() error {
 				results[ic.index] = o.executeSingle(gctx, ic.call, state, traceID, batchSpan, true)
-				return nil
+				return gctx.Err()
 			})
 		}
-		_ = g.Wait()
+		if err := g.Wait(); err != nil {
+			o.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, batchSpan, ""),
+				Severity:     "warn",
+				Component:    "orchestrator",
+				ErrorType:    "context_cancelled",
+				ErrorMessage: err.Error(),
+			})
+		}
 		concurrentDuration = time.Since(concStart)
 	}
 
@@ -150,12 +158,12 @@ func (o *Orchestrator) executeSingle(
 
 	if result.Decision == permission.DecisionAsk {
 		// "Ask" means the user must confirm before execution. The TUI prompt
-		// integration will replace this deny with an interactive flow.
-		o.bus.Emit(observe.PermissionDenialEnforced{
-			EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
-			ToolCallID:  call.ID,
-			ToolName:    call.Name,
-			WasExecuted: false,
+		// integration will replace this with an interactive flow.
+		o.bus.Emit(observe.ToolPermissionPrompted{
+			EventHeader:  observe.NewEventHeader("ToolPermissionPrompted", traceID, spanID, parentSpan),
+			ToolCallID:   call.ID,
+			ToolName:     call.Name,
+			UserDecision: "pending",
 		})
 		return model.ToolResultPart{
 			ToolCallID: call.ID,

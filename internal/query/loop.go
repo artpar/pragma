@@ -9,6 +9,7 @@ import (
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
 )
 
@@ -21,12 +22,19 @@ const continuationPrompt = "Please continue."
 // Implements SPEC.md §6.1.
 func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 	ch := make(chan LoopEvent, 16)
-	go e.runLoop(ctx, userMessage, ch)
+	go func() {
+		defer close(ch)
+		defer func() {
+			if r := recover(); r != nil {
+				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
+			}
+		}()
+		e.runLoop(ctx, userMessage, ch)
+	}()
 	return ch
 }
 
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
-	defer close(ch)
 
 	// 1. Create and append user message
 	userMsg := model.Message{
@@ -85,7 +93,16 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		})
 
 		// f. Record cost
-		pricing := e.provider.Pricing(e.config.Model)
+		pricing, known := e.provider.Pricing(e.config.Model)
+		if !known {
+			e.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warn",
+				Component:    "query",
+				ErrorType:    "unknown_model_pricing",
+				ErrorMessage: fmt.Sprintf("no pricing data for model %q, costs will be zero", e.config.Model),
+			})
+		}
 		e.costTracker.Record(e.config.Model, e.provider.Name(), response.Usage, pricing)
 
 		// g+h. Switch on StopReason
@@ -157,6 +174,7 @@ func (e *Engine) consumeStream(
 	var textBuf strings.Builder
 	var thinkBuf strings.Builder
 	var thinkSigBuf strings.Builder
+	var redactedThinkingParts []model.ThinkingPart
 	toolCalls := make(map[string]*toolAccumulator)
 	var toolOrder []string
 	var done *provider.StreamDone
@@ -180,8 +198,18 @@ func (e *Engine) consumeStream(
 			thinkSigBuf.WriteString(chunk.ThinkingSignatureDelta)
 		}
 
+		if chunk.RedactedThinkingBlock != nil {
+			redactedThinkingParts = append(redactedThinkingParts, model.ThinkingPart{
+				Redacted:     true,
+				RedactedData: chunk.RedactedThinkingBlock.Data,
+			})
+		}
+
 		if chunk.ToolCallStart != nil {
 			tc := chunk.ToolCallStart
+			if _, exists := toolCalls[tc.ID]; exists {
+				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
+			}
 			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name}
 			toolOrder = append(toolOrder, tc.ID)
 		}
@@ -203,7 +231,7 @@ func (e *Engine) consumeStream(
 		return model.Response{}, fmt.Errorf("stream ended without Done: %w", model.ErrStreamClosed)
 	}
 
-	// Build content parts: thinking → text → tool calls (same order as AccumulateStream)
+	// Build content parts: thinking → redacted thinking → text → tool calls
 	var parts []model.ContentPart
 	if thinkBuf.Len() > 0 {
 		parts = append(parts, model.ThinkingPart{
@@ -211,19 +239,27 @@ func (e *Engine) consumeStream(
 			Signature: thinkSigBuf.String(),
 		})
 	}
+	for _, rtp := range redactedThinkingParts {
+		parts = append(parts, rtp)
+	}
 	if textBuf.Len() > 0 {
 		parts = append(parts, model.TextPart{Text: textBuf.String()})
 	}
 	for _, id := range toolOrder {
 		acc := toolCalls[id]
+		raw := json.RawMessage(acc.inputBuf.String())
+		if len(raw) > 0 && !json.Valid(raw) {
+			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
+		}
 		parts = append(parts, model.ToolCallPart{
 			ID:    acc.id,
 			Name:  acc.name,
-			Input: json.RawMessage(acc.inputBuf.String()),
+			Input: raw,
 		})
 	}
 
 	return model.Response{
+		Model:      done.Model,
 		Content:    parts,
 		StopReason: done.StopReason,
 		Usage:      done.Usage,

@@ -13,7 +13,7 @@ type Provider interface {
 	Stream(ctx context.Context, params RequestParams) (<-chan StreamChunk, error)
 	Complete(ctx context.Context, params RequestParams) (model.Response, error)
 	SupportsFeature(feature Feature) bool
-	Pricing(modelID string) model.Pricing
+	Pricing(modelID string) (model.Pricing, bool)
 }
 
 // Feature flags that providers may or may not support.
@@ -53,6 +53,7 @@ type StreamChunk struct {
 	ThinkingSignatureDelta string
 	ToolCallStart          *model.ToolCallPart
 	ToolCallInputDelta     *ToolCallDelta
+	RedactedThinkingBlock  *RedactedThinking
 	Done                   *StreamDone
 	Error                  error
 }
@@ -63,8 +64,15 @@ type ToolCallDelta struct {
 	JSONDelta  string
 }
 
+// RedactedThinking carries opaque data for a provider-redacted thinking block.
+// Arrives as a single content_block_start event (not accumulated from deltas).
+type RedactedThinking struct {
+	Data string
+}
+
 // StreamDone signals the end of a stream with final metadata.
 type StreamDone struct {
 	StopReason model.StopReason
 	Usage      model.TokenUsage
+	Model      string
 }

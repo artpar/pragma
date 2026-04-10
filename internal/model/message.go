@@ -64,6 +64,9 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("unmarshal message content: %w", err)
 	}
+	if raw.Role != RoleUser && raw.Role != RoleAssistant {
+		return fmt.Errorf("unmarshal message: invalid role %q", raw.Role)
+	}
 	m.ID = raw.ID
 	m.Role = raw.Role
 	m.Content = parts

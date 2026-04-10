@@ -12,7 +12,10 @@ import (
 
 func TestContentPartToWireUserText(t *testing.T) {
 	mapper := NewIDMapper()
-	block := contentPartToWireUser(model.TextPart{Text: "hello"}, mapper)
+	block, err := contentPartToWireUser(model.TextPart{Text: "hello"}, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if block.OfText == nil {
 		t.Fatal("expected OfText")
 	}
@@ -23,10 +26,13 @@ func TestContentPartToWireUserText(t *testing.T) {
 
 func TestContentPartToWireUserImage(t *testing.T) {
 	mapper := NewIDMapper()
-	block := contentPartToWireUser(model.ImagePart{
+	block, err := contentPartToWireUser(model.ImagePart{
 		MimeType: "image/png",
 		Data:     []byte{0x89, 0x50, 0x4e, 0x47},
 	}, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if block.OfImage == nil {
 		t.Fatal("expected OfImage")
 	}
@@ -36,11 +42,14 @@ func TestContentPartToWireUserToolResult(t *testing.T) {
 	mapper := NewIDMapper()
 	mapper.RegisterPair("internal-1", "toolu_abc")
 
-	block := contentPartToWireUser(model.ToolResultPart{
+	block, err := contentPartToWireUser(model.ToolResultPart{
 		ToolCallID: "internal-1",
 		Content:    "output text",
 		IsError:    false,
 	}, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if block.OfToolResult == nil {
 		t.Fatal("expected OfToolResult")
 	}
@@ -51,14 +60,16 @@ func TestContentPartToWireUserToolResult(t *testing.T) {
 
 func TestContentPartToWireUserToolResultSyntheticID(t *testing.T) {
 	mapper := NewIDMapper()
-	block := contentPartToWireUser(model.ToolResultPart{
+	block, err := contentPartToWireUser(model.ToolResultPart{
 		ToolCallID: "unknown-id",
 		Content:    "ok",
 	}, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if block.OfToolResult == nil {
 		t.Fatal("expected OfToolResult")
 	}
-	// Should have generated a synthetic wire ID
 	if block.OfToolResult.ToolUseID == "" {
 		t.Error("expected non-empty ToolUseID")
 	}
@@ -69,7 +80,10 @@ func TestContentPartToWireUserToolResultSyntheticID(t *testing.T) {
 
 func TestContentPartToWireAssistantText(t *testing.T) {
 	mapper := NewIDMapper()
-	block := contentPartToWireAssistant(model.TextPart{Text: "response"}, mapper)
+	block, err := contentPartToWireAssistant(model.TextPart{Text: "response"}, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if block.OfText == nil {
 		t.Fatal("expected OfText")
 	}
@@ -79,11 +93,14 @@ func TestContentPartToWireAssistantToolCall(t *testing.T) {
 	mapper := NewIDMapper()
 	mapper.RegisterPair("tc-1", "toolu_xyz")
 
-	block := contentPartToWireAssistant(model.ToolCallPart{
+	block, err := contentPartToWireAssistant(model.ToolCallPart{
 		ID:    "tc-1",
 		Name:  "Bash",
 		Input: json.RawMessage(`{"cmd":"ls"}`),
 	}, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if block.OfToolUse == nil {
 		t.Fatal("expected OfToolUse")
 	}
@@ -97,10 +114,13 @@ func TestContentPartToWireAssistantToolCall(t *testing.T) {
 
 func TestContentPartToWireAssistantThinking(t *testing.T) {
 	mapper := NewIDMapper()
-	block := contentPartToWireAssistant(model.ThinkingPart{
+	block, err := contentPartToWireAssistant(model.ThinkingPart{
 		Text:      "reasoning trace",
 		Signature: "sig_abc123",
 	}, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if block.OfThinking == nil {
 		t.Fatal("expected OfThinking")
 	}
@@ -109,6 +129,18 @@ func TestContentPartToWireAssistantThinking(t *testing.T) {
 	}
 	if block.OfThinking.Signature != "sig_abc123" {
 		t.Errorf("Signature: got %q", block.OfThinking.Signature)
+	}
+}
+
+func TestContentPartToWireAssistantMalformedInput(t *testing.T) {
+	mapper := NewIDMapper()
+	_, err := contentPartToWireAssistant(model.ToolCallPart{
+		ID:    "tc-bad",
+		Name:  "Bash",
+		Input: json.RawMessage(`{broken json`),
+	}, mapper)
+	if err == nil {
+		t.Error("expected error for malformed tool input JSON")
 	}
 }
 
@@ -126,11 +158,9 @@ func TestSystemToWire(t *testing.T) {
 	if blocks[0].Text != "You are a helpful assistant." {
 		t.Errorf("block[0] text: got %q", blocks[0].Text)
 	}
-	// Cacheable block should have CacheControl set
 	if string(blocks[0].CacheControl.Type) == "" {
 		t.Error("block[0] should have CacheControl set")
 	}
-	// Non-cacheable block should not
 	if string(blocks[1].CacheControl.Type) != "" {
 		t.Error("block[1] should not have CacheControl set")
 	}
@@ -175,8 +205,10 @@ func TestBuildWireParamsTemperatureOmittedWhenThinking(t *testing.T) {
 		Thinking:    &provider.ThinkingConfig{Enabled: true, BudgetTokens: 5000},
 	}
 	mapper := NewIDMapper()
-	wire := buildWireParams(params, mapper)
-
+	wire, err := buildWireParams(params, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if wire.Temperature.Valid() {
 		t.Error("temperature should be omitted when thinking is enabled")
 	}
@@ -191,8 +223,10 @@ func TestBuildWireParamsTemperatureSetWhenNoThinking(t *testing.T) {
 		Temperature: &temp,
 	}
 	mapper := NewIDMapper()
-	wire := buildWireParams(params, mapper)
-
+	wire, err := buildWireParams(params, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !wire.Temperature.Valid() {
 		t.Error("temperature should be set when thinking is disabled")
 	}
@@ -200,13 +234,15 @@ func TestBuildWireParamsTemperatureSetWhenNoThinking(t *testing.T) {
 
 func TestBuildWireParamsMaxTokensCapped(t *testing.T) {
 	params := provider.RequestParams{
-		Model:     "claude-sonnet-4-20250514", // UpperMaxOutput = 64000
+		Model:     "claude-sonnet-4-20250514",
 		MaxTokens: 100000,
 		Messages:  []model.Message{{ID: "m1", Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "hi"}}}},
 	}
 	mapper := NewIDMapper()
-	wire := buildWireParams(params, mapper)
-
+	wire, err := buildWireParams(params, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if wire.MaxTokens > 64000 {
 		t.Errorf("MaxTokens should be capped at 64000, got %d", wire.MaxTokens)
 	}
@@ -219,8 +255,10 @@ func TestBuildWireParamsUnknownModelPassesThrough(t *testing.T) {
 		Messages:  []model.Message{{ID: "m1", Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "hi"}}}},
 	}
 	mapper := NewIDMapper()
-	wire := buildWireParams(params, mapper)
-
+	wire, err := buildWireParams(params, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if wire.MaxTokens != 50000 {
 		t.Errorf("MaxTokens should pass through for unknown model, got %d", wire.MaxTokens)
 	}
@@ -288,7 +326,10 @@ func TestMessageToWireUserRole(t *testing.T) {
 		Content: []model.ContentPart{model.TextPart{Text: "hello"}},
 	}
 	mapper := NewIDMapper()
-	wire := messageToWire(m, mapper)
+	wire, err := messageToWire(m, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if wire.Role != sdk.MessageParamRoleUser {
 		t.Errorf("role: got %q, want user", wire.Role)
 	}
@@ -301,7 +342,10 @@ func TestMessageToWireAssistantRole(t *testing.T) {
 		Content: []model.ContentPart{model.TextPart{Text: "hi"}},
 	}
 	mapper := NewIDMapper()
-	wire := messageToWire(m, mapper)
+	wire, err := messageToWire(m, mapper)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if wire.Role != sdk.MessageParamRoleAssistant {
 		t.Errorf("role: got %q, want assistant", wire.Role)
 	}
@@ -318,5 +362,29 @@ func TestParseInputSchemaWithExtraFields(t *testing.T) {
 	}
 	if schema.ExtraFields["additionalProperties"] != false {
 		t.Errorf("additionalProperties: got %v", schema.ExtraFields["additionalProperties"])
+	}
+}
+
+func TestSyntheticMessageIDsAreUnique(t *testing.T) {
+	msgs := []model.Message{
+		{ID: "m1", Role: model.RoleAssistant, Content: []model.ContentPart{
+			model.ToolCallPart{ID: "tc-1", Name: "X", Input: json.RawMessage(`{}`)},
+		}},
+		// No user message after — normalizer will inject synthetic
+		{ID: "m2", Role: model.RoleAssistant, Content: []model.ContentPart{
+			model.ToolCallPart{ID: "tc-2", Name: "Y", Input: json.RawMessage(`{}`)},
+		}},
+	}
+	result := normalizeMessages(msgs)
+
+	// Collect all message IDs
+	ids := make(map[string]int)
+	for _, m := range result {
+		ids[m.ID]++
+	}
+	for id, count := range ids {
+		if count > 1 {
+			t.Errorf("duplicate message ID %q appears %d times", id, count)
+		}
 	}
 }

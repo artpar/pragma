@@ -21,10 +21,13 @@ type AuditEntry struct {
 type Auditor struct {
 	mu      sync.Mutex
 	entries []AuditEntry
+	index   map[string]int // toolCallID → entries index for O(1) lookup
 }
 
 func NewAuditor() *Auditor {
-	return &Auditor{}
+	return &Auditor{
+		index: make(map[string]int),
+	}
 }
 
 func (a *Auditor) HandleEvent(event Event) {
@@ -33,21 +36,27 @@ func (a *Auditor) HandleEvent(event Event) {
 
 	switch e := event.(type) {
 	case ToolPermissionChecked:
+		idx := len(a.entries)
 		a.entries = append(a.entries, AuditEntry{
-			Timestamp:  e.EventTimestamp(),
-			ToolCallID: e.ToolCallID,
-			ToolName:   e.ToolName,
-			Decision:   e.Decision,
+			Timestamp:   e.EventTimestamp(),
+			ToolCallID:  e.ToolCallID,
+			ToolName:    e.ToolName,
+			Decision:    e.Decision,
 			RuleMatched: e.Rule,
-			RuleSource: e.Source,
+			RuleSource:  e.Source,
 		})
+		a.index[e.ToolCallID] = idx
 	case ToolPermissionPrompted:
-		// Find the existing entry and update user response
-		for i := len(a.entries) - 1; i >= 0; i-- {
-			if a.entries[i].ToolCallID == e.ToolCallID {
-				a.entries[i].UserResponse = e.UserDecision
-				break
-			}
+		// O(1) lookup via index
+		if idx, ok := a.index[e.ToolCallID]; ok {
+			a.entries[idx].UserResponse = e.UserDecision
+		} else {
+			a.entries = append(a.entries, AuditEntry{
+				Timestamp:    e.EventTimestamp(),
+				ToolCallID:   e.ToolCallID,
+				Decision:     "prompted",
+				UserResponse: e.UserDecision,
+			})
 		}
 	case PermissionDenialEnforced:
 		a.entries = append(a.entries, AuditEntry{

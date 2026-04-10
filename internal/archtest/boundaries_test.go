@@ -14,19 +14,40 @@ func TestEventEmissionAtBoundaries(t *testing.T) {
 		t.Fatal("could not find project root")
 	}
 
-	// Packages that cross boundaries must emit events
-	boundaryPackages := []string{
-		filepath.Join(root, "internal", "tool"),
+	// Each boundary package must emit specific event types
+	type boundaryCheck struct {
+		dir            string
+		requiredEvents []string
 	}
 
-	for _, pkgDir := range boundaryPackages {
-		files := scanGoFiles(pkgDir)
+	checks := []boundaryCheck{
+		{
+			dir: filepath.Join(root, "internal", "tool"),
+			requiredEvents: []string{
+				"ToolCallReceived",
+				"ToolPermissionChecked",
+				"ToolExecutionStarted",
+				"ToolBatchStarted",
+				"ToolBatchCompleted",
+			},
+		},
+		{
+			dir: filepath.Join(root, "internal", "provider", "anthropic"),
+			requiredEvents: []string{
+				"APIRequestStarted",
+				"APIRequestCompleted",
+			},
+		},
+	}
+
+	for _, check := range checks {
+		files := scanGoFiles(check.dir)
 		if len(files) == 0 {
 			continue
 		}
 
-		rel, _ := filepath.Rel(root, pkgDir)
-		hasEmit := false
+		rel, _ := filepath.Rel(root, check.dir)
+		emittedEvents := make(map[string]bool)
 
 		for _, file := range files {
 			fset := token.NewFileSet()
@@ -44,16 +65,23 @@ func TestEventEmissionAtBoundaries(t *testing.T) {
 				if !ok {
 					return true
 				}
-				if sel.Sel.Name == "Emit" {
-					hasEmit = true
+				if sel.Sel.Name != "Emit" || len(call.Args) == 0 {
+					return true
+				}
+				// Check composite literal argument for event type name
+				if comp, ok := call.Args[0].(*ast.CompositeLit); ok {
+					if typeSel, ok := comp.Type.(*ast.SelectorExpr); ok {
+						emittedEvents[typeSel.Sel.Name] = true
+					}
 				}
 				return true
 			})
 		}
 
-		if !hasEmit {
-			t.Errorf("boundary package %s has no Emit calls (must emit events at boundaries)", rel)
+		for _, required := range check.requiredEvents {
+			if !emittedEvents[required] {
+				t.Errorf("boundary package %s must emit %s event but does not", rel, required)
+			}
 		}
 	}
 }
-

@@ -99,3 +99,30 @@ func TestAuditorTrailIsCopy(t *testing.T) {
 		t.Error("Trail returned a reference, not a copy")
 	}
 }
+
+func TestAuditorOrphanedPromptCreatesEntry(t *testing.T) {
+	a := NewAuditor()
+
+	// ToolPermissionPrompted without prior ToolPermissionChecked
+	a.HandleEvent(ToolPermissionPrompted{
+		EventHeader:  NewEventHeader("ToolPermissionPrompted", "t1", "s1", ""),
+		ToolCallID:   "tc-orphan",
+		ToolName:     "Bash",
+		UserDecision: "allow",
+		DurationMs:   1000,
+	})
+
+	trail := a.Trail()
+	if len(trail) != 1 {
+		t.Fatalf("Trail: got %d, want 1", len(trail))
+	}
+	if trail[0].ToolCallID != "tc-orphan" {
+		t.Errorf("ToolCallID: got %q, want tc-orphan", trail[0].ToolCallID)
+	}
+	if trail[0].Decision != "prompted" {
+		t.Errorf("Decision: got %q, want prompted", trail[0].Decision)
+	}
+	if trail[0].UserResponse != "allow" {
+		t.Errorf("UserResponse: got %q, want allow", trail[0].UserResponse)
+	}
+}

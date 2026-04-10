@@ -61,3 +61,55 @@ func TestRecorderWritesJSONL(t *testing.T) {
 		t.Errorf("event[1]: got %q", events[1].EventKind())
 	}
 }
+
+func TestRecorderEncodeErrorTracking(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+
+	rec, err := NewRecorder(path)
+	if err != nil {
+		t.Fatalf("NewRecorder: %v", err)
+	}
+
+	// Close the underlying file to force encode errors
+	rec.file.Close()
+
+	rec.HandleEvent(ConversationStarted{
+		EventHeader:    NewEventHeader("ConversationStarted", "t1", "s1", ""),
+		ConversationID: "conv-1",
+		Model:          "test",
+		Provider:       "test",
+		WorkDir:        "/tmp",
+	})
+
+	// Close should return the encode error
+	if err := rec.Close(); err == nil {
+		t.Error("expected error from Close after encode failure")
+	}
+}
+
+func TestRecorderCloseIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+
+	rec, err := NewRecorder(path)
+	if err != nil {
+		t.Fatalf("NewRecorder: %v", err)
+	}
+
+	rec.HandleEvent(ConversationStarted{
+		EventHeader:    NewEventHeader("ConversationStarted", "t1", "s1", ""),
+		ConversationID: "conv-1",
+		Model:          "test",
+		Provider:       "test",
+		WorkDir:        "/tmp",
+	})
+
+	// Double close must not panic
+	if err := rec.Close(); err != nil {
+		t.Fatalf("first Close: %v", err)
+	}
+	if err := rec.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+}

@@ -24,10 +24,12 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 	var textBuf strings.Builder
 	var thinkBuf strings.Builder
 	var thinkSigBuf strings.Builder
+	var redactedThinkingParts []model.ThinkingPart
 	toolCalls := make(map[string]*toolAccumulator)
 	var toolOrder []string // track insertion order
 	var stopReason model.StopReason
 	var usage model.TokenUsage
+	var responseModel string
 	gotDone := false
 
 	for chunk := range chunks {
@@ -43,8 +45,17 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 		if chunk.ThinkingSignatureDelta != "" {
 			thinkSigBuf.WriteString(chunk.ThinkingSignatureDelta)
 		}
+		if chunk.RedactedThinkingBlock != nil {
+			redactedThinkingParts = append(redactedThinkingParts, model.ThinkingPart{
+				Redacted:     true,
+				RedactedData: chunk.RedactedThinkingBlock.Data,
+			})
+		}
 		if chunk.ToolCallStart != nil {
 			tc := chunk.ToolCallStart
+			if _, exists := toolCalls[tc.ID]; exists {
+				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
+			}
 			acc := &toolAccumulator{
 				id:   tc.ID,
 				name: tc.Name,
@@ -62,6 +73,7 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 		if chunk.Done != nil {
 			stopReason = chunk.Done.StopReason
 			usage = chunk.Done.Usage
+			responseModel = chunk.Done.Model
 			gotDone = true
 		}
 	}
@@ -78,19 +90,27 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 			Signature: thinkSigBuf.String(),
 		})
 	}
+	for _, rtp := range redactedThinkingParts {
+		parts = append(parts, rtp)
+	}
 	if textBuf.Len() > 0 {
 		parts = append(parts, model.TextPart{Text: textBuf.String()})
 	}
 	for _, id := range toolOrder {
 		acc := toolCalls[id]
+		raw := json.RawMessage(acc.inputBuf.String())
+		if len(raw) > 0 && !json.Valid(raw) {
+			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
+		}
 		parts = append(parts, model.ToolCallPart{
 			ID:    acc.id,
 			Name:  acc.name,
-			Input: json.RawMessage(acc.inputBuf.String()),
+			Input: raw,
 		})
 	}
 
 	return model.Response{
+		Model:      responseModel,
 		Content:    parts,
 		StopReason: stopReason,
 		Usage:      usage,

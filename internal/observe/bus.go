@@ -1,6 +1,9 @@
 package observe
 
-import "sync"
+import (
+	"log/slog"
+	"sync"
+)
 
 // Subscriber processes events from the EventBus.
 type Subscriber interface {
@@ -15,6 +18,7 @@ type EventBus struct {
 	mu          sync.RWMutex
 	buffer      chan Event
 	done        chan struct{}
+	drainOnce   sync.Once
 }
 
 // NewEventBus creates an EventBus with the given buffer size and starts
@@ -28,15 +32,10 @@ func NewEventBus(bufferSize int) *EventBus {
 	return b
 }
 
-// Emit sends an event to the buffer. Drops the event if the buffer is full
-// to prevent deadlocking callers (streaming goroutines, tool execution).
+// Emit sends an event to the buffer. Blocks if the buffer is full
+// (backpressure — better than silent drop per SPEC.md).
 func (b *EventBus) Emit(event Event) {
-	select {
-	case b.buffer <- event:
-	default:
-		// Buffer full — drop event rather than block.
-		// This prevents a slow subscriber from freezing the entire application.
-	}
+	b.buffer <- event
 }
 
 // Subscribe adds a subscriber and returns an unsubscribe function.
@@ -59,8 +58,10 @@ func (b *EventBus) Subscribe(sub Subscriber) func() {
 // Drain closes the buffer and waits for all buffered events to be delivered.
 // Call on shutdown.
 func (b *EventBus) Drain() {
-	close(b.buffer)
-	<-b.done
+	b.drainOnce.Do(func() {
+		close(b.buffer)
+		<-b.done
+	})
 }
 
 func (b *EventBus) dispatch() {
@@ -72,7 +73,14 @@ func (b *EventBus) dispatch() {
 
 		for _, sub := range subs {
 			if sub != nil {
-				sub.HandleEvent(event)
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("subscriber panicked", "panic", r, "event", event.EventKind())
+						}
+					}()
+					sub.HandleEvent(event)
+				}()
 			}
 		}
 	}
