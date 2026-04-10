@@ -4,7 +4,7 @@ Go port of the Pragma TypeScript CLI. LLM-generic — works with Anthropic, Open
 
 ## Status
 
-**Phase 2 complete** — Anthropic provider adapter: streaming, retry, caching, message normalization, model registry.
+**Phase 2 complete + bug sweep** — Anthropic provider adapter: streaming, retry, caching, message normalization, model registry. Post-phase audit fixed 5 bugs (signature accumulation, event kind mismatch, redacted thinking round-trip, PauseTurn stop reason, DecisionAsk passthrough), 3 latent issues, and 3 tech debt items.
 
 ## Architecture
 

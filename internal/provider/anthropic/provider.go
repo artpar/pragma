@@ -96,7 +96,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	spanID := observe.NewSpanID()
 
 	p.bus.Emit(observe.APIRequestStarted{
-		EventHeader:   observe.NewEventHeader("api.request_started", traceID, spanID, ""),
+		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:         params.Model,
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
@@ -114,7 +114,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	if err != nil {
 		classified := classifyError(err)
 		p.bus.Emit(observe.APIRequestFailed{
-			EventHeader:  observe.NewEventHeader("api.request_failed", traceID, spanID, ""),
+			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
 			ErrorType:    classified.errorType,
 			ErrorMessage: err.Error(),
 			Retryable:    classified.retryable,
@@ -125,7 +125,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 
 	resp := responseFromWire(msg, mapper)
 	p.bus.Emit(observe.APIRequestCompleted{
-		EventHeader: observe.NewEventHeader("api.request_completed", traceID, spanID, ""),
+		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  resp.StopReason,
 		Usage:       resp.Usage,
 		DurationMs:  time.Since(start).Milliseconds(),
@@ -145,7 +145,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	spanID := observe.NewSpanID()
 
 	p.bus.Emit(observe.APIRequestStarted{
-		EventHeader:   observe.NewEventHeader("api.request_started", traceID, spanID, ""),
+		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:         params.Model,
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
@@ -195,14 +195,14 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 		}
 
 		p.bus.Emit(observe.APIRetryScheduled{
-			EventHeader: observe.NewEventHeader("api.retry_scheduled", traceID, spanID, ""),
+			EventHeader: observe.NewEventHeader("APIRetryScheduled", traceID, spanID, ""),
 			Attempt:     attempt + 1,
 			DelayMs:     delay.Milliseconds(),
 			Reason:      classified.errorType,
 		})
 
 		p.bus.Emit(observe.APIRequestFailed{
-			EventHeader:  observe.NewEventHeader("api.request_failed", traceID, spanID, ""),
+			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
 			ErrorType:    classified.errorType,
 			ErrorMessage: err.Error(),
 			Retryable:    true,

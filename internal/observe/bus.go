@@ -28,9 +28,15 @@ func NewEventBus(bufferSize int) *EventBus {
 	return b
 }
 
-// Emit sends an event to the buffer. Blocks if the buffer is full (backpressure).
+// Emit sends an event to the buffer. Drops the event if the buffer is full
+// to prevent deadlocking callers (streaming goroutines, tool execution).
 func (b *EventBus) Emit(event Event) {
-	b.buffer <- event
+	select {
+	case b.buffer <- event:
+	default:
+		// Buffer full — drop event rather than block.
+		// This prevents a slow subscriber from freezing the entire application.
+	}
 }
 
 // Subscribe adds a subscriber and returns an unsubscribe function.

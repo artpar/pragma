@@ -73,7 +73,7 @@ func (p *Provider) consumeStream(
 		// Throttled observability event (at most 1/sec)
 		if bus != nil && now.Sub(lastEventEmit) >= time.Second {
 			bus.Emit(observe.APIStreamChunk{
-				EventHeader: observe.NewEventHeader("api.stream_chunk", traceID, spanID, ""),
+				EventHeader: observe.NewEventHeader("APIStreamChunk", traceID, spanID, ""),
 				ChunkType:   event.Type,
 			})
 			lastEventEmit = now
@@ -212,7 +212,7 @@ func (p *Provider) handleMessageDelta(
 
 	if bus != nil {
 		bus.Emit(observe.APIRequestCompleted{
-			EventHeader: observe.NewEventHeader("api.request_completed", traceID, spanID, ""),
+			EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 			StopReason:  stopReason,
 			Usage:       usage,
 			DurationMs:  time.Since(state.startTime).Milliseconds(),

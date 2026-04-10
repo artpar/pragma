@@ -23,7 +23,7 @@ type toolAccumulator struct {
 func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 	var textBuf strings.Builder
 	var thinkBuf strings.Builder
-	var thinkSig string
+	var thinkSigBuf strings.Builder
 	toolCalls := make(map[string]*toolAccumulator)
 	var toolOrder []string // track insertion order
 	var stopReason model.StopReason
@@ -41,7 +41,7 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 			thinkBuf.WriteString(chunk.ThinkingDelta)
 		}
 		if chunk.ThinkingSignatureDelta != "" {
-			thinkSig = chunk.ThinkingSignatureDelta
+			thinkSigBuf.WriteString(chunk.ThinkingSignatureDelta)
 		}
 		if chunk.ToolCallStart != nil {
 			tc := chunk.ToolCallStart
@@ -75,7 +75,7 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 	if thinkBuf.Len() > 0 {
 		parts = append(parts, model.ThinkingPart{
 			Text:      thinkBuf.String(),
-			Signature: thinkSig,
+			Signature: thinkSigBuf.String(),
 		})
 	}
 	if textBuf.Len() > 0 {

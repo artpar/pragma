@@ -69,9 +69,14 @@ func (ToolResultPart) PartType() ContentType { return ContentToolResult }
 // Signature is a provider attestation (e.g., Anthropic's cryptographic proof)
 // that must be sent back in conversation history. Empty for providers that
 // don't use signatures.
+// Redacted indicates the provider redacted this block's content. When true,
+// RedactedData contains the opaque encrypted data that must be sent back verbatim.
+// The provider adapter emits this as a redacted_thinking block, not a regular one.
 type ThinkingPart struct {
-	Text      string `json:"text"`
-	Signature string `json:"signature,omitempty"`
+	Text         string `json:"text"`
+	Signature    string `json:"signature,omitempty"`
+	Redacted     bool   `json:"redacted,omitempty"`
+	RedactedData string `json:"redacted_data,omitempty"`
 }
 
 func (ThinkingPart) contentPartSealed() {}
@@ -102,39 +107,44 @@ func UnmarshalContentPart(data []byte) (ContentPart, error) {
 	if err := json.Unmarshal(data, &env); err != nil {
 		return nil, fmt.Errorf("unmarshal content envelope: %w", err)
 	}
-	switch env.Type {
+	return unmarshalFromEnvelope(env.Type, env.Data)
+}
+
+// unmarshalFromEnvelope dispatches on type and unmarshals the raw data into the correct variant.
+func unmarshalFromEnvelope(typ ContentType, data json.RawMessage) (ContentPart, error) {
+	switch typ {
 	case ContentText:
 		var p TextPart
-		if err := json.Unmarshal(env.Data, &p); err != nil {
+		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("unmarshal text part: %w", err)
 		}
 		return p, nil
 	case ContentImage:
 		var p ImagePart
-		if err := json.Unmarshal(env.Data, &p); err != nil {
+		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("unmarshal image part: %w", err)
 		}
 		return p, nil
 	case ContentToolCall:
 		var p ToolCallPart
-		if err := json.Unmarshal(env.Data, &p); err != nil {
+		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("unmarshal tool call part: %w", err)
 		}
 		return p, nil
 	case ContentToolResult:
 		var p ToolResultPart
-		if err := json.Unmarshal(env.Data, &p); err != nil {
+		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("unmarshal tool result part: %w", err)
 		}
 		return p, nil
 	case ContentThinking:
 		var p ThinkingPart
-		if err := json.Unmarshal(env.Data, &p); err != nil {
+		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("unmarshal thinking part: %w", err)
 		}
 		return p, nil
 	default:
-		return nil, fmt.Errorf("%w: %q", ErrInvalidContentType, env.Type)
+		return nil, fmt.Errorf("%w: %q", ErrInvalidContentType, typ)
 	}
 }
 
@@ -162,11 +172,7 @@ func UnmarshalContentParts(data []byte) ([]ContentPart, error) {
 	}
 	parts := make([]ContentPart, len(envs))
 	for i, env := range envs {
-		raw, err := json.Marshal(env)
-		if err != nil {
-			return nil, fmt.Errorf("re-marshal envelope [%d]: %w", i, err)
-		}
-		part, err := UnmarshalContentPart(raw)
+		part, err := unmarshalFromEnvelope(env.Type, env.Data)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal content part [%d]: %w", i, err)
 		}

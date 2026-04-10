@@ -260,6 +260,7 @@ func TestOrchestratorEmitsEvents(t *testing.T) {
 	kinds := sub.eventKinds()
 
 	expected := []string{
+		"ToolCallReceived",
 		"ToolBatchStarted",
 		"ToolPermissionChecked",
 		"ToolExecutionStarted",

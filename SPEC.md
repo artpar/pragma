@@ -93,7 +93,7 @@ type ContentPart interface {
 | `ImagePart` | `MimeType string`, `Data []byte` | `json:"mime_type"`, `json:"data"` | Raw bytes, provider base64-encodes |
 | `ToolCallPart` | `ID string`, `Name string`, `Input json.RawMessage` | `json:"id"`, `json:"name"`, `json:"input"` | ID is internal UUID, provider maps to wire ID |
 | `ToolResultPart` | `ToolCallID string`, `Content string`, `IsError bool` | `json:"tool_call_id"`, `json:"content"`, `json:"is_error,omitempty"` | ToolCallID correlates to ToolCallPart.ID |
-| `ThinkingPart` | `Text string`, `Signature string` | `json:"text"`, `json:"signature,omitempty"` | Reasoning trace + provider attestation signature |
+| `ThinkingPart` | `Text string`, `Signature string`, `Redacted bool`, `RedactedData string` | `json:"text"`, `json:"signature,omitempty"`, `json:"redacted,omitempty"`, `json:"redacted_data,omitempty"` | Reasoning trace + provider attestation. Redacted=true for provider-redacted blocks; RedactedData contains opaque encrypted data to send back verbatim |
 
 Custom JSON marshal/unmarshal dispatches on `"type"` discriminator field.
 
@@ -223,12 +223,13 @@ const (
     StopEndTurn   StopReason = "end_turn"
     StopToolUse   StopReason = "tool_use"
     StopMaxTokens StopReason = "max_tokens"
+    StopPauseTurn StopReason = "pause_turn"
     StopError     StopReason = "error"
 )
 ```
 
 Each provider maps its native stop reason:
-- Anthropic: `end_turn→StopEndTurn`, `tool_use→StopToolUse`, `max_tokens→StopMaxTokens`
+- Anthropic: `end_turn→StopEndTurn`, `tool_use→StopToolUse`, `max_tokens→StopMaxTokens`, `pause_turn→StopPauseTurn`
 - OpenAI: `stop→StopEndTurn`, `tool_calls→StopToolUse`, `length→StopMaxTokens`
 - Google: `STOP→StopEndTurn`, `FUNCTION_CALL→StopToolUse`, `MAX_TOKENS→StopMaxTokens`
 
@@ -432,7 +433,7 @@ For Google (no explicit IDs): synthesize wire ID from `{name}_{index}`.
 │   ├─ ImagePart{MimeType, Data}                   │
 │   ├─ ToolCallPart{ID, Name, Input}  ──────┐     │
 │   ├─ ToolResultPart{ToolCallID, Content} ◄─┘     │
-│   └─ ThinkingPart{Text}             (correlates) │
+│   └─ ThinkingPart{Text, Redacted}   (correlates) │
 └──────────────────────────────────────────────────┘
 
 ┌──────────────────┐     ┌──────────────────────────┐

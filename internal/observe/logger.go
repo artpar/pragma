@@ -109,8 +109,10 @@ func eventLevel(kind string) Level {
 		return LevelWarn
 	case "APIRequestFailed", "ToolExecutionFailed", "CompactionFailed",
 		"MCPServerFailed", "MCPServerDisconnected", "SubAgentFailed",
-		"ErrorOccurred", "PermissionDenialEnforced", "ConversationForked":
+		"ErrorOccurred", "PermissionDenialEnforced":
 		return LevelError
+	case "ConversationForked":
+		return LevelInfo
 	default:
 		return LevelInfo
 	}

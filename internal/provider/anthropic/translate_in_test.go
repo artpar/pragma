@@ -115,7 +115,7 @@ func TestStopReasonFromWire(t *testing.T) {
 		{sdk.StopReasonToolUse, model.StopToolUse},
 		{sdk.StopReasonMaxTokens, model.StopMaxTokens},
 		{sdk.StopReasonStopSequence, model.StopEndTurn},
-		{sdk.StopReasonPauseTurn, model.StopEndTurn},
+		{sdk.StopReasonPauseTurn, model.StopPauseTurn},
 		{sdk.StopReasonRefusal, model.StopError},
 		{"unknown", model.StopError},
 	}

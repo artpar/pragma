@@ -32,9 +32,9 @@ type CostEntry struct {
 }
 
 // CostTracker accumulates costs across multiple LLM requests.
-// Thread-safe via mutex.
+// Thread-safe via RWMutex.
 type CostTracker struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	entries  []CostEntry
 	totalUSD float64
 }
@@ -65,15 +65,15 @@ func (ct *CostTracker) Record(model string, provider string, usage TokenUsage, p
 }
 
 func (ct *CostTracker) TotalUSD() float64 {
-	ct.mu.Lock()
-	defer ct.mu.Unlock()
+	ct.mu.RLock()
+	defer ct.mu.RUnlock()
 	return ct.totalUSD
 }
 
 // Snapshot returns a copy of all cost entries.
 func (ct *CostTracker) Snapshot() []CostEntry {
-	ct.mu.Lock()
-	defer ct.mu.Unlock()
+	ct.mu.RLock()
+	defer ct.mu.RUnlock()
 	out := make([]CostEntry, len(ct.entries))
 	copy(out, ct.entries)
 	return out

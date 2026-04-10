@@ -56,8 +56,9 @@ func contentBlockFromWire(block sdk.ContentBlockUnion, mapper *IDMapper) model.C
 
 	case "redacted_thinking":
 		return model.ThinkingPart{
-			Text:      "[redacted]",
-			Signature: "",
+			Text:         "[redacted]",
+			Redacted:     true,
+			RedactedData: block.Data,
 		}
 
 	default:
@@ -79,7 +80,7 @@ func stopReasonFromWire(sr sdk.StopReason) model.StopReason {
 	case sdk.StopReasonStopSequence:
 		return model.StopEndTurn
 	case sdk.StopReasonPauseTurn:
-		return model.StopEndTurn
+		return model.StopPauseTurn
 	case sdk.StopReasonRefusal:
 		return model.StopError
 	default:

@@ -51,8 +51,15 @@ func mergeConsecutiveSameRole(msgs []model.Message) []model.Message {
 // Orphaned tool calls get a synthetic error result. Orphaned tool results
 // (no matching tool call) are removed.
 func ensureToolResultPairing(msgs []model.Message) []model.Message {
+	// Deep copy messages so appending to Content slices doesn't corrupt the caller's data
+	// through shared backing arrays.
 	out := make([]model.Message, len(msgs))
-	copy(out, msgs)
+	for i, m := range msgs {
+		content := make([]model.ContentPart, len(m.Content))
+		copy(content, m.Content)
+		out[i] = m
+		out[i].Content = content
+	}
 
 	for i := 0; i < len(out); i++ {
 		if out[i].Role != model.RoleAssistant {

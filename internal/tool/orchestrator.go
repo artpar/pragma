@@ -40,7 +40,17 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	}
 	var concurrent, serial []indexedCall
 
+	traceID := observe.NewTraceID()
+	batchSpan := observe.NewSpanID()
+
 	for i, call := range calls {
+		o.bus.Emit(observe.ToolCallReceived{
+			EventHeader:    observe.NewEventHeader("ToolCallReceived", traceID, batchSpan, ""),
+			ToolCallID:     call.ID,
+			ToolName:       call.Name,
+			InputSizeBytes: len(call.Input),
+		})
+
 		desc, ok := o.registry.Get(call.Name)
 		if !ok {
 			results[i] = model.ToolResultPart{
@@ -57,9 +67,6 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			serial = append(serial, ic)
 		}
 	}
-
-	traceID := observe.NewTraceID()
-	batchSpan := observe.NewSpanID()
 	o.bus.Emit(observe.ToolBatchStarted{
 		EventHeader:     observe.NewEventHeader("ToolBatchStarted", traceID, batchSpan, ""),
 		ConcurrentCount: len(concurrent),
@@ -137,6 +144,22 @@ func (o *Orchestrator) executeSingle(
 		return model.ToolResultPart{
 			ToolCallID: call.ID,
 			Content:    "permission denied: " + result.Reason,
+			IsError:    true,
+		}
+	}
+
+	if result.Decision == permission.DecisionAsk {
+		// "Ask" means the user must confirm before execution. The TUI prompt
+		// integration will replace this deny with an interactive flow.
+		o.bus.Emit(observe.PermissionDenialEnforced{
+			EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
+			ToolCallID:  call.ID,
+			ToolName:    call.Name,
+			WasExecuted: false,
+		})
+		return model.ToolResultPart{
+			ToolCallID: call.ID,
+			Content:    "permission requires user confirmation (not yet implemented)",
 			IsError:    true,
 		}
 	}

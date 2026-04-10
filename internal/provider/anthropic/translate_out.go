@@ -148,6 +148,9 @@ func contentPartToWireAssistant(part model.ContentPart, mapper *IDMapper) sdk.Co
 		}
 		return sdk.NewToolUseBlock(wireID, input, p.Name)
 	case model.ThinkingPart:
+		if p.Redacted {
+			return sdk.NewRedactedThinkingBlock(p.RedactedData)
+		}
 		return sdk.NewThinkingBlock(p.Signature, p.Text)
 	default:
 		return sdk.NewTextBlock(fmt.Sprintf("[unsupported content type in assistant message: %T]", part))
