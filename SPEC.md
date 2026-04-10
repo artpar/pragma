@@ -52,9 +52,9 @@ internal/
   permission/         ← Permission system (rule-based checker, content matching, dangerous paths)
   app/                ← AppState + StateStore (references model/)
   tui/                ← Bubbletea TUI (references model/)
-  config/             ← Settings + merge
-  context/            ← System prompt builder
-  session/            ← Persistence (references model/)
+  config/             ← Settings + merge + path resolution (~/.gogent/)
+  sysprompt/          ← System prompt builder (AGENT.md loading, env detection, block composition)
+  session/            ← Session persistence (save/load/list to ~/.gogent/sessions/)
   task/               ← Background tasks
   mcp/                ← MCP client + tool adapter
   cli/                ← Cobra CLI wiring

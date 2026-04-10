@@ -130,7 +130,7 @@ func TestLoad_NoFiles(t *testing.T) {
 
 func TestLoad_GlobalOnly(t *testing.T) {
 	dir := t.TempDir()
-	globalDir := filepath.Join(dir, "global", ".pragma")
+	globalDir := filepath.Join(dir, "global", ".gogent")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestLoad_GlobalOnly(t *testing.T) {
 
 func TestLoad_ProjectOverride(t *testing.T) {
 	dir := t.TempDir()
-	globalDir := filepath.Join(dir, "global", ".pragma")
+	globalDir := filepath.Join(dir, "global", ".gogent")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestLoad_ProjectOverride(t *testing.T) {
 	writeJSON(t, globalPath, Config{Model: "global-model", MaxTokens: 4096, Provider: "anthropic"})
 
 	projectDir := filepath.Join(dir, "project")
-	projectClaudeDir := filepath.Join(projectDir, ".pragma")
+	projectClaudeDir := filepath.Join(projectDir, ".gogent")
 	if err := os.MkdirAll(projectClaudeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -187,16 +187,16 @@ func TestLoad_ProjectOverride(t *testing.T) {
 
 func TestLoad_MalformedJSON(t *testing.T) {
 	dir := t.TempDir()
-	claudeDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+	gogentDir := filepath.Join(dir, ".gogent")
+	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte("{bad json"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(gogentDir, "settings.json"), []byte("{bad json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Use the malformed file as the global config
-	_, err := loadWithGlobal(filepath.Join(claudeDir, "settings.json"), t.TempDir())
+	_, err := loadWithGlobal(filepath.Join(gogentDir, "settings.json"), t.TempDir())
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
@@ -257,7 +257,7 @@ func TestLoad_RealFunction(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	// Create global config
-	globalDir := filepath.Join(dir, ".pragma")
+	globalDir := filepath.Join(dir, ".gogent")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -265,11 +265,11 @@ func TestLoad_RealFunction(t *testing.T) {
 
 	// Create project config in a subdirectory
 	projDir := filepath.Join(dir, "myproject")
-	projClaudeDir := filepath.Join(projDir, ".pragma")
-	if err := os.MkdirAll(projClaudeDir, 0o755); err != nil {
+	projGogentDir := filepath.Join(projDir, ".gogent")
+	if err := os.MkdirAll(projGogentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeJSON(t, filepath.Join(projClaudeDir, "settings.json"), Config{Provider: "anthropic", Record: true})
+	writeJSON(t, filepath.Join(projGogentDir, "settings.json"), Config{Provider: "anthropic", Record: true})
 
 	cfg, err := Load(projDir)
 	if err != nil {
@@ -289,17 +289,17 @@ func TestLoad_RealFunction(t *testing.T) {
 	}
 }
 
-func TestGlobalPath(t *testing.T) {
+func TestGlobalSettingsPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
-	path, err := GlobalPath()
+	path, err := GlobalSettingsPath()
 	if err != nil {
-		t.Fatalf("GlobalPath: %v", err)
+		t.Fatalf("GlobalSettingsPath: %v", err)
 	}
-	expected := filepath.Join(dir, ".pragma", "settings.json")
+	expected := filepath.Join(dir, ".gogent", "settings.json")
 	if path != expected {
-		t.Errorf("GlobalPath = %q, want %q", path, expected)
+		t.Errorf("GlobalSettingsPath = %q, want %q", path, expected)
 	}
 }
 
@@ -369,7 +369,7 @@ func loadWithGlobal(globalPath, workDir string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	project, err := readFile(ProjectPath(workDir))
+	project, err := readFile(ProjectSettingsPath(workDir))
 	if err != nil {
 		return Config{}, err
 	}

@@ -16,6 +16,8 @@ import (
 	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/provider/anthropic"
 	"github.com/artpar/gogent/internal/query"
+	"github.com/artpar/gogent/internal/session"
+	"github.com/artpar/gogent/internal/sysprompt"
 	"github.com/artpar/gogent/internal/task"
 	"github.com/artpar/gogent/internal/tool"
 	toolagent "github.com/artpar/gogent/internal/tools/agent"
@@ -56,6 +58,8 @@ func main() {
 	root.Flags().Int("thinking-budget", 0, "thinking token budget")
 	root.Flags().Bool("verbose", false, "verbose logging to stderr")
 	root.Flags().Bool("record", false, "record events to file")
+	root.Flags().String("resume", "", "resume session by ID")
+	root.Flags().Bool("list-sessions", false, "list saved sessions")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -67,9 +71,10 @@ func main() {
 }
 
 func runNonInteractive(cmd *cobra.Command, _ []string) error {
-	prompt, _ := cmd.Flags().GetString("prompt")
-	if prompt == "" {
-		return fmt.Errorf("--prompt/-p is required for non-interactive mode")
+	// Handle --list-sessions early (no prompt or API key needed)
+	listSessions, _ := cmd.Flags().GetBool("list-sessions")
+	if listSessions {
+		return runListSessions()
 	}
 
 	// 1. Load config (3-scope merge)
@@ -83,10 +88,8 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// 2. Apply CLI flag overrides
+	// 2. Apply CLI flag overrides + defaults
 	applyFlagOverrides(cmd, &cfg)
-
-	// 3. Apply defaults
 	if cfg.Model == "" {
 		cfg.Model = "claude-sonnet-4-20250514"
 	}
@@ -99,14 +102,21 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 	if cfg.APIKey == "" {
 		cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
+
+	// Determine if resuming or new session
+	resumeID, _ := cmd.Flags().GetString("resume")
+	prompt, _ := cmd.Flags().GetString("prompt")
+
+	if resumeID == "" && prompt == "" {
+		return fmt.Errorf("--prompt/-p is required (or use --resume to continue a session)")
+	}
 	if cfg.APIKey == "" {
 		return fmt.Errorf("API key required: set --api-key or ANTHROPIC_API_KEY environment variable")
 	}
 
-	// 4. Create EventBus
+	// 3. Create EventBus
 	bus := observe.NewEventBus(1024)
 
-	// 5. Subscribe Logger — errors only unless verbose
 	logLevel := observe.LevelError
 	if cfg.Verbose {
 		logLevel = observe.LevelTrace
@@ -114,7 +124,6 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 	logger := observe.NewLogger(os.Stderr, logLevel, observe.FormatText, nil)
 	bus.Subscribe(logger)
 
-	// 6. Optionally subscribe Recorder
 	if cfg.Record {
 		recorder, recErr := observe.NewRecorder("gogent-recording.jsonl")
 		if recErr != nil {
@@ -124,28 +133,58 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		bus.Subscribe(recorder)
 	}
 
-	// 7. Create Provider
+	// 4. Create Provider
 	prov := createProvider(cfg, bus)
 
-	// 8. Create permission checker
+	// 5. Create permission checker
 	permEntries, permMode, _ := config.LoadPermissions(cwd)
 	rules := permission.RulesFromConfigEntries(permEntries)
 	mode := permission.PermissionMode(permMode)
 	if mode == "" {
-		mode = permission.ModeBypassPermissions // non-interactive mode: allow all by default
+		mode = permission.ModeBypassPermissions
 	}
 	checker := permission.NewRuleChecker(rules, mode, cwd, bus)
 	prompter := &permission.NonInteractivePrompter{}
 
-	// 9. Create StateStore
-	var systemPrompt model.SystemPrompt
+	// 6. Build system prompt
+	var sysPrompt model.SystemPrompt
 	if cfg.SystemPrompt != "" {
-		systemPrompt = model.SystemPrompt{
+		// CLI override replaces everything
+		sysPrompt = model.SystemPrompt{
 			Blocks: []model.SystemBlock{{Text: cfg.SystemPrompt, Cacheable: true}},
 		}
+	} else {
+		builder := sysprompt.New(cwd, cfg.Model, bus)
+		sysPrompt = builder.Build()
 	}
 
-	conv := model.NewConversation(systemPrompt, cfg.Model, cfg.Provider, cwd)
+	// 7. Create or resume conversation
+	var conv model.Conversation
+	if resumeID != "" {
+		sessionStore, storeErr := session.NewStore()
+		if storeErr != nil {
+			return fmt.Errorf("open session store: %w", storeErr)
+		}
+		sess, loadErr := sessionStore.Load(resumeID)
+		if loadErr != nil {
+			return fmt.Errorf("resume session: %w", loadErr)
+		}
+		conv = sess.Conversation
+		// Rebuild system prompt (fresh env info) unless original had a CLI override
+		if sess.SystemOverride != "" {
+			conv.System = model.SystemPrompt{
+				Blocks: []model.SystemBlock{{Text: sess.SystemOverride, Cacheable: true}},
+			}
+		} else {
+			conv.System = sysPrompt
+		}
+		if cfg.Verbose {
+			fmt.Fprintf(os.Stderr, "resumed session %s (%d messages)\n", resumeID, len(conv.Messages))
+		}
+	} else {
+		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)
+	}
+
 	store := app.NewStateStore(app.AppState{
 		Conversation: conv,
 		CWD:          cwd,
@@ -155,12 +194,12 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		Temperature:  cfg.Temperature,
 	})
 
-	// 10. Create task registry and Engine config
+	// 8. Create task registry and Engine config
 	taskRegistry := task.NewRegistry(bus)
 	costTracker := model.NewCostTracker()
 	engineCfg := query.EngineConfig{
-		Model:     cfg.Model,
-		MaxTokens: cfg.MaxTokens,
+		Model:       cfg.Model,
+		MaxTokens:   cfg.MaxTokens,
 		Temperature: cfg.Temperature,
 	}
 	if cfg.Thinking != nil && cfg.Thinking.Enabled {
@@ -170,10 +209,9 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// 11. EngineFactory for sub-agents
+	// 9. EngineFactory for sub-agents
 	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
 		subRegistry := tool.NewRegistry(bus)
-		// Register the same tools minus Agent (scopedToolNames is nil = all)
 		for _, td := range []tool.Descriptor{
 			&toolglob.Tool{},
 			&toolgrep.Tool{},
@@ -211,7 +249,7 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		return subEngine, subStore
 	}
 
-	// 12. Create main Registry and register all tools
+	// 10. Create main Registry and register all tools
 	registry := tool.NewRegistry(bus)
 	for _, t := range []tool.Descriptor{
 		&toolglob.Tool{},
@@ -234,12 +272,15 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// 13. Create Orchestrator and Engine
+	// 11. Create Orchestrator and Engine
 	orchestrator := tool.NewOrchestrator(registry, checker, prompter, bus)
 	engine := query.NewEngine(prov, registry, orchestrator, store, costTracker, bus, engineCfg)
 
-	// 12. Run Engine
+	// 12. Run engine
 	ctx := cmd.Context()
+	if prompt == "" {
+		prompt = "Continue from where we left off."
+	}
 	events := engine.Run(ctx, prompt)
 
 	// 13. Consume events
@@ -267,12 +308,84 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// 14. Drain EventBus
+	// 14. Save session
+	saveSession(store, costTracker, cfg.SystemPrompt, cwd)
+
+	// 15. Drain EventBus
 	if cfg.Verbose {
 		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", costTracker.TotalUSD())
 	}
 	bus.Drain()
 	return nil
+}
+
+func runListSessions() error {
+	sessionStore, err := session.NewStore()
+	if err != nil {
+		return fmt.Errorf("open session store: %w", err)
+	}
+	summaries, err := sessionStore.List()
+	if err != nil {
+		return fmt.Errorf("list sessions: %w", err)
+	}
+	if len(summaries) == 0 {
+		fmt.Println("No saved sessions.")
+		return nil
+	}
+	for _, s := range summaries {
+		summary := s.Summary
+		if len(summary) > 80 {
+			summary = summary[:80] + "..."
+		}
+		fmt.Printf("%-38s  %s  %d turns  $%.4f  %s\n",
+			s.ID, s.Model, s.TurnCount, s.CostUSD, summary)
+	}
+	return nil
+}
+
+func saveSession(store *app.StateStore, costTracker *model.CostTracker, systemOverride, cwd string) {
+	sessionStore, err := session.NewStore()
+	if err != nil {
+		return // best-effort
+	}
+	snap := store.Snapshot()
+	if len(snap.Conversation.Messages) == 0 {
+		return
+	}
+
+	// Derive summary from first user message
+	summary := ""
+	for _, msg := range snap.Conversation.Messages {
+		if msg.Role == model.RoleUser {
+			for _, part := range msg.Content {
+				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+					summary = tp.Text
+					if len(summary) > 100 {
+						summary = summary[:100]
+					}
+					break
+				}
+			}
+			break
+		}
+	}
+
+	turnCount := 0
+	for _, msg := range snap.Conversation.Messages {
+		if msg.Role == model.RoleUser {
+			turnCount++
+		}
+	}
+
+	sess := session.Session{
+		Conversation:   snap.Conversation,
+		Summary:        summary,
+		CostUSD:        costTracker.TotalUSD(),
+		TurnCount:      turnCount,
+		SystemOverride: systemOverride,
+		GitRemote:      sysprompt.GitRemoteURL(cwd),
+	}
+	_ = sessionStore.Save(sess) // best-effort
 }
 
 func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {

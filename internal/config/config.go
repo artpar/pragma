@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 )
 
 // RawPermission is a single permission entry from a settings file.
@@ -38,11 +37,11 @@ type ThinkingConfig struct {
 	BudgetTokens int  `json:"budget_tokens,omitempty"`
 }
 
-// Load reads global (~/.pragma/settings.json) and project (<workDir>/.pragma/settings.json)
+// Load reads global (~/.gogent/settings.json) and project (<workDir>/.gogent/settings.json)
 // config files and merges them. Project settings override global settings.
 // CLI flag overrides are applied by the caller after Load returns.
 func Load(workDir string) (Config, error) {
-	globalPath, err := GlobalPath()
+	globalPath, err := GlobalSettingsPath()
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve global config path: %w", err)
 	}
@@ -52,32 +51,13 @@ func Load(workDir string) (Config, error) {
 		return Config{}, fmt.Errorf("read global config: %w", err)
 	}
 
-	projectPath := ProjectPath(workDir)
+	projectPath := ProjectSettingsPath(workDir)
 	project, err := readFile(projectPath)
 	if err != nil {
 		return Config{}, fmt.Errorf("read project config: %w", err)
 	}
 
 	return merge(global, project), nil
-}
-
-// GlobalPath returns ~/.pragma/settings.json.
-func GlobalPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("get home directory: %w", err)
-	}
-	return filepath.Join(home, ".pragma", "settings.json"), nil
-}
-
-// ProjectPath returns <workDir>/.pragma/settings.json.
-func ProjectPath(workDir string) string {
-	return filepath.Join(workDir, ".pragma", "settings.json")
-}
-
-// LocalPath returns <workDir>/.pragma/settings.local.json.
-func LocalPath(workDir string) string {
-	return filepath.Join(workDir, ".pragma", "settings.local.json")
 }
 
 // PermissionWithSource is a permission entry tagged with its config source.
@@ -90,7 +70,7 @@ type PermissionWithSource struct {
 // LoadPermissions reads permission entries from all config scopes and returns them
 // ordered by priority (user first, local last). Also returns the permission mode.
 func LoadPermissions(workDir string) ([]PermissionWithSource, string, error) {
-	globalPath, err := GlobalPath()
+	globalPath, err := GlobalSettingsPath()
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve global config path: %w", err)
 	}
@@ -101,8 +81,8 @@ func LoadPermissions(workDir string) ([]PermissionWithSource, string, error) {
 	}
 	scopes := []scopeInfo{
 		{globalPath, "userSettings"},
-		{ProjectPath(workDir), "projectSettings"},
-		{LocalPath(workDir), "localSettings"},
+		{ProjectSettingsPath(workDir), "projectSettings"},
+		{LocalSettingsPath(workDir), "localSettings"},
 	}
 
 	var result []PermissionWithSource

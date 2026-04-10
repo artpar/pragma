@@ -296,6 +296,24 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	case "AgentMDLoaded":
+		var e AgentMDLoaded
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "AgentMDNotFound":
+		var e AgentMDNotFound
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "SystemPromptBuilt":
+		var e SystemPromptBuilt
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	default:
 		return nil, fmt.Errorf("unknown event kind: %q", peek.Kind)
 	}

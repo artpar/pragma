@@ -359,3 +359,30 @@ type PermissionDenialEnforced struct {
 }
 
 func (PermissionDenialEnforced) eventSealed() {}
+
+// --- System Prompt Events ---
+
+type AgentMDLoaded struct {
+	EventHeader
+	Path  string `json:"path"`
+	Scope string `json:"scope"`
+	Bytes int    `json:"bytes"`
+}
+
+func (AgentMDLoaded) eventSealed() {}
+
+type AgentMDNotFound struct {
+	EventHeader
+	Path  string `json:"path"`
+	Scope string `json:"scope"`
+}
+
+func (AgentMDNotFound) eventSealed() {}
+
+type SystemPromptBuilt struct {
+	EventHeader
+	BlockCount int `json:"block_count"`
+	TotalBytes int `json:"total_bytes"`
+}
+
+func (SystemPromptBuilt) eventSealed() {}

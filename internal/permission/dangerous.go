@@ -29,6 +29,7 @@ var DangerousDirs = []string{
 	".vscode",
 	".idea",
 	".pragma",
+	".gogent",
 }
 
 // IsDangerousPath checks if a file path is in a dangerous location.
