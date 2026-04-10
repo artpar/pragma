@@ -57,6 +57,8 @@ internal/
   session/            ← Session persistence (save/load/list to ~/.gogent/sessions/)
   task/               ← Background tasks
   mcp/                ← MCP client + tool adapter
+  compact/            ← Context window management, compaction service, auto-compaction
+  slash/              ← Slash command framework + built-in commands
   cli/                ← Cobra CLI wiring
   util/               ← Pure utilities
 ```
@@ -304,7 +306,8 @@ type Provider interface {
     Stream(ctx context.Context, params RequestParams) (<-chan StreamChunk, error)
     Complete(ctx context.Context, params RequestParams) (model.Response, error)
     SupportsFeature(feature Feature) bool
-    Pricing(modelID string) (model.Pricing, bool)  // ADR-012: Go map-lookup pattern
+    Pricing(modelID string) (model.Pricing, bool)        // ADR-012: Go map-lookup pattern
+    ContextWindow(modelID string) (int, bool)             // Phase 9: parses [Xm] suffix
 }
 
 type Feature string
