@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/artpar/gogent/internal/app"
+	"github.com/artpar/gogent/internal/compact"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
@@ -108,6 +109,36 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			})
 		}
 		e.costTracker.Record(e.config.Model, e.provider.Name(), response.Usage, pricing)
+
+		// Auto-compaction check (between cost recording and stop reason switch).
+		// Only runs if compactor is set (nil for subagent engines, #27794).
+		if e.compactor != nil && e.autoTracker != nil {
+			compSnap := e.store.Snapshot()
+			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
+			if e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
+				compResult, compErr := e.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
+				if compErr != nil {
+					tripped := e.autoTracker.RecordFailure()
+					if tripped {
+						e.bus.Emit(observe.ErrorOccurred{
+							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+							Severity:     "warn",
+							Component:    "compact",
+							ErrorType:    "circuit_breaker_tripped",
+							ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
+						})
+					}
+				} else {
+					e.autoTracker.RecordSuccess()
+					e.store.Update(func(s *app.AppState) {
+						s.Conversation.Messages = compResult.ReplacementMessages
+						s.Conversation.UpdatedAt = time.Now()
+					})
+					ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
+				}
+			}
+			e.autoTracker.IncrementTurn()
+		}
 
 		// g+h. Switch on StopReason
 		switch response.StopReason {

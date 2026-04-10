@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/query"
+	"github.com/artpar/gogent/internal/slash"
 )
 
 // LoopEventMsg wraps a query.LoopEvent for the bubbletea Update loop.
@@ -31,6 +32,12 @@ type PermResponseMsg struct {
 // InputSubmittedMsg carries a user message from the input component.
 type InputSubmittedMsg struct {
 	Text string
+}
+
+// SlashResultMsg carries the result of a slash command execution.
+type SlashResultMsg struct {
+	Result slash.Result
+	Err    error
 }
 
 // sessionSavedMsg signals that a session save completed.

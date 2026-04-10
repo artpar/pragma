@@ -81,6 +81,14 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 	return model.Pricing{}, false
 }
 
+// ContextWindow returns the context window size for a known model.
+func (p *Provider) ContextWindow(modelID string) (int, bool) {
+	if info, ok := LookupModel(modelID); ok {
+		return info.MaxContext, true
+	}
+	return 131_072, false // conservative default for Groq models
+}
+
 // Complete sends a non-streaming request and returns the complete response.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
 	mapper := NewIDMapper()

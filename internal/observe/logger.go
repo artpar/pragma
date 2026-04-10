@@ -131,7 +131,7 @@ func eventLevel(kind string) Level {
 		"MCPServerConnected", "MCPToolCallCompleted", "SubAgentSpawned",
 		"SubAgentCompleted", "ToolBatchStarted", "ToolBatchCompleted",
 		"ToolPermissionChecked", "ToolPermissionPrompted",
-		"PermissionRuleMatched",
+		"PermissionRuleMatched", "SlashCommandExecuted",
 		"AgentMDLoaded", "SystemPromptBuilt":
 		return LevelInfo
 	case "APIRetryScheduled", "CompactionStarted", "CompactionCompleted",
@@ -162,6 +162,8 @@ func eventTopic(kind string) string {
 		return "tool"
 	case "CompactionStarted", "CompactionCompleted", "CompactionFailed":
 		return "compaction"
+	case "SlashCommandExecuted":
+		return "command"
 	case "MCPServerConnecting", "MCPServerConnected", "MCPServerDisconnected",
 		"MCPServerFailed", "MCPToolCallStarted", "MCPToolCallCompleted",
 		"MCPHealthCheck":

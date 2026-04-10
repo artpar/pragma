@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"strconv"
+	"strings"
 	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
@@ -84,6 +86,32 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 		return info.Pricing, true
 	}
 	return model.Pricing{}, false
+}
+
+// ContextWindow returns the context window size in tokens for the given model.
+// Parses [Xm] suffix for extended context variants (GitHub issue #41984, #39467).
+// E.g., "claude-sonnet-4-20250514[1m]" returns 1,000,000.
+func (p *Provider) ContextWindow(modelID string) (int, bool) {
+	// Parse [Xm] suffix for extended context variants
+	if idx := strings.Index(modelID, "["); idx != -1 {
+		suffix := modelID[idx:]
+		if strings.HasSuffix(suffix, "m]") {
+			multiplierStr := suffix[1 : len(suffix)-2]
+			if n, err := strconv.Atoi(multiplierStr); err == nil {
+				return n * 1_000_000, true
+			}
+		}
+		modelID = modelID[:idx]
+	}
+
+	if info, ok := LookupModel(modelID); ok {
+		cw := info.ContextWindow
+		if cw == 0 {
+			cw = 200_000 // conservative default for known models without explicit window
+		}
+		return cw, true
+	}
+	return 200_000, false
 }
 
 // Complete sends a non-streaming request and returns the complete response.

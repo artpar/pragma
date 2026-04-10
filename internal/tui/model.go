@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -10,6 +11,7 @@ import (
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/query"
+	"github.com/artpar/gogent/internal/slash"
 )
 
 // Config holds all dependencies for the TUI model.
@@ -20,6 +22,8 @@ type Config struct {
 	ModelName   string
 	Provider    string
 	SessionSave func()
+	SlashCmds   *slash.Registry
+	SlashDeps   slash.Deps
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -29,6 +33,8 @@ type Model struct {
 	store       *app.StateStore
 	costTracker *model.CostTracker
 	sessionSave func()
+	slashCmds   *slash.Registry
+	slashDeps   slash.Deps
 
 	// Components
 	viewport   viewport.Model
@@ -60,6 +66,8 @@ func New(cfg Config) Model {
 		store:       cfg.Store,
 		costTracker: cfg.CostTracker,
 		sessionSave: cfg.SessionSave,
+		slashCmds:   cfg.SlashCmds,
+		slashDeps:   cfg.SlashDeps,
 		input:       newInputComponent(),
 		perm:        newPermissionDialog(),
 		toolbar:     newToolbar(cfg.ModelName, cfg.Provider),
@@ -95,6 +103,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PermResponseMsg:
 		return m.handlePermResponse(msg)
+
+	case SlashResultMsg:
+		return m.handleSlashResult(msg)
 
 	case sessionSavedMsg:
 		return m, nil
@@ -207,6 +218,11 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 		return m, nil
 	}
 
+	// Check for slash command BEFORE starting engine
+	if name, args, ok := slash.Parse(msg.Text); ok {
+		return m.handleSlashCommand(name, args)
+	}
+
 	// Render user message to viewport
 	userMsg := model.Message{
 		ID:   model.NewUUID(),
@@ -237,6 +253,45 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	return m, waitForEvent(m.eventCh)
 }
 
+// handleSlashCommand dispatches a slash command and returns a SlashResultMsg.
+func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
+	trimmedArgs := strings.TrimSpace(args)
+	label := "/" + name
+	if trimmedArgs != "" {
+		label += " " + trimmedArgs
+	}
+	m.outputBuf.WriteString(userLabelStyle.Render("> "+label) + "\n")
+	m.viewport.SetContent(m.outputBuf.String())
+	m.viewport.GotoBottom()
+
+	slashCmds := m.slashCmds
+	slashDeps := m.slashDeps
+	return m, func() tea.Msg {
+		result, err := slashCmds.Execute(context.Background(), name, trimmedArgs, slashDeps)
+		return SlashResultMsg{Result: result, Err: err}
+	}
+}
+
+// handleSlashResult processes the output of a slash command.
+func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.outputBuf.WriteString(errorStyle.Render("Error: "+msg.Err.Error()) + "\n\n")
+	} else {
+		if msg.Result.Quit {
+			return m.quit()
+		}
+		if msg.Result.ClearConversation {
+			m.outputBuf.Reset()
+		}
+		if msg.Result.DisplayText != "" {
+			m.outputBuf.WriteString(msg.Result.DisplayText + "\n\n")
+		}
+	}
+	m.viewport.SetContent(m.outputBuf.String())
+	m.viewport.GotoBottom()
+	return m, nil
+}
+
 // handleLoopEvent processes a streaming event from the query engine.
 func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	if msg.Event == nil {
@@ -245,6 +300,13 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch e := msg.Event.(type) {
+	case query.CompactionEvent:
+		m.flushStreamBuf()
+		m.outputBuf.WriteString(thinkingStyle.Render(
+			fmt.Sprintf("[auto-compacted: %d → %d tokens]", e.PreTokens, e.PostTokens)) + "\n")
+		m.viewport.SetContent(m.outputBuf.String())
+		m.viewport.GotoBottom()
+
 	case query.TextEvent:
 		m.streamBuf.WriteString(e.Text)
 		m.viewport.SetContent(m.outputBuf.String() + m.streamBuf.String())

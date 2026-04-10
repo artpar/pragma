@@ -45,6 +45,14 @@ type TurnCompleteEvent struct {
 
 func (TurnCompleteEvent) loopEventSealed() {}
 
+// CompactionEvent signals that auto-compaction occurred during the agentic loop.
+type CompactionEvent struct {
+	PreTokens  int
+	PostTokens int
+}
+
+func (CompactionEvent) loopEventSealed() {}
+
 // ErrorEvent signals an error that terminated the loop.
 type ErrorEvent struct {
 	Err error

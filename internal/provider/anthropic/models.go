@@ -10,6 +10,7 @@ import (
 // ModelInfo describes an Anthropic model's capabilities and pricing.
 type ModelInfo struct {
 	ID               string
+	ContextWindow    int // total context window in tokens (default 200_000)
 	DefaultMaxOutput int
 	UpperMaxOutput   int
 	MaxThinking      int
@@ -31,6 +32,7 @@ var aliases = map[string]string{
 var registry = map[string]ModelInfo{
 	"claude-opus-4-6-20250610": {
 		ID:               "claude-opus-4-6-20250610",
+		ContextWindow:    200_000,
 		DefaultMaxOutput: 64000,
 		UpperMaxOutput:   128000,
 		MaxThinking:      127999,
@@ -45,6 +47,7 @@ var registry = map[string]ModelInfo{
 	},
 	"claude-sonnet-4-6-20250514": {
 		ID:               "claude-sonnet-4-6-20250514",
+		ContextWindow:    200_000,
 		DefaultMaxOutput: 32000,
 		UpperMaxOutput:   128000,
 		MaxThinking:      127999,
@@ -59,6 +62,7 @@ var registry = map[string]ModelInfo{
 	},
 	"claude-opus-4-5-20250220": {
 		ID:               "claude-opus-4-5-20250220",
+		ContextWindow:    200_000,
 		DefaultMaxOutput: 32000,
 		UpperMaxOutput:   64000,
 		MaxThinking:      63999,
@@ -73,6 +77,7 @@ var registry = map[string]ModelInfo{
 	},
 	"claude-sonnet-4-20250514": {
 		ID:               "claude-sonnet-4-20250514",
+		ContextWindow:    200_000,
 		DefaultMaxOutput: 32000,
 		UpperMaxOutput:   64000,
 		MaxThinking:      63999,
@@ -87,6 +92,7 @@ var registry = map[string]ModelInfo{
 	},
 	"claude-haiku-4-5-20251001": {
 		ID:               "claude-haiku-4-5-20251001",
+		ContextWindow:    200_000,
 		DefaultMaxOutput: 32000,
 		UpperMaxOutput:   64000,
 		MaxThinking:      63999,

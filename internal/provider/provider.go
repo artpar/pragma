@@ -14,6 +14,10 @@ type Provider interface {
 	Complete(ctx context.Context, params RequestParams) (model.Response, error)
 	SupportsFeature(feature Feature) bool
 	Pricing(modelID string) (model.Pricing, bool)
+	// ContextWindow returns the context window size in tokens for the given model.
+	// Must parse model variant suffixes like [1m] (GitHub issue #41984, #39467).
+	// Returns (0, false) if the model is unknown.
+	ContextWindow(modelID string) (int, bool)
 }
 
 // Feature flags that providers may or may not support.

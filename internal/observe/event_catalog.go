@@ -360,6 +360,18 @@ type PermissionDenialEnforced struct {
 
 func (PermissionDenialEnforced) eventSealed() {}
 
+// --- Slash Command Events ---
+
+type SlashCommandExecuted struct {
+	EventHeader
+	CommandName string `json:"command_name"`
+	Args        string `json:"args,omitempty"`
+	DurationMs  int64  `json:"duration_ms"`
+	Success     bool   `json:"success"`
+}
+
+func (SlashCommandExecuted) eventSealed() {}
+
 // --- System Prompt Events ---
 
 type AgentMDLoaded struct {

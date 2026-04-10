@@ -193,6 +193,13 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	// Slash command events
+	case "SlashCommandExecuted":
+		var e SlashCommandExecuted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	// MCP events
 	case "MCPServerConnecting":
 		var e MCPServerConnecting

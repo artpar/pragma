@@ -2,6 +2,7 @@ package query
 
 import (
 	"github.com/artpar/gogent/internal/app"
+	"github.com/artpar/gogent/internal/compact"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
@@ -31,6 +32,20 @@ type Engine struct {
 	costTracker  *model.CostTracker
 	bus          *observe.EventBus
 	config       EngineConfig
+
+	// Compaction — nil means auto-compaction disabled.
+	// Subagent engines pass nil (#27794: only root engine auto-compacts).
+	compactor    *compact.Service
+	autoTracker  *compact.AutoTracker
+	windowConfig compact.WindowConfig
+}
+
+// CompactionDeps holds optional compaction dependencies.
+// Pass nil/zero values to disable auto-compaction (e.g., for subagent engines).
+type CompactionDeps struct {
+	Compactor    *compact.Service
+	AutoTracker  *compact.AutoTracker
+	WindowConfig compact.WindowConfig
 }
 
 // NewEngine creates an Engine with all dependencies injected.
@@ -42,8 +57,9 @@ func NewEngine(
 	ct *model.CostTracker,
 	bus *observe.EventBus,
 	cfg EngineConfig,
+	compDeps ...CompactionDeps,
 ) *Engine {
-	return &Engine{
+	e := &Engine{
 		provider:     prov,
 		registry:     reg,
 		orchestrator: orch,
@@ -52,4 +68,18 @@ func NewEngine(
 		bus:          bus,
 		config:       cfg,
 	}
+	if len(compDeps) > 0 {
+		e.compactor = compDeps[0].Compactor
+		e.autoTracker = compDeps[0].AutoTracker
+		e.windowConfig = compDeps[0].WindowConfig
+	}
+	return e
+}
+
+// SetCompaction configures auto-compaction after engine creation.
+// Useful when the engine is created before compaction deps are ready.
+func (e *Engine) SetCompaction(deps CompactionDeps) {
+	e.compactor = deps.Compactor
+	e.autoTracker = deps.AutoTracker
+	e.windowConfig = deps.WindowConfig
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/gogent/internal/app"
+	"github.com/artpar/gogent/internal/compact"
 	"github.com/artpar/gogent/internal/config"
 	"github.com/artpar/gogent/internal/mcp"
 	"github.com/artpar/gogent/internal/model"
@@ -21,6 +22,7 @@ import (
 	groqprov "github.com/artpar/gogent/internal/provider/groq"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/session"
+	"github.com/artpar/gogent/internal/slash"
 	"github.com/artpar/gogent/internal/sysprompt"
 	"github.com/artpar/gogent/internal/task"
 	"github.com/artpar/gogent/internal/tool"
@@ -356,6 +358,33 @@ func baseTools(d *deps) []tool.Descriptor {
 	}
 }
 
+// buildCompactionDeps creates compaction dependencies from the deps struct.
+func buildCompactionDeps(d *deps) (query.CompactionDeps, *compact.Service) {
+	secondaryModel := secondaryModelFor(d.cfg.Provider)
+	compactor := compact.NewService(d.prov, d.bus, d.costTracker, secondaryModel)
+
+	disableAutoCompact := os.Getenv("DISABLE_AUTO_COMPACT") == "1" || os.Getenv("DISABLE_AUTO_COMPACT") == "true"
+	autoTracker := compact.NewAutoTracker(disableAutoCompact)
+
+	ctxWindow := 200_000 // conservative default
+	if cw, ok := d.prov.ContextWindow(d.cfg.Model); ok {
+		ctxWindow = cw
+	}
+
+	snap := d.store.Snapshot()
+	sysTokEst := compact.EstimateSystemPromptTokens(snap.Conversation.System)
+
+	return query.CompactionDeps{
+		Compactor:   compactor,
+		AutoTracker: autoTracker,
+		WindowConfig: compact.WindowConfig{
+			ContextWindow:   ctxWindow,
+			MaxOutput:       d.cfg.MaxTokens,
+			SystemPromptEst: sysTokEst,
+		},
+	}, compactor
+}
+
 // runInteractive launches the bubbletea TUI for multi-turn conversation.
 func runInteractive(cmd *cobra.Command) error {
 	d, err := setupDeps(cmd)
@@ -372,13 +401,31 @@ func runInteractive(cmd *cobra.Command) error {
 		return err
 	}
 
+	compDeps, compactor := buildCompactionDeps(d)
+	engine.SetCompaction(compDeps)
+
+	sessionSaveFn := func() { saveSession(d.store, d.costTracker, d.cfg.SystemPrompt, d.cwd) }
+
+	slashCmds := slash.NewRegistry()
+	slashDeps := slash.Deps{
+		Store:       d.store,
+		CostTracker: d.costTracker,
+		Compactor:   compactor,
+		Bus:         d.bus,
+		SessionSave: sessionSaveFn,
+		ModelName:   d.cfg.Model,
+		Provider:    d.cfg.Provider,
+	}
+
 	m := tui.New(tui.Config{
 		Engine:      engine,
 		Store:       d.store,
 		CostTracker: d.costTracker,
 		ModelName:   d.cfg.Model,
 		Provider:    d.cfg.Provider,
-		SessionSave: func() { saveSession(d.store, d.costTracker, d.cfg.SystemPrompt, d.cwd) },
+		SessionSave: sessionSaveFn,
+		SlashCmds:   slashCmds,
+		SlashDeps:   slashDeps,
 	})
 
 	program := tea.NewProgram(m, tea.WithAltScreen())
@@ -407,6 +454,9 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	compDeps, _ := buildCompactionDeps(d)
+	engine.SetCompaction(compDeps)
+
 	prompt, _ := cmd.Flags().GetString("prompt")
 	resumeID, _ := cmd.Flags().GetString("resume")
 	if resumeID != "" && prompt == "" {
@@ -431,6 +481,10 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		case query.ToolResultEvent:
 			if d.cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
+			}
+		case query.CompactionEvent:
+			if d.cfg.Verbose {
+				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
 			}
 		case query.TurnCompleteEvent:
 			fmt.Println()
