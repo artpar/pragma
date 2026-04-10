@@ -133,6 +133,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 							ErrorType:    "circuit_breaker_tripped",
 							ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
 						})
+						ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
 					}
 				} else {
 					e.autoTracker.RecordSuccess()

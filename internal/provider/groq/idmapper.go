@@ -39,14 +39,12 @@ func (m *IDMapper) RegisterPair(internalID, wireID string) {
 }
 
 // ToWire returns the wire ID for an internal UUID.
-// If no mapping exists, generates a synthetic wire ID.
+// Returns "" if the internal ID is not registered.
+// Callers must handle the empty case (e.g., generate and register a synthetic ID).
 func (m *IDMapper) ToWire(internalID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if wireID, ok := m.internalToWire[internalID]; ok {
-		return wireID
-	}
-	return syntheticWireID(internalID)
+	return m.internalToWire[internalID]
 }
 
 // ToInternal returns the internal UUID for a wire ID.

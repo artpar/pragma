@@ -148,6 +148,11 @@ func unmarshalFromEnvelope(typ ContentType, data json.RawMessage) (ContentPart, 
 		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("unmarshal tool call part: %w", err)
 		}
+		// Normalize nil Input to empty object — prevents inconsistent state
+		// where some ToolCallParts have nil and others have "{}".
+		if p.Input == nil {
+			p.Input = json.RawMessage("{}")
+		}
 		return p, nil
 	case ContentToolResult:
 		var p ToolResultPart

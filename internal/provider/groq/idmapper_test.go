@@ -14,14 +14,11 @@ func TestIDMapper_RegisterAndLookup(t *testing.T) {
 	}
 }
 
-func TestIDMapper_SyntheticFallback(t *testing.T) {
+func TestIDMapper_UnmappedReturnsEmpty(t *testing.T) {
 	m := NewIDMapper()
 	wireID := m.ToWire("550e8400-e29b-41d4-a716-446655440000")
-	if wireID[:5] != "call_" {
-		t.Errorf("synthetic wire ID should start with call_, got %q", wireID)
-	}
-	if len(wireID) != 29 { // "call_" + 24 chars
-		t.Errorf("synthetic wire ID length %d, want 29", len(wireID))
+	if wireID != "" {
+		t.Errorf("ToWire for unmapped ID should return empty, got %q", wireID)
 	}
 }
 

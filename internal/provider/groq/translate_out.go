@@ -128,6 +128,10 @@ func assistantToWire(m model.Message, mapper *IDMapper) wireMessage {
 			textParts = append(textParts, part.Text)
 		case model.ToolCallPart:
 			wireID := mapper.ToWire(part.ID)
+			if wireID == "" {
+				wireID = syntheticWireID(part.ID)
+				mapper.RegisterPair(part.ID, wireID)
+			}
 			args := string(part.Input)
 			if args == "" || args == "null" {
 				args = "{}"
@@ -173,6 +177,10 @@ func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string
 		switch part := p.(type) {
 		case model.ToolResultPart:
 			wireID := mapper.ToWire(part.ToolCallID)
+			if wireID == "" {
+				wireID = syntheticWireID(part.ToolCallID)
+				mapper.RegisterPair(part.ToolCallID, wireID)
+			}
 			toolResults = append(toolResults, wireMessage{
 				Role:       "tool",
 				ToolCallID: wireID,

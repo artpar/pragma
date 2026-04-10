@@ -286,7 +286,7 @@ func TestBuildEnv_NoConfig(t *testing.T) {
 
 func TestToolCallTimeout(t *testing.T) {
 	// Default should be 60s
-	timeout := toolCallTimeout()
+	timeout := toolCallTimeout(nil)
 	if timeout != defaultToolCallTimeout {
 		t.Errorf("default timeout = %v, want %v", timeout, defaultToolCallTimeout)
 	}

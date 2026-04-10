@@ -29,7 +29,16 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 		scope string
 	}
 
-	globalPath, _ := config.GlobalAgentMDPath()
+	globalPath, globalErr := config.GlobalAgentMDPath()
+	if globalErr != nil && bus != nil {
+		bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+			Severity:     "warning",
+			Component:    "sysprompt",
+			ErrorType:    "home_dir_resolution",
+			ErrorMessage: fmt.Sprintf("cannot resolve global AGENT.md path: %v", globalErr),
+		})
+	}
 	candidates := []candidate{
 		{globalPath, "global"},
 		{config.ProjectAgentMDPath(workDir), "project"},
@@ -53,7 +62,16 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 				}
 				continue
 			}
-			// Non-existence errors: skip silently (permission denied, etc.)
+			// Permission denied or other I/O errors: warn and skip
+			if bus != nil {
+				bus.Emit(observe.ErrorOccurred{
+					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+					Severity:     "warning",
+					Component:    "sysprompt",
+					ErrorType:    "agent_md_read_error",
+					ErrorMessage: fmt.Sprintf("cannot read %s (%s): %v", c.path, c.scope, err),
+				})
+			}
 			continue
 		}
 

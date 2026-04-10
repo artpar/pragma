@@ -235,6 +235,7 @@ func (c *Client) listToolsLocked(ctx context.Context) ([]ToolInfo, error) {
 
 	result, err := c.mcpCli.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
+		c.tools = nil // defense in depth: ensure stale cache is cleared on failure
 		return nil, fmt.Errorf("list tools from %q: %w", c.name, err)
 	}
 
@@ -292,7 +293,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 	start := time.Now()
 
 	// Apply tool call timeout
-	timeout := toolCallTimeout()
+	timeout := toolCallTimeout(c.bus)
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -399,7 +400,8 @@ func (c *Client) Reconnect(ctx context.Context) error {
 }
 
 // toolCallTimeout returns the tool call timeout from MCP_TIMEOUT env or default.
-func toolCallTimeout() time.Duration {
+// Emits a warning via bus if MCP_TIMEOUT is set but unparseable (GitHub #7575, #16837).
+func toolCallTimeout(bus *observe.EventBus) time.Duration {
 	if v := os.Getenv("MCP_TIMEOUT"); v != "" {
 		if ms, err := time.ParseDuration(v); err == nil {
 			return ms
@@ -408,6 +410,16 @@ func toolCallTimeout() time.Duration {
 		var ms int64
 		if _, err := fmt.Sscanf(v, "%d", &ms); err == nil && ms > 0 {
 			return time.Duration(ms) * time.Millisecond
+		}
+		// Both parse attempts failed — warn the user
+		if bus != nil {
+			bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warning",
+				Component:    "mcp/client",
+				ErrorType:    "invalid_timeout",
+				ErrorMessage: fmt.Sprintf("MCP_TIMEOUT=%q is not a valid duration or millisecond value; using default %s", v, defaultToolCallTimeout),
+			})
 		}
 	}
 	return defaultToolCallTimeout

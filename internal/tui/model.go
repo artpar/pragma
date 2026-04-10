@@ -16,6 +16,7 @@ import (
 
 // Config holds all dependencies for the TUI model.
 type Config struct {
+	ParentCtx   context.Context // parent context for cancellation propagation (e.g., cmd.Context())
 	Engine      *query.Engine
 	Store       *app.StateStore
 	CostTracker *model.CostTracker
@@ -60,7 +61,11 @@ type Model struct {
 
 // New creates a new TUI model with all dependencies.
 func New(cfg Config) Model {
-	ctx, cancel := context.WithCancel(context.Background())
+	parentCtx := cfg.ParentCtx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
 
 	return Model{
 		engine:      cfg.Engine,

@@ -128,6 +128,15 @@ func (p *Provider) consumeSSE(
 		if data == "[DONE]" {
 			// If we have a saved finish_reason but never got usage, emit Done anyway
 			if !state.doneSent && state.finishReason != nil {
+				if bus != nil {
+					bus.Emit(observe.ErrorOccurred{
+						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
+						Severity:     "warning",
+						Component:    "groq/stream",
+						ErrorType:    "missing_usage",
+						ErrorMessage: "stream ended without usage data; cost tracking will report $0",
+					})
+				}
 				ch <- provider.StreamChunk{
 					Done: &provider.StreamDone{
 						StopReason: stopReasonFromWire(*state.finishReason),
@@ -189,6 +198,15 @@ func (p *Provider) consumeSSE(
 
 	// If we have a finish_reason but never got usage, emit Done with what we have
 	if !state.doneSent && state.finishReason != nil {
+		if bus != nil {
+			bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
+				Severity:     "warning",
+				Component:    "groq/stream",
+				ErrorType:    "missing_usage",
+				ErrorMessage: "stream ended without usage data; cost tracking will report $0",
+			})
+		}
 		ch <- provider.StreamChunk{
 			Done: &provider.StreamDone{
 				StopReason: stopReasonFromWire(*state.finishReason),

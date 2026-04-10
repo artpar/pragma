@@ -222,7 +222,7 @@ func TestNormalizeArguments(t *testing.T) {
 		{"invalid json", "{}"},
 	}
 	for _, tt := range tests {
-		got := normalizeArguments(tt.input)
+		got := normalizeArguments(tt.input, nil)
 		if got != tt.want {
 			t.Errorf("normalizeArguments(%q)=%q, want %q", tt.input, got, tt.want)
 		}

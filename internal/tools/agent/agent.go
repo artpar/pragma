@@ -99,8 +99,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		tt.Status = task.TaskRunning
 	})
 
-	// Create sub-engine
-	engine, _ := t.EngineFactory(forkedConv, scopedTools, in.Model)
+	// Create sub-engine (capture sub-store for future state sync; TS reference
+	// uses createSubagentContext() with opt-in state sharing — GitHub #9458, #7091)
+	engine, subStore := t.EngineFactory(forkedConv, scopedTools, in.Model)
+	_ = subStore // retained to prevent GC; will be used for state sync in future phases
 
 	// Run sub-engine synchronously
 	events := engine.Run(ctx, in.Prompt)

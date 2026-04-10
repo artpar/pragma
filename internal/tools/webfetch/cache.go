@@ -67,6 +67,12 @@ func (c *urlCache) Set(url, content string) {
 		}
 	}
 
+	// Reject entries larger than the entire cache — prevents evicting everything
+	// then permanently exceeding the limit (GitHub #32701).
+	if entrySize > c.maxSize {
+		return
+	}
+
 	// If still over limit, evict oldest entries
 	for c.size+entrySize > c.maxSize && len(c.entries) > 0 {
 		var oldestKey string

@@ -56,9 +56,15 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
 	var in struct {
 		Pattern string `json:"pattern"`
+		Path    string `json:"path,omitempty"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil || in.Pattern == "" {
 		return checker.Check(ctx, "Glob", "")
+	}
+	// If an explicit absolute path is given, check permission against that path
+	// so the permission system can enforce directory restrictions.
+	if in.Path != "" && filepath.IsAbs(in.Path) {
+		return checker.Check(ctx, "Glob", in.Path)
 	}
 	return checker.Check(ctx, "Glob", in.Pattern)
 }

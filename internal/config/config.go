@@ -158,11 +158,29 @@ func merge(base, overlay Config) Config {
 	if overlay.Record {
 		result.Record = true
 	}
-	// Permissions concatenate (not override) — accumulate from all scopes
-	result.Permissions = append(result.Permissions, overlay.Permissions...)
+	// Permissions concatenate (not override) — accumulate from all scopes, deduplicated.
+	// GitHub #6991, #6874: identical rules from multiple scopes cause duplicate checks.
+	result.Permissions = deduplicatePermissions(append(result.Permissions, overlay.Permissions...))
 	if overlay.PermissionMode != "" {
 		result.PermissionMode = overlay.PermissionMode
 	}
 
+	return result
+}
+
+// deduplicatePermissions removes duplicate permission entries by (Behavior, Rule) tuple.
+// First occurrence wins (preserves priority order from global → project → local).
+func deduplicatePermissions(perms []RawPermission) []RawPermission {
+	type key struct{ behavior, rule string }
+	seen := make(map[key]bool, len(perms))
+	result := make([]RawPermission, 0, len(perms))
+	for _, p := range perms {
+		k := key{p.Behavior, p.Rule}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		result = append(result, p)
+	}
 	return result
 }

@@ -195,7 +195,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			fmt.Fprintf(os.Stderr, "warning: mcp server %q: %v\n", name, err)
 		}
 
-		if err := mcpManager.RegisterTools(context.Background()); err != nil {
+		if err := mcpManager.RegisterTools(cmd.Context()); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: register mcp tools: %v\n", err)
 		}
 	}

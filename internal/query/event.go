@@ -53,6 +53,14 @@ type CompactionEvent struct {
 
 func (CompactionEvent) loopEventSealed() {}
 
+// CompactionDisabledEvent signals that auto-compaction circuit breaker tripped.
+// The TUI should display a warning — tokens will grow unboundedly (GitHub #24677, #9579).
+type CompactionDisabledEvent struct {
+	ConsecutiveFailures int
+}
+
+func (CompactionDisabledEvent) loopEventSealed() {}
+
 // ErrorEvent signals an error that terminated the loop.
 type ErrorEvent struct {
 	Err error

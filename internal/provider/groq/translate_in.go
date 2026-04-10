@@ -2,6 +2,7 @@ package groq
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
@@ -37,7 +38,7 @@ func responseFromWire(resp *wireResponse, mapper *IDMapper, bus *observe.EventBu
 		internalID := model.NewUUID()
 		mapper.RegisterPair(internalID, tc.ID)
 
-		args := normalizeArguments(tc.Function.Arguments)
+		args := normalizeArguments(tc.Function.Arguments, bus)
 		parts = append(parts, model.ToolCallPart{
 			ID:    internalID,
 			Name:  tc.Function.Name,
@@ -84,11 +85,21 @@ func usageFromWire(u wireUsage) model.TokenUsage {
 
 // normalizeArguments ensures tool call arguments are valid JSON.
 // Empty string or whitespace-only becomes "{}".
-func normalizeArguments(args string) string {
+// Invalid JSON is replaced with "{}" and a warning is emitted.
+func normalizeArguments(args string, bus *observe.EventBus) string {
 	if args == "" || args == "null" {
 		return "{}"
 	}
 	if !json.Valid([]byte(args)) {
+		if bus != nil {
+			bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warning",
+				Component:    "groq/translate_in",
+				ErrorType:    "malformed_tool_arguments",
+				ErrorMessage: fmt.Sprintf("tool call arguments are not valid JSON (%d bytes), replaced with {}", len(args)),
+			})
+		}
 		return "{}"
 	}
 	return args

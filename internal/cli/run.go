@@ -67,6 +67,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	}
 
 	m := tui.New(tui.Config{
+		ParentCtx:   cmd.Context(),
 		Engine:      engine,
 		Store:       d.Store,
 		CostTracker: d.CostTracker,
