@@ -27,8 +27,6 @@ const (
 	maxMarkdownChars = 100_000           // truncate markdown to this
 	cacheMaxSize     = 50 * 1024 * 1024  // 50 MB
 	cacheTTL         = 15 * time.Minute
-	// Use a fast, cheap model for summarization (not the parent's model)
-	secondaryModel = "claude-haiku-4-5-20251001"
 )
 
 type WebFetchInput struct {
@@ -62,10 +60,11 @@ type fetchResult struct {
 
 // Tool implements the WebFetch tool for fetching and processing web content.
 type Tool struct {
-	Provider  provider.Provider
-	Bus       *observe.EventBus
-	cache     *urlCache
-	cacheOnce sync.Once
+	Provider       provider.Provider
+	Bus            *observe.EventBus
+	SecondaryModel string // model for summarization; provider-specific
+	cache          *urlCache
+	cacheOnce      sync.Once
 }
 
 func (t *Tool) Name() string                { return "WebFetch" }
@@ -235,7 +234,7 @@ func (t *Tool) summarize(ctx context.Context, content, userPrompt string) (strin
 	}
 
 	resp, err := t.Provider.Complete(ctx, provider.RequestParams{
-		Model:     secondaryModel,
+		Model:     t.SecondaryModel,
 		MaxTokens: 4096,
 		Messages:  messages,
 		System: model.SystemPrompt{

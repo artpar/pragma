@@ -85,7 +85,7 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
-	wireReq := buildWireRequest(params, mapper, false)
+	wireReq := buildWireRequest(params, mapper, false, p.bus)
 
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
@@ -152,7 +152,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
-	wireReq := buildWireRequest(params, mapper, true)
+	wireReq := buildWireRequest(params, mapper, true, p.bus)
 
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
@@ -208,7 +208,10 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 }
 
 // withRetry executes fn with exponential backoff retry for retryable errors.
+// Gives up after 3 consecutive 529 (overloaded) responses to avoid hammering
+// a service that is under pressure.
 func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func(attempt int) error) error {
+	var consecutiveOverloaded int
 	for attempt := range p.maxRetries + 1 {
 		err := fn(attempt)
 		if err == nil {
@@ -216,6 +219,16 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 		}
 
 		classified := classifyError(err)
+
+		// Track consecutive overloaded responses — give up after 3
+		if classified.errorType == "overloaded" {
+			consecutiveOverloaded++
+			if consecutiveOverloaded >= 3 {
+				classified.retryable = false
+			}
+		} else {
+			consecutiveOverloaded = 0
+		}
 
 		if !classified.retryable || attempt >= p.maxRetries {
 			// Emit final failure event with correct error type (before wrapping loses it)

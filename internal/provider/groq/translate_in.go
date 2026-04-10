@@ -55,6 +55,8 @@ func responseFromWire(resp *wireResponse, mapper *IDMapper, bus *observe.EventBu
 }
 
 // stopReasonFromWire maps Groq finish_reason to internal StopReason.
+// Note: OpenAI-compatible APIs have no "pause_turn" concept (that's Anthropic-specific).
+// "length" maps to StopMaxTokens — the agentic loop treats this as terminal.
 func stopReasonFromWire(fr string) model.StopReason {
 	switch fr {
 	case "stop":

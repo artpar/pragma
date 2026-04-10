@@ -135,6 +135,34 @@ func TestPackageDependencyDAG(t *testing.T) {
 			"internal/session",
 			"internal/sysprompt",
 		},
+		"internal/query/": {
+			"internal/tui",
+			"internal/cli",
+			"internal/session",
+			"internal/sysprompt",
+			"internal/mcp",
+			"internal/permission",
+		},
+		"internal/task/": {
+			"internal/model",
+			"internal/provider",
+			"internal/tool",
+			"internal/app",
+			"internal/tui",
+			"internal/cli",
+			"internal/query",
+			"internal/session",
+		},
+		"internal/config/": {
+			"internal/model",
+			"internal/provider",
+			"internal/observe",
+			"internal/tool",
+			"internal/app",
+			"internal/tui",
+			"internal/cli",
+			"internal/query",
+		},
 	}
 
 	internalDir := filepath.Join(root, "internal")

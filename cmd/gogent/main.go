@@ -252,7 +252,7 @@ func setupDeps(cmd *cobra.Command) (*deps, error) {
 
 	// Connect MCP servers and register their tools
 	if len(mcpServers) > 0 {
-		connectCtx, connectCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		connectCtx, connectCancel := context.WithTimeout(cmd.Context(), 60*time.Second)
 		connectErrs := mcpManager.ConnectAll(connectCtx, mcpServers)
 		connectCancel()
 
@@ -265,16 +265,14 @@ func setupDeps(cmd *cobra.Command) (*deps, error) {
 		}
 	}
 
-	// Compose cleanup: MCP + recorder
-	var compositeCleanup func()
-	if cleanupFn != nil {
-		compositeCleanup = func() {
-			mcpManager.DisconnectAll()
+	// Compose cleanup: MCP disconnect → bus drain → recorder close.
+	// Order matters: MCP disconnect may emit final events, drain flushes
+	// them to subscribers (including recorder), then recorder closes its file.
+	compositeCleanup := func() {
+		mcpManager.DisconnectAll()
+		bus.Drain()
+		if cleanupFn != nil {
 			cleanupFn()
-		}
-	} else {
-		compositeCleanup = func() {
-			mcpManager.DisconnectAll()
 		}
 	}
 
@@ -349,7 +347,7 @@ func baseTools(d *deps) []tool.Descriptor {
 		&toolfileedit.Tool{},
 		&toolbash.Tool{},
 		&toolnotebookedit.Tool{},
-		&toolwebfetch.Tool{Provider: d.prov, Bus: d.bus},
+		&toolwebfetch.Tool{Provider: d.prov, Bus: d.bus, SecondaryModel: secondaryModelFor(d.cfg.Provider)},
 		&tooltaskcreate.Tool{Tasks: d.taskReg},
 		&tooltaskget.Tool{Tasks: d.taskReg},
 		&tooltasklist.Tool{Tasks: d.taskReg},
@@ -387,11 +385,9 @@ func runInteractive(cmd *cobra.Command) error {
 	prompter.SetProgram(program)
 
 	if _, err := program.Run(); err != nil {
-		d.bus.Drain()
 		return err
 	}
 
-	d.bus.Drain()
 	return nil
 }
 
@@ -439,7 +435,7 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		case query.TurnCompleteEvent:
 			fmt.Println()
 		case query.ErrorEvent:
-			d.bus.Drain()
+			saveSession(d.store, d.costTracker, d.cfg.SystemPrompt, d.cwd)
 			return e.Err
 		}
 	}
@@ -449,7 +445,6 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 	if d.cfg.Verbose {
 		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", d.costTracker.TotalUSD())
 	}
-	d.bus.Drain()
 	return nil
 }
 
@@ -556,6 +551,16 @@ func applyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	}
 	if cmd.Flags().Changed("record") {
 		cfg.Record, _ = cmd.Flags().GetBool("record")
+	}
+}
+
+// secondaryModelFor returns the fast/cheap model for summarization tasks (e.g., WebFetch).
+func secondaryModelFor(providerName string) string {
+	switch providerName {
+	case "groq":
+		return "llama-3.3-70b-versatile"
+	default:
+		return "claude-haiku-4-5-20251001"
 	}
 }
 

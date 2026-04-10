@@ -16,6 +16,7 @@ import (
 // Sentinel errors for Groq API error categories.
 var (
 	ErrRateLimit       = errors.New("groq: rate limit exceeded")
+	ErrOverloaded      = errors.New("groq: service overloaded")
 	ErrServerError     = errors.New("groq: server error")
 	ErrAuthentication  = errors.New("groq: authentication failed")
 	ErrInvalidRequest  = errors.New("groq: invalid request")
@@ -113,6 +114,13 @@ func classifyHTTPError(statusCode int, body []byte, resp *http.Response) classif
 			wrapped:    fmt.Errorf("%w: %s", ErrRateLimit, errMsg),
 			retryable:  true,
 			errorType:  "rate_limit",
+			retryAfter: retryAfter,
+		}
+	case 529: // overloaded
+		return classifiedError{
+			wrapped:    fmt.Errorf("%w: %s", ErrOverloaded, errMsg),
+			retryable:  true,
+			errorType:  "overloaded",
 			retryAfter: retryAfter,
 		}
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:

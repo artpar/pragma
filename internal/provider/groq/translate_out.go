@@ -6,18 +6,19 @@ import (
 	"strings"
 
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
 )
 
 // buildWireRequest converts internal RequestParams to a Groq wire request.
-func buildWireRequest(params provider.RequestParams, mapper *IDMapper, stream bool) wireRequest {
+func buildWireRequest(params provider.RequestParams, mapper *IDMapper, stream bool, bus *observe.EventBus) wireRequest {
 	normalized := normalizeMessages(params.Messages)
 
 	modelInfo, _ := LookupModel(params.Model)
 
 	req := wireRequest{
 		Model:    params.Model,
-		Messages: messagesToWire(params.System, normalized, mapper),
+		Messages: messagesToWire(params.System, normalized, mapper, bus),
 		Stream:   stream,
 	}
 
@@ -65,7 +66,7 @@ func buildWireRequest(params provider.RequestParams, mapper *IDMapper, stream bo
 }
 
 // messagesToWire converts system prompt + internal messages to Groq wire messages.
-func messagesToWire(system model.SystemPrompt, msgs []model.Message, mapper *IDMapper) []wireMessage {
+func messagesToWire(system model.SystemPrompt, msgs []model.Message, mapper *IDMapper, bus *observe.EventBus) []wireMessage {
 	var out []wireMessage
 
 	// System prompt as first message
@@ -90,7 +91,7 @@ func messagesToWire(system model.SystemPrompt, msgs []model.Message, mapper *IDM
 		case model.RoleAssistant:
 			out = append(out, assistantToWire(m, mapper))
 		case model.RoleUser:
-			out = append(out, userToWire(m, mapper, toolNameMap)...)
+			out = append(out, userToWire(m, mapper, toolNameMap, bus)...)
 		}
 	}
 
@@ -163,7 +164,7 @@ func assistantToWire(m model.Message, mapper *IDMapper) wireMessage {
 
 // userToWire converts a user message to one or more wire messages.
 // Tool results become separate role:"tool" messages.
-func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string) []wireMessage {
+func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string, bus *observe.EventBus) []wireMessage {
 	var toolResults []wireMessage
 	var contentParts []wireContentPart
 	hasMultipart := false
@@ -188,6 +189,15 @@ func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string
 				ImageURL: &wireImageURL{URL: dataURI},
 			})
 		case model.DocumentPart:
+			if bus != nil {
+				bus.Emit(observe.ErrorOccurred{
+					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+					Severity:     "warning",
+					Component:    "groq/translate_out",
+					ErrorType:    "unsupported_content",
+					ErrorMessage: fmt.Sprintf("DocumentPart (%s) not supported by Groq, degraded to text placeholder", part.MimeType),
+				})
+			}
 			contentParts = append(contentParts, wireContentPart{
 				Type: "text",
 				Text: fmt.Sprintf("[Document: %s, not supported by this provider]", part.MimeType),

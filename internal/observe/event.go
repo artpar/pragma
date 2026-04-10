@@ -49,14 +49,18 @@ func NewEventHeader(kind, traceID, spanID, parentSpanID string) EventHeader {
 // NewSpanID generates a random span ID.
 func NewSpanID() string {
 	var b [8]byte
-	_, _ = rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	return fmt.Sprintf("%x", b[:])
 }
 
 // NewTraceID generates a random trace ID.
 func NewTraceID() string {
 	var b [16]byte
-	_, _ = rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	return fmt.Sprintf("%x", b[:])
 }
 

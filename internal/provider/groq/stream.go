@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -143,7 +144,15 @@ func (p *Provider) consumeSSE(
 
 		var chunk wireStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			// Skip malformed chunks
+			if bus != nil {
+				bus.Emit(observe.ErrorOccurred{
+					EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
+					Severity:     "warning",
+					Component:    "groq/stream",
+					ErrorType:    "malformed_chunk",
+					ErrorMessage: fmt.Sprintf("skipping malformed stream chunk: %v", err),
+				})
+			}
 			continue
 		}
 

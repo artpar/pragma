@@ -20,7 +20,7 @@ func TestBuildWireRequest_Basic(t *testing.T) {
 		},
 	}
 	mapper := NewIDMapper()
-	req := buildWireRequest(params, mapper, false)
+	req := buildWireRequest(params, mapper, false, nil)
 
 	if req.Model != "llama-3.3-70b-versatile" {
 		t.Errorf("model=%q", req.Model)
@@ -47,7 +47,7 @@ func TestBuildWireRequest_Stream(t *testing.T) {
 		Messages:  []model.Message{{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "hi"}}}},
 	}
 	mapper := NewIDMapper()
-	req := buildWireRequest(params, mapper, true)
+	req := buildWireRequest(params, mapper, true, nil)
 
 	if !req.Stream {
 		t.Error("stream should be true")
@@ -64,7 +64,7 @@ func TestBuildWireRequest_MaxTokensCapped(t *testing.T) {
 		Messages:  []model.Message{{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "hi"}}}},
 	}
 	mapper := NewIDMapper()
-	req := buildWireRequest(params, mapper, false)
+	req := buildWireRequest(params, mapper, false, nil)
 
 	if req.MaxCompletionTokens != 32768 {
 		t.Errorf("max_completion_tokens=%d, want 32768 (capped)", req.MaxCompletionTokens)
@@ -81,7 +81,7 @@ func TestBuildWireRequest_WithTools(t *testing.T) {
 		},
 	}
 	mapper := NewIDMapper()
-	req := buildWireRequest(params, mapper, false)
+	req := buildWireRequest(params, mapper, false, nil)
 
 	if len(req.Tools) != 1 {
 		t.Fatalf("got %d tools, want 1", len(req.Tools))
@@ -109,7 +109,7 @@ func TestBuildWireRequest_Reasoning(t *testing.T) {
 		Thinking:  thinking,
 	}
 	mapper := NewIDMapper()
-	req := buildWireRequest(params, mapper, false)
+	req := buildWireRequest(params, mapper, false, nil)
 
 	if req.ReasoningFormat != "parsed" {
 		t.Errorf("reasoning_format=%q, want parsed", req.ReasoningFormat)
@@ -158,7 +158,7 @@ func TestUserToWire_ToolResults(t *testing.T) {
 		},
 	}
 	toolNameMap := map[string]string{"int-1": "bash"}
-	wires := userToWire(msg, mapper, toolNameMap)
+	wires := userToWire(msg, mapper, toolNameMap, nil)
 
 	// Should produce 2 wire messages: tool result + user text
 	if len(wires) != 2 {
@@ -191,7 +191,7 @@ func TestUserToWire_ImagePart(t *testing.T) {
 			model.ImagePart{MimeType: "image/png", Data: []byte{0x89, 0x50}},
 		},
 	}
-	wires := userToWire(msg, mapper, nil)
+	wires := userToWire(msg, mapper, nil, nil)
 	if len(wires) != 1 {
 		t.Fatalf("got %d messages, want 1", len(wires))
 	}
@@ -217,7 +217,7 @@ func TestUserToWire_SimpleText(t *testing.T) {
 		Role:    model.RoleUser,
 		Content: []model.ContentPart{model.TextPart{Text: "hello"}},
 	}
-	wires := userToWire(msg, mapper, nil)
+	wires := userToWire(msg, mapper, nil, nil)
 	if len(wires) != 1 {
 		t.Fatalf("got %d messages, want 1", len(wires))
 	}
