@@ -18,6 +18,12 @@ import (
 	"github.com/artpar/gogent/internal/provider/anthropic"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/tool"
+	toolbash "github.com/artpar/gogent/internal/tools/bash"
+	toolfileedit "github.com/artpar/gogent/internal/tools/fileedit"
+	toolfileread "github.com/artpar/gogent/internal/tools/fileread"
+	toolfilewrite "github.com/artpar/gogent/internal/tools/filewrite"
+	toolglob "github.com/artpar/gogent/internal/tools/glob"
+	toolgrep "github.com/artpar/gogent/internal/tools/grep"
 )
 
 func main() {
@@ -113,8 +119,20 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 	// 7. Create Provider
 	prov := createProvider(cfg, bus)
 
-	// 8. Create Registry (empty — no tools implemented yet)
+	// 8. Create Registry and register tools
 	registry := tool.NewRegistry(bus)
+	for _, t := range []tool.Descriptor{
+		&toolglob.Tool{},
+		&toolgrep.Tool{},
+		&toolfileread.Tool{},
+		&toolfilewrite.Tool{},
+		&toolfileedit.Tool{},
+		&toolbash.Tool{},
+	} {
+		if err := registry.Register(t); err != nil {
+			return fmt.Errorf("register tool %s: %w", t.Name(), err)
+		}
+	}
 
 	// 9. Create Orchestrator
 	checker := &allowAllChecker{}

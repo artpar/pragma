@@ -1,0 +1,164 @@
+package fileedit
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/artpar/gogent/internal/permission"
+	"github.com/artpar/gogent/internal/tool"
+)
+
+const maxEditFileSize = 1024 * 1024 * 1024 // 1 GiB
+
+// FileEditInput defines the parameters for the FileEdit tool.
+type FileEditInput struct {
+	FilePath   string `json:"file_path" desc:"The absolute path to the file to edit"`
+	OldString  string `json:"old_string" desc:"The exact string to find and replace"`
+	NewString  string `json:"new_string" desc:"The replacement string"`
+	ReplaceAll bool   `json:"replace_all,omitempty" desc:"If true, replace all occurrences. Default false."`
+}
+
+var inputSchema = json.RawMessage(`{
+	"type": "object",
+	"required": ["file_path", "old_string", "new_string"],
+	"properties": {
+		"file_path": {
+			"type": "string",
+			"description": "The absolute path to the file to edit"
+		},
+		"old_string": {
+			"type": "string",
+			"description": "The exact string to find and replace"
+		},
+		"new_string": {
+			"type": "string",
+			"description": "The replacement string"
+		},
+		"replace_all": {
+			"type": "boolean",
+			"description": "If true, replace all occurrences. Default false.",
+			"default": false
+		}
+	}
+}`)
+
+// Tool implements the FileEdit tool.
+type Tool struct{}
+
+func (t *Tool) Name() string                { return "Edit" }
+func (t *Tool) Description() string          { return "Perform exact string replacements in files." }
+func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Flags() tool.ToolFlags {
+	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
+}
+
+func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	return checker.Check(ctx, "Edit", input)
+}
+
+func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
+	var in FileEditInput
+	if err := json.Unmarshal(input, &in); err != nil {
+		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
+	}
+	if in.FilePath == "" {
+		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
+	}
+
+	filePath := in.FilePath
+	if !filepath.IsAbs(filePath) {
+		return tool.InvokeResult{}, fmt.Errorf("file_path must be absolute, got: %s", filePath)
+	}
+
+	// Reject no-op edits
+	if in.OldString == in.NewString {
+		return tool.InvokeResult{}, fmt.Errorf("no changes to make: old_string and new_string are exactly the same")
+	}
+
+	// Reject .ipynb files
+	if strings.HasSuffix(strings.ToLower(filePath), ".ipynb") {
+		return tool.InvokeResult{}, fmt.Errorf("file is a Jupyter Notebook. Use the NotebookEdit tool to edit this file")
+	}
+
+	// Read existing file
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			result, err := handleNonexistentFile(filePath, in)
+			if err != nil {
+				return tool.InvokeResult{}, err
+			}
+			return tool.InvokeResult{Content: result}, nil
+		}
+		return tool.InvokeResult{}, fmt.Errorf("read file: %w", err)
+	}
+
+	// Check file size
+	if len(data) > maxEditFileSize {
+		return tool.InvokeResult{}, fmt.Errorf("file is too large to edit (%d bytes). Maximum editable file size is 1 GiB", len(data))
+	}
+
+	content := string(data)
+	// Normalize CRLF
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	// Handle empty old_string on existing file
+	if in.OldString == "" {
+		if strings.TrimSpace(content) != "" {
+			return tool.InvokeResult{}, fmt.Errorf("cannot create new file - file already exists and is not empty")
+		}
+		// Empty file — write new content
+		if err := os.WriteFile(filePath, []byte(in.NewString), 0644); err != nil {
+			return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
+		}
+		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
+	}
+
+	// Find occurrences
+	count := strings.Count(content, in.OldString)
+
+	if count == 0 {
+		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.\nString: %s", in.OldString)
+	}
+
+	if count > 1 && !in.ReplaceAll {
+		return tool.InvokeResult{}, fmt.Errorf("found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, in.OldString)
+	}
+
+	// Perform replacement
+	var updated string
+	if in.ReplaceAll {
+		updated = strings.ReplaceAll(content, in.OldString, in.NewString)
+	} else {
+		updated = strings.Replace(content, in.OldString, in.NewString, 1)
+	}
+
+	// Write back
+	if err := os.WriteFile(filePath, []byte(updated), 0644); err != nil {
+		return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
+	}
+
+	if in.ReplaceAll && count > 1 {
+		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count)}, nil
+	}
+	return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
+}
+
+func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
+	if in.OldString == "" {
+		// Create new file with new_string content
+		dir := filepath.Dir(filePath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "", fmt.Errorf("create directory: %w", err)
+		}
+		if err := os.WriteFile(filePath, []byte(in.NewString), 0644); err != nil {
+			return "", fmt.Errorf("write file: %w", err)
+		}
+		return fmt.Sprintf("The file %s has been created successfully.", in.FilePath), nil
+	}
+	return "", fmt.Errorf("file does not exist: %s. Make sure the path is correct.", in.FilePath)
+}

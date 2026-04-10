@@ -11,6 +11,7 @@ type ContentType string
 const (
 	ContentText       ContentType = "text"
 	ContentImage      ContentType = "image"
+	ContentDocument   ContentType = "document"
 	ContentToolCall   ContentType = "tool_call"
 	ContentToolResult ContentType = "tool_result"
 	ContentThinking   ContentType = "thinking"
@@ -40,6 +41,17 @@ type ImagePart struct {
 
 func (ImagePart) contentPartSealed() {}
 func (ImagePart) PartType() ContentType { return ContentImage }
+
+// DocumentPart holds a document (e.g., PDF) as raw bytes.
+// Provider adapters encode to base64 and send as a document content block.
+// MimeType is "application/pdf" for PDFs.
+type DocumentPart struct {
+	MimeType string `json:"mime_type"`
+	Data     []byte `json:"data"`
+}
+
+func (DocumentPart) contentPartSealed() {}
+func (DocumentPart) PartType() ContentType { return ContentDocument }
 
 // ToolCallPart represents the LLM requesting a tool invocation.
 // ID is an internal UUID; provider adapters map to/from wire IDs.
@@ -123,6 +135,12 @@ func unmarshalFromEnvelope(typ ContentType, data json.RawMessage) (ContentPart, 
 		var p ImagePart
 		if err := json.Unmarshal(data, &p); err != nil {
 			return nil, fmt.Errorf("unmarshal image part: %w", err)
+		}
+		return p, nil
+	case ContentDocument:
+		var p DocumentPart
+		if err := json.Unmarshal(data, &p); err != nil {
+			return nil, fmt.Errorf("unmarshal document part: %w", err)
 		}
 		return p, nil
 	case ContentToolCall:

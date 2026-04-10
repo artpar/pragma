@@ -90,14 +90,14 @@ func (echoTool) Description() string { return "echoes input" }
 func (echoTool) InputSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}}}`)
 }
-func (echoTool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (string, error) {
+func (echoTool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
 	var args struct {
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(input, &args); err != nil {
-		return "", err
+		return tool.InvokeResult{}, err
 	}
-	return "echo: " + args.Text, nil
+	return tool.InvokeResult{Content: "echo: " + args.Text}, nil
 }
 func (echoTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	return checker.Check(context.Background(), "echo", nil)

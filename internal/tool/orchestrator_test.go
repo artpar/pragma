@@ -47,8 +47,8 @@ type failingTool struct {
 	echoTool
 }
 
-func (t *failingTool) Invoke(_ context.Context, _ json.RawMessage, _ StateSnapshot) (string, error) {
-	return "", errors.New("tool execution failed")
+func (t *failingTool) Invoke(_ context.Context, _ json.RawMessage, _ StateSnapshot) (InvokeResult, error) {
+	return InvokeResult{}, errors.New("tool execution failed")
 }
 
 // staticState satisfies StateSnapshot.
@@ -101,17 +101,17 @@ func TestOrchestratorSingleTool(t *testing.T) {
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
 
-	if len(results) != 1 {
-		t.Fatalf("results: got %d, want 1", len(results))
+	if len(results.Results) != 1 {
+		t.Fatalf("results: got %d, want 1", len(results.Results))
 	}
-	if results[0].ToolCallID != "tc-1" {
-		t.Errorf("ToolCallID: got %q", results[0].ToolCallID)
+	if results.Results[0].ToolCallID != "tc-1" {
+		t.Errorf("ToolCallID: got %q", results.Results[0].ToolCallID)
 	}
-	if results[0].IsError {
-		t.Errorf("unexpected error: %s", results[0].Content)
+	if results.Results[0].IsError {
+		t.Errorf("unexpected error: %s", results.Results[0].Content)
 	}
-	if results[0].Content != `{"command":"ls"}` {
-		t.Errorf("Content: got %q", results[0].Content)
+	if results.Results[0].Content != `{"command":"ls"}` {
+		t.Errorf("Content: got %q", results.Results[0].Content)
 	}
 }
 
@@ -135,8 +135,8 @@ func TestOrchestratorConcurrentTools(t *testing.T) {
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
 	elapsed := time.Since(start)
 
-	if len(results) != 3 {
-		t.Fatalf("results: got %d, want 3", len(results))
+	if len(results.Results) != 3 {
+		t.Fatalf("results: got %d, want 3", len(results.Results))
 	}
 
 	// If running concurrently, total time should be ~50ms, not ~150ms
@@ -151,13 +151,13 @@ type sleepingTool struct {
 	invoked atomic.Int32
 }
 
-func (t *sleepingTool) Invoke(ctx context.Context, input json.RawMessage, _ StateSnapshot) (string, error) {
+func (t *sleepingTool) Invoke(ctx context.Context, input json.RawMessage, _ StateSnapshot) (InvokeResult, error) {
 	t.invoked.Add(1)
 	select {
 	case <-time.After(t.delay):
-		return string(input), nil
+		return InvokeResult{Content: string(input)}, nil
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return InvokeResult{}, ctx.Err()
 	}
 }
 
@@ -179,8 +179,8 @@ func TestOrchestratorSerialTools(t *testing.T) {
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
 	elapsed := time.Since(start)
 
-	if len(results) != 2 {
-		t.Fatalf("results: got %d, want 2", len(results))
+	if len(results.Results) != 2 {
+		t.Fatalf("results: got %d, want 2", len(results.Results))
 	}
 
 	// Serial: should take >= 60ms
@@ -199,10 +199,10 @@ func TestOrchestratorToolNotFound(t *testing.T) {
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
 
-	if len(results) != 1 {
-		t.Fatalf("results: got %d, want 1", len(results))
+	if len(results.Results) != 1 {
+		t.Fatalf("results: got %d, want 1", len(results.Results))
 	}
-	if !results[0].IsError {
+	if !results.Results[0].IsError {
 		t.Error("expected error result for unknown tool")
 	}
 }
@@ -220,11 +220,11 @@ func TestOrchestratorPermissionDenied(t *testing.T) {
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
 
-	if !results[0].IsError {
+	if !results.Results[0].IsError {
 		t.Error("expected error result for denied tool")
 	}
-	if results[0].Content != "permission denied: denied by test" {
-		t.Errorf("Content: got %q", results[0].Content)
+	if results.Results[0].Content != "permission denied: denied by test" {
+		t.Errorf("Content: got %q", results.Results[0].Content)
 	}
 }
 
@@ -239,11 +239,11 @@ func TestOrchestratorToolError(t *testing.T) {
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
 
-	if !results[0].IsError {
+	if !results.Results[0].IsError {
 		t.Error("expected error result")
 	}
-	if results[0].Content != "tool execution failed" {
-		t.Errorf("Content: got %q", results[0].Content)
+	if results.Results[0].Content != "tool execution failed" {
+		t.Errorf("Content: got %q", results.Results[0].Content)
 	}
 }
 
@@ -293,13 +293,13 @@ func TestOrchestratorResultOrder(t *testing.T) {
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
 
-	if results[0].ToolCallID != "tc-1" {
-		t.Errorf("result[0] ID: got %q", results[0].ToolCallID)
+	if results.Results[0].ToolCallID != "tc-1" {
+		t.Errorf("result[0] ID: got %q", results.Results[0].ToolCallID)
 	}
-	if results[1].ToolCallID != "tc-2" {
-		t.Errorf("result[1] ID: got %q", results[1].ToolCallID)
+	if results.Results[1].ToolCallID != "tc-2" {
+		t.Errorf("result[1] ID: got %q", results.Results[1].ToolCallID)
 	}
-	if results[2].ToolCallID != "tc-3" {
-		t.Errorf("result[2] ID: got %q", results[2].ToolCallID)
+	if results.Results[2].ToolCallID != "tc-3" {
+		t.Errorf("result[2] ID: got %q", results.Results[2].ToolCallID)
 	}
 }

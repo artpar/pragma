@@ -130,16 +130,17 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ch <- ToolCallEvent{Call: tc}
 			}
 
-			results := e.orchestrator.Execute(ctx, toolCalls, snap)
-			for _, r := range results {
+			execResult := e.orchestrator.Execute(ctx, toolCalls, snap)
+			for _, r := range execResult.Results {
 				ch <- ToolResultEvent{Result: r}
 			}
 
-			// Build user message with tool results
-			resultParts := make([]model.ContentPart, len(results))
-			for i, r := range results {
-				resultParts[i] = r
+			// Build user message with tool results + any supplements (e.g., PDF document blocks)
+			resultParts := make([]model.ContentPart, 0, len(execResult.Results)+len(execResult.Supplements))
+			for _, r := range execResult.Results {
+				resultParts = append(resultParts, r)
 			}
+			resultParts = append(resultParts, execResult.Supplements...)
 			resultMsg := model.Message{
 				ID:        model.NewUUID(),
 				Role:      model.RoleUser,

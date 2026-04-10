@@ -19,6 +19,10 @@ func TestContentPartRoundTrip(t *testing.T) {
 			part: ImagePart{MimeType: "image/png", Data: []byte{0x89, 0x50, 0x4e, 0x47}},
 		},
 		{
+			name: "DocumentPart",
+			part: DocumentPart{MimeType: "application/pdf", Data: []byte("%PDF-1.4 test")},
+		},
+		{
 			name: "ToolCallPart",
 			part: ToolCallPart{
 				ID:    "call-123",

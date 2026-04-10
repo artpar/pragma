@@ -333,9 +333,9 @@ func (c *counterTool) Description() string { return "increments counter" }
 func (c *counterTool) InputSchema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{}}`)
 }
-func (c *counterTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSnapshot) (string, error) {
+func (c *counterTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
 	c.count++
-	return "count: " + string(rune('0'+c.count)), nil
+	return tool.InvokeResult{Content: "count: " + string(rune('0'+c.count))}, nil
 }
 func (c *counterTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	return checker.Check(context.Background(), "counter", nil)

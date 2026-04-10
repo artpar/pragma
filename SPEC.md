@@ -76,6 +76,7 @@ type ContentType string
 const (
     ContentText       ContentType = "text"
     ContentImage      ContentType = "image"
+    ContentDocument   ContentType = "document"
     ContentToolCall   ContentType = "tool_call"
     ContentToolResult ContentType = "tool_result"
     ContentThinking   ContentType = "thinking"
@@ -91,6 +92,7 @@ type ContentPart interface {
 |---|---|---|---|
 | `TextPart` | `Text string` | `json:"text"` | Plain text content |
 | `ImagePart` | `MimeType string`, `Data []byte` | `json:"mime_type"`, `json:"data"` | Raw bytes, provider base64-encodes |
+| `DocumentPart` | `MimeType string`, `Data []byte` | `json:"mime_type"`, `json:"data"` | Document (e.g., PDF). Provider sends as native document block. MimeType is "application/pdf" for PDFs (ADR-014) |
 | `ToolCallPart` | `ID string`, `Name string`, `Input json.RawMessage` | `json:"id"`, `json:"name"`, `json:"input"` | ID is internal UUID, provider maps to wire ID |
 | `ToolResultPart` | `ToolCallID string`, `Content string`, `IsError bool` | `json:"tool_call_id"`, `json:"content"`, `json:"is_error,omitempty"` | ToolCallID correlates to ToolCallPart.ID |
 | `ThinkingPart` | `Text string`, `Signature string`, `Redacted bool`, `RedactedData string` | `json:"text"`, `json:"signature,omitempty"`, `json:"redacted,omitempty"`, `json:"redacted_data,omitempty"` | Reasoning trace + provider attestation. Redacted=true for provider-redacted blocks; RedactedData contains opaque encrypted data to send back verbatim |

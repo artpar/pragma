@@ -22,8 +22,8 @@ func (t *echoTool) Description() string            { return t.description }
 func (t *echoTool) InputSchema() json.RawMessage   { return t.schema }
 func (t *echoTool) Flags() ToolFlags               { return t.flags }
 
-func (t *echoTool) Invoke(_ context.Context, input json.RawMessage, _ StateSnapshot) (string, error) {
-	return string(input), nil
+func (t *echoTool) Invoke(_ context.Context, input json.RawMessage, _ StateSnapshot) (InvokeResult, error) {
+	return InvokeResult{Content: string(input)}, nil
 }
 
 func (t *echoTool) CheckPerm(_ context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {

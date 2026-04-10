@@ -124,6 +124,9 @@ func contentPartToWireUser(part model.ContentPart, mapper *IDMapper) (sdk.Conten
 	case model.ImagePart:
 		encoded := base64.StdEncoding.EncodeToString(p.Data)
 		return sdk.NewImageBlockBase64(p.MimeType, encoded), nil
+	case model.DocumentPart:
+		encoded := base64.StdEncoding.EncodeToString(p.Data)
+		return sdk.NewDocumentBlock(sdk.Base64PDFSourceParam{Data: encoded}), nil
 	case model.ToolResultPart:
 		wireID := mapper.ToWire(p.ToolCallID)
 		if wireID == "" {

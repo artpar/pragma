@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/permission"
 )
 
@@ -19,13 +20,23 @@ type ToolFlags struct {
 	Destructive bool
 }
 
+// InvokeResult holds the output from a tool invocation.
+// Content is the text result sent to the LLM as the tool_result content.
+// Supplements are optional additional content parts (e.g., DocumentPart for PDFs,
+// ImagePart for extracted pages) that are included alongside the tool result
+// in the conversation message sent to the LLM.
+type InvokeResult struct {
+	Content     string
+	Supplements []model.ContentPart
+}
+
 // Descriptor defines a tool that can be invoked by the LLM.
 // Each tool implementation satisfies this interface.
 type Descriptor interface {
 	Name() string
 	Description() string
 	InputSchema() json.RawMessage
-	Invoke(ctx context.Context, input json.RawMessage, state StateSnapshot) (string, error)
+	Invoke(ctx context.Context, input json.RawMessage, state StateSnapshot) (InvokeResult, error)
 	CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult
 	Flags() ToolFlags
 }

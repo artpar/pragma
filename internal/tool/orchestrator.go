@@ -28,10 +28,22 @@ func NewOrchestrator(registry *Registry, checker permission.Checker, bus *observ
 	}
 }
 
+// ExecuteResult holds the results of a tool batch execution.
+type ExecuteResult struct {
+	Results     []model.ToolResultPart
+	Supplements []model.ContentPart // additional content parts (e.g., DocumentPart for PDFs)
+}
+
+// singleResult holds the output of one tool invocation.
+type singleResult struct {
+	part        model.ToolResultPart
+	supplements []model.ContentPart
+}
+
 // Execute runs a batch of tool calls, partitioning into concurrent and serial groups.
 // Results are returned in the same order as the input calls.
-func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, state StateSnapshot) []model.ToolResultPart {
-	results := make([]model.ToolResultPart, len(calls))
+func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, state StateSnapshot) ExecuteResult {
+	singles := make([]singleResult, len(calls))
 
 	// Partition
 	type indexedCall struct {
@@ -53,10 +65,12 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 
 		desc, ok := o.registry.Get(call.Name)
 		if !ok {
-			results[i] = model.ToolResultPart{
-				ToolCallID: call.ID,
-				Content:    "unknown tool: " + call.Name,
-				IsError:    true,
+			singles[i] = singleResult{
+				part: model.ToolResultPart{
+					ToolCallID: call.ID,
+					Content:    "unknown tool: " + call.Name,
+					IsError:    true,
+				},
 			}
 			continue
 		}
@@ -84,7 +98,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		for _, ic := range concurrent {
 			ic := ic
 			g.Go(func() error {
-				results[ic.index] = o.executeSingle(gctx, ic.call, state, traceID, batchSpan, true)
+				singles[ic.index] = o.executeSingle(gctx, ic.call, state, traceID, batchSpan, true)
 				return gctx.Err()
 			})
 		}
@@ -104,7 +118,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	if len(serial) > 0 {
 		serStart := time.Now()
 		for _, ic := range serial {
-			results[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
+			singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
 		}
 		serialDuration = time.Since(serStart)
 	}
@@ -116,7 +130,15 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		SerialDurationMs:     serialDuration.Milliseconds(),
 	})
 
-	return results
+	// Collect results and supplements
+	out := ExecuteResult{
+		Results: make([]model.ToolResultPart, len(singles)),
+	}
+	for i, s := range singles {
+		out.Results[i] = s.part
+		out.Supplements = append(out.Supplements, s.supplements...)
+	}
+	return out
 }
 
 func (o *Orchestrator) executeSingle(
@@ -125,50 +147,52 @@ func (o *Orchestrator) executeSingle(
 	state StateSnapshot,
 	traceID, parentSpan string,
 	concurrent bool,
-) model.ToolResultPart {
+) singleResult {
 	spanID := observe.NewSpanID()
 
 	// Tool is guaranteed to exist — unknown tools are filtered in Execute()
 	desc, _ := o.registry.Get(call.Name)
 
 	// Permission check
-	result := desc.CheckPerm(ctx, call.Input, o.checker)
+	permResult := desc.CheckPerm(ctx, call.Input, o.checker)
 	o.bus.Emit(observe.ToolPermissionChecked{
 		EventHeader: observe.NewEventHeader("ToolPermissionChecked", traceID, spanID, parentSpan),
 		ToolCallID:  call.ID,
 		ToolName:    call.Name,
-		Decision:    string(result.Decision),
-		Rule:        result.Rule.Pattern,
-		Source:      result.Rule.Source,
+		Decision:    string(permResult.Decision),
+		Rule:        permResult.Rule.Pattern,
+		Source:      permResult.Rule.Source,
 	})
 
-	if result.Decision == permission.DecisionDeny {
+	if permResult.Decision == permission.DecisionDeny {
 		o.bus.Emit(observe.PermissionDenialEnforced{
 			EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
 			ToolCallID:  call.ID,
 			ToolName:    call.Name,
 			WasExecuted: false,
 		})
-		return model.ToolResultPart{
-			ToolCallID: call.ID,
-			Content:    "permission denied: " + result.Reason,
-			IsError:    true,
+		return singleResult{
+			part: model.ToolResultPart{
+				ToolCallID: call.ID,
+				Content:    "permission denied: " + permResult.Reason,
+				IsError:    true,
+			},
 		}
 	}
 
-	if result.Decision == permission.DecisionAsk {
-		// "Ask" means the user must confirm before execution. The TUI prompt
-		// integration will replace this with an interactive flow.
+	if permResult.Decision == permission.DecisionAsk {
 		o.bus.Emit(observe.ToolPermissionPrompted{
 			EventHeader:  observe.NewEventHeader("ToolPermissionPrompted", traceID, spanID, parentSpan),
 			ToolCallID:   call.ID,
 			ToolName:     call.Name,
 			UserDecision: "pending",
 		})
-		return model.ToolResultPart{
-			ToolCallID: call.ID,
-			Content:    "permission requires user confirmation (not yet implemented)",
-			IsError:    true,
+		return singleResult{
+			part: model.ToolResultPart{
+				ToolCallID: call.ID,
+				Content:    "permission requires user confirmation (not yet implemented)",
+				IsError:    true,
+			},
 		}
 	}
 
@@ -181,7 +205,7 @@ func (o *Orchestrator) executeSingle(
 	})
 
 	start := time.Now()
-	output, err := desc.Invoke(ctx, call.Input, state)
+	invokeResult, err := desc.Invoke(ctx, call.Input, state)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -192,10 +216,12 @@ func (o *Orchestrator) executeSingle(
 			ErrorType:    "invocation_error",
 			ErrorMessage: err.Error(),
 		})
-		return model.ToolResultPart{
-			ToolCallID: call.ID,
-			Content:    err.Error(),
-			IsError:    true,
+		return singleResult{
+			part: model.ToolResultPart{
+				ToolCallID: call.ID,
+				Content:    err.Error(),
+				IsError:    true,
+			},
 		}
 	}
 
@@ -204,12 +230,15 @@ func (o *Orchestrator) executeSingle(
 		ToolCallID:      call.ID,
 		ToolName:        call.Name,
 		DurationMs:      duration.Milliseconds(),
-		OutputSizeBytes: len(output),
+		OutputSizeBytes: len(invokeResult.Content),
 		IsError:         false,
 	})
 
-	return model.ToolResultPart{
-		ToolCallID: call.ID,
-		Content:    output,
+	return singleResult{
+		part: model.ToolResultPart{
+			ToolCallID: call.ID,
+			Content:    invokeResult.Content,
+		},
+		supplements: invokeResult.Supplements,
 	}
 }
