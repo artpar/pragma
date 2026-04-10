@@ -42,7 +42,7 @@ func (c *Conversation) Append(msg Message) {
 }
 
 // Fork creates a deep copy of the conversation with a new ID and parent link.
-// All slices inside ContentParts (ImagePart.Data, ToolCallPart.Input) are copied.
+// All slices inside ContentParts (ImagePart.Data, DocumentPart.Data, ToolCallPart.Input) are copied.
 func (c Conversation) Fork(newID string) Conversation {
 	msgs := make([]Message, len(c.Messages))
 	for i, m := range c.Messages {
@@ -135,6 +135,10 @@ func deepCopyContentPart(part ContentPart) ContentPart {
 			copy(input, p.Input)
 		}
 		return ToolCallPart{ID: p.ID, Name: p.Name, Input: input}
+	case DocumentPart:
+		data := make([]byte, len(p.Data))
+		copy(data, p.Data)
+		return DocumentPart{MimeType: p.MimeType, Data: data}
 	case ToolResultPart:
 		return p
 	case ThinkingPart:

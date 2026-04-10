@@ -441,7 +441,10 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 
 	// Apply offset (1-indexed)
 	startLine := 1
-	if offset != nil && *offset > 0 {
+	if offset != nil {
+		if *offset < 1 {
+			return "", fmt.Errorf("offset must be >= 1 (1-indexed), got %d", *offset)
+		}
 		startLine = *offset
 	}
 

@@ -139,7 +139,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		Result:     resultStr,
 		TokensUsed: tokensUsed,
 	}
-	data, _ := json.Marshal(ar)
+	data, err := json.Marshal(ar)
+	if err != nil {
+		return tool.InvokeResult{Content: fmt.Sprintf("Agent completed but failed to marshal result: %v", err)}, nil
+	}
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 

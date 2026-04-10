@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/artpar/gogent/internal/model"
@@ -113,11 +114,17 @@ func LookupModel(modelID string) (ModelInfo, bool) {
 			return info, true
 		}
 	}
-	// Try prefix match (e.g., "claude-sonnet-4-6" matches "claude-sonnet-4-6-20250514")
-	for id, info := range registry {
+	// Try prefix match (e.g., "claude-sonnet-4-6" matches "claude-sonnet-4-6-20250514").
+	// Collect all matches and sort alphabetically for deterministic results.
+	var candidates []string
+	for id := range registry {
 		if strings.HasPrefix(id, modelID) {
-			return info, true
+			candidates = append(candidates, id)
 		}
+	}
+	if len(candidates) > 0 {
+		sort.Strings(candidates)
+		return registry[candidates[0]], true
 	}
 	return ModelInfo{}, false
 }

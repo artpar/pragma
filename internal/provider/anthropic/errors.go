@@ -3,8 +3,10 @@ package anthropic
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -39,7 +41,18 @@ func classifyError(err error) classifiedError {
 		return classifyAPIError(apiErr)
 	}
 
-	// Connection-level errors: type-based checks first, string fallback
+	// Connection-level errors: check most specific types first.
+	// DNS errors must come before OpError because DNSError is often
+	// wrapped inside OpError, and errors.As unwraps the chain.
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return classifiedError{
+			wrapped:   fmt.Errorf("DNS resolution failed: %w", ErrServerError),
+			retryable: !dnsErr.IsNotFound,
+			errorType: "connection",
+		}
+	}
+
 	var netErr *net.OpError
 	if errors.As(err, &netErr) {
 		return classifiedError{
@@ -49,7 +62,26 @@ func classifyError(err error) classifiedError {
 		}
 	}
 
-	// String fallback for errors that don't wrap net.OpError
+	// URL errors (wraps net errors for HTTP client)
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return classifiedError{
+			wrapped:   fmt.Errorf("connection error: %w", ErrServerError),
+			retryable: true,
+			errorType: "connection",
+		}
+	}
+
+	// EOF errors (server closed connection)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return classifiedError{
+			wrapped:   fmt.Errorf("connection closed: %w", ErrServerError),
+			retryable: true,
+			errorType: "connection",
+		}
+	}
+
+	// String fallback for errors that don't match any structured type
 	msg := err.Error()
 	if strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "broken pipe") ||

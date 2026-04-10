@@ -122,6 +122,29 @@ func TestConversationForkDeepCopyImageData(t *testing.T) {
 	}
 }
 
+func TestConversationForkDeepCopyDocumentData(t *testing.T) {
+	conv := NewConversation(SystemPrompt{}, "model", "prov", "/tmp")
+	docData := []byte{0x25, 0x50, 0x44, 0x46} // %PDF magic bytes
+	conv.Append(Message{
+		ID:        "msg-1",
+		Role:      RoleUser,
+		Content:   []ContentPart{DocumentPart{MimeType: "application/pdf", Data: docData}},
+		Timestamp: time.Now(),
+	})
+
+	forked := conv.Fork("fork-1")
+
+	// Modify forked document data — original should not change
+	forkedDoc := forked.Messages[0].Content[0].(DocumentPart)
+	forkedDoc.Data[0] = 0xFF
+	forked.Messages[0].Content[0] = DocumentPart{MimeType: "application/pdf", Data: forkedDoc.Data}
+
+	origDoc := conv.Messages[0].Content[0].(DocumentPart)
+	if origDoc.Data[0] == 0xFF {
+		t.Error("original DocumentPart.Data was modified by fork — slice not deep-copied")
+	}
+}
+
 func TestConversationForkDeepCopyToolCallInput(t *testing.T) {
 	conv := NewConversation(SystemPrompt{}, "model", "prov", "/tmp")
 	input := json.RawMessage(`{"key":"value"}`)

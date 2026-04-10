@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -117,6 +118,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		u.Scheme = "https"
 	}
 	fetchURL := u.String()
+
+	// SSRF protection: resolve hostname and block private/loopback IPs
+	if err := checkSSRF(u.Hostname()); err != nil {
+		return tool.InvokeResult{Content: err.Error()}, nil
+	}
 
 	// Init cache lazily (thread-safe)
 	t.cacheOnce.Do(func() {
@@ -249,6 +255,37 @@ func (t *Tool) summarize(ctx context.Context, content, userPrompt string) (strin
 }
 
 func marshalResult(fr fetchResult) tool.InvokeResult {
-	data, _ := json.Marshal(fr)
+	data, err := json.Marshal(fr)
+	if err != nil {
+		return tool.InvokeResult{Content: fmt.Sprintf("Fetch completed but failed to marshal result: %v", err)}
+	}
 	return tool.InvokeResult{Content: string(data)}
+}
+
+// checkSSRF resolves the hostname and rejects private, loopback, and metadata IPs.
+func checkSSRF(hostname string) error {
+	ips, err := net.LookupHost(hostname)
+	if err != nil {
+		return fmt.Errorf("DNS resolution failed for %s: %v", hostname, err)
+	}
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		if isPrivateIP(ip) {
+			return fmt.Errorf("URL resolves to private/reserved IP address (%s) — request blocked for security", ipStr)
+		}
+	}
+	return nil
+}
+
+// isPrivateIP checks if an IP is loopback, private, link-local, or a cloud metadata endpoint.
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	// Cloud metadata endpoint: 169.254.169.254
+	metadataIP := net.ParseIP("169.254.169.254")
+	return ip.Equal(metadataIP)
 }

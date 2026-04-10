@@ -12,7 +12,7 @@ import (
 func TestContentBlockFromWireText(t *testing.T) {
 	mapper := NewIDMapper()
 	block := sdk.ContentBlockUnion{Type: "text", Text: "hello world"}
-	part := contentBlockFromWire(block, mapper)
+	part, _ := contentBlockFromWire(block, mapper)
 	tp, ok := part.(model.TextPart)
 	if !ok {
 		t.Fatalf("expected TextPart, got %T", part)
@@ -30,7 +30,7 @@ func TestContentBlockFromWireToolUse(t *testing.T) {
 		Name:  "Bash",
 		Input: json.RawMessage(`{"cmd":"ls"}`),
 	}
-	part := contentBlockFromWire(block, mapper)
+	part, _ := contentBlockFromWire(block, mapper)
 	tc, ok := part.(model.ToolCallPart)
 	if !ok {
 		t.Fatalf("expected ToolCallPart, got %T", part)
@@ -68,7 +68,7 @@ func TestContentBlockFromWireThinking(t *testing.T) {
 		Thinking:  "Let me think about this...",
 		Signature: "sig_xyz",
 	}
-	part := contentBlockFromWire(block, mapper)
+	part, _ := contentBlockFromWire(block, mapper)
 	tp, ok := part.(model.ThinkingPart)
 	if !ok {
 		t.Fatalf("expected ThinkingPart, got %T", part)
@@ -84,7 +84,7 @@ func TestContentBlockFromWireThinking(t *testing.T) {
 func TestContentBlockFromWireRedactedThinking(t *testing.T) {
 	mapper := NewIDMapper()
 	block := sdk.ContentBlockUnion{Type: "redacted_thinking", Data: "encrypted_data"}
-	part := contentBlockFromWire(block, mapper)
+	part, _ := contentBlockFromWire(block, mapper)
 	tp, ok := part.(model.ThinkingPart)
 	if !ok {
 		t.Fatalf("expected ThinkingPart, got %T", part)
@@ -100,9 +100,12 @@ func TestContentBlockFromWireRedactedThinking(t *testing.T) {
 func TestContentBlockFromWireUnknown(t *testing.T) {
 	mapper := NewIDMapper()
 	block := sdk.ContentBlockUnion{Type: "web_search_tool_result"}
-	part := contentBlockFromWire(block, mapper)
+	part, skippedType := contentBlockFromWire(block, mapper)
 	if part != nil {
 		t.Errorf("expected nil for unknown type, got %T", part)
+	}
+	if skippedType != "web_search_tool_result" {
+		t.Errorf("skippedType: got %q, want %q", skippedType, "web_search_tool_result")
 	}
 }
 
@@ -162,7 +165,7 @@ func TestResponseFromWire(t *testing.T) {
 		StopReason: sdk.StopReasonEndTurn,
 		Usage:      sdk.Usage{InputTokens: 10, OutputTokens: 5},
 	}
-	resp := responseFromWire(msg, mapper)
+	resp := responseFromWire(msg, mapper, nil)
 	if resp.ID != "msg_123" {
 		t.Errorf("ID: got %q", resp.ID)
 	}

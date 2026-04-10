@@ -66,6 +66,37 @@ func TestIDMapperOverwrite(t *testing.T) {
 	}
 }
 
+func TestIDMapperOverwriteCleansStaleReverse(t *testing.T) {
+	m := NewIDMapper()
+	m.RegisterPair("id-1", "wire-old")
+	m.RegisterPair("id-1", "wire-new")
+
+	// Old reverse mapping should be gone
+	if got := m.ToInternal("wire-old"); got != "" {
+		t.Errorf("stale reverse mapping: ToInternal(wire-old) = %q, want empty", got)
+	}
+	if got := m.ToWire("id-1"); got != "wire-new" {
+		t.Errorf("ToWire: got %q, want wire-new", got)
+	}
+	if got := m.ToInternal("wire-new"); got != "id-1" {
+		t.Errorf("ToInternal: got %q, want id-1", got)
+	}
+}
+
+func TestIDMapperOverwriteCleansStaleForward(t *testing.T) {
+	m := NewIDMapper()
+	m.RegisterPair("id-old", "wire-1")
+	m.RegisterPair("id-new", "wire-1")
+
+	// Old forward mapping should be gone
+	if got := m.ToWire("id-old"); got != "" {
+		t.Errorf("stale forward mapping: ToWire(id-old) = %q, want empty", got)
+	}
+	if got := m.ToWire("id-new"); got != "wire-1" {
+		t.Errorf("ToWire: got %q, want wire-1", got)
+	}
+}
+
 func TestIDMapperConcurrent(t *testing.T) {
 	m := NewIDMapper()
 	var wg sync.WaitGroup

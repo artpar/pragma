@@ -52,6 +52,23 @@ func TestLookupModelPricingNonZero(t *testing.T) {
 	}
 }
 
+func TestLookupModelPrefixDeterministic(t *testing.T) {
+	// "claude-opus-4" matches multiple registry keys (4-5 and 4-6).
+	// Run 100 times to verify deterministic result from sorted candidates.
+	var firstID string
+	for i := 0; i < 100; i++ {
+		info, ok := LookupModel("claude-opus-4")
+		if !ok {
+			t.Fatal("expected prefix match")
+		}
+		if firstID == "" {
+			firstID = info.ID
+		} else if info.ID != firstID {
+			t.Fatalf("non-deterministic: got %q on iteration %d, previously got %q", info.ID, i, firstID)
+		}
+	}
+}
+
 func TestLookupModelThinkingEnabled(t *testing.T) {
 	info, ok := LookupModel("claude-sonnet-4-20250514")
 	if !ok {

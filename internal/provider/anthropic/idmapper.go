@@ -29,6 +29,14 @@ func NewIDMapper() *IDMapper {
 func (m *IDMapper) RegisterPair(internalID, wireID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Clean up stale reverse mapping when internal ID is reassigned
+	if oldWire, ok := m.internalToWire[internalID]; ok && oldWire != wireID {
+		delete(m.wireToInternal, oldWire)
+	}
+	// Clean up stale forward mapping when wire ID is reassigned
+	if oldInternal, ok := m.wireToInternal[wireID]; ok && oldInternal != internalID {
+		delete(m.internalToWire, oldInternal)
+	}
 	m.internalToWire[internalID] = wireID
 	m.wireToInternal[wireID] = internalID
 }

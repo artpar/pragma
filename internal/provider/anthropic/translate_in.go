@@ -2,20 +2,36 @@ package anthropic
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // responseFromWire converts an Anthropic API response to an internal Response.
-func responseFromWire(msg *sdk.Message, mapper *IDMapper) model.Response {
+// Unsupported content block types are skipped with a warning emitted via bus.
+func responseFromWire(msg *sdk.Message, mapper *IDMapper, bus *observe.EventBus) model.Response {
 	var parts []model.ContentPart
+	var skipped []string
 	for _, block := range msg.Content {
-		part := contentBlockFromWire(block, mapper)
+		part, skippedType := contentBlockFromWire(block, mapper)
 		if part != nil {
 			parts = append(parts, part)
+		} else if skippedType != "" {
+			skipped = append(skipped, skippedType)
 		}
+	}
+	if len(skipped) > 0 && bus != nil {
+		bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+			Severity:     "warn",
+			Component:    "anthropic.translate_in",
+			ErrorType:    "unsupported_content_block",
+			ErrorMessage: fmt.Sprintf("skipped %d unsupported content block(s): %s", len(skipped), strings.Join(skipped, ", ")),
+		})
 	}
 	return model.Response{
 		ID:         msg.ID,
@@ -27,11 +43,11 @@ func responseFromWire(msg *sdk.Message, mapper *IDMapper) model.Response {
 }
 
 // contentBlockFromWire converts a single Anthropic content block to an internal ContentPart.
-// Returns nil for unsupported block types.
-func contentBlockFromWire(block sdk.ContentBlockUnion, mapper *IDMapper) model.ContentPart {
+// Returns (nil, blockType) for unsupported block types so the caller can log them.
+func contentBlockFromWire(block sdk.ContentBlockUnion, mapper *IDMapper) (model.ContentPart, string) {
 	switch block.Type {
 	case "text":
-		return model.TextPart{Text: block.Text}
+		return model.TextPart{Text: block.Text}, ""
 
 	case "tool_use":
 		internalID := model.NewUUID()
@@ -46,25 +62,25 @@ func contentBlockFromWire(block sdk.ContentBlockUnion, mapper *IDMapper) model.C
 			ID:    internalID,
 			Name:  block.Name,
 			Input: input,
-		}
+		}, ""
 
 	case "thinking":
 		return model.ThinkingPart{
 			Text:      block.Thinking,
 			Signature: block.Signature,
-		}
+		}, ""
 
 	case "redacted_thinking":
 		return model.ThinkingPart{
 			Text:         "[redacted]",
 			Redacted:     true,
 			RedactedData: block.Data,
-		}
+		}, ""
 
 	default:
 		// Unsupported block types (server_tool_use, web_search_tool_result, etc.)
-		// are silently skipped. They can be added as needed.
-		return nil
+		// are skipped. Return the type name so the caller can emit a warning.
+		return nil, block.Type
 	}
 }
 

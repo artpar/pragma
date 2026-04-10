@@ -3,6 +3,8 @@ package anthropic
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"testing"
 
@@ -96,6 +98,35 @@ func TestClassifyErrorConnectionReset(t *testing.T) {
 	}
 	if !errors.Is(result.wrapped, ErrServerError) {
 		t.Errorf("sentinel: got %v, want ErrServerError", result.wrapped)
+	}
+}
+
+func TestClassifyErrorDNSNotFound(t *testing.T) {
+	err := &net.DNSError{Err: "no such host", Name: "api.anthropic.com", IsNotFound: true}
+	result := classifyError(err)
+	if result.retryable {
+		t.Error("NXDOMAIN should not be retryable")
+	}
+	if result.errorType != "connection" {
+		t.Errorf("errorType: got %q, want %q", result.errorType, "connection")
+	}
+}
+
+func TestClassifyErrorDNSTransient(t *testing.T) {
+	err := &net.DNSError{Err: "temporary failure", Name: "api.anthropic.com", IsNotFound: false}
+	result := classifyError(err)
+	if !result.retryable {
+		t.Error("transient DNS error should be retryable")
+	}
+}
+
+func TestClassifyErrorEOF(t *testing.T) {
+	result := classifyError(io.ErrUnexpectedEOF)
+	if !result.retryable {
+		t.Error("unexpected EOF should be retryable")
+	}
+	if result.errorType != "connection" {
+		t.Errorf("errorType: got %q, want %q", result.errorType, "connection")
 	}
 }
 

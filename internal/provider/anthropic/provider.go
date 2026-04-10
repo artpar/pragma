@@ -127,7 +127,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		return model.Response{}, classified.wrapped
 	}
 
-	resp := responseFromWire(msg, mapper)
+	resp := responseFromWire(msg, mapper, p.bus)
 	p.bus.Emit(observe.APIRequestCompleted{
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  resp.StopReason,

@@ -226,6 +226,17 @@ func (o *Orchestrator) executeSingle(
 		}
 	}
 
+	// Check context before execution
+	if ctx.Err() != nil {
+		return singleResult{
+			part: model.ToolResultPart{
+				ToolCallID: call.ID,
+				Content:    "cancelled: " + ctx.Err().Error(),
+				IsError:    true,
+			},
+		}
+	}
+
 	// Execute
 	o.bus.Emit(observe.ToolExecutionStarted{
 		EventHeader: observe.NewEventHeader("ToolExecutionStarted", traceID, spanID, parentSpan),

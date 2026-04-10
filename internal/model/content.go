@@ -18,7 +18,7 @@ const (
 )
 
 // ContentPart is a sealed interface representing one block of message content.
-// Only the 5 variants in this file implement it.
+// Only the 6 variants in this file implement it.
 type ContentPart interface {
 	contentPartSealed()
 	PartType() ContentType
