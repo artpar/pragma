@@ -61,3 +61,22 @@ func ProjectAgentMDPath(workDir string) string {
 func LocalAgentMDPath(workDir string) string {
 	return filepath.Join(workDir, ".gogent", "AGENT.local.md")
 }
+
+// MCPConfigPath returns <workDir>/.gogent/mcp.json.
+func MCPConfigPath(workDir string) string {
+	return filepath.Join(workDir, ".gogent", "mcp.json")
+}
+
+// MCPLocalConfigPath returns <workDir>/.gogent/mcp.local.json.
+func MCPLocalConfigPath(workDir string) string {
+	return filepath.Join(workDir, ".gogent", "mcp.local.json")
+}
+
+// GlobalMCPConfigPath returns ~/.gogent/mcp.json.
+func GlobalMCPConfigPath() (string, error) {
+	dir, err := GogentHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "mcp.json"), nil
+}

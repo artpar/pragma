@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/config"
+	"github.com/artpar/gogent/internal/mcp"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
@@ -98,8 +100,9 @@ type deps struct {
 	costTracker *model.CostTracker
 	engineCfg   query.EngineConfig
 	taskReg     *task.Registry
+	mcpManager  *mcp.Manager
 	cwd         string
-	cleanup     func() // close recorder, etc.
+	cleanup     func() // close recorder, MCP servers, etc.
 }
 
 // setupDeps creates all shared dependencies from CLI flags and config.
@@ -238,6 +241,43 @@ func setupDeps(cmd *cobra.Command) (*deps, error) {
 	// Registry (without Agent tool — added by caller who knows the prompter)
 	registry := tool.NewRegistry(bus)
 
+	// MCP manager
+	mcpManager := mcp.NewManager(bus, registry)
+
+	// Load MCP server configs (optional — not having any is fine)
+	mcpServers, mcpErr := mcp.LoadConfig(cwd, bus)
+	if mcpErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: load mcp config: %v\n", mcpErr)
+	}
+
+	// Connect MCP servers and register their tools
+	if len(mcpServers) > 0 {
+		connectCtx, connectCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		connectErrs := mcpManager.ConnectAll(connectCtx, mcpServers)
+		connectCancel()
+
+		for name, err := range connectErrs {
+			fmt.Fprintf(os.Stderr, "warning: mcp server %q: %v\n", name, err)
+		}
+
+		if err := mcpManager.RegisterTools(context.Background()); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: register mcp tools: %v\n", err)
+		}
+	}
+
+	// Compose cleanup: MCP + recorder
+	var compositeCleanup func()
+	if cleanupFn != nil {
+		compositeCleanup = func() {
+			mcpManager.DisconnectAll()
+			cleanupFn()
+		}
+	} else {
+		compositeCleanup = func() {
+			mcpManager.DisconnectAll()
+		}
+	}
+
 	return &deps{
 		cfg:         cfg,
 		bus:         bus,
@@ -248,8 +288,9 @@ func setupDeps(cmd *cobra.Command) (*deps, error) {
 		costTracker: costTracker,
 		engineCfg:   engineCfg,
 		taskReg:     taskReg,
+		mcpManager:  mcpManager,
 		cwd:         cwd,
-		cleanup:     cleanupFn,
+		cleanup:     compositeCleanup,
 	}, nil
 }
 

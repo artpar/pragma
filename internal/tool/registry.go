@@ -35,6 +35,13 @@ func (r *Registry) Register(desc Descriptor) error {
 	return nil
 }
 
+// Unregister removes a tool by name. Used for MCP tool refresh on reconnect.
+func (r *Registry) Unregister(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.tools, name)
+}
+
 // Get returns a tool by name.
 func (r *Registry) Get(name string) (Descriptor, bool) {
 	r.mu.RLock()
