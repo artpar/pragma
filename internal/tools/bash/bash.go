@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/artpar/gogent/internal/permission"
@@ -55,7 +56,13 @@ func (t *Tool) Flags() tool.ToolFlags {
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
-	return checker.Check(ctx, "Bash", input)
+	var in struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil || in.Command == "" {
+		return checker.Check(ctx, "Bash", "")
+	}
+	return checker.Check(ctx, "Bash", in.Command)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
@@ -85,6 +92,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", in.Command)
 	cmd.Dir = state.WorkDir()
+	// Process group isolation: timeout kills the group, not the parent (#45717)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 
 	// Capture combined stdout+stderr (merged fd, like TS)
 	var combined bytes.Buffer

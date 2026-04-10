@@ -16,31 +16,35 @@ import (
 // allowAllChecker allows every tool.
 type allowAllChecker struct{}
 
-func (allowAllChecker) Check(_ context.Context, _ string, _ json.RawMessage) permission.CheckResult {
+func (allowAllChecker) Check(_ context.Context, _ string, _ string) permission.CheckResult {
 	return permission.CheckResult{
 		Decision: permission.DecisionAllow,
-		Rule:     permission.Rule{Pattern: "*", Decision: permission.DecisionAllow, Source: "test"},
+		Rule:     &permission.Rule{ToolName: "*", Decision: permission.DecisionAllow, Source: "test"},
 	}
 }
+
+func (allowAllChecker) AddSessionRule(_ permission.Rule) {}
 
 // denyChecker denies a specific tool, allows everything else.
 type denyChecker struct {
 	denyTool string
 }
 
-func (c denyChecker) Check(_ context.Context, toolName string, _ json.RawMessage) permission.CheckResult {
+func (c denyChecker) Check(_ context.Context, toolName string, _ string) permission.CheckResult {
 	if toolName == c.denyTool {
 		return permission.CheckResult{
 			Decision: permission.DecisionDeny,
-			Rule:     permission.Rule{Pattern: toolName, Decision: permission.DecisionDeny, Source: "test"},
+			Rule:     &permission.Rule{ToolName: toolName, Decision: permission.DecisionDeny, Source: "test"},
 			Reason:   "denied by test",
 		}
 	}
 	return permission.CheckResult{
 		Decision: permission.DecisionAllow,
-		Rule:     permission.Rule{Pattern: "*", Decision: permission.DecisionAllow, Source: "test"},
+		Rule:     &permission.Rule{ToolName: "*", Decision: permission.DecisionAllow, Source: "test"},
 	}
 }
+
+func (denyChecker) AddSessionRule(_ permission.Rule) {}
 
 // failingTool is a real tool that always returns an error.
 type failingTool struct {
@@ -71,7 +75,8 @@ func setupOrchestrator(t *testing.T, checker permission.Checker, tools ...Descri
 		}
 	}
 
-	orch := NewOrchestrator(reg, checker, bus)
+	prompter := &permission.NonInteractivePrompter{}
+	orch := NewOrchestrator(reg, checker, prompter, bus)
 	return orch, bus, sub
 }
 

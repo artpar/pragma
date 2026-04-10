@@ -49,7 +49,7 @@ internal/
   tool/               ← Tool system (UNCHANGED interface, references model/)
   tools/              ← Tool implementations (UNCHANGED)
   query/              ← Agentic loop (references model/ + provider/)
-  permission/         ← Permission system (UNCHANGED)
+  permission/         ← Permission system (rule-based checker, content matching, dangerous paths)
   app/                ← AppState + StateStore (references model/)
   tui/                ← Bubbletea TUI (references model/)
   config/             ← Settings + merge

@@ -16,14 +16,16 @@ import (
 type Orchestrator struct {
 	registry *Registry
 	checker  permission.Checker
+	prompter permission.Prompter
 	bus      *observe.EventBus
 }
 
 // NewOrchestrator creates an Orchestrator.
-func NewOrchestrator(registry *Registry, checker permission.Checker, bus *observe.EventBus) *Orchestrator {
+func NewOrchestrator(registry *Registry, checker permission.Checker, prompter permission.Prompter, bus *observe.EventBus) *Orchestrator {
 	return &Orchestrator{
 		registry: registry,
 		checker:  checker,
+		prompter: prompter,
 		bus:      bus,
 	}
 }
@@ -155,13 +157,23 @@ func (o *Orchestrator) executeSingle(
 
 	// Permission check
 	permResult := desc.CheckPerm(ctx, call.Input, o.checker)
+
+	rulePattern := ""
+	ruleSource := ""
+	if permResult.Rule != nil {
+		rulePattern = permResult.Rule.Content
+		if rulePattern == "" {
+			rulePattern = permResult.Rule.ToolName
+		}
+		ruleSource = string(permResult.Rule.Source)
+	}
 	o.bus.Emit(observe.ToolPermissionChecked{
 		EventHeader: observe.NewEventHeader("ToolPermissionChecked", traceID, spanID, parentSpan),
 		ToolCallID:  call.ID,
 		ToolName:    call.Name,
 		Decision:    string(permResult.Decision),
-		Rule:        permResult.Rule.Pattern,
-		Source:      permResult.Rule.Source,
+		Rule:        rulePattern,
+		Source:      ruleSource,
 	})
 
 	if permResult.Decision == permission.DecisionDeny {
@@ -181,18 +193,36 @@ func (o *Orchestrator) executeSingle(
 	}
 
 	if permResult.Decision == permission.DecisionAsk {
+		promptStart := time.Now()
+		decision, sessionRule := o.prompter.Prompt(ctx, call.Name, permResult.Content, permResult.Reason)
+		promptDuration := time.Since(promptStart)
+
+		if sessionRule != nil {
+			o.checker.AddSessionRule(*sessionRule)
+		}
+
 		o.bus.Emit(observe.ToolPermissionPrompted{
 			EventHeader:  observe.NewEventHeader("ToolPermissionPrompted", traceID, spanID, parentSpan),
 			ToolCallID:   call.ID,
 			ToolName:     call.Name,
-			UserDecision: "pending",
+			UserDecision: string(decision),
+			DurationMs:   promptDuration.Milliseconds(),
 		})
-		return singleResult{
-			part: model.ToolResultPart{
-				ToolCallID: call.ID,
-				Content:    "permission requires user confirmation (not yet implemented)",
-				IsError:    true,
-			},
+
+		if decision != permission.DecisionAllow {
+			o.bus.Emit(observe.PermissionDenialEnforced{
+				EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
+				ToolCallID:  call.ID,
+				ToolName:    call.Name,
+				WasExecuted: false,
+			})
+			return singleResult{
+				part: model.ToolResultPart{
+					ToolCallID: call.ID,
+					Content:    "permission denied by user",
+					IsError:    true,
+				},
+			}
 		}
 	}
 

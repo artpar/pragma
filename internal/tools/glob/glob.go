@@ -54,7 +54,13 @@ func (t *Tool) Flags() tool.ToolFlags {
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
-	return checker.Check(ctx, "Glob", input)
+	var in struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil || in.Pattern == "" {
+		return checker.Check(ctx, "Glob", "")
+	}
+	return checker.Check(ctx, "Glob", in.Pattern)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {

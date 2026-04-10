@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -17,13 +16,22 @@ import (
 	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/provider/anthropic"
 	"github.com/artpar/gogent/internal/query"
+	"github.com/artpar/gogent/internal/task"
 	"github.com/artpar/gogent/internal/tool"
+	toolagent "github.com/artpar/gogent/internal/tools/agent"
 	toolbash "github.com/artpar/gogent/internal/tools/bash"
 	toolfileedit "github.com/artpar/gogent/internal/tools/fileedit"
 	toolfileread "github.com/artpar/gogent/internal/tools/fileread"
 	toolfilewrite "github.com/artpar/gogent/internal/tools/filewrite"
 	toolglob "github.com/artpar/gogent/internal/tools/glob"
 	toolgrep "github.com/artpar/gogent/internal/tools/grep"
+	toolnotebookedit "github.com/artpar/gogent/internal/tools/notebookedit"
+	tooltaskcreate "github.com/artpar/gogent/internal/tools/taskcreate"
+	tooltaskget "github.com/artpar/gogent/internal/tools/taskget"
+	tooltasklist "github.com/artpar/gogent/internal/tools/tasklist"
+	tooltaskstop "github.com/artpar/gogent/internal/tools/taskstop"
+	tooltaskupdate "github.com/artpar/gogent/internal/tools/taskupdate"
+	toolwebfetch "github.com/artpar/gogent/internal/tools/webfetch"
 )
 
 func main() {
@@ -119,26 +127,17 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 	// 7. Create Provider
 	prov := createProvider(cfg, bus)
 
-	// 8. Create Registry and register tools
-	registry := tool.NewRegistry(bus)
-	for _, t := range []tool.Descriptor{
-		&toolglob.Tool{},
-		&toolgrep.Tool{},
-		&toolfileread.Tool{},
-		&toolfilewrite.Tool{},
-		&toolfileedit.Tool{},
-		&toolbash.Tool{},
-	} {
-		if err := registry.Register(t); err != nil {
-			return fmt.Errorf("register tool %s: %w", t.Name(), err)
-		}
+	// 8. Create permission checker
+	permEntries, permMode, _ := config.LoadPermissions(cwd)
+	rules := permission.RulesFromConfigEntries(permEntries)
+	mode := permission.PermissionMode(permMode)
+	if mode == "" {
+		mode = permission.ModeBypassPermissions // non-interactive mode: allow all by default
 	}
+	checker := permission.NewRuleChecker(rules, mode, cwd, bus)
+	prompter := &permission.NonInteractivePrompter{}
 
-	// 9. Create Orchestrator
-	checker := &allowAllChecker{}
-	orchestrator := tool.NewOrchestrator(registry, checker, bus)
-
-	// 10. Create StateStore
+	// 9. Create StateStore
 	var systemPrompt model.SystemPrompt
 	if cfg.SystemPrompt != "" {
 		systemPrompt = model.SystemPrompt{
@@ -156,7 +155,8 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 		Temperature:  cfg.Temperature,
 	})
 
-	// 11. Create Engine
+	// 10. Create task registry and Engine config
+	taskRegistry := task.NewRegistry(bus)
 	costTracker := model.NewCostTracker()
 	engineCfg := query.EngineConfig{
 		Model:     cfg.Model,
@@ -169,6 +169,73 @@ func runNonInteractive(cmd *cobra.Command, _ []string) error {
 			BudgetTokens: cfg.Thinking.BudgetTokens,
 		}
 	}
+
+	// 11. EngineFactory for sub-agents
+	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
+		subRegistry := tool.NewRegistry(bus)
+		// Register the same tools minus Agent (scopedToolNames is nil = all)
+		for _, td := range []tool.Descriptor{
+			&toolglob.Tool{},
+			&toolgrep.Tool{},
+			&toolfileread.Tool{},
+			&toolfilewrite.Tool{},
+			&toolfileedit.Tool{},
+			&toolbash.Tool{},
+			&toolnotebookedit.Tool{},
+			&toolwebfetch.Tool{Provider: prov, Bus: bus},
+			&tooltaskcreate.Tool{Tasks: taskRegistry},
+			&tooltaskget.Tool{Tasks: taskRegistry},
+			&tooltasklist.Tool{Tasks: taskRegistry},
+			&tooltaskupdate.Tool{Tasks: taskRegistry},
+			&tooltaskstop.Tool{Tasks: taskRegistry},
+		} {
+			_ = subRegistry.Register(td)
+		}
+		if scopedToolNames != nil {
+			subRegistry = subRegistry.Scoped(scopedToolNames)
+		}
+		subStore := app.NewStateStore(app.AppState{
+			Conversation: forkedConv,
+			CWD:          cwd,
+			Model:        cfg.Model,
+			Provider:     cfg.Provider,
+			MaxTokens:    cfg.MaxTokens,
+			Temperature:  cfg.Temperature,
+		})
+		subOrch := tool.NewOrchestrator(subRegistry, checker, prompter, bus)
+		subCfg := engineCfg
+		if modelOverride != "" {
+			subCfg.Model = modelOverride
+		}
+		subEngine := query.NewEngine(prov, subRegistry, subOrch, subStore, costTracker, bus, subCfg)
+		return subEngine, subStore
+	}
+
+	// 12. Create main Registry and register all tools
+	registry := tool.NewRegistry(bus)
+	for _, t := range []tool.Descriptor{
+		&toolglob.Tool{},
+		&toolgrep.Tool{},
+		&toolfileread.Tool{},
+		&toolfilewrite.Tool{},
+		&toolfileedit.Tool{},
+		&toolbash.Tool{},
+		&toolagent.Tool{EngineFactory: engineFactory, Store: store, Tasks: taskRegistry, Bus: bus},
+		&toolnotebookedit.Tool{},
+		&toolwebfetch.Tool{Provider: prov, Bus: bus},
+		&tooltaskcreate.Tool{Tasks: taskRegistry},
+		&tooltaskget.Tool{Tasks: taskRegistry},
+		&tooltasklist.Tool{Tasks: taskRegistry},
+		&tooltaskupdate.Tool{Tasks: taskRegistry},
+		&tooltaskstop.Tool{Tasks: taskRegistry},
+	} {
+		if err := registry.Register(t); err != nil {
+			return fmt.Errorf("register tool %s: %w", t.Name(), err)
+		}
+	}
+
+	// 13. Create Orchestrator and Engine
+	orchestrator := tool.NewOrchestrator(registry, checker, prompter, bus)
 	engine := query.NewEngine(prov, registry, orchestrator, store, costTracker, bus, engineCfg)
 
 	// 12. Run Engine
@@ -256,12 +323,3 @@ func createProvider(cfg config.Config, bus *observe.EventBus) provider.Provider 
 	}
 }
 
-// allowAllChecker allows all tool invocations in non-interactive mode.
-type allowAllChecker struct{}
-
-func (a *allowAllChecker) Check(_ context.Context, _ string, _ json.RawMessage) permission.CheckResult {
-	return permission.CheckResult{
-		Decision: permission.DecisionAllow,
-		Rule:     permission.Rule{Pattern: "*", Decision: permission.DecisionAllow, Source: "non-interactive"},
-	}
-}

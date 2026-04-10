@@ -75,12 +75,14 @@ func (ep *errorProvider) Stream(_ context.Context, _ provider.RequestParams) (<-
 // allowAllChecker allows all tool invocations.
 type allowAllChecker struct{}
 
-func (a *allowAllChecker) Check(_ context.Context, _ string, _ json.RawMessage) permission.CheckResult {
+func (a *allowAllChecker) Check(_ context.Context, _ string, _ string) permission.CheckResult {
 	return permission.CheckResult{
 		Decision: permission.DecisionAllow,
-		Rule:     permission.Rule{Pattern: "*", Decision: permission.DecisionAllow, Source: "test"},
+		Rule:     &permission.Rule{ToolName: "*", Decision: permission.DecisionAllow, Source: "test"},
 	}
 }
+
+func (a *allowAllChecker) AddSessionRule(_ permission.Rule) {}
 
 // echoTool is a real tool.Descriptor that returns its input as output.
 type echoTool struct{}
@@ -100,7 +102,7 @@ func (echoTool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSna
 	return tool.InvokeResult{Content: "echo: " + args.Text}, nil
 }
 func (echoTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
-	return checker.Check(context.Background(), "echo", nil)
+	return checker.Check(context.Background(), "echo", "")
 }
 func (echoTool) Flags() tool.ToolFlags {
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
@@ -114,7 +116,8 @@ func newTestEngine(prov provider.Provider, tools ...tool.Descriptor) (*Engine, *
 		_ = registry.Register(t)
 	}
 	checker := &allowAllChecker{}
-	orch := tool.NewOrchestrator(registry, checker, bus)
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
 
 	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
 	store := app.NewStateStore(app.AppState{

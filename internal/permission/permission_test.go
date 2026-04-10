@@ -7,9 +7,10 @@ import (
 
 func TestRuleRoundTrip(t *testing.T) {
 	rule := Rule{
-		Pattern:  "Bash(git *)",
+		ToolName: "Bash",
+		Content:  "git *",
 		Decision: DecisionAllow,
-		Source:   "settings.json",
+		Source:   SourceUser,
 	}
 
 	data, err := json.Marshal(rule)
@@ -22,8 +23,11 @@ func TestRuleRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if got.Pattern != rule.Pattern {
-		t.Errorf("Pattern: got %q, want %q", got.Pattern, rule.Pattern)
+	if got.ToolName != rule.ToolName {
+		t.Errorf("ToolName: got %q, want %q", got.ToolName, rule.ToolName)
+	}
+	if got.Content != rule.Content {
+		t.Errorf("Content: got %q, want %q", got.Content, rule.Content)
 	}
 	if got.Decision != rule.Decision {
 		t.Errorf("Decision: got %q, want %q", got.Decision, rule.Decision)
@@ -52,10 +56,11 @@ func TestDecisionValues(t *testing.T) {
 func TestCheckResultRoundTrip(t *testing.T) {
 	cr := CheckResult{
 		Decision: DecisionDeny,
-		Rule: Rule{
-			Pattern:  "Bash(rm *)",
+		Rule: &Rule{
+			ToolName: "Bash",
+			Content:  "rm *",
 			Decision: DecisionDeny,
-			Source:   "global",
+			Source:   SourceUser,
 		},
 		Reason: "destructive command",
 	}
@@ -73,8 +78,14 @@ func TestCheckResultRoundTrip(t *testing.T) {
 	if got.Decision != cr.Decision {
 		t.Errorf("Decision: got %q", got.Decision)
 	}
-	if got.Rule.Pattern != cr.Rule.Pattern {
-		t.Errorf("Rule.Pattern: got %q", got.Rule.Pattern)
+	if got.Rule == nil {
+		t.Fatal("Rule is nil")
+	}
+	if got.Rule.ToolName != cr.Rule.ToolName {
+		t.Errorf("Rule.ToolName: got %q", got.Rule.ToolName)
+	}
+	if got.Rule.Content != cr.Rule.Content {
+		t.Errorf("Rule.Content: got %q", got.Rule.Content)
 	}
 	if got.Reason != cr.Reason {
 		t.Errorf("Reason: got %q", got.Reason)

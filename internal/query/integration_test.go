@@ -8,6 +8,7 @@ import (
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -41,7 +42,8 @@ func TestPipelineIntegration(t *testing.T) {
 
 	registry := tool.NewRegistry(bus)
 	checker := &allowAllChecker{}
-	orch := tool.NewOrchestrator(registry, checker, bus)
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
 
 	system := model.SystemPrompt{
 		Blocks: []model.SystemBlock{{Text: "You are helpful.", Cacheable: true}},
@@ -215,7 +217,8 @@ func TestPipelineToolUseIntegration(t *testing.T) {
 	registry := tool.NewRegistry(bus)
 	_ = registry.Register(echoTool{})
 	checker := &allowAllChecker{}
-	orch := tool.NewOrchestrator(registry, checker, bus)
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
 
 	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
 	store := app.NewStateStore(app.AppState{

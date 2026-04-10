@@ -70,7 +70,13 @@ func (t *Tool) Flags() tool.ToolFlags {
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
-	return checker.Check(ctx, "Grep", input)
+	var in struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil {
+		return checker.Check(ctx, "Grep", "")
+	}
+	return checker.Check(ctx, "Grep", in.Path)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {

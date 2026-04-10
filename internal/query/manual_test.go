@@ -47,7 +47,8 @@ func TestToolOrchestration_MultipleToolsConcurrentAndSerial(t *testing.T) {
 	_ = registry.Register(&counterTool{}) // serial (destructive)
 
 	checker := &allowAllChecker{}
-	orch := tool.NewOrchestrator(registry, checker, bus)
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
 
 	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
 	store := app.NewStateStore(app.AppState{
@@ -338,7 +339,7 @@ func (c *counterTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateS
 	return tool.InvokeResult{Content: "count: " + string(rune('0'+c.count))}, nil
 }
 func (c *counterTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
-	return checker.Check(context.Background(), "counter", nil)
+	return checker.Check(context.Background(), "counter", "")
 }
 func (c *counterTool) Flags() tool.ToolFlags {
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true} // serial!

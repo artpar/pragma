@@ -57,7 +57,13 @@ func (t *Tool) Flags() tool.ToolFlags {
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
-	return checker.Check(ctx, "Edit", input)
+	var in struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.Unmarshal(input, &in); err != nil || in.FilePath == "" {
+		return checker.Check(ctx, "Edit", "")
+	}
+	return checker.Check(ctx, "Edit", in.FilePath)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {

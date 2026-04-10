@@ -26,8 +26,8 @@ func (t *echoTool) Invoke(_ context.Context, input json.RawMessage, _ StateSnaps
 	return InvokeResult{Content: string(input)}, nil
 }
 
-func (t *echoTool) CheckPerm(_ context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
-	return checker.Check(context.Background(), t.name, input)
+func (t *echoTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	return checker.Check(context.Background(), t.name, "")
 }
 
 func newEchoTool(name string, concurrent bool) *echoTool {
