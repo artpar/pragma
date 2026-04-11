@@ -53,6 +53,7 @@ type Model struct {
 	streamBuf      *strings.Builder // current streaming text (not yet finalized)
 	eventCh        <-chan query.LoopEvent
 	streaming      bool
+	parentCtx      context.Context // original parent context — never overwritten
 	ctx            context.Context
 	cancel         context.CancelFunc
 	interruptCount int
@@ -88,6 +89,7 @@ func New(cfg Config) Model {
 		toolbar:     newToolbar(cfg.ModelName, cfg.Provider),
 		outputBuf:   &strings.Builder{},
 		streamBuf:   &strings.Builder{},
+		parentCtx:   parentCtx,
 		ctx:         ctx,
 		cancel:      cancel,
 	}
@@ -344,7 +346,7 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 
 	// Cancel previous context before creating a new one to avoid goroutine leaks.
 	m.cancel()
-	m.ctx, m.cancel = context.WithCancel(context.Background())
+	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
 	m.eventCh = m.engine.Run(m.ctx, msg.Text)
 
 	m.outputBuf.WriteString(assistantLabelStyle.Render("Assistant"))

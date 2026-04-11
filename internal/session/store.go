@@ -46,7 +46,10 @@ func (s *Store) Save(sess Session) error {
 		return fmt.Errorf("marshal session: %w", err)
 	}
 
-	path := s.sessionPath(sess.Conversation.ID)
+	path, err := s.sessionPath(sess.Conversation.ID)
+	if err != nil {
+		return err
+	}
 	tmpPath := path + ".tmp"
 
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
@@ -63,7 +66,10 @@ func (s *Store) Save(sess Session) error {
 
 // Load reads a session by conversation ID.
 func (s *Store) Load(id string) (Session, error) {
-	path := s.sessionPath(id)
+	path, err := s.sessionPath(id)
+	if err != nil {
+		return Session{}, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -122,16 +128,36 @@ func (s *Store) List() ([]SessionSummary, error) {
 
 // Delete removes a session file.
 func (s *Store) Delete(id string) error {
-	path := s.sessionPath(id)
-	err := os.Remove(path)
+	path, err := s.sessionPath(id)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("delete session %q: %w", id, err)
 	}
 	return nil
 }
 
-func (s *Store) sessionPath(id string) string {
-	return filepath.Join(s.dir, id+".json")
+func (s *Store) sessionPath(id string) (string, error) {
+	if !isValidSessionID(id) {
+		return "", fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", id)
+	}
+	return filepath.Join(s.dir, id+".json"), nil
+}
+
+// isValidSessionID checks that the ID contains only safe characters
+// to prevent path traversal attacks via crafted --resume values.
+func isValidSessionID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, ch := range id {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // sanitizeConversation strips empty text blocks from all messages.

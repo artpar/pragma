@@ -3,12 +3,14 @@ package hook
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/artpar/gogent/internal/observe"
 )
 
 // Manager loads, matches, and executes hooks.
 type Manager struct {
+	mu        sync.RWMutex
 	hooks     map[Event][]Entry
 	workDir   string
 	sessionID string
@@ -27,16 +29,22 @@ func NewManager(workDir, sessionID string, bus *observe.EventBus) *Manager {
 
 // SetSessionID updates the session ID used in hook input and env vars.
 func (m *Manager) SetSessionID(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.sessionID = id
 }
 
 // Reload re-reads hooks from settings files. Call after config changes.
 func (m *Manager) Reload() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.hooks = LoadHooks(m.workDir)
 }
 
 // HasHooks returns true if any hooks are configured for the given event.
 func (m *Manager) HasHooks(event Event) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	entries := m.hooks[event]
 	return len(entries) > 0
 }
@@ -45,11 +53,12 @@ func (m *Manager) HasHooks(event Event) bool {
 // For PreToolUse/PostToolUse, input.ToolName is used to filter by matcher.
 // Hooks run sequentially — simpler than parallel, avoids race conditions.
 func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) AggregatedResult {
+	m.mu.RLock()
 	input.Event = event
 	input.CWD = m.workDir
 	input.SessionID = m.sessionID
-
 	entries := m.hooks[event]
+	m.mu.RUnlock()
 	if len(entries) == 0 {
 		return AggregatedResult{}
 	}
