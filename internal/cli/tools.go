@@ -11,22 +11,28 @@ import (
 	toolagent "github.com/artpar/gogent/internal/tools/agent"
 	toolask "github.com/artpar/gogent/internal/tools/ask"
 	toolbash "github.com/artpar/gogent/internal/tools/bash"
+	toolcron "github.com/artpar/gogent/internal/tools/cron"
 	toolfileedit "github.com/artpar/gogent/internal/tools/fileedit"
 	toolfileread "github.com/artpar/gogent/internal/tools/fileread"
 	toolfilewrite "github.com/artpar/gogent/internal/tools/filewrite"
 	toolglob "github.com/artpar/gogent/internal/tools/glob"
 	toolgrep "github.com/artpar/gogent/internal/tools/grep"
+	toolmcp "github.com/artpar/gogent/internal/tools/mcp"
 	toolnotebookedit "github.com/artpar/gogent/internal/tools/notebookedit"
 	toolplan "github.com/artpar/gogent/internal/tools/plan"
 	toolsearch "github.com/artpar/gogent/internal/tools/search"
+	toolsendmsg "github.com/artpar/gogent/internal/tools/sendmsg"
 	toolsleep "github.com/artpar/gogent/internal/tools/sleep"
 	tooltaskcreate "github.com/artpar/gogent/internal/tools/taskcreate"
 	tooltaskget "github.com/artpar/gogent/internal/tools/taskget"
 	tooltasklist "github.com/artpar/gogent/internal/tools/tasklist"
+	tooltaskoutput "github.com/artpar/gogent/internal/tools/taskoutput"
 	tooltaskstop "github.com/artpar/gogent/internal/tools/taskstop"
 	tooltaskupdate "github.com/artpar/gogent/internal/tools/taskupdate"
 	tooltodo "github.com/artpar/gogent/internal/tools/todo"
+	tooltoolsearch "github.com/artpar/gogent/internal/tools/toolsearch"
 	toolwebfetch "github.com/artpar/gogent/internal/tools/webfetch"
+	toolworktree "github.com/artpar/gogent/internal/tools/worktree"
 )
 
 // RegisterTools registers all tools on the registry. The agent tool needs the
@@ -97,10 +103,20 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&tooltasklist.Tool{Tasks: d.TaskReg},
 		&tooltaskupdate.Tool{Tasks: d.TaskReg},
 		&tooltaskstop.Tool{Tasks: d.TaskReg},
+		&tooltaskoutput.Tool{Tasks: d.TaskReg},
 		&toolsleep.Tool{},
 		&tooltodo.Tool{Store: d.Store},
 		&toolplan.EnterTool{Store: d.Store},
 		&toolplan.ExitTool{Store: d.Store},
 		&toolsearch.Tool{Registry: d.Registry},
+		&tooltoolsearch.Tool{Registry: d.Registry},
+		&toolmcp.ListTool{Manager: d.McpManager},
+		&toolmcp.ReadTool{Manager: d.McpManager},
+		&toolworktree.EnterTool{},
+		&toolworktree.ExitTool{},
+		&toolcron.CreateTool{Scheduler: d.CronSched},
+		&toolcron.DeleteTool{Scheduler: d.CronSched},
+		&toolcron.ListTool{Scheduler: d.CronSched},
+		&toolsendmsg.Tool{Tasks: d.TaskReg},
 	}
 }

@@ -368,6 +368,86 @@ func extractTextContent(result *mcp.CallToolResult) string {
 	return strings.Join(parts, "\n")
 }
 
+// ResourceInfo describes an MCP resource exposed by a server.
+type ResourceInfo struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	MimeType    string `json:"mimeType,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// ResourceContent holds one piece of content returned by ReadResource.
+type ResourceContent struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Blob     string `json:"blob,omitempty"` // base64-encoded binary
+}
+
+// ListResources returns the resources offered by this server.
+func (c *Client) ListResources(ctx context.Context) ([]ResourceInfo, error) {
+	c.mu.Lock()
+	if !c.connected || c.mcpCli == nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
+	}
+	cli := c.mcpCli
+	c.mu.Unlock()
+
+	result, err := cli.ListResources(ctx, mcp.ListResourcesRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("list resources from %q: %w", c.name, err)
+	}
+
+	resources := make([]ResourceInfo, 0, len(result.Resources))
+	for _, r := range result.Resources {
+		resources = append(resources, ResourceInfo{
+			URI:         r.URI,
+			Name:        r.Name,
+			MimeType:    r.MIMEType,
+			Description: r.Description,
+		})
+	}
+	return resources, nil
+}
+
+// ReadResource reads a resource by URI from this server.
+func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceContent, error) {
+	c.mu.Lock()
+	if !c.connected || c.mcpCli == nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
+	}
+	cli := c.mcpCli
+	c.mu.Unlock()
+
+	result, err := cli.ReadResource(ctx, mcp.ReadResourceRequest{
+		Params: mcp.ReadResourceParams{URI: uri},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read resource %q from %q: %w", uri, c.name, err)
+	}
+
+	contents := make([]ResourceContent, 0, len(result.Contents))
+	for _, content := range result.Contents {
+		switch c := content.(type) {
+		case mcp.TextResourceContents:
+			contents = append(contents, ResourceContent{
+				URI:      c.URI,
+				MimeType: c.MIMEType,
+				Text:     c.Text,
+			})
+		case mcp.BlobResourceContents:
+			contents = append(contents, ResourceContent{
+				URI:      c.URI,
+				MimeType: c.MIMEType,
+				Blob:     c.Blob,
+			})
+		}
+	}
+	return contents, nil
+}
+
 // Disconnect closes the connection and cleans up resources.
 func (c *Client) Disconnect() error {
 	c.mu.Lock()

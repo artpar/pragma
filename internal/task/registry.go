@@ -90,6 +90,18 @@ func (r *Registry) Update(id string, fn func(*Task)) error {
 	return nil
 }
 
+// GetByName returns the first task with a matching AgentName.
+func (r *Registry) GetByName(name string) (*Task, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, t := range r.tasks {
+		if t.AgentName == name {
+			return t, true
+		}
+	}
+	return nil, false
+}
+
 // Cancel cancels a running task. Returns error if task not found or not cancellable.
 func (r *Registry) Cancel(id string) error {
 	r.mu.Lock()

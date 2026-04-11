@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/config"
+	"github.com/artpar/gogent/internal/cron"
 	"github.com/artpar/gogent/internal/mcp"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
@@ -17,6 +19,7 @@ import (
 	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/provider/anthropic"
 	groqprov "github.com/artpar/gogent/internal/provider/groq"
+	oaiprov "github.com/artpar/gogent/internal/provider/openai"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/session"
 	"github.com/artpar/gogent/internal/sysprompt"
@@ -36,6 +39,7 @@ type Deps struct {
 	EngineCfg   query.EngineConfig
 	TaskReg     *task.Registry
 	McpManager  *mcp.Manager
+	CronSched   *cron.Scheduler
 	Cwd         string
 	Cleanup     func()
 }
@@ -68,14 +72,19 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		switch cfg.Provider {
 		case "groq":
 			cfg.APIKey = os.Getenv("GROQ_API_KEY")
+		case "openai":
+			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
 		default:
 			cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
 		}
 	}
 	if cfg.APIKey == "" {
 		envVar := "ANTHROPIC_API_KEY"
-		if cfg.Provider == "groq" {
+		switch cfg.Provider {
+		case "groq":
 			envVar = "GROQ_API_KEY"
+		case "openai":
+			envVar = "OPENAI_API_KEY"
 		}
 		return nil, fmt.Errorf("API key required: set --api-key or %s environment variable", envVar)
 	}
@@ -158,8 +167,16 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Temperature:  cfg.Temperature,
 	})
 
-	// Task registry, cost tracker, engine config
+	// Task registry, cron scheduler, cost tracker, engine config
 	taskReg := task.NewRegistry(bus)
+
+	var cronSched *cron.Scheduler
+	if gogentHome, homeErr := config.GogentHome(); homeErr == nil {
+		cronStore := cron.NewStore(filepath.Join(gogentHome, "scheduled_tasks.json"))
+		cronSched = cron.NewScheduler(bus, cronStore)
+	} else {
+		cronSched = cron.NewScheduler(bus, nil)
+	}
 	costTracker := model.NewCostTracker()
 	engineCfg := query.EngineConfig{
 		Model:       cfg.Model,
@@ -220,6 +237,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		EngineCfg:   engineCfg,
 		TaskReg:     taskReg,
 		McpManager:  mcpManager,
+		CronSched:   cronSched,
 		Cwd:         cwd,
 		Cleanup:     compositeCleanup,
 	}, nil
@@ -271,6 +289,12 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) provider.Provider 
 		return anthropic.New(cfg.APIKey, bus)
 	case "groq":
 		return groqprov.New(cfg.APIKey, bus)
+	case "openai":
+		var opts []oaiprov.Option
+		if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
+			opts = append(opts, oaiprov.WithBaseURL(baseURL))
+		}
+		return oaiprov.New(cfg.APIKey, bus, opts...)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown provider %q, falling back to anthropic\n", cfg.Provider)
 		return anthropic.New(cfg.APIKey, bus)
@@ -282,6 +306,8 @@ func SecondaryModelFor(providerName string) string {
 	switch providerName {
 	case "groq":
 		return "llama-3.3-70b-versatile"
+	case "openai":
+		return "gpt-4o-mini"
 	default:
 		return "claude-haiku-4-5-20251001"
 	}

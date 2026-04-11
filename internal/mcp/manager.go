@@ -190,3 +190,14 @@ func (m *Manager) ConnectedCount() int {
 	}
 	return count
 }
+
+// Clients returns a snapshot of all connected clients keyed by server name.
+func (m *Manager) Clients() map[string]*Client {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make(map[string]*Client, len(m.clients))
+	for name, client := range m.clients {
+		result[name] = client
+	}
+	return result
+}
