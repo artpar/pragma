@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/config"
 	"github.com/artpar/gogent/internal/cron"
+	"github.com/artpar/gogent/internal/lsp"
 	"github.com/artpar/gogent/internal/mcp"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
@@ -39,6 +40,7 @@ type Deps struct {
 	EngineCfg   query.EngineConfig
 	TaskReg     *task.Registry
 	McpManager  *mcp.Manager
+	LspManager  *lsp.Manager
 	CronSched   *cron.Scheduler
 	Metrics     *observe.Metrics
 	Auditor     *observe.Auditor
@@ -256,6 +258,17 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	registry := tool.NewRegistry(bus)
 
+	lspManager := lsp.NewManager(bus)
+	lspConfigs, lspErr := lsp.LoadConfig(cwd, bus)
+	if lspErr != nil {
+		observe.GlobalTrace("if: lspErr != nil")
+		fmt.Fprintf(os.Stderr, "warning: load lsp config: %v\n", lspErr)
+	}
+	if len(lspConfigs) > 0 {
+		observe.GlobalTrace("if: len(lspConfigs) > 0")
+		lspManager.Initialize(lspConfigs, cwd)
+	}
+
 	mcpManager := mcp.NewManager(bus, registry)
 
 	mcpServers, mcpErr := mcp.LoadConfig(cwd, bus)
@@ -282,6 +295,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	}
 
 	compositeCleanup := func() {
+		lspManager.Shutdown()
 		mcpManager.DisconnectAll()
 		bus.Drain()
 		for _, fn := range cleanupFns {
@@ -301,6 +315,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		EngineCfg:   engineCfg,
 		TaskReg:     taskReg,
 		McpManager:  mcpManager,
+		LspManager:  lspManager,
 		CronSched:   cronSched,
 		Metrics:     metrics,
 		Auditor:     auditor,

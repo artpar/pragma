@@ -399,6 +399,44 @@ type SystemPromptBuilt struct {
 
 func (SystemPromptBuilt) eventSealed() {}
 
+// --- LSP Events ---
+
+type LSPServerStarted struct {
+	EventHeader
+	ServerName string `json:"server_name"`
+	Command    string `json:"command"`
+}
+
+func (LSPServerStarted) eventSealed() {}
+
+type LSPServerStopped struct {
+	EventHeader
+	ServerName string `json:"server_name"`
+	Reason     string `json:"reason"`
+}
+
+func (LSPServerStopped) eventSealed() {}
+
+type LSPRequestSent struct {
+	EventHeader
+	ServerName string `json:"server_name"`
+	Method     string `json:"method"`
+	FilePath   string `json:"file_path"`
+}
+
+func (LSPRequestSent) eventSealed() {}
+
+type LSPRequestCompleted struct {
+	EventHeader
+	ServerName string `json:"server_name"`
+	Method     string `json:"method"`
+	DurationMs int64  `json:"duration_ms"`
+	HasResult  bool   `json:"has_result"`
+	Error      string `json:"error,omitempty"`
+}
+
+func (LSPRequestCompleted) eventSealed() {}
+
 // --- Flow Trace Events ---
 
 // FlowTrace captures a decision point, branch, or loop iteration in the code.

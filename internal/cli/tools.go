@@ -2,6 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"net/http"
+	"os"
+	"time"
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/model"
@@ -18,7 +21,9 @@ import (
 	toolfilewrite "github.com/artpar/gogent/internal/tools/filewrite"
 	toolglob "github.com/artpar/gogent/internal/tools/glob"
 	toolgrep "github.com/artpar/gogent/internal/tools/grep"
+	toollsp "github.com/artpar/gogent/internal/tools/lsp"
 	toolmcp "github.com/artpar/gogent/internal/tools/mcp"
+	toolremote "github.com/artpar/gogent/internal/tools/remote"
 	toolnotebookedit "github.com/artpar/gogent/internal/tools/notebookedit"
 	toolplan "github.com/artpar/gogent/internal/tools/plan"
 	toolsendmsg "github.com/artpar/gogent/internal/tools/sendmsg"
@@ -99,7 +104,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: []tool.Descriptor{\n\t&toolglob.Tool{},\n\t&toolgrep.Tool{},\n\t&toolfileread.Tool{...")
-	return []tool.Descriptor{
+	tools := []tool.Descriptor{
 		&toolglob.Tool{},
 		&toolgrep.Tool{},
 		&toolfileread.Tool{},
@@ -127,5 +132,30 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolcron.DeleteTool{Scheduler: d.CronSched},
 		&toolcron.ListTool{Scheduler: d.CronSched},
 		&toolsendmsg.Tool{Tasks: d.TaskReg},
+		&toollsp.Tool{Manager: d.LspManager},
 	}
+
+	// Feature-gated: RemoteTrigger tool (GOGENT_FEATURE_REMOTE_TRIGGERS=1)
+	if os.Getenv("GOGENT_FEATURE_REMOTE_TRIGGERS") == "1" {
+		tools = append(tools, &toolremote.Tool{
+			HTTPClient: &http.Client{Timeout: 20 * time.Second},
+			BaseURL:    "https://api.anthropic.com",
+			TokenSource: func() (string, error) {
+				token := os.Getenv("ANTHROPIC_OAUTH_TOKEN")
+				if token == "" {
+					return "", fmt.Errorf("ANTHROPIC_OAUTH_TOKEN not set")
+				}
+				return token, nil
+			},
+			OrgUUID: func() (string, error) {
+				uuid := os.Getenv("ANTHROPIC_ORG_UUID")
+				if uuid == "" {
+					return "", fmt.Errorf("ANTHROPIC_ORG_UUID not set")
+				}
+				return uuid, nil
+			},
+		})
+	}
+
+	return tools
 }

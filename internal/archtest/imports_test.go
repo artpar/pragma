@@ -136,6 +136,18 @@ func TestPackageDependencyDAG(t *testing.T) {
 			"internal/session",
 			"internal/sysprompt",
 		},
+		"internal/lsp/": {
+			"internal/provider",
+			"internal/app",
+			"internal/tui",
+			"internal/cli",
+			"internal/query",
+			"internal/session",
+			"internal/sysprompt",
+			"internal/tool",
+			"internal/permission",
+			"internal/mcp",
+		},
 		"internal/compact/": {
 			"internal/tui",
 			"internal/cli",

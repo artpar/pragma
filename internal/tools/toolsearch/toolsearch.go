@@ -107,6 +107,14 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 			if _, ok := t.Registry.Get(name); ok {
 				observe.GlobalTrace("if: ok")
 				matches = append(matches, name)
+			} else {
+				// Suffix matching: select:get_handoff matches mcp__server__get_handoff (#41604)
+				suffix := "__" + name
+				for _, td := range allTools {
+					if strings.HasSuffix(td.Name(), suffix) {
+						matches = append(matches, td.Name())
+					}
+				}
 			}
 		}
 		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")

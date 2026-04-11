@@ -80,3 +80,22 @@ func GlobalMCPConfigPath() (string, error) {
 	}
 	return filepath.Join(dir, "mcp.json"), nil
 }
+
+// LSPConfigPath returns <workDir>/.gogent/lsp.json.
+func LSPConfigPath(workDir string) string {
+	return filepath.Join(workDir, ".gogent", "lsp.json")
+}
+
+// LSPLocalConfigPath returns <workDir>/.gogent/lsp.local.json.
+func LSPLocalConfigPath(workDir string) string {
+	return filepath.Join(workDir, ".gogent", "lsp.local.json")
+}
+
+// GlobalLSPConfigPath returns ~/.gogent/lsp.json.
+func GlobalLSPConfigPath() (string, error) {
+	dir, err := GogentHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "lsp.json"), nil
+}
