@@ -176,7 +176,8 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	checker := permission.NewRuleChecker(rules, mode, cwd, bus)
 
 	// Hook manager — loads from all 3 settings scopes
-	hookMgr := hook.NewManager(cwd, "", bus) // sessionID set after conversation is created
+	// sessionID is set below after the conversation is created/resumed
+	hookMgr := hook.NewManager(cwd, "", bus)
 
 	// System prompt
 	var sysPrompt model.SystemPrompt
@@ -235,6 +236,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		MaxTokens:    cfg.MaxTokens,
 		Temperature:  cfg.Temperature,
 	})
+
+	// Now that conversation ID is known, set it on the hook manager
+	hookMgr.SetSessionID(conv.ID)
 
 	taskReg := task.NewRegistry(bus)
 

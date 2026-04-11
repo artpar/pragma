@@ -25,6 +25,11 @@ func NewManager(workDir, sessionID string, bus *observe.EventBus) *Manager {
 	}
 }
 
+// SetSessionID updates the session ID used in hook input and env vars.
+func (m *Manager) SetSessionID(id string) {
+	m.sessionID = id
+}
+
 // Reload re-reads hooks from settings files. Call after config changes.
 func (m *Manager) Reload() {
 	m.hooks = LoadHooks(m.workDir)

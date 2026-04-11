@@ -9,6 +9,7 @@ import (
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/compact"
+	"github.com/artpar/gogent/internal/hook"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
@@ -62,6 +63,11 @@ func RunInteractive(cmd *cobra.Command) error {
 		SessionID:   snap.Conversation.ID,
 	})
 
+	// SessionStart hook
+	if d.HookMgr != nil {
+		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
+	}
+
 	prompter := tui.NewInteractivePrompter()
 	asker := tui.NewInteractiveAsker()
 	engine, err := RegisterTools(d, prompter, asker)
@@ -97,11 +103,19 @@ func RunInteractive(cmd *cobra.Command) error {
 		SessionSave: sessionSaveFn,
 		SlashCmds:   slashCmds,
 		SlashDeps:   slashDeps,
+		HookMgr:     d.HookMgr,
 	})
 
 	program := tea.NewProgram(m, tea.WithAltScreen())
 	prompter.SetProgram(program)
 	asker.SetProgram(program)
+
+	// SessionEnd hook on exit
+	defer func() {
+		if d.HookMgr != nil {
+			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
+		}
+	}()
 
 	if _, err := program.Run(); err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -133,6 +147,17 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		EventHeader: observe.NewEventHeader("SessionStarted", "", "", ""),
 		SessionID:   snap.Conversation.ID,
 	})
+
+	// SessionStart hook
+	if d.HookMgr != nil {
+		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
+	}
+	// SessionEnd hook on exit
+	defer func() {
+		if d.HookMgr != nil {
+			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
+		}
+	}()
 
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tui.NonInteractiveAsker{}

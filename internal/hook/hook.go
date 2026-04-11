@@ -30,12 +30,13 @@ type Entry struct {
 
 // HookInput is the JSON payload sent to hooks on stdin.
 type HookInput struct {
-	Event     Event           `json:"event"`
-	SessionID string          `json:"session_id,omitempty"`
-	CWD       string          `json:"cwd"`
-	ToolName  string          `json:"tool_name,omitempty"`
-	ToolInput json.RawMessage `json:"tool_input,omitempty"`
-	Response  string          `json:"response,omitempty"` // PostToolUse only
+	Event      Event           `json:"event"`
+	SessionID  string          `json:"session_id,omitempty"`
+	CWD        string          `json:"cwd"`
+	ToolName   string          `json:"tool_name,omitempty"`
+	ToolInput  json.RawMessage `json:"tool_input,omitempty"`
+	Response   string          `json:"response,omitempty"`    // PostToolUse: tool output
+	PromptText string          `json:"prompt_text,omitempty"` // UserPromptSubmit: user's message
 }
 
 // Result is the outcome of a single hook execution.

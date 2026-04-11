@@ -315,7 +315,7 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	// UserPromptSubmit hook — can block submission
 	if m.hookMgr != nil {
 		hookResult := m.hookMgr.Execute(context.Background(), hook.UserPromptSubmit, hook.HookInput{
-			Response: msg.Text, // reuse Response field for the user's prompt text
+			PromptText: msg.Text,
 		})
 		if hookResult.Blocked {
 			m.outputBuf.WriteString(errorStyle.Render("Blocked: "+hookResult.BlockMsg) + "\n")
