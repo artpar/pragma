@@ -157,8 +157,20 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 
 		switch response.StopReason {
-		case model.StopEndTurn, model.StopMaxTokens:
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn, model.StopMaxTokens")
+		case model.StopEndTurn:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn")
+			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+			return
+
+		case model.StopMaxTokens:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopMaxTokens")
+			e.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warn",
+				Component:    "query",
+				ErrorType:    "response_truncated",
+				ErrorMessage: fmt.Sprintf("model %q hit max_tokens limit — response was truncated", e.config.Model),
+			})
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
 

@@ -147,10 +147,18 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		}
 	}
 	tk := t.Tasks.Create(subject, in.Prompt)
-	_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+	if err := t.Tasks.Update(tk.ID, func(tt *task.Task) {
 		tt.Status = task.TaskRunning
 		tt.AgentName = subject
-	})
+	}); err != nil {
+		t.Bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+			Severity:     "warn",
+			Component:    "agent",
+			ErrorType:    "task_update_failed",
+			ErrorMessage: fmt.Sprintf("set task %s to running: %v", tk.ID, err),
+		})
+	}
 
 	// Set up worktree isolation if requested
 	var wtPath, wtBranch, wtHeadCommit string
@@ -160,7 +168,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		wtPath, wtBranch, wtHeadCommit, err = t.createWorktree(ctx, state.WorkDir(), tk.ID)
 		if err != nil {
 			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: err != nil")
-			_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+			t.updateTask(tk.ID, func(tt *task.Task) {
 				tt.Status = task.TaskFailed
 				tt.Error = err.Error()
 			})
@@ -187,17 +195,17 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if in.RunInBackground {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.RunInBackground")
-		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runBackground(tk, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)")
-		return t.runBackground(tk, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)")
+		return t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)
 	}
-	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk, engine, in, wtPath, wtBranch, wtHeadCommit)")
-	return t.runSync(ctx, tk, engine, in, wtPath, wtBranch, wtHeadCommit)
+	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, wtPath, wtBranch, wtHeadCommit)")
+	return t.runSync(ctx, tk.ID, engine, in, wtPath, wtBranch, wtHeadCommit)
 }
 
 // runSync runs the sub-agent synchronously and returns the result.
 func (t *Tool) runSync(
 	ctx context.Context,
-	tk *task.Task,
+	taskID string,
 	engine *query.Engine,
 	in AgentInput,
 	wtPath, wtBranch, wtHeadCommit string,
@@ -226,13 +234,13 @@ func (t *Tool) runSync(
 			usage.CacheReadInputTokens += e.Response.Usage.CacheReadInputTokens
 		case query.ErrorEvent:
 			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.ErrorEvent")
-			_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+			t.updateTask(taskID, func(tt *task.Task) {
 				tt.Status = task.TaskFailed
 				tt.Error = e.Err.Error()
 			})
 			t.Bus.Emit(observe.SubAgentFailed{
 				EventHeader:  observe.NewEventHeader("SubAgentFailed", "", observe.NewSpanID(), ""),
-				SubAgentID:   tk.ID,
+				SubAgentID:   taskID,
 				ErrorType:    "agent_error",
 				ErrorMessage: e.Err.Error(),
 			})
@@ -246,7 +254,7 @@ func (t *Tool) runSync(
 	tokensUsed := usage.InputTokens + usage.OutputTokens
 
 	resultStr := result.String()
-	_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+	t.updateTask(taskID, func(tt *task.Task) {
 		tt.Status = task.TaskCompleted
 		tt.Result = resultStr
 		tt.TokensUsed = tokensUsed
@@ -254,7 +262,7 @@ func (t *Tool) runSync(
 
 	t.Bus.Emit(observe.SubAgentCompleted{
 		EventHeader: observe.NewEventHeader("SubAgentCompleted", "", observe.NewSpanID(), ""),
-		SubAgentID:  tk.ID,
+		SubAgentID:  taskID,
 		DurationMs:  time.Since(startTime).Milliseconds(),
 		TurnCount:   turnCount,
 		Usage:       usage,
@@ -282,7 +290,7 @@ func (t *Tool) runSync(
 
 // runBackground launches the sub-agent in a goroutine and returns immediately.
 func (t *Tool) runBackground(
-	tk *task.Task,
+	taskID string,
 	engine *query.Engine,
 	subStore *app.StateStore,
 	in AgentInput,
@@ -292,7 +300,7 @@ func (t *Tool) runBackground(
 	defer observe.GlobalTrace("exit")
 
 	childCtx, cancelFn := context.WithCancel(context.Background())
-	_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+	t.updateTask(taskID, func(tt *task.Task) {
 		tt.Cancel = cancelFn
 	})
 	_ = subStore
@@ -323,13 +331,13 @@ func (t *Tool) runBackground(
 				usage.CacheReadInputTokens += e.Response.Usage.CacheReadInputTokens
 			case query.ErrorEvent:
 				observe.GlobalTrace("typecase: query.ErrorEvent")
-				_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+				t.updateTask(taskID, func(tt *task.Task) {
 					tt.Status = task.TaskFailed
 					tt.Error = e.Err.Error()
 				})
 				t.Bus.Emit(observe.SubAgentFailed{
 					EventHeader:  observe.NewEventHeader("SubAgentFailed", "", observe.NewSpanID(), ""),
-					SubAgentID:   tk.ID,
+					SubAgentID:   taskID,
 					ErrorType:    "agent_error",
 					ErrorMessage: e.Err.Error(),
 				})
@@ -341,14 +349,14 @@ func (t *Tool) runBackground(
 			observe.GlobalTrace("if: !failed")
 			tokensUsed := usage.InputTokens + usage.OutputTokens
 			resultStr := result.String()
-			_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+			t.updateTask(taskID, func(tt *task.Task) {
 				tt.Status = task.TaskCompleted
 				tt.Result = resultStr
 				tt.TokensUsed = tokensUsed
 			})
 			t.Bus.Emit(observe.SubAgentCompleted{
 				EventHeader: observe.NewEventHeader("SubAgentCompleted", "", observe.NewSpanID(), ""),
-				SubAgentID:  tk.ID,
+				SubAgentID:  taskID,
 				DurationMs:  time.Since(startTime).Milliseconds(),
 				TurnCount:   turnCount,
 				Usage:       usage,
@@ -361,8 +369,8 @@ func (t *Tool) runBackground(
 	ar := agentResult{
 		Status:       "async_launched",
 		Prompt:       in.Prompt,
-		AgentID:      tk.ID,
-		TaskID:       tk.ID,
+		AgentID:      taskID,
+		TaskID:       taskID,
 		WorktreePath: wtPath,
 		Branch:       wtBranch,
 	}
@@ -374,6 +382,19 @@ func (t *Tool) runBackground(
 	}
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
+}
+
+// updateTask applies a mutation to a task, emitting an error event on failure.
+func (t *Tool) updateTask(taskID string, fn func(*task.Task)) {
+	if err := t.Tasks.Update(taskID, fn); err != nil {
+		t.Bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+			Severity:     "warn",
+			Component:    "agent",
+			ErrorType:    "task_update_failed",
+			ErrorMessage: fmt.Sprintf("update task %s: %v", taskID, err),
+		})
+	}
 }
 
 // createWorktree creates a git worktree for isolated agent work.

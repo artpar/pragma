@@ -29,8 +29,8 @@ func NewRegistry(bus *observe.EventBus) *Registry {
 	}
 }
 
-// Create creates a new task in pending status and returns it.
-func (r *Registry) Create(subject, description string) *Task {
+// Create creates a new task in pending status and returns a snapshot.
+func (r *Registry) Create(subject, description string) Task {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	id := fmt.Sprintf("task-%d", r.seq.Add(1))
@@ -47,38 +47,43 @@ func (r *Registry) Create(subject, description string) *Task {
 	r.mu.Lock()
 	r.tasks[id] = t
 	r.mu.Unlock()
-	observe.GlobalTrace("return: t")
+	observe.GlobalTrace("return: t.snapshot()")
 
-	return t
+	return t.snapshot()
 }
 
-// Get returns a task by ID.
-func (r *Registry) Get(id string) (*Task, bool) {
+// Get returns a snapshot of a task by ID. The returned Task is a deep copy
+// safe to read without synchronization.
+func (r *Registry) Get(id string) (Task, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tasks[id]
-	observe.GlobalTrace("return: t, ok")
-	return t, ok
+	if !ok {
+		observe.GlobalTrace("return: Task{}, false")
+		return Task{}, false
+	}
+	observe.GlobalTrace("return: t.snapshot(), true")
+	return t.snapshot(), true
 }
 
-// List returns all tasks, optionally filtered by status.
+// List returns snapshots of all tasks, optionally filtered by status.
 // Tasks are returned in creation order (by ID).
-func (r *Registry) List(status *TaskStatus) []*Task {
+func (r *Registry) List(status *TaskStatus) []Task {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make([]*Task, 0, len(r.tasks))
+	result := make([]Task, 0, len(r.tasks))
 	for _, t := range r.tasks {
 		observe.GlobalTrace("range r.tasks")
 		if status != nil && t.Status != *status {
 			observe.GlobalTrace("if: status != nil && t.Status != *status")
 			continue
 		}
-		result = append(result, t)
+		result = append(result, t.snapshot())
 	}
 
 	sort.Slice(result, func(i, j int) bool {
@@ -108,8 +113,8 @@ func (r *Registry) Update(id string, fn func(*Task)) error {
 	return nil
 }
 
-// GetByName returns the first task with a matching AgentName.
-func (r *Registry) GetByName(name string) (*Task, bool) {
+// GetByName returns a snapshot of the first task with a matching AgentName.
+func (r *Registry) GetByName(name string) (Task, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
@@ -118,12 +123,12 @@ func (r *Registry) GetByName(name string) (*Task, bool) {
 		observe.GlobalTrace("range r.tasks")
 		if t.AgentName == name {
 			observe.GlobalTrace("if: t.AgentName == name")
-			observe.GlobalTrace("return: t, true")
-			return t, true
+			observe.GlobalTrace("return: t.snapshot(), true")
+			return t.snapshot(), true
 		}
 	}
-	observe.GlobalTrace("return: nil, false")
-	return nil, false
+	observe.GlobalTrace("return: Task{}, false")
+	return Task{}, false
 }
 
 // Cancel cancels a running task. Returns error if task not found or not cancellable.

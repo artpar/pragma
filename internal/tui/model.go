@@ -325,6 +325,8 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	m.toolbar.SetStatus("streaming...")
 	m.toolbar.IncrementTurn()
 
+	// Cancel previous context before creating a new one to avoid goroutine leaks.
+	m.cancel()
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	m.eventCh = m.engine.Run(m.ctx, msg.Text)
 
@@ -441,6 +443,9 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	case query.TurnCompleteEvent:
 		observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 		m.flushStreamBuf()
+		if e.StopReason == model.StopMaxTokens {
+			m.outputBuf.WriteString("\n" + thinkingStyle.Render("[response truncated — hit max_tokens limit]") + "\n")
+		}
 		m.outputBuf.WriteString("\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
 		return m.finishTurn(), saveSessionCmd(m.sessionSave)
