@@ -1,5 +1,6 @@
 # Binaries
 /gogent
+/gogent-instrument
 *.exe
 *.dll
 *.so
