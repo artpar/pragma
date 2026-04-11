@@ -13,6 +13,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -46,53 +47,89 @@ var inputSchema = json.RawMessage(`{
 // Tool implements the Glob tool for file pattern matching.
 type Tool struct{}
 
-func (t *Tool) Name() string             { return "Glob" }
-func (t *Tool) Description() string       { return "Fast file pattern matching tool that returns matching file paths sorted by modification time." }
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Glob\"")
+	return "Glob"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Fast file pattern matching tool that returns matching file paths sorted by m...")
+	return "Fast file pattern matching tool that returns matching file paths sorted by modification time."
+}
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "exit")
 	var in struct {
 		Pattern string `json:"pattern"`
 		Path    string `json:"path,omitempty"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil || in.Pattern == "" {
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "if: err != nil || in.Pattern == \"\"")
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", \"\")")
 		return checker.Check(ctx, "Glob", "")
 	}
-	// If an explicit absolute path is given, check permission against that path
-	// so the permission system can enforce directory restrictions.
+
 	if in.Path != "" && filepath.IsAbs(in.Path) {
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "if: in.Path != \"\" && filepath.IsAbs(in.Path)")
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Path)")
 		return checker.Check(ctx, "Glob", in.Path)
 	}
+	observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Pattern)")
 	return checker.Check(ctx, "Glob", in.Pattern)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "glob", "Tool.Invoke", "enter")
+	defer observe.TraceCtx(ctx, "glob", "Tool.Invoke", "exit")
 	var in GlobInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Pattern == "" {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: in.Pattern == \"\"")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"pattern is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("pattern is required")
 	}
 
 	baseDir := state.WorkDir()
 	if in.Path != "" {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: in.Path != \"\"")
 		if filepath.IsAbs(in.Path) {
+			observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: filepath.IsAbs(in.Path)")
 			baseDir = in.Path
 		} else {
+			observe.TraceCtx(ctx, "glob", "Tool.Invoke", "else: filepath.IsAbs(in.Path)")
 			baseDir = filepath.Join(state.WorkDir(), in.Path)
 		}
 	}
 
-	// Verify directory exists
 	info, err := os.Stat(baseDir)
 	if err != nil {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"directory not found: %s\", baseDir)")
 		return tool.InvokeResult{}, fmt.Errorf("directory not found: %s", baseDir)
 	}
 	if !info.IsDir() {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: !info.IsDir()")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"not a directory: %s\", baseDir)")
 		return tool.InvokeResult{}, fmt.Errorf("not a directory: %s", baseDir)
 	}
 
@@ -109,11 +146,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// Skip directories — only return files
+
 		if d.IsDir() {
 			return nil
 		}
-		// Skip hidden VCS dirs (doublestar uses "/" as separator)
+
 		for _, seg := range strings.Split(path, "/") {
 			switch seg {
 			case ".git", ".svn", ".hg", ".bzr", ".jj", ".sl":
@@ -128,7 +165,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		}
 		matches = append(matches, fileEntry{path: path, modTime: mt})
 
-		// Cap to avoid unbounded results
 		if len(matches) >= maxResults {
 			truncated = true
 			return errMaxResults
@@ -136,10 +172,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return nil
 	})
 	if err != nil && !errors.Is(err, errMaxResults) && ctx.Err() == nil {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: err != nil && !errors.Is(err, errMaxResults) && ctx.Err() == nil")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"glob error: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("glob error: %w", err)
 	}
 
-	// Sort by modification time (newest first), filename tiebreaker
 	sort.Slice(matches, func(i, j int) bool {
 		if matches[i].modTime.Equal(matches[j].modTime) {
 			return matches[i].path < matches[j].path
@@ -148,18 +185,23 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	})
 
 	if len(matches) == 0 {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: len(matches) == 0")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: \"No files found\"}, nil")
 		return tool.InvokeResult{Content: "No files found"}, nil
 	}
 
 	// Build plain text output (filenames joined by newline, matching TS mapToolResultToToolResultBlockParam)
 	var sb strings.Builder
 	for _, m := range matches {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "range matches")
 		sb.WriteString(m.path)
 		sb.WriteByte('\n')
 	}
 	if truncated {
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: truncated")
 		sb.WriteString("(Results are truncated. Consider using a more specific path or pattern.)\n")
 	}
+	observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: strings.TrimRight(sb.String(), \"\\n\")}, nil")
 
 	return tool.InvokeResult{Content: strings.TrimRight(sb.String(), "\n")}, nil
 }

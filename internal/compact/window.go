@@ -1,5 +1,7 @@
 package compact
 
+import "github.com/artpar/gogent/internal/observe"
+
 // Threshold constants matching the TS reference (autoCompact.ts).
 const (
 	// AutoCompactBufferTokens is the safety margin below the effective context window
@@ -51,41 +53,61 @@ type ThresholdState struct {
 // EffectiveWindow returns the usable context window after reserving output tokens
 // and system prompt space.
 func EffectiveWindow(wc WindowConfig) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	ew := wc.ContextWindow - wc.MaxOutput - wc.SystemPromptEst
 	if ew < 0 {
+		observe.GlobalTrace("if: ew < 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
+	observe.GlobalTrace("return: ew")
 	return ew
 }
 
 // AutoCompactThreshold returns the token count above which auto-compaction triggers.
 func AutoCompactThreshold(wc WindowConfig) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	threshold := EffectiveWindow(wc) - AutoCompactBufferTokens
 	if threshold < 0 {
+		observe.GlobalTrace("if: threshold < 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
+	observe.GlobalTrace("return: threshold")
 	return threshold
 }
 
 // WarningThreshold returns the token count above which a warning is shown.
 func WarningThreshold(wc WindowConfig) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	threshold := EffectiveWindow(wc) - WarningThresholdBufferTokens
 	if threshold < 0 {
+		observe.GlobalTrace("if: threshold < 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
+	observe.GlobalTrace("return: threshold")
 	return threshold
 }
 
 // CalculateThresholdState computes the current context window usage state.
 func CalculateThresholdState(tokenCount int, wc WindowConfig) ThresholdState {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	ew := EffectiveWindow(wc)
 	pct := 0
 	if ew > 0 {
+		observe.GlobalTrace("if: ew > 0")
 		pct = tokenCount * 100 / ew
 		if pct > 100 {
+			observe.GlobalTrace("if: pct > 100")
 			pct = 100
 		}
 	}
+	observe.GlobalTrace("return: ThresholdState{\n\tTokenCount:\t\t\ttokenCount,\n\tEffectiveWindow:\t\tew,\n\tIsAboveWar...")
 	return ThresholdState{
 		TokenCount:                  tokenCount,
 		EffectiveWindow:             ew,

@@ -5,6 +5,7 @@ import (
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/tool"
@@ -20,7 +21,6 @@ import (
 	toolmcp "github.com/artpar/gogent/internal/tools/mcp"
 	toolnotebookedit "github.com/artpar/gogent/internal/tools/notebookedit"
 	toolplan "github.com/artpar/gogent/internal/tools/plan"
-	toolsearch "github.com/artpar/gogent/internal/tools/search"
 	toolsendmsg "github.com/artpar/gogent/internal/tools/sendmsg"
 	toolsleep "github.com/artpar/gogent/internal/tools/sleep"
 	tooltaskcreate "github.com/artpar/gogent/internal/tools/taskcreate"
@@ -38,7 +38,9 @@ import (
 // RegisterTools registers all tools on the registry. The agent tool needs the
 // engine factory, which depends on the prompter — so it's built here.
 func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*query.Engine, error) {
-	// Sub-agent engine factory
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
 	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
 		subRegistry := tool.NewRegistry(d.Bus)
 		for _, td := range BaseTools(d) {
@@ -63,32 +65,40 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		return query.NewEngine(d.Prov, subRegistry, subOrch, subStore, d.CostTracker, d.Bus, subCfg), subStore
 	}
 
-	// Register all base tools
 	for _, td := range BaseTools(d) {
+		observe.GlobalTrace("range BaseTools(d)")
 		if err := d.Registry.Register(td); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
 			return nil, fmt.Errorf("register tool %s: %w", td.Name(), err)
 		}
 	}
 
-	// Register tools that need the prompter/asker
 	agentTool := &toolagent.Tool{EngineFactory: engineFactory, Store: d.Store, Tasks: d.TaskReg, Bus: d.Bus}
 	if err := d.Registry.Register(agentTool); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
 		return nil, fmt.Errorf("register agent tool: %w", err)
 	}
 	askTool := &toolask.Tool{Asker: asker}
 	if err := d.Registry.Register(askTool); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
 		return nil, fmt.Errorf("register ask tool: %w", err)
 	}
 
-	// Create main orchestrator and engine
 	orchestrator := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
 	engine := query.NewEngine(d.Prov, d.Registry, orchestrator, d.Store, d.CostTracker, d.Bus, d.EngineCfg)
+	observe.GlobalTrace("return: engine, nil")
 	return engine, nil
 }
 
 // BaseTools returns all tool descriptors except Agent and AskUserQuestion
 // (which need the engine factory / asker).
 func BaseTools(d *Deps) []tool.Descriptor {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: []tool.Descriptor{\n\t&toolglob.Tool{},\n\t&toolgrep.Tool{},\n\t&toolfileread.Tool{...")
 	return []tool.Descriptor{
 		&toolglob.Tool{},
 		&toolgrep.Tool{},
@@ -108,7 +118,6 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&tooltodo.Tool{Store: d.Store},
 		&toolplan.EnterTool{Store: d.Store},
 		&toolplan.ExitTool{Store: d.Store},
-		&toolsearch.Tool{Registry: d.Registry},
 		&tooltoolsearch.Tool{Registry: d.Registry},
 		&toolmcp.ListTool{Manager: d.McpManager},
 		&toolmcp.ReadTool{Manager: d.McpManager},

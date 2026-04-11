@@ -398,3 +398,29 @@ type SystemPromptBuilt struct {
 }
 
 func (SystemPromptBuilt) eventSealed() {}
+
+// --- Flow Trace Events ---
+
+// FlowTrace captures a decision point, branch, or loop iteration in the code.
+// Use this for fine-grained tracing without creating a new event type per decision.
+type FlowTrace struct {
+	EventHeader
+	Component string `json:"component"` // e.g. "query", "orchestrator", "permission", "tui"
+	Function  string `json:"function"`  // e.g. "runLoop", "executeSingle", "Check"
+	Message   string `json:"message"`   // e.g. "stop_reason=tool_use, executing 3 tools"
+}
+
+func (FlowTrace) eventSealed() {}
+
+// Trace is a convenience method on EventBus for emitting FlowTrace events.
+func (bus *EventBus) Trace(component, function, msg string) {
+	if bus == nil {
+		return
+	}
+	bus.Emit(FlowTrace{
+		EventHeader: NewEventHeader("FlowTrace", "", "", ""),
+		Component:   component,
+		Function:    function,
+		Message:     msg,
+	})
+}

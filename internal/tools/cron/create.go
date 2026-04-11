@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	cronpkg "github.com/artpar/gogent/internal/cron"
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -45,46 +46,81 @@ type CreateTool struct {
 	Scheduler *cronpkg.Scheduler
 }
 
-func (t *CreateTool) Name() string                { return "CronCreate" }
-func (t *CreateTool) Description() string          { return "Schedule a prompt to run on a cron schedule." }
-func (t *CreateTool) InputSchema() json.RawMessage { return createSchema }
+func (t *CreateTool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"CronCreate\"")
+	return "CronCreate"
+}
+func (t *CreateTool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Schedule a prompt to run on a cron schedule.\"")
+	return "Schedule a prompt to run on a cron schedule."
+}
+func (t *CreateTool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: createSchema")
+	return createSchema
+}
 func (t *CreateTool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: true}
 }
 
 func (t *CreateTool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "cron", "CreateTool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "cron", "CreateTool.CheckPerm", "exit")
 	var in struct {
 		Cron string `json:"cron"`
 	}
 	if err := json.Unmarshal(input, &in); err == nil && in.Cron != "" {
+		observe.TraceCtx(ctx, "cron", "CreateTool.CheckPerm", "if: err == nil && in.Cron != \"\"")
+		observe.TraceCtx(ctx, "cron", "CreateTool.CheckPerm", "return: checker.Check(ctx, \"CronCreate\", in.Cron)")
 		return checker.Check(ctx, "CronCreate", in.Cron)
 	}
+	observe.TraceCtx(ctx, "cron", "CreateTool.CheckPerm", "return: checker.Check(ctx, \"CronCreate\", \"\")")
 	return checker.Check(ctx, "CronCreate", "")
 }
 
 func (t *CreateTool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var in createInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Cron == "" {
+		observe.GlobalTrace("if: in.Cron == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"cron expression is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("cron expression is required")
 	}
 	if in.Prompt == "" {
+		observe.GlobalTrace("if: in.Prompt == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("prompt is required")
 	}
 
 	recurring := true
 	if in.Recurring != nil {
+		observe.GlobalTrace("if: in.Recurring != nil")
 		recurring = *in.Recurring
 	}
 	durable := false
 	if in.Durable != nil {
+		observe.GlobalTrace("if: in.Durable != nil")
 		durable = *in.Durable
 	}
 
 	job, err := t.Scheduler.Create(in.Cron, in.Prompt, recurring, durable)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"create cron job: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("create cron job: %w", err)
 	}
 
@@ -100,5 +136,6 @@ func (t *CreateTool) Invoke(_ context.Context, input json.RawMessage, _ tool.Sta
 		Durable:       job.Durable,
 	}
 	data, _ := json.Marshal(result)
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }

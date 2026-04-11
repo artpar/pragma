@@ -59,6 +59,8 @@ func NewEngine(
 	cfg EngineConfig,
 	compDeps ...CompactionDeps,
 ) *Engine {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	e := &Engine{
 		provider:     prov,
 		registry:     reg,
@@ -69,16 +71,20 @@ func NewEngine(
 		config:       cfg,
 	}
 	if len(compDeps) > 0 {
+		observe.GlobalTrace("if: len(compDeps) > 0")
 		e.compactor = compDeps[0].Compactor
 		e.autoTracker = compDeps[0].AutoTracker
 		e.windowConfig = compDeps[0].WindowConfig
 	}
+	observe.GlobalTrace("return: e")
 	return e
 }
 
 // SetCompaction configures auto-compaction after engine creation.
 // Useful when the engine is created before compaction deps are ready.
 func (e *Engine) SetCompaction(deps CompactionDeps) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	e.compactor = deps.Compactor
 	e.autoTracker = deps.AutoTracker
 	e.windowConfig = deps.WindowConfig

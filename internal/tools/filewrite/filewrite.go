@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -35,54 +36,89 @@ var inputSchema = json.RawMessage(`{
 // Tool implements the FileWrite tool.
 type Tool struct{}
 
-func (t *Tool) Name() string                { return "Write" }
-func (t *Tool) Description() string          { return "Write a file to the local filesystem. Creates parent directories as needed." }
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Write\"")
+	return "Write"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Write a file to the local filesystem. Creates parent directories as needed.\"")
+	return "Write a file to the local filesystem. Creates parent directories as needed."
+}
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "filewrite", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "filewrite", "Tool.CheckPerm", "exit")
 	var in struct {
 		FilePath string `json:"file_path"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil || in.FilePath == "" {
+		observe.TraceCtx(ctx, "filewrite", "Tool.CheckPerm", "if: err != nil || in.FilePath == \"\"")
+		observe.TraceCtx(ctx, "filewrite", "Tool.CheckPerm", "return: checker.Check(ctx, \"Write\", \"\")")
 		return checker.Check(ctx, "Write", "")
 	}
+	observe.TraceCtx(ctx, "filewrite", "Tool.CheckPerm", "return: checker.Check(ctx, \"Write\", in.FilePath)")
 	return checker.Check(ctx, "Write", in.FilePath)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "enter")
+	defer observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "exit")
 	var in FileWriteInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.FilePath == "" {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: in.FilePath == \"\"")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
 
 	filePath := in.FilePath
 	if !filepath.IsAbs(filePath) {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: !filepath.IsAbs(filePath)")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path must be absolute, got: %s\", filePath)")
 		return tool.InvokeResult{}, fmt.Errorf("file_path must be absolute, got: %s", filePath)
 	}
 
-	// Determine if creating or updating
 	_, err := os.Stat(filePath)
 	isCreate := os.IsNotExist(err)
 
-	// Create parent directories
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create directory %s: %w\", dir, err)")
 		return tool.InvokeResult{}, fmt.Errorf("create directory %s: %w", dir, err)
 	}
 
-	// Write the file
 	if err := os.WriteFile(filePath, []byte(in.Content), 0644); err != nil {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 	}
 
 	if isCreate {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: isCreate")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been created successf...")
 		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been created successfully.", in.FilePath)}, nil
 	}
+	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
 	return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
 }

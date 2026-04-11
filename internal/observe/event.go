@@ -325,6 +325,12 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	case "FlowTrace":
+		var e FlowTrace
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	default:
 		return nil, fmt.Errorf("unknown event kind: %q", peek.Kind)
 	}

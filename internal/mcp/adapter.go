@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -22,6 +23,9 @@ type MCPToolAdapter struct {
 
 // NewMCPToolAdapter creates an adapter. fullName is "mcp__<server>__<tool>".
 func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tBuildToolName(...")
 	return &MCPToolAdapter{
 		client:   client,
 		toolInfo: info,
@@ -30,42 +34,68 @@ func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
 }
 
 // Name returns the fully-qualified tool name (mcp__<server>__<tool>).
-func (a *MCPToolAdapter) Name() string { return a.fullName }
+func (a *MCPToolAdapter) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: a.fullName")
+	return a.fullName
+}
 
 // Description returns the MCP server's tool description, capped at 2048 chars.
 func (a *MCPToolAdapter) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	d := a.toolInfo.Description
 	if len(d) > maxDescriptionLen {
+		observe.GlobalTrace("if: len(d) > maxDescriptionLen")
+		observe.GlobalTrace("return: d[:maxDescriptionLen]")
 		return d[:maxDescriptionLen]
 	}
+	observe.GlobalTrace("return: d")
 	return d
 }
 
 // InputSchema returns the MCP server's JSON Schema for the tool.
 func (a *MCPToolAdapter) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(a.toolInfo.InputSchema) == 0 {
+		observe.GlobalTrace("if: len(a.toolInfo.InputSchema) == 0")
+		observe.GlobalTrace("return: json.RawMessage(`{\"type\":\"object\"}`)")
 		return json.RawMessage(`{"type":"object"}`)
 	}
+	observe.GlobalTrace("return: a.toolInfo.InputSchema")
 	return a.toolInfo.InputSchema
 }
 
 // Invoke calls the MCP server tool. Handles disconnection with 1 reconnect retry.
 func (a *MCPToolAdapter) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "exit")
 	result, err := a.client.CallTool(ctx, a.toolInfo.Name, input)
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: err != nil")
 		if errors.Is(err, ErrServerNotConnected) {
-			// Server went away between calls — attempt reconnect + retry once
+			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: errors.Is(err, ErrServerNotConnected)")
+
 			if reconnErr := a.client.Reconnect(ctx); reconnErr != nil {
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: reconnErr != nil")
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"reconnect failed for %s: %w\", a.fullName, re...")
 				return tool.InvokeResult{}, fmt.Errorf("reconnect failed for %s: %w", a.fullName, reconnErr)
 			}
 			result, err = a.client.CallTool(ctx, a.toolInfo.Name, input)
 			if err != nil {
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: err != nil")
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 				return tool.InvokeResult{}, err
 			}
 		} else {
+			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "else: errors.Is(err, ErrServerNotConnected)")
+			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 			return tool.InvokeResult{}, err
 		}
 	}
+	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 
 	return tool.InvokeResult{Content: result}, nil
 }
@@ -73,15 +103,21 @@ func (a *MCPToolAdapter) Invoke(ctx context.Context, input json.RawMessage, _ to
 // CheckPerm extracts a permission-checkable string from the input.
 // The content is the stringified JSON args — permission rules match against this.
 func (a *MCPToolAdapter) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.CheckPerm", "exit")
 	content := string(input)
+	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.CheckPerm", "return: checker.Check(ctx, a.fullName, content)")
 	return checker.Check(ctx, a.fullName, content)
 }
 
 // Flags returns tool flags derived from MCP annotations.
 func (a *MCPToolAdapter) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{\n\tReadOnly:\ta.toolInfo.ReadOnly,\n\tConcurrent:\ta.toolInfo.ReadO...")
 	return tool.ToolFlags{
 		ReadOnly:    a.toolInfo.ReadOnly,
-		Concurrent:  a.toolInfo.ReadOnly, // read-only tools are safe to run concurrently
+		Concurrent:  a.toolInfo.ReadOnly,
 		Destructive: a.toolInfo.Destructive,
 	}
 }

@@ -48,6 +48,9 @@ type Client struct {
 
 // NewClient creates a Client (does not connect yet).
 func NewClient(name string, cfg ServerConfig, bus *observe.EventBus) *Client {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &Client{\n\tname:\tname,\n\tconfig:\tcfg,\n\tbus:\tbus,\n}")
 	return &Client{
 		name:   name,
 		config: cfg,
@@ -56,17 +59,27 @@ func NewClient(name string, cfg ServerConfig, bus *observe.EventBus) *Client {
 }
 
 // Name returns the server name.
-func (c *Client) Name() string { return c.name }
+func (c *Client) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: c.name")
+	return c.name
+}
 
 // Connected returns true if the client is connected.
 func (c *Client) Connected() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	observe.GlobalTrace("return: c.connected")
 	return c.connected
 }
 
 // Connect establishes the MCP connection with a startup timeout.
 func (c *Client) Connect(ctx context.Context) error {
+	observe.TraceCtx(ctx, "mcp", "Client.Connect", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Client.Connect", "exit")
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -86,19 +99,21 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	cli, err := c.createMCPClient()
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "if: err != nil")
 		c.bus.Emit(observe.MCPServerFailed{
 			EventHeader:  observe.NewEventHeader("MCPServerFailed", traceID, spanID, ""),
 			ServerName:   c.name,
 			ErrorType:    "transport_create",
 			ErrorMessage: err.Error(),
 		})
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"create transport for %q: %w\", c.name, err)")
 		return fmt.Errorf("create transport for %q: %w", c.name, err)
 	}
 
-	// For SSE/HTTP transports, Start must be called explicitly.
-	// Stdio transport auto-starts in NewStdioMCPClient.
 	if c.config.effectiveType() != "stdio" {
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "if: c.config.effectiveType() != \"stdio\"")
 		if err := cli.Start(connectCtx); err != nil {
+			observe.TraceCtx(ctx, "mcp", "Client.Connect", "if: err != nil")
 			_ = cli.Close()
 			c.bus.Emit(observe.MCPServerFailed{
 				EventHeader:  observe.NewEventHeader("MCPServerFailed", traceID, spanID, ""),
@@ -106,11 +121,11 @@ func (c *Client) Connect(ctx context.Context) error {
 				ErrorType:    "transport_start",
 				ErrorMessage: err.Error(),
 			})
+			observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"start transport for %q: %w\", c.name, err)")
 			return fmt.Errorf("start transport for %q: %w", c.name, err)
 		}
 	}
 
-	// Initialize MCP handshake
 	_, err = cli.Initialize(connectCtx, mcp.InitializeRequest{
 		Params: mcp.InitializeParams{
 			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
@@ -122,6 +137,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		},
 	})
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "if: err != nil")
 		_ = cli.Close()
 		c.bus.Emit(observe.MCPServerFailed{
 			EventHeader:  observe.NewEventHeader("MCPServerFailed", traceID, spanID, ""),
@@ -129,17 +145,18 @@ func (c *Client) Connect(ctx context.Context) error {
 			ErrorType:    "initialize",
 			ErrorMessage: err.Error(),
 		})
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"initialize %q: %w\", c.name, err)")
 		return fmt.Errorf("initialize %q: %w", c.name, err)
 	}
 
 	c.mcpCli = cli
 	c.connected = true
-	c.tools = nil // clear cached tools
+	c.tools = nil
 
-	// List tools immediately to populate cache and report count
 	tools, toolErr := c.listToolsLocked(connectCtx)
 	toolCount := 0
 	if toolErr == nil {
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "if: toolErr == nil")
 		toolCount = len(tools)
 	}
 
@@ -149,18 +166,23 @@ func (c *Client) Connect(ctx context.Context) error {
 		ToolCount:   toolCount,
 		DurationMs:  time.Since(start).Milliseconds(),
 	})
+	observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: nil")
 
 	return nil
 }
 
 // createMCPClient creates the underlying mcp-go Client based on transport type.
 func (c *Client) createMCPClient() (*mcpclient.Client, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch c.config.effectiveType() {
 	case "stdio":
+		observe.GlobalTrace("case: \"stdio\"")
 		env := c.buildEnv()
 		return mcpclient.NewStdioMCPClient(c.config.Command, env, c.config.Args...)
 
 	case "sse":
+		observe.GlobalTrace("case: \"sse\"")
 		opts := make([]transport.ClientOption, 0, 1)
 		if len(c.config.Headers) > 0 {
 			opts = append(opts, transport.WithHeaders(c.config.Headers))
@@ -168,6 +190,7 @@ func (c *Client) createMCPClient() (*mcpclient.Client, error) {
 		return mcpclient.NewSSEMCPClient(c.config.URL, opts...)
 
 	case "http":
+		observe.GlobalTrace("case: \"http\"")
 		opts := make([]transport.StreamableHTTPCOption, 0, 1)
 		if len(c.config.Headers) > 0 {
 			opts = append(opts, transport.WithHTTPHeaders(c.config.Headers))
@@ -175,6 +198,7 @@ func (c *Client) createMCPClient() (*mcpclient.Client, error) {
 		return mcpclient.NewStreamableHttpClient(c.config.URL, opts...)
 
 	default:
+		observe.GlobalTrace("default")
 		return nil, fmt.Errorf("unsupported transport: %s", c.config.effectiveType())
 	}
 }
@@ -182,14 +206,18 @@ func (c *Client) createMCPClient() (*mcpclient.Client, error) {
 // buildEnv merges config Env into the current process environment.
 // Config entries override existing env vars with the same key.
 func (c *Client) buildEnv() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(c.config.Env) == 0 {
-		return nil // inherit current process env (default behavior)
+		observe.GlobalTrace("if: len(c.config.Env) == 0")
+		observe.GlobalTrace("return: nil")
+		return nil
 	}
 
-	// Start with current environment
 	current := os.Environ()
 	override := make(map[string]string, len(c.config.Env))
 	for k, v := range c.config.Env {
+		observe.GlobalTrace("range c.config.Env")
 		override[k] = v
 	}
 
@@ -197,56 +225,75 @@ func (c *Client) buildEnv() []string {
 	seen := make(map[string]bool, len(current))
 
 	for _, entry := range current {
+		observe.GlobalTrace("range current")
 		key, _, _ := strings.Cut(entry, "=")
 		if v, ok := override[key]; ok {
+			observe.GlobalTrace("if: ok")
 			result = append(result, key+"="+v)
 			seen[key] = true
 		} else {
+			observe.GlobalTrace("else: ok")
 			result = append(result, entry)
 			seen[key] = true
 		}
 	}
 
-	// Add any new env vars from config that weren't in current env
 	for k, v := range override {
+		observe.GlobalTrace("range override")
 		if !seen[k] {
+			observe.GlobalTrace("if: !seen[k]")
 			result = append(result, k+"="+v)
 		}
 	}
+	observe.GlobalTrace("return: result")
 
 	return result
 }
 
 // ListTools returns the tools offered by this server (cached after first call).
 func (c *Client) ListTools(ctx context.Context) ([]ToolInfo, error) {
+	observe.TraceCtx(ctx, "mcp", "Client.ListTools", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Client.ListTools", "exit")
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	observe.TraceCtx(ctx, "mcp", "Client.ListTools", "return: c.listToolsLocked(ctx)")
 	return c.listToolsLocked(ctx)
 }
 
 func (c *Client) listToolsLocked(ctx context.Context) ([]ToolInfo, error) {
+	observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "exit")
 	if !c.connected || c.mcpCli == nil {
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: !c.connected || c.mcpCli == nil")
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
 	}
 
 	if c.tools != nil {
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: c.tools != nil")
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: c.tools, nil")
 		return c.tools, nil
 	}
 
 	result, err := c.mcpCli.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
-		c.tools = nil // defense in depth: ensure stale cache is cleared on failure
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: err != nil")
+		c.tools = nil
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"list tools from %q: %w\", c.name, err)")
 		return nil, fmt.Errorf("list tools from %q: %w", c.name, err)
 	}
 
 	tools := make([]ToolInfo, 0, len(result.Tools))
 	for _, t := range result.Tools {
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "range result.Tools")
 		schema, err := json.Marshal(t.InputSchema)
 		if err != nil {
+			observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: err != nil")
 			schema = []byte(`{"type":"object"}`)
 		}
-		// Use RawInputSchema if available (arbitrary JSON Schema)
+
 		if len(t.RawInputSchema) > 0 {
+			observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: len(t.RawInputSchema) > 0")
 			schema = t.RawInputSchema
 		}
 
@@ -257,9 +304,11 @@ func (c *Client) listToolsLocked(ctx context.Context) ([]ToolInfo, error) {
 		}
 
 		if t.Annotations.ReadOnlyHint != nil {
+			observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: t.Annotations.ReadOnlyHint != nil")
 			info.ReadOnly = *t.Annotations.ReadOnlyHint
 		}
 		if t.Annotations.DestructiveHint != nil {
+			observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: t.Annotations.DestructiveHint != nil")
 			info.Destructive = *t.Annotations.DestructiveHint
 		}
 
@@ -267,14 +316,19 @@ func (c *Client) listToolsLocked(ctx context.Context) ([]ToolInfo, error) {
 	}
 
 	c.tools = tools
+	observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: tools, nil")
 	return tools, nil
 }
 
 // CallTool invokes a tool on the MCP server with a deadline.
 func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMessage) (string, error) {
+	observe.TraceCtx(ctx, "mcp", "Client.CallTool", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Client.CallTool", "exit")
 	c.mu.Lock()
 	if !c.connected || c.mcpCli == nil {
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: !c.connected || c.mcpCli == nil")
 		c.mu.Unlock()
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return "", fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
 	}
 	cli := c.mcpCli
@@ -292,7 +346,6 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 
 	start := time.Now()
 
-	// Apply tool call timeout
 	timeout := toolCallTimeout(c.bus)
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -300,7 +353,10 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 	// Convert json.RawMessage to map[string]any for mcp-go
 	var arguments map[string]any
 	if len(args) > 0 {
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: len(args) > 0")
 		if err := json.Unmarshal(args, &arguments); err != nil {
+			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: err != nil")
+			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"parse tool arguments: %w\", err)")
 			return "", fmt.Errorf("parse tool arguments: %w", err)
 		}
 	}
@@ -312,17 +368,21 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 		},
 	})
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: err != nil")
 		if callCtx.Err() != nil && ctx.Err() == nil {
-			// Inner timeout fired but parent context still alive = tool call timeout
+			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: callCtx.Err() != nil && ctx.Err() == nil")
+			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s after %s\", ErrToolCallTimeout, c.name, toolName, ti...")
+
 			return "", fmt.Errorf("%w: %s/%s after %s", ErrToolCallTimeout, c.name, toolName, timeout)
 		}
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %v\", ErrToolCallFailed, c.name, toolName, err)")
 		return "", fmt.Errorf("%w: %s/%s: %v", ErrToolCallFailed, c.name, toolName, err)
 	}
 
-	// Extract text from result content
 	output := extractTextContent(result)
 
 	if result.IsError {
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: result.IsError")
 		c.bus.Emit(observe.MCPToolCallCompleted{
 			EventHeader:     observe.NewEventHeader("MCPToolCallCompleted", traceID, spanID, ""),
 			ServerName:      c.name,
@@ -330,6 +390,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 			DurationMs:      time.Since(start).Milliseconds(),
 			OutputSizeBytes: len(output),
 		})
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %s\", ErrToolCallFailed, c.name, toolName, output)")
 		return "", fmt.Errorf("%w: %s/%s: %s", ErrToolCallFailed, c.name, toolName, output)
 	}
 
@@ -340,31 +401,41 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 		DurationMs:      time.Since(start).Milliseconds(),
 		OutputSizeBytes: len(output),
 	})
+	observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: output, nil")
 
 	return output, nil
 }
 
 // extractTextContent concatenates text from CallToolResult content blocks.
 func extractTextContent(result *mcp.CallToolResult) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if result == nil || len(result.Content) == 0 {
+		observe.GlobalTrace("if: result == nil || len(result.Content) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
 	var parts []string
 	for _, content := range result.Content {
+		observe.GlobalTrace("range result.Content")
 		switch c := content.(type) {
 		case mcp.TextContent:
+			observe.GlobalTrace("typecase: mcp.TextContent")
 			parts = append(parts, c.Text)
 		case *mcp.TextContent:
+			observe.GlobalTrace("typecase: *mcp.TextContent")
 			parts = append(parts, c.Text)
 		default:
-			// For non-text content (images, resources), serialize as JSON
+			observe.GlobalTrace("typedefault")
+
 			data, err := json.Marshal(c)
 			if err == nil {
 				parts = append(parts, string(data))
 			}
 		}
 	}
+	observe.GlobalTrace("return: strings.Join(parts, \"\\n\")")
 	return strings.Join(parts, "\n")
 }
 
@@ -386,9 +457,13 @@ type ResourceContent struct {
 
 // ListResources returns the resources offered by this server.
 func (c *Client) ListResources(ctx context.Context) ([]ResourceInfo, error) {
+	observe.TraceCtx(ctx, "mcp", "Client.ListResources", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Client.ListResources", "exit")
 	c.mu.Lock()
 	if !c.connected || c.mcpCli == nil {
+		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "if: !c.connected || c.mcpCli == nil")
 		c.mu.Unlock()
+		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
 	}
 	cli := c.mcpCli
@@ -396,11 +471,14 @@ func (c *Client) ListResources(ctx context.Context) ([]ResourceInfo, error) {
 
 	result, err := cli.ListResources(ctx, mcp.ListResourcesRequest{})
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "if: err != nil")
+		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"list resources from %q: %w\", c.name, err)")
 		return nil, fmt.Errorf("list resources from %q: %w", c.name, err)
 	}
 
 	resources := make([]ResourceInfo, 0, len(result.Resources))
 	for _, r := range result.Resources {
+		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "range result.Resources")
 		resources = append(resources, ResourceInfo{
 			URI:         r.URI,
 			Name:        r.Name,
@@ -408,14 +486,19 @@ func (c *Client) ListResources(ctx context.Context) ([]ResourceInfo, error) {
 			Description: r.Description,
 		})
 	}
+	observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: resources, nil")
 	return resources, nil
 }
 
 // ReadResource reads a resource by URI from this server.
 func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceContent, error) {
+	observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "exit")
 	c.mu.Lock()
 	if !c.connected || c.mcpCli == nil {
+		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "if: !c.connected || c.mcpCli == nil")
 		c.mu.Unlock()
+		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
 	}
 	cli := c.mcpCli
@@ -425,19 +508,24 @@ func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceConten
 		Params: mcp.ReadResourceParams{URI: uri},
 	})
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "if: err != nil")
+		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"read resource %q from %q: %w\", uri, c.name, err)")
 		return nil, fmt.Errorf("read resource %q from %q: %w", uri, c.name, err)
 	}
 
 	contents := make([]ResourceContent, 0, len(result.Contents))
 	for _, content := range result.Contents {
+		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "range result.Contents")
 		switch c := content.(type) {
 		case mcp.TextResourceContents:
+			observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "typecase: mcp.TextResourceContents")
 			contents = append(contents, ResourceContent{
 				URI:      c.URI,
 				MimeType: c.MIMEType,
 				Text:     c.Text,
 			})
 		case mcp.BlobResourceContents:
+			observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "typecase: mcp.BlobResourceContents")
 			contents = append(contents, ResourceContent{
 				URI:      c.URI,
 				MimeType: c.MIMEType,
@@ -445,15 +533,20 @@ func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceConten
 			})
 		}
 	}
+	observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: contents, nil")
 	return contents, nil
 }
 
 // Disconnect closes the connection and cleans up resources.
 func (c *Client) Disconnect() error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if !c.connected || c.mcpCli == nil {
+		observe.GlobalTrace("if: !c.connected || c.mcpCli == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
@@ -469,30 +562,42 @@ func (c *Client) Disconnect() error {
 		ServerName:  c.name,
 		Reason:      "client_disconnect",
 	})
+	observe.GlobalTrace("return: err")
 
 	return err
 }
 
 // Reconnect disconnects then connects again. Clears tool cache.
 func (c *Client) Reconnect(ctx context.Context) error {
+	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "exit")
 	_ = c.Disconnect()
+	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "return: c.Connect(ctx)")
 	return c.Connect(ctx)
 }
 
 // toolCallTimeout returns the tool call timeout from MCP_TIMEOUT env or default.
 // Emits a warning via bus if MCP_TIMEOUT is set but unparseable (GitHub #7575, #16837).
 func toolCallTimeout(bus *observe.EventBus) time.Duration {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if v := os.Getenv("MCP_TIMEOUT"); v != "" {
+		observe.GlobalTrace("if: v != \"\"")
 		if ms, err := time.ParseDuration(v); err == nil {
+			observe.GlobalTrace("if: err == nil")
+			observe.GlobalTrace("return: ms")
 			return ms
 		}
 		// Try parsing as milliseconds (common in TS world)
 		var ms int64
 		if _, err := fmt.Sscanf(v, "%d", &ms); err == nil && ms > 0 {
+			observe.GlobalTrace("if: err == nil && ms > 0")
+			observe.GlobalTrace("return: time.Duration(ms) * time.Millisecond")
 			return time.Duration(ms) * time.Millisecond
 		}
-		// Both parse attempts failed — warn the user
+
 		if bus != nil {
+			observe.GlobalTrace("if: bus != nil")
 			bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 				Severity:     "warning",
@@ -502,5 +607,6 @@ func toolCallTimeout(bus *observe.EventBus) time.Duration {
 			})
 		}
 	}
+	observe.GlobalTrace("return: defaultToolCallTimeout")
 	return defaultToolCallTimeout
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -37,35 +38,65 @@ type enterResult struct {
 // EnterTool creates a git worktree for isolated work.
 type EnterTool struct{}
 
-func (t *EnterTool) Name() string                { return "EnterWorktree" }
-func (t *EnterTool) Description() string          { return "Create a git worktree for isolated file operations." }
-func (t *EnterTool) InputSchema() json.RawMessage { return enterSchema }
+func (t *EnterTool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"EnterWorktree\"")
+	return "EnterWorktree"
+}
+func (t *EnterTool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Create a git worktree for isolated file operations.\"")
+	return "Create a git worktree for isolated file operations."
+}
+func (t *EnterTool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: enterSchema")
+	return enterSchema
+}
 func (t *EnterTool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
 func (t *EnterTool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "exit")
 	var in struct {
 		Slug string `json:"slug"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil || in.Slug == "" {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "if: err != nil || in.Slug == \"\"")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", \"\")")
 		return checker.Check(ctx, "EnterWorktree", "")
 	}
+	observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", in.Slug)")
 	return checker.Check(ctx, "EnterWorktree", in.Slug)
 }
 
 func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "enter")
+	defer observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "exit")
 	var in enterInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 
 	slug := in.Slug
 	if slug == "" {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: slug == \"\"")
 		slug = fmt.Sprintf("wt-%d", time.Now().UnixMilli())
 	}
 
 	if err := validateSlug(slug); err != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid slug: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid slug: %w", err)
 	}
 
@@ -73,24 +104,27 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 	branch := "worktree-" + flatSlug
 	dir := filepath.Join(state.WorkDir(), ".gogent", "worktrees", flatSlug)
 
-	// Create parent directories
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create worktree parent dir: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("create worktree parent dir: %w", err)
 	}
 
-	// Create the worktree
 	cmd := exec.CommandContext(ctx, "git", "worktree", "add", "-B", branch, dir, "HEAD")
 	cmd.Dir = state.WorkDir()
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git worktree add: %s: %w\", strings.TrimSpace...")
 		return tool.InvokeResult{}, fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 
-	// Get the HEAD commit of the new worktree
 	revCmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD")
 	revOut, err := revCmd.Output()
 	if err != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git rev-parse HEAD: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("git rev-parse HEAD: %w", err)
 	}
 	headCommit := strings.TrimSpace(string(revOut))
@@ -102,7 +136,10 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 	}
 	data, err := json.Marshal(result)
 	if err != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"marshal result: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("marshal result: %w", err)
 	}
+	observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }

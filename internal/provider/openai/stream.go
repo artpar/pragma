@@ -40,6 +40,8 @@ func (p *Provider) startStream(
 	bus *observe.EventBus,
 	traceID, spanID string,
 ) <-chan provider.StreamChunk {
+	observe.TraceCtx(ctx, "openai", "Provider.startStream", "enter")
+	defer observe.TraceCtx(ctx, "openai", "Provider.startStream", "exit")
 	ch := make(chan provider.StreamChunk, 32)
 
 	go func() {
@@ -51,10 +53,10 @@ func (p *Provider) startStream(
 			startTime: time.Now(),
 		}
 
-		// Idle timeout watchdog
 		streamCtx := ctx
 		var idleCh chan struct{}
 		if p.idleTimeout > 0 {
+			observe.TraceCtx(ctx, "openai", "Provider.startStream", "if: p.idleTimeout > 0")
 			var watchCancel context.CancelFunc
 			streamCtx, watchCancel = context.WithCancel(ctx)
 			defer watchCancel()
@@ -63,16 +65,20 @@ func (p *Provider) startStream(
 				timer := time.NewTimer(p.idleTimeout)
 				defer timer.Stop()
 				for {
+					observe.TraceCtx(ctx, "openai", "Provider.startStream", "for: true")
 					select {
 					case <-idleCh:
+						observe.TraceCtx(ctx, "openai", "Provider.startStream", "select: <-idleCh")
 						if !timer.Stop() {
 							<-timer.C
 						}
 						timer.Reset(p.idleTimeout)
 					case <-timer.C:
+						observe.TraceCtx(ctx, "openai", "Provider.startStream", "select: <-timer.C")
 						watchCancel()
 						return
 					case <-streamCtx.Done():
+						observe.TraceCtx(ctx, "openai", "Provider.startStream", "select: <-streamCtx.Done()")
 						return
 					}
 				}
@@ -81,6 +87,7 @@ func (p *Provider) startStream(
 
 		p.consumeSSE(streamCtx, resp, mapper, ch, state, bus, traceID, spanID, idleCh)
 	}()
+	observe.TraceCtx(ctx, "openai", "Provider.startStream", "return: ch")
 
 	return ch
 }
@@ -96,39 +103,47 @@ func (p *Provider) consumeSSE(
 	traceID, spanID string,
 	idleCh chan<- struct{},
 ) {
+	observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "enter")
+	defer observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "exit")
 	scanner := bufio.NewScanner(resp.Body)
-	// Allow large lines (tool call arguments can be big)
+
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var lastEventEmit time.Time
 
 	for scanner.Scan() {
+		observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "for: scanner.Scan()")
 		if ctx.Err() != nil {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: ctx.Err() != nil")
 			ch <- provider.StreamChunk{Error: ctx.Err()}
 			return
 		}
 
-		// Reset idle timeout
 		if idleCh != nil {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: idleCh != nil")
 			select {
 			case idleCh <- struct{}{}:
+				observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "select: idleCh <- struct{}{}")
 			default:
+				observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "select: default")
 			}
 		}
 
 		line := scanner.Text()
 
-		// SSE: only process "data:" lines
 		if !strings.HasPrefix(line, "data: ") {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !strings.HasPrefix(line, \"data: \")")
 			continue
 		}
 		data := strings.TrimPrefix(line, "data: ")
 
-		// Stream termination
 		if data == "[DONE]" {
-			// If we have a saved finish_reason but never got usage, emit Done anyway
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: data == \"[DONE]\"")
+
 			if !state.doneSent && state.finishReason != nil {
+				observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !state.doneSent && state.finishReason != nil")
 				if bus != nil {
+					observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: bus != nil")
 					bus.Emit(observe.ErrorOccurred{
 						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
 						Severity:     "warning",
@@ -146,6 +161,7 @@ func (p *Provider) consumeSSE(
 				state.doneSent = true
 			}
 			if !state.doneSent {
+				observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !state.doneSent")
 				ch <- provider.StreamChunk{Error: model.ErrStreamClosed}
 			}
 			return
@@ -153,7 +169,9 @@ func (p *Provider) consumeSSE(
 
 		var chunk wireStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: err != nil")
 			if bus != nil {
+				observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: bus != nil")
 				bus.Emit(observe.ErrorOccurred{
 					EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
 					Severity:     "warning",
@@ -166,14 +184,15 @@ func (p *Provider) consumeSSE(
 		}
 
 		if chunk.Model != "" {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: chunk.Model != \"\"")
 			state.model = chunk.Model
 		}
 
 		p.dispatchStreamChunk(&chunk, mapper, ch, state, bus, traceID, spanID)
 
-		// Throttled observability event (at most 1/sec)
 		now := time.Now()
 		if bus != nil && now.Sub(lastEventEmit) >= time.Second {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: bus != nil && now.Sub(lastEventEmit) >= time.Second")
 			bus.Emit(observe.APIStreamChunk{
 				EventHeader: observe.NewEventHeader("APIStreamChunk", traceID, spanID, ""),
 				ChunkType:   "stream_delta",
@@ -183,8 +202,10 @@ func (p *Provider) consumeSSE(
 	}
 
 	if err := scanner.Err(); err != nil {
+		observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: err != nil")
 		classified := classifyError(err)
 		if bus != nil {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: bus != nil")
 			bus.Emit(observe.APIRequestFailed{
 				EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
 				ErrorType:    classified.errorType,
@@ -196,9 +217,10 @@ func (p *Provider) consumeSSE(
 		return
 	}
 
-	// If we have a finish_reason but never got usage, emit Done with what we have
 	if !state.doneSent && state.finishReason != nil {
+		observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !state.doneSent && state.finishReason != nil")
 		if bus != nil {
+			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: bus != nil")
 			bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
 				Severity:     "warning",
@@ -217,6 +239,7 @@ func (p *Provider) consumeSSE(
 	}
 
 	if !state.doneSent {
+		observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !state.doneSent")
 		ch <- provider.StreamChunk{Error: model.ErrStreamClosed}
 	}
 }
@@ -230,22 +253,27 @@ func (p *Provider) dispatchStreamChunk(
 	bus *observe.EventBus,
 	traceID, spanID string,
 ) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, choice := range chunk.Choices {
+		observe.GlobalTrace("range chunk.Choices")
 		delta := choice.Delta
 
-		// Text content
 		if delta.Content != nil && *delta.Content != "" {
+			observe.GlobalTrace("if: delta.Content != nil && *delta.Content != \"\"")
 			ch <- provider.StreamChunk{TextDelta: *delta.Content}
 		}
 
-		// Tool calls
 		for _, tc := range delta.ToolCalls {
+			observe.GlobalTrace("range delta.ToolCalls")
 			if tc.ID != "" {
-				// New tool call starting
+				observe.GlobalTrace("if: tc.ID != \"\"")
+
 				internalID := model.NewUUID()
 				mapper.RegisterPair(internalID, tc.ID)
 				name := ""
 				if tc.Function != nil {
+					observe.GlobalTrace("if: tc.Function != nil")
 					name = tc.Function.Name
 				}
 				state.toolCalls[tc.Index] = &inProgressToolCall{
@@ -261,10 +289,11 @@ func (p *Provider) dispatchStreamChunk(
 				}
 			}
 
-			// Argument delta
 			if tc.Function != nil && tc.Function.Arguments != "" {
+				observe.GlobalTrace("if: tc.Function != nil && tc.Function.Arguments != \"\"")
 				ipc, ok := state.toolCalls[tc.Index]
 				if ok {
+					observe.GlobalTrace("if: ok")
 					ipc.argsBuf.WriteString(tc.Function.Arguments)
 					ch <- provider.StreamChunk{
 						ToolCallInputDelta: &provider.ToolCallDelta{
@@ -276,12 +305,13 @@ func (p *Provider) dispatchStreamChunk(
 			}
 		}
 
-		// Finish reason
 		if choice.FinishReason != nil {
-			// Save finish reason — usage may come in a separate chunk
+			observe.GlobalTrace("if: choice.FinishReason != nil")
+
 			state.finishReason = choice.FinishReason
 
 			if chunk.Usage != nil {
+				observe.GlobalTrace("if: chunk.Usage != nil")
 				usage := usageFromWire(*chunk.Usage)
 				ch <- provider.StreamChunk{
 					Done: &provider.StreamDone{
@@ -293,6 +323,7 @@ func (p *Provider) dispatchStreamChunk(
 				state.doneSent = true
 
 				if bus != nil {
+					observe.GlobalTrace("if: bus != nil")
 					bus.Emit(observe.APIRequestCompleted{
 						EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 						StopReason:  stopReasonFromWire(*choice.FinishReason),
@@ -305,12 +336,13 @@ func (p *Provider) dispatchStreamChunk(
 		}
 	}
 
-	// Usage in a separate chunk (after choices with finish_reason, common with stream_options)
 	if chunk.Usage != nil && !state.doneSent {
+		observe.GlobalTrace("if: chunk.Usage != nil && !state.doneSent")
 		usage := usageFromWire(*chunk.Usage)
-		// Use saved finish reason from a prior chunk
+
 		stopReason := model.StopEndTurn
 		if state.finishReason != nil {
+			observe.GlobalTrace("if: state.finishReason != nil")
 			stopReason = stopReasonFromWire(*state.finishReason)
 		}
 		ch <- provider.StreamChunk{
@@ -323,6 +355,7 @@ func (p *Provider) dispatchStreamChunk(
 		state.doneSent = true
 
 		if bus != nil {
+			observe.GlobalTrace("if: bus != nil")
 			bus.Emit(observe.APIRequestCompleted{
 				EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 				StopReason:  stopReason,

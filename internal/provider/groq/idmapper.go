@@ -1,6 +1,7 @@
 package groq
 
 import (
+	"github.com/artpar/gogent/internal/observe"
 	"strings"
 	"sync"
 )
@@ -15,6 +16,9 @@ type IDMapper struct {
 
 // NewIDMapper creates an empty IDMapper.
 func NewIDMapper() *IDMapper {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &IDMapper{\n\tinternalToWire:\tmake(map[string]string),\n\twireToInternal:\tmake(ma...")
 	return &IDMapper{
 		internalToWire: make(map[string]string),
 		wireToInternal: make(map[string]string),
@@ -24,14 +28,18 @@ func NewIDMapper() *IDMapper {
 // RegisterPair records a bidirectional mapping.
 // Cleans up stale reverse mappings if an ID is reassigned.
 func (m *IDMapper) RegisterPair(internalID, wireID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Clean up stale reverse mapping if internalID was previously mapped to a different wireID
+
 	if oldWire, ok := m.internalToWire[internalID]; ok && oldWire != wireID {
+		observe.GlobalTrace("if: ok && oldWire != wireID")
 		delete(m.wireToInternal, oldWire)
 	}
-	// Clean up stale forward mapping if wireID was previously mapped to a different internalID
+
 	if oldInternal, ok := m.wireToInternal[wireID]; ok && oldInternal != internalID {
+		observe.GlobalTrace("if: ok && oldInternal != internalID")
 		delete(m.internalToWire, oldInternal)
 	}
 	m.internalToWire[internalID] = wireID
@@ -42,32 +50,45 @@ func (m *IDMapper) RegisterPair(internalID, wireID string) {
 // Returns "" if the internal ID is not registered.
 // Callers must handle the empty case (e.g., generate and register a synthetic ID).
 func (m *IDMapper) ToWire(internalID string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	observe.GlobalTrace("return: m.internalToWire[internalID]")
 	return m.internalToWire[internalID]
 }
 
 // ToInternal returns the internal UUID for a wire ID.
 // Returns empty string if no mapping exists.
 func (m *IDMapper) ToInternal(wireID string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	observe.GlobalTrace("return: m.wireToInternal[wireID]")
 	return m.wireToInternal[wireID]
 }
 
 // HasInternal returns true if the internal ID has a registered mapping.
 func (m *IDMapper) HasInternal(internalID string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	_, ok := m.internalToWire[internalID]
+	observe.GlobalTrace("return: ok")
 	return ok
 }
 
 // syntheticWireID generates a deterministic Groq-format wire ID from an internal UUID.
 func syntheticWireID(internalID string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	clean := strings.ReplaceAll(internalID, "-", "")
 	if len(clean) > 24 {
+		observe.GlobalTrace("if: len(clean) > 24")
 		clean = clean[:24]
 	}
+	observe.GlobalTrace("return: \"call_\" + clean")
 	return "call_" + clean
 }

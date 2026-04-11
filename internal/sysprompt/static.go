@@ -1,13 +1,19 @@
 package sysprompt
 
-import "github.com/artpar/gogent/internal/model"
+import (
+	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
+)
 
 // staticBlocks returns the static system prompt blocks (identity, system rules,
 // task guidance, tone & style). These are identical across sessions and cacheable.
 func staticBlocks() []model.SystemBlock {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: []model.SystemBlock{\n\t{Text: identityText, Cacheable: false},\n\t{Text: systemR...")
 	return []model.SystemBlock{
-		{Text: identityText, Cacheable: true},
-		{Text: systemRulesText, Cacheable: true},
+		{Text: identityText, Cacheable: false},
+		{Text: systemRulesText, Cacheable: false},
 		{Text: taskGuidanceText, Cacheable: true},
 		{Text: toneStyleText, Cacheable: true},
 	}

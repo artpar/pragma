@@ -31,6 +31,8 @@ func (p *Provider) startStream(
 	bus *observe.EventBus,
 	traceID, spanID string,
 ) <-chan provider.StreamChunk {
+	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "enter")
+	defer observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "exit")
 	ch := make(chan provider.StreamChunk, 32)
 
 	go func() {
@@ -43,10 +45,10 @@ func (p *Provider) startStream(
 			startTime:    time.Now(),
 		}
 
-		// Idle timeout watchdog — cancels stream if no events arrive within idleTimeout
 		streamCtx := ctx
 		var idleCh chan struct{}
 		if p.idleTimeout > 0 {
+			observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "if: p.idleTimeout > 0")
 			var watchCancel context.CancelFunc
 			streamCtx, watchCancel = context.WithCancel(ctx)
 			defer watchCancel()
@@ -55,16 +57,20 @@ func (p *Provider) startStream(
 				timer := time.NewTimer(p.idleTimeout)
 				defer timer.Stop()
 				for {
+					observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "for: true")
 					select {
 					case <-idleCh:
+						observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "select: <-idleCh")
 						if !timer.Stop() {
 							<-timer.C
 						}
 						timer.Reset(p.idleTimeout)
 					case <-timer.C:
+						observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "select: <-timer.C")
 						watchCancel()
 						return
 					case <-streamCtx.Done():
+						observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "select: <-streamCtx.Done()")
 						return
 					}
 				}
@@ -73,6 +79,7 @@ func (p *Provider) startStream(
 
 		p.consumeStream(streamCtx, stream, mapper, ch, state, bus, traceID, spanID, idleCh)
 	}()
+	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "return: ch")
 
 	return ch
 }
@@ -89,17 +96,24 @@ func (p *Provider) consumeStream(
 	traceID, spanID string,
 	idleCh chan<- struct{},
 ) {
+	observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "enter")
+	defer observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "exit")
 	var lastEventEmit time.Time
 
 	for stream.Next() {
-		// Reset idle timeout watchdog
+		observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "for: stream.Next()")
+
 		if idleCh != nil {
+			observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "if: idleCh != nil")
 			select {
 			case idleCh <- struct{}{}:
+				observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "select: idleCh <- struct{}{}")
 			default:
+				observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "select: default")
 			}
 		}
 		if ctx.Err() != nil {
+			observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "if: ctx.Err() != nil")
 			ch <- provider.StreamChunk{Error: ctx.Err()}
 			return
 		}
@@ -108,8 +122,8 @@ func (p *Provider) consumeStream(
 		event := stream.Current()
 		p.dispatchEvent(event, mapper, ch, state, bus, traceID, spanID)
 
-		// Throttled observability event (at most 1/sec)
 		if bus != nil && now.Sub(lastEventEmit) >= time.Second {
+			observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "if: bus != nil && now.Sub(lastEventEmit) >= time.Second")
 			bus.Emit(observe.APIStreamChunk{
 				EventHeader: observe.NewEventHeader("APIStreamChunk", traceID, spanID, ""),
 				ChunkType:   event.Type,
@@ -118,10 +132,11 @@ func (p *Provider) consumeStream(
 		}
 	}
 
-	// Check for stream error
 	if err := stream.Err(); err != nil {
+		observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "if: err != nil")
 		classified := classifyError(err)
 		if bus != nil {
+			observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "if: bus != nil")
 			bus.Emit(observe.APIRequestFailed{
 				EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
 				ErrorType:    classified.errorType,
@@ -133,8 +148,8 @@ func (p *Provider) consumeStream(
 		return
 	}
 
-	// If Done was never sent, emit an error
 	if !state.doneSent {
+		observe.TraceCtx(ctx, "anthropic", "Provider.consumeStream", "if: !state.doneSent")
 		ch <- provider.StreamChunk{Error: model.ErrStreamClosed}
 	}
 }
@@ -148,29 +163,36 @@ func (p *Provider) dispatchEvent(
 	bus *observe.EventBus,
 	traceID, spanID string,
 ) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch event.Type {
 	case "message_start":
-		// Capture model from the initial message
+		observe.GlobalTrace("case: \"message_start\"")
+
 		if string(event.Message.Model) != "" {
 			state.model = string(event.Message.Model)
 		}
 
 	case "content_block_start":
+		observe.GlobalTrace("case: \"content_block_start\"")
 		p.handleBlockStart(event, mapper, ch, state)
 
 	case "content_block_delta":
+		observe.GlobalTrace("case: \"content_block_delta\"")
 		p.handleBlockDelta(event, ch, state)
 
 	case "content_block_stop":
-		// Block finalized, no chunk needed
+		observe.GlobalTrace("case: \"content_block_stop\"")
 
 	case "message_delta":
+		observe.GlobalTrace("case: \"message_delta\"")
 		p.handleMessageDelta(event, ch, state, bus, traceID, spanID)
 
 	case "message_stop":
-		// Done already sent on message_delta
+		observe.GlobalTrace("case: \"message_stop\"")
 
 	default:
+		observe.GlobalTrace("default")
 		if bus != nil && event.Type != "" {
 			bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
@@ -189,8 +211,11 @@ func (p *Provider) handleBlockStart(
 	ch chan<- provider.StreamChunk,
 	state *streamState,
 ) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	blockType := event.ContentBlock.Type
 	if blockType == "" {
+		observe.GlobalTrace("if: blockType == \"\"")
 		return
 	}
 	idx := event.Index
@@ -198,6 +223,7 @@ func (p *Provider) handleBlockStart(
 
 	switch blockType {
 	case "tool_use":
+		observe.GlobalTrace("case: \"tool_use\"")
 		internalID := model.NewUUID()
 		wireID := event.ContentBlock.ID
 		mapper.RegisterPair(internalID, wireID)
@@ -211,11 +237,11 @@ func (p *Provider) handleBlockStart(
 		}
 
 	case "text", "thinking":
-		// Track but don't emit a chunk
+		observe.GlobalTrace("case: \"text\", \"thinking\"")
 
 	case "redacted_thinking":
-		// Redacted thinking arrives as a complete block (no deltas).
-		// Emit directly — accumulator appends as ThinkingPart{Redacted: true}.
+		observe.GlobalTrace("case: \"redacted_thinking\"")
+
 		ch <- provider.StreamChunk{
 			RedactedThinkingBlock: &provider.RedactedThinking{
 				Data: event.ContentBlock.Data,
@@ -223,7 +249,8 @@ func (p *Provider) handleBlockStart(
 		}
 
 	default:
-		// Unknown block type — ignore
+		observe.GlobalTrace("default")
+
 	}
 }
 
@@ -232,16 +259,20 @@ func (p *Provider) handleBlockDelta(
 	ch chan<- provider.StreamChunk,
 	state *streamState,
 ) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	deltaType := event.Delta.Type
 	switch deltaType {
 	case "text_delta":
+		observe.GlobalTrace("case: \"text_delta\"")
 		ch <- provider.StreamChunk{TextDelta: event.Delta.Text}
 
 	case "input_json_delta":
+		observe.GlobalTrace("case: \"input_json_delta\"")
 		idx := event.Index
 		internalID, ok := state.blockToolIDs[idx]
 		if !ok {
-			return // orphaned delta — block start was skipped or unknown
+			return
 		}
 		ch <- provider.StreamChunk{
 			ToolCallInputDelta: &provider.ToolCallDelta{
@@ -251,13 +282,16 @@ func (p *Provider) handleBlockDelta(
 		}
 
 	case "thinking_delta":
+		observe.GlobalTrace("case: \"thinking_delta\"")
 		ch <- provider.StreamChunk{ThinkingDelta: event.Delta.Thinking}
 
 	case "signature_delta":
+		observe.GlobalTrace("case: \"signature_delta\"")
 		ch <- provider.StreamChunk{ThinkingSignatureDelta: event.Delta.Signature}
 
 	case "citations_delta":
-		// Skip citation deltas for now
+		observe.GlobalTrace("case: \"citations_delta\"")
+
 	}
 }
 
@@ -268,6 +302,8 @@ func (p *Provider) handleMessageDelta(
 	bus *observe.EventBus,
 	traceID, spanID string,
 ) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	usage := model.TokenUsage{
 		InputTokens:              int(event.Usage.InputTokens),
 		OutputTokens:             int(event.Usage.OutputTokens),
@@ -287,6 +323,7 @@ func (p *Provider) handleMessageDelta(
 	state.doneSent = true
 
 	if bus != nil {
+		observe.GlobalTrace("if: bus != nil")
 		bus.Emit(observe.APIRequestCompleted{
 			EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 			StopReason:  stopReason,

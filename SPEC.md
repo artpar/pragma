@@ -905,11 +905,15 @@ func (l *Logger) HandleEvent(event Event)
 **Topic filtering**: `--debug=tool,api,mcp` shows only those event categories. Solves the all-or-nothing problem.
 
 **Level mapping** (Event → Level):
-- `APIStreamChunk` → Trace
+- `APIStreamChunk`, `FlowTrace` → Trace
 - `ToolExecutionStarted`, `APIRequestStarted` → Debug
 - `ToolExecutionCompleted`, `APIRequestCompleted`, `MessageAppended` → Info
 - `APIRetryScheduled`, `CompactionStarted` → Warn
 - `*Failed`, `ErrorOccurred` → Error
+
+### 3.1b FlowTrace and Auto-Instrumentation (ADR-028)
+
+`internal/observe/trace.go` — context-carried and global trace functions. `cmd/gogent-instrument/` — AST tool that injects trace calls at every branch point. Per-execution JSONL logs at `~/.gogent/logs/`. Runtime filtering via `GOGENT_TRACE_FILTER` env var.
 
 ### 3.2 Recorder (for replay)
 
@@ -1808,11 +1812,15 @@ func (l *Logger) HandleEvent(event Event)
 **Topic filtering**: `--debug=tool,api,mcp` shows only those event categories. Solves the all-or-nothing problem.
 
 **Level mapping** (Event → Level):
-- `APIStreamChunk` → Trace
+- `APIStreamChunk`, `FlowTrace` → Trace
 - `ToolExecutionStarted`, `APIRequestStarted` → Debug
 - `ToolExecutionCompleted`, `APIRequestCompleted`, `MessageAppended` → Info
 - `APIRetryScheduled`, `CompactionStarted` → Warn
 - `*Failed`, `ErrorOccurred` → Error
+
+### 3.1b FlowTrace and Auto-Instrumentation (ADR-028)
+
+`internal/observe/trace.go` — context-carried and global trace functions. `cmd/gogent-instrument/` — AST tool that injects trace calls at every branch point. Per-execution JSONL logs at `~/.gogent/logs/`. Runtime filtering via `GOGENT_TRACE_FILTER` env var.
 
 ### 3.2 Recorder (for replay)
 

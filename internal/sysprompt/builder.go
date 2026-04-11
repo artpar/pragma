@@ -14,6 +14,9 @@ type Builder struct {
 
 // New creates a Builder. workDir is the project root. bus may be nil.
 func New(workDir, modelID string, bus *observe.EventBus) *Builder {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &Builder{\n\tworkDir:\tworkDir,\n\tmodel:\t\tmodelID,\n\tbus:\t\tbus,\n}")
 	return &Builder{
 		workDir: workDir,
 		model:   modelID,
@@ -25,31 +28,34 @@ func New(workDir, modelID string, bus *observe.EventBus) *Builder {
 // Pipeline: static blocks → AGENT.md block → env block.
 // Never fails — missing files are skipped, env detection always returns values.
 func (b *Builder) Build() model.SystemPrompt {
-	// Static blocks (cacheable)
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
 	blocks := staticBlocks()
 
-	// AGENT.md block (not cacheable)
 	sources := LoadAgentMD(b.workDir, b.bus)
 	if len(sources) > 0 {
+		observe.GlobalTrace("if: len(sources) > 0")
 		blocks = append(blocks, agentMDBlock(sources))
 	}
 
-	// Environment block (not cacheable)
 	env := DetectEnv(b.workDir, b.model)
 	blocks = append(blocks, envBlock(env))
 
-	// Emit build event
 	totalBytes := 0
 	for _, blk := range blocks {
+		observe.GlobalTrace("range blocks")
 		totalBytes += len(blk.Text)
 	}
 	if b.bus != nil {
+		observe.GlobalTrace("if: b.bus != nil")
 		b.bus.Emit(observe.SystemPromptBuilt{
 			EventHeader: observe.NewEventHeader("SystemPromptBuilt", "", observe.NewSpanID(), ""),
 			BlockCount:  len(blocks),
 			TotalBytes:  totalBytes,
 		})
 	}
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
 
 	return model.SystemPrompt{Blocks: blocks}
 }

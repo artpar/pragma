@@ -33,58 +33,92 @@ type Provider struct {
 type Option func(*Provider)
 
 // WithMaxRetries sets the maximum number of retry attempts. Default: 10.
-func WithMaxRetries(n int) Option { return func(p *Provider) { p.maxRetries = n } }
+func WithMaxRetries(n int) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
+	return func(p *Provider) { p.maxRetries = n }
+}
 
 // WithBaseURL overrides the API base URL (for testing).
-func WithBaseURL(url string) Option { return func(p *Provider) { p.baseURL = url } }
+func WithBaseURL(url string) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
+	return func(p *Provider) { p.baseURL = url }
+}
 
 // WithIdleTimeout sets the stream idle timeout. Default: 90s.
-func WithIdleTimeout(d time.Duration) Option { return func(p *Provider) { p.idleTimeout = d } }
+func WithIdleTimeout(d time.Duration) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
+	return func(p *Provider) { p.idleTimeout = d }
+}
 
 // New creates an Anthropic provider with the given API key and options.
 func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	p := &Provider{
 		bus:         bus,
 		maxRetries:  10,
 		idleTimeout: 90 * time.Second,
 	}
 	for _, opt := range opts {
+		observe.GlobalTrace("range opts")
 		opt(p)
 	}
 
 	clientOpts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
-		option.WithMaxRetries(0), // we handle retries ourselves
+		option.WithMaxRetries(0),
 	}
 	if p.baseURL != "" {
+		observe.GlobalTrace("if: p.baseURL != \"\"")
 		clientOpts = append(clientOpts, option.WithBaseURL(p.baseURL))
 	}
 	p.client = sdk.NewClient(clientOpts...)
+	observe.GlobalTrace("return: p")
 	return p
 }
 
 // Name returns "anthropic".
-func (p *Provider) Name() string { return "anthropic" }
+func (p *Provider) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"anthropic\"")
+	return "anthropic"
+}
 
 // SupportsFeature returns true for all features Anthropic supports.
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch feature {
 	case provider.FeaturePrefixCaching,
 		provider.FeatureThinking,
 		provider.FeatureImages,
 		provider.FeatureToolUse,
 		provider.FeatureStreaming:
+		observe.GlobalTrace("case: provider.FeaturePrefixCaching, provider.FeatureThinking, provider.FeatureImag...")
 		return true
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 // Pricing returns pricing info for a known model.
 // Returns false if the model is not recognized.
 func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if info, ok := LookupModel(modelID); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: info.Pricing, true")
 		return info.Pricing, true
 	}
+	observe.GlobalTrace("return: model.Pricing{}, false")
 	return model.Pricing{}, false
 }
 
@@ -92,12 +126,18 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 // Parses [Xm] suffix for extended context variants (GitHub issue #41984, #39467).
 // E.g., "claude-sonnet-4-20250514[1m]" returns 1,000,000.
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
-	// Parse [Xm] suffix for extended context variants
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
 	if idx := strings.Index(modelID, "["); idx != -1 {
+		observe.GlobalTrace("if: idx != -1")
 		suffix := modelID[idx:]
 		if strings.HasSuffix(suffix, "m]") {
+			observe.GlobalTrace("if: strings.HasSuffix(suffix, \"m]\")")
 			multiplierStr := suffix[1 : len(suffix)-2]
 			if n, err := strconv.Atoi(multiplierStr); err == nil {
+				observe.GlobalTrace("if: err == nil")
+				observe.GlobalTrace("return: n * 1_000_000, true")
 				return n * 1_000_000, true
 			}
 		}
@@ -105,21 +145,29 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	}
 
 	if info, ok := LookupModel(modelID); ok {
+		observe.GlobalTrace("if: ok")
 		cw := info.ContextWindow
 		if cw == 0 {
-			cw = 200_000 // conservative default for known models without explicit window
+			observe.GlobalTrace("if: cw == 0")
+			cw = 200_000
 		}
+		observe.GlobalTrace("return: cw, true")
 		return cw, true
 	}
+	observe.GlobalTrace("return: 200_000, false")
 	return 200_000, false
 }
 
 // Complete sends a non-streaming request and returns the complete response.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
+	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "enter")
+	defer observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "exit")
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
 	wireParams, err := buildWireParams(params, mapper)
 	if err != nil {
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, fmt.Errorf(\"building wire params: %w\", err)")
 		return model.Response{}, fmt.Errorf("building wire params: %w", err)
 	}
 	applyCacheBreakpoints(&wireParams)
@@ -144,6 +192,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		return apiErr
 	})
 	if err != nil {
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "if: err != nil")
 		classified := classifyError(err)
 		p.bus.Emit(observe.APIRequestFailed{
 			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
@@ -152,6 +201,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 			Retryable:    classified.retryable,
 			Attempt:      p.maxRetries + 1,
 		})
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, classified.wrapped")
 		return model.Response{}, classified.wrapped
 	}
 
@@ -163,15 +213,20 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		DurationMs:  time.Since(start).Milliseconds(),
 		Model:       resp.Model,
 	})
+	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: resp, nil")
 	return resp, nil
 }
 
 // Stream starts a streaming request and returns a channel of StreamChunks.
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
+	observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "enter")
+	defer observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "exit")
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
 	wireParams, err := buildWireParams(params, mapper)
 	if err != nil {
+		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: nil, fmt.Errorf(\"building wire params: %w\", err)")
 		return nil, fmt.Errorf("building wire params: %w", err)
 	}
 	applyCacheBreakpoints(&wireParams)
@@ -189,43 +244,55 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 
 	stream := p.client.Messages.NewStreaming(ctx, wireParams)
 	ch := p.startStream(ctx, stream, mapper, p.bus, traceID, spanID)
+	observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: ch, nil")
 	return ch, nil
 }
 
 // withRetry executes fn with exponential backoff retry for retryable errors.
 func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func(attempt int) error) error {
+	observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "enter")
+	defer observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "exit")
 	var consecutive529 int
 
 	for attempt := range p.maxRetries + 1 {
+		observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "range p.maxRetries + 1")
 		err := fn(attempt)
 		if err == nil {
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: err == nil")
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: nil")
 			return nil
 		}
 
 		classified := classifyError(err)
 
 		if !classified.retryable || attempt >= p.maxRetries {
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: !classified.retryable || attempt >= p.maxRetries")
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
 			return classified.wrapped
 		}
 
-		// 529 consecutive limit: give up after 3
 		if classified.errorType == "overloaded" {
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: classified.errorType == \"overloaded\"")
 			consecutive529++
 			if consecutive529 >= 3 {
+				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: consecutive529 >= 3")
+				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
 				return classified.wrapped
 			}
 		} else {
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "else: classified.errorType == \"overloaded\"")
 			consecutive529 = 0
 		}
 
-		// Calculate delay
 		delay := classified.retryAfter
 		if delay == 0 {
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: delay == 0")
 			baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
 			if baseDelay > 32*time.Second {
+				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: baseDelay > 32*time.Second")
 				baseDelay = 32 * time.Second
 			}
-			jitter := time.Duration(rand.Float64()*0.25*float64(baseDelay))
+			jitter := time.Duration(rand.Float64() * 0.25 * float64(baseDelay))
 			delay = baseDelay + jitter
 		}
 
@@ -246,36 +313,51 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 
 		select {
 		case <-time.After(delay):
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "select: <-time.After(delay)")
 		case <-ctx.Done():
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "select: <-ctx.Done()")
 			return ctx.Err()
 		}
 	}
+	observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: fmt.Errorf(\"exhausted %d retries\", p.maxRetries)")
 	return fmt.Errorf("exhausted %d retries", p.maxRetries)
 }
 
 // estimateTokens provides a rough token estimate for observability events.
 func estimateTokens(params provider.RequestParams) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	total := 0
 	for _, block := range params.System.Blocks {
+		observe.GlobalTrace("range params.System.Blocks")
 		total += len(block.Text) / 4
 	}
 	for _, m := range params.Messages {
+		observe.GlobalTrace("range params.Messages")
 		for _, part := range m.Content {
+			observe.GlobalTrace("range m.Content")
 			switch p := part.(type) {
 			case model.TextPart:
+				observe.GlobalTrace("typecase: model.TextPart")
 				total += len(p.Text) / 4
 			case model.ToolCallPart:
+				observe.GlobalTrace("typecase: model.ToolCallPart")
 				total += len(p.Input) / 4
 			case model.ToolResultPart:
+				observe.GlobalTrace("typecase: model.ToolResultPart")
 				total += len(p.Content) / 4
 			case model.ThinkingPart:
+				observe.GlobalTrace("typecase: model.ThinkingPart")
 				total += len(p.Text) / 4
 			case model.ImagePart:
+				observe.GlobalTrace("typecase: model.ImagePart")
 				total += 1000
 			case model.DocumentPart:
+				observe.GlobalTrace("typecase: model.DocumentPart")
 				total += len(p.Data) / 4
 			}
 		}
 	}
+	observe.GlobalTrace("return: total")
 	return total
 }

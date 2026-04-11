@@ -57,18 +57,24 @@ type Registry struct {
 
 // NewRegistry creates a registry with all built-in commands registered.
 func NewRegistry() *Registry {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r := &Registry{
 		commands: make(map[string]*Command),
 	}
 	registerBuiltins(r)
+	observe.GlobalTrace("return: r")
 	return r
 }
 
 // Register adds a command to the registry. Names and aliases are case-insensitive.
 func (r *Registry) Register(cmd Command) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	c := &cmd
 	r.commands[strings.ToLower(cmd.Name)] = c
 	for _, alias := range cmd.Aliases {
+		observe.GlobalTrace("range cmd.Aliases")
 		r.commands[strings.ToLower(alias)] = c
 	}
 	r.ordered = append(r.ordered, cmd)
@@ -76,14 +82,19 @@ func (r *Registry) Register(cmd Command) {
 
 // Execute dispatches to the matching command handler and emits an observability event.
 func (r *Registry) Execute(ctx context.Context, name, args string, deps Deps) (Result, error) {
+	observe.TraceCtx(ctx, "slash", "Registry.Execute", "enter")
+	defer observe.TraceCtx(ctx, "slash", "Registry.Execute", "exit")
 	cmd, ok := r.commands[strings.ToLower(name)]
 	if !ok {
+		observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: !ok")
+		observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: Result{}, fmt.Errorf(\"%w: /%s\", ErrUnknownCommand, name)")
 		return Result{}, fmt.Errorf("%w: /%s", ErrUnknownCommand, name)
 	}
 	deps.Commands = r.Commands()
 	start := time.Now()
 	result, err := cmd.Handle(ctx, args, deps)
 	if deps.Bus != nil {
+		observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: deps.Bus != nil")
 		deps.Bus.Emit(observe.SlashCommandExecuted{
 			EventHeader: observe.NewEventHeader("SlashCommandExecuted", "", "", ""),
 			CommandName: cmd.Name,
@@ -92,16 +103,20 @@ func (r *Registry) Execute(ctx context.Context, name, args string, deps Deps) (R
 			Success:     err == nil,
 		})
 	}
+	observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: result, err")
 	return result, err
 }
 
 // Commands returns all registered commands sorted alphabetically.
 func (r *Registry) Commands() []Command {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	sorted := make([]Command, len(r.ordered))
 	copy(sorted, r.ordered)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Name < sorted[j].Name
 	})
+	observe.GlobalTrace("return: sorted")
 	return sorted
 }
 
@@ -109,22 +124,29 @@ func (r *Registry) Commands() []Command {
 // Returns (command name, args, true) for valid commands.
 // Returns ("", "", false) if input is not a slash command.
 func Parse(input string) (name string, args string, ok bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	trimmed := strings.TrimSpace(input)
 	if !strings.HasPrefix(trimmed, "/") {
+		observe.GlobalTrace("if: !strings.HasPrefix(trimmed, \"/\")")
+		observe.GlobalTrace("return: \"\", \"\", false")
 		return "", "", false
 	}
 
 	withoutSlash := trimmed[1:]
 	if withoutSlash == "" {
+		observe.GlobalTrace("if: withoutSlash == \"\"")
+		observe.GlobalTrace("return: \"\", \"\", false")
 		return "", "", false
 	}
 
-	// Split on first space: command name + optional args
 	parts := strings.SplitN(withoutSlash, " ", 2)
 	name = parts[0]
 	if len(parts) > 1 {
+		observe.GlobalTrace("if: len(parts) > 1")
 		args = parts[1]
 	}
+	observe.GlobalTrace("return: name, args, true")
 
 	return name, args, true
 }

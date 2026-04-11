@@ -1,6 +1,7 @@
 package compact
 
 import (
+	"github.com/artpar/gogent/internal/observe"
 	"regexp"
 	"strings"
 )
@@ -121,21 +122,25 @@ When you are using compact - please focus on test output and code changes. Inclu
 `
 
 var (
-	analysisRe = regexp.MustCompile(`(?s)<analysis>.*?</analysis>`)
-	summaryRe  = regexp.MustCompile(`(?s)<summary>(.*?)</summary>`)
+	analysisRe         = regexp.MustCompile(`(?s)<analysis>.*?</analysis>`)
+	summaryRe          = regexp.MustCompile(`(?s)<summary>(.*?)</summary>`)
 	multipleBlankLines = regexp.MustCompile(`\n\n+`)
 )
 
 // CompactPrompt builds the full compaction prompt with optional custom instructions.
 func CompactPrompt(customInstructions string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 	b.WriteString(noToolsPreamble)
 	b.WriteString(baseCompactPrompt)
 	if ci := strings.TrimSpace(customInstructions); ci != "" {
+		observe.GlobalTrace("if: ci != \"\"")
 		b.WriteString("\n\nAdditional Instructions:\n")
 		b.WriteString(ci)
 	}
 	b.WriteString(noToolsTrailer)
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 
@@ -144,19 +149,20 @@ func CompactPrompt(customInstructions string) string {
 // no informational value once the summary is written.
 // Ported from TS: formatCompactSummary() in prompt.ts
 func FormatCompactSummary(raw string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	result := raw
 
-	// Strip analysis section
 	result = analysisRe.ReplaceAllString(result, "")
 
-	// Extract and format summary section
 	if match := summaryRe.FindStringSubmatch(result); len(match) > 1 {
+		observe.GlobalTrace("if: len(match) > 1")
 		content := strings.TrimSpace(match[1])
 		result = summaryRe.ReplaceAllString(result, "Summary:\n"+content)
 	}
 
-	// Clean up extra whitespace
 	result = multipleBlankLines.ReplaceAllString(result, "\n\n")
+	observe.GlobalTrace("return: strings.TrimSpace(result)")
 
 	return strings.TrimSpace(result)
 }
@@ -165,13 +171,18 @@ func FormatCompactSummary(raw string) string {
 // that tells the model this session was compacted.
 // Ported from TS: getCompactUserSummaryMessage() in prompt.ts
 func CompactUserMessage(summary string, suppressFollowUp bool) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	formatted := FormatCompactSummary(summary)
 
 	base := "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\n" + formatted
 
 	if suppressFollowUp {
+		observe.GlobalTrace("if: suppressFollowUp")
+		observe.GlobalTrace("return: base + \"\\nContinue the conversation from where it left off without asking the...")
 		return base + "\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
 	}
+	observe.GlobalTrace("return: base")
 
 	return base
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/artpar/gogent/internal/observe"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -25,6 +26,8 @@ type askDialog struct {
 
 // Show activates the dialog with a question.
 func (d *askDialog) Show(msg *AskRequestMsg) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	d.active = true
 	d.question = msg.Question
 	d.response = msg.Response
@@ -33,17 +36,24 @@ func (d *askDialog) Show(msg *AskRequestMsg) {
 
 // Update handles key input while the dialog is active.
 func (d *askDialog) Update(msg tea.Msg) tea.Cmd {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !d.active {
+		observe.GlobalTrace("if: !d.active")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	switch keyMsg.Type {
 	case tea.KeyEnter:
+		observe.GlobalTrace("case: tea.KeyEnter")
 		answer := d.answer.String()
 		resp := d.response
 		d.active = false
@@ -53,27 +63,36 @@ func (d *askDialog) Update(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 	case tea.KeyBackspace:
+		observe.GlobalTrace("case: tea.KeyBackspace")
 		s := d.answer.String()
 		if len(s) > 0 {
 			d.answer.Reset()
 			d.answer.WriteString(s[:len(s)-1])
 		}
 	case tea.KeyRunes:
+		observe.GlobalTrace("case: tea.KeyRunes")
 		d.answer.WriteString(keyMsg.String())
 	case tea.KeySpace:
+		observe.GlobalTrace("case: tea.KeySpace")
 		d.answer.WriteString(" ")
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 // View renders the ask dialog.
 func (d *askDialog) View() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !d.active {
+		observe.GlobalTrace("if: !d.active")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString(askQuestionStyle.Render("? " + d.question))
 	b.WriteString("\n")
 	b.WriteString(askInputStyle.Render("> " + d.answer.String() + "█"))
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }

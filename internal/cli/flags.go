@@ -1,9 +1,14 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+	"github.com/artpar/gogent/internal/observe"
+)
 
 // RegisterFlags adds all CLI flags to the root cobra command.
 func RegisterFlags(cmd *cobra.Command) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cmd.Flags().StringP("prompt", "p", "", "prompt to send (non-interactive mode)")
 	cmd.Flags().String("model", "", "model name")
 	cmd.Flags().String("provider", "", "provider name (anthropic, groq)")

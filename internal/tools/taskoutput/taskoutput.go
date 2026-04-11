@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/task"
 	"github.com/artpar/gogent/internal/tool"
@@ -30,40 +31,68 @@ type Tool struct {
 	Tasks *task.Registry
 }
 
-func (t *Tool) Name() string                { return "TaskOutput" }
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"TaskOutput\"")
+	return "TaskOutput"
+}
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
 
 func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Read the output of a task. Returns the current status and result of a backgr...")
 	return "Read the output of a task. Returns the current status and result of a background task. Use this to check on async agent results."
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskOutput\", \"\")")
 	return checker.Check(ctx, "TaskOutput", "")
 }
 
 func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var in taskOutputInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.TaskID == "" {
+		observe.GlobalTrace("if: in.TaskID == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"task_id is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("task_id is required")
 	}
 
 	tk, ok := t.Tasks.Get(in.TaskID)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
 		result := taskOutputResult{
 			RetrievalStatus: "not_ready",
 		}
 		data, _ := json.Marshal(result)
+		observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 		return tool.InvokeResult{Content: string(data)}, nil
 	}
 
 	switch tk.Status {
 	case task.TaskCompleted, task.TaskFailed, task.TaskCancelled:
+		observe.GlobalTrace("case: task.TaskCompleted, task.TaskFailed, task.TaskCancelled")
 		result := taskOutputResult{
 			RetrievalStatus: "success",
 			Task: &taskSnapshot{
@@ -78,7 +107,8 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		return tool.InvokeResult{Content: string(data)}, nil
 
 	default:
-		// Still running or pending — return partial info
+		observe.GlobalTrace("default")
+
 		result := taskOutputResult{
 			RetrievalStatus: "not_ready",
 			Task: &taskSnapshot{

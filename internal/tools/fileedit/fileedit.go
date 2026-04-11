@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -49,122 +50,184 @@ var inputSchema = json.RawMessage(`{
 // Tool implements the FileEdit tool.
 type Tool struct{}
 
-func (t *Tool) Name() string                { return "Edit" }
-func (t *Tool) Description() string          { return "Perform exact string replacements in files." }
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Edit\"")
+	return "Edit"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Perform exact string replacements in files.\"")
+	return "Perform exact string replacements in files."
+}
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "exit")
 	var in struct {
 		FilePath string `json:"file_path"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil || in.FilePath == "" {
+		observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "if: err != nil || in.FilePath == \"\"")
+		observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"Edit\", \"\")")
 		return checker.Check(ctx, "Edit", "")
 	}
+	observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"Edit\", in.FilePath)")
 	return checker.Check(ctx, "Edit", in.FilePath)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "enter")
+	defer observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "exit")
 	var in FileEditInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.FilePath == "" {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.FilePath == \"\"")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
 
 	filePath := in.FilePath
 	if !filepath.IsAbs(filePath) {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: !filepath.IsAbs(filePath)")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path must be absolute, got: %s\", filePath)")
 		return tool.InvokeResult{}, fmt.Errorf("file_path must be absolute, got: %s", filePath)
 	}
 
-	// Reject no-op edits
 	if in.OldString == in.NewString {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == in.NewString")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"no changes to make: old_string and new_strin...")
 		return tool.InvokeResult{}, fmt.Errorf("no changes to make: old_string and new_string are exactly the same")
 	}
 
-	// Reject .ipynb files
 	if strings.HasSuffix(strings.ToLower(filePath), ".ipynb") {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: strings.HasSuffix(strings.ToLower(filePath), \".ipynb\")")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file is a Jupyter Notebook. Use the Notebook...")
 		return tool.InvokeResult{}, fmt.Errorf("file is a Jupyter Notebook. Use the NotebookEdit tool to edit this file")
 	}
 
-	// Read existing file
 	data, err := os.ReadFile(filePath)
 	if err != nil {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
 		if os.IsNotExist(err) {
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: os.IsNotExist(err)")
 			result, err := handleNonexistentFile(filePath, in)
 			if err != nil {
+				observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+				observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 				return tool.InvokeResult{}, err
 			}
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 			return tool.InvokeResult{Content: result}, nil
 		}
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read file: %w", err)
 	}
 
-	// Check file size
 	if len(data) > maxEditFileSize {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: len(data) > maxEditFileSize")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file is too large to edit (%d bytes). Maximu...")
 		return tool.InvokeResult{}, fmt.Errorf("file is too large to edit (%d bytes). Maximum editable file size is 1 GiB", len(data))
 	}
 
 	content := string(data)
-	// Normalize CRLF
+
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 
-	// Handle empty old_string on existing file
 	if in.OldString == "" {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == \"\"")
 		if strings.TrimSpace(content) != "" {
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: strings.TrimSpace(content) != \"\"")
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"cannot create new file - file already exists...")
 			return tool.InvokeResult{}, fmt.Errorf("cannot create new file - file already exists and is not empty")
 		}
-		// Empty file — write new content
+
 		if err := os.WriteFile(filePath, []byte(in.NewString), 0644); err != nil {
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 		}
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
 		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
 	}
 
-	// Find occurrences
 	count := strings.Count(content, in.OldString)
 
 	if count == 0 {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count == 0")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.\\nString...")
 		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.\nString: %s", in.OldString)
 	}
 
 	if count > 1 && !in.ReplaceAll {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count > 1 && !in.ReplaceAll")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"found %d matches of the string to replace, b...")
 		return tool.InvokeResult{}, fmt.Errorf("found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, in.OldString)
 	}
 
 	// Perform replacement
 	var updated string
 	if in.ReplaceAll {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.ReplaceAll")
 		updated = strings.ReplaceAll(content, in.OldString, in.NewString)
 	} else {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "else: in.ReplaceAll")
 		updated = strings.Replace(content, in.OldString, in.NewString, 1)
 	}
 
-	// Write back
 	if err := os.WriteFile(filePath, []byte(updated), 0644); err != nil {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 	}
 
 	if in.ReplaceAll && count > 1 {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.ReplaceAll && count > 1")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated. All %d ...")
 		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count)}, nil
 	}
+	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
 	return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
 }
 
 func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if in.OldString == "" {
-		// Create new file with new_string content
+		observe.GlobalTrace("if: in.OldString == \"\"")
+
 		dir := filepath.Dir(filePath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: \"\", fmt.Errorf(\"create directory: %w\", err)")
 			return "", fmt.Errorf("create directory: %w", err)
 		}
 		if err := os.WriteFile(filePath, []byte(in.NewString), 0644); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: \"\", fmt.Errorf(\"write file: %w\", err)")
 			return "", fmt.Errorf("write file: %w", err)
 		}
+		observe.GlobalTrace("return: fmt.Sprintf(\"The file %s has been created successfully.\", in.FilePath), nil")
 		return fmt.Sprintf("The file %s has been created successfully.", in.FilePath), nil
 	}
+	observe.GlobalTrace("return: \"\", fmt.Errorf(\"file does not exist: %s. Make sure the path is correct.\", in....")
 	return "", fmt.Errorf("file does not exist: %s. Make sure the path is correct.", in.FilePath)
 }

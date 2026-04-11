@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -38,67 +39,102 @@ type Tool struct {
 	Registry *tool.Registry
 }
 
-func (t *Tool) Name() string                { return "ToolSearch" }
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"ToolSearch\"")
+	return "ToolSearch"
+}
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
 
 func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: `Fetches full schema definitions for deferred tools so they can be called. Us...")
 	return `Fetches full schema definitions for deferred tools so they can be called. Use "select:Read,Edit,Grep" for direct selection, or keywords to search.`
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "return: checker.Check(ctx, \"ToolSearch\", \"\")")
 	return checker.Check(ctx, "ToolSearch", "")
 }
 
 func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var in toolSearchInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Query == "" {
+		observe.GlobalTrace("if: in.Query == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"query is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("query is required")
 	}
 	if in.MaxResults <= 0 {
+		observe.GlobalTrace("if: in.MaxResults <= 0")
 		in.MaxResults = 5
 	}
 
 	allTools := t.Registry.List()
 
-	// Mode 1: Direct selection (select:Name1,Name2)
 	if strings.HasPrefix(in.Query, "select:") {
+		observe.GlobalTrace("if: strings.HasPrefix(in.Query, \"select:\")")
 		names := strings.Split(strings.TrimPrefix(in.Query, "select:"), ",")
 		var matches []string
 		for _, name := range names {
+			observe.GlobalTrace("range names")
 			name = strings.TrimSpace(name)
 			if name == "" {
+				observe.GlobalTrace("if: name == \"\"")
 				continue
 			}
 			if _, ok := t.Registry.Get(name); ok {
+				observe.GlobalTrace("if: ok")
 				matches = append(matches, name)
 			}
 		}
+		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
 		return t.formatResult(matches, in.Query, len(allTools))
 	}
 
-	// Mode 2: Exact name match
 	if _, ok := t.Registry.Get(in.Query); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: t.formatResult([]string{in.Query}, in.Query, len(allTools))")
 		return t.formatResult([]string{in.Query}, in.Query, len(allTools))
 	}
 
-	// Mode 3: MCP prefix match
 	if strings.HasPrefix(in.Query, "mcp__") || strings.HasPrefix(in.Query, "+mcp__") {
+		observe.GlobalTrace("if: strings.HasPrefix(in.Query, \"mcp__\") || strings.HasPrefix(in.Query, \"+mcp__\")")
 		prefix := strings.TrimPrefix(in.Query, "+")
 		var matches []string
 		for _, td := range allTools {
+			observe.GlobalTrace("range allTools")
 			if strings.HasPrefix(td.Name(), prefix) {
+				observe.GlobalTrace("if: strings.HasPrefix(td.Name(), prefix)")
 				matches = append(matches, td.Name())
 			}
 		}
 		if len(matches) > in.MaxResults {
+			observe.GlobalTrace("if: len(matches) > in.MaxResults")
 			matches = matches[:in.MaxResults]
 		}
+		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
 		return t.formatResult(matches, in.Query, len(allTools))
 	}
 
@@ -112,15 +148,19 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	var required []string
 	var optional []string
 	for _, term := range terms {
+		observe.GlobalTrace("range terms")
 		if strings.HasPrefix(term, "+") {
+			observe.GlobalTrace("if: strings.HasPrefix(term, \"+\")")
 			required = append(required, strings.TrimPrefix(term, "+"))
 		} else {
+			observe.GlobalTrace("else: strings.HasPrefix(term, \"+\")")
 			optional = append(optional, term)
 		}
 	}
 
 	var results []scored
 	for _, td := range allTools {
+		observe.GlobalTrace("range allTools")
 		name := td.Name()
 		parts := parseToolName(name)
 		desc := strings.ToLower(td.Description())
@@ -130,8 +170,10 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		requiredMet := true
 
 		for _, term := range required {
+			observe.GlobalTrace("range required")
 			termScore := scoreTerm(term, parts, nameLower, desc)
 			if termScore == 0 {
+				observe.GlobalTrace("if: termScore == 0")
 				requiredMet = false
 				break
 			}
@@ -139,14 +181,17 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		}
 
 		if !requiredMet {
+			observe.GlobalTrace("if: !requiredMet")
 			continue
 		}
 
 		for _, term := range optional {
+			observe.GlobalTrace("range optional")
 			score += scoreTerm(term, parts, nameLower, desc)
 		}
 
 		if score > 0 {
+			observe.GlobalTrace("if: score > 0")
 			results = append(results, scored{name: name, score: score})
 		}
 	}
@@ -157,16 +202,21 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 
 	var matches []string
 	for i, r := range results {
+		observe.GlobalTrace("range results")
 		if i >= in.MaxResults {
+			observe.GlobalTrace("if: i >= in.MaxResults")
 			break
 		}
 		matches = append(matches, r.name)
 	}
+	observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
 
 	return t.formatResult(matches, in.Query, len(allTools))
 }
 
 func (t *Tool) formatResult(matches []string, query string, totalTools int) (tool.InvokeResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	result := struct {
 		Matches    []string `json:"matches"`
 		Query      string   `json:"query"`
@@ -177,26 +227,35 @@ func (t *Tool) formatResult(matches []string, query string, totalTools int) (too
 		TotalTools: totalTools,
 	}
 	if result.Matches == nil {
+		observe.GlobalTrace("if: result.Matches == nil")
 		result.Matches = []string{}
 	}
 	data, _ := json.Marshal(result)
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
 // parseToolName splits a tool name into searchable parts.
 // CamelCase → ["file", "read"], MCP names → split by "__" and "_".
 func parseToolName(name string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.Contains(name, "__") {
-		// MCP tool: mcp__server__action → split by __ and _
+		observe.GlobalTrace("if: strings.Contains(name, \"__\")")
+
 		raw := strings.Split(name, "__")
 		var parts []string
 		for _, r := range raw {
+			observe.GlobalTrace("range raw")
 			for _, p := range strings.Split(r, "_") {
+				observe.GlobalTrace("range strings.Split(r, \"_\")")
 				if p != "" {
+					observe.GlobalTrace("if: p != \"\"")
 					parts = append(parts, strings.ToLower(p))
 				}
 			}
 		}
+		observe.GlobalTrace("return: parts")
 		return parts
 	}
 
@@ -204,48 +263,58 @@ func parseToolName(name string) []string {
 	var parts []string
 	var current strings.Builder
 	for _, r := range name {
+		observe.GlobalTrace("range name")
 		if unicode.IsUpper(r) && current.Len() > 0 {
+			observe.GlobalTrace("if: unicode.IsUpper(r) && current.Len() > 0")
 			parts = append(parts, strings.ToLower(current.String()))
 			current.Reset()
 		}
 		current.WriteRune(r)
 	}
 	if current.Len() > 0 {
+		observe.GlobalTrace("if: current.Len() > 0")
 		parts = append(parts, strings.ToLower(current.String()))
 	}
+	observe.GlobalTrace("return: parts")
 	return parts
 }
 
 func scoreTerm(term string, parts []string, nameLower, desc string) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	score := 0
 
-	// Exact part match (highest)
 	for _, p := range parts {
+		observe.GlobalTrace("range parts")
 		if p == term {
+			observe.GlobalTrace("if: p == term")
 			score += 10
 			break
 		}
 	}
 
-	// Substring part match
 	if score == 0 {
+		observe.GlobalTrace("if: score == 0")
 		for _, p := range parts {
+			observe.GlobalTrace("range parts")
 			if strings.Contains(p, term) {
+				observe.GlobalTrace("if: strings.Contains(p, term)")
 				score += 5
 				break
 			}
 		}
 	}
 
-	// Full name fallback
 	if score == 0 && strings.Contains(nameLower, term) {
+		observe.GlobalTrace("if: score == 0 && strings.Contains(nameLower, term)")
 		score += 3
 	}
 
-	// Description word-boundary match
 	if strings.Contains(desc, term) {
+		observe.GlobalTrace("if: strings.Contains(desc, term)")
 		score += 2
 	}
+	observe.GlobalTrace("return: score")
 
 	return score
 }

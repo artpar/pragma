@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/task"
 	"github.com/artpar/gogent/internal/tool"
@@ -34,27 +35,55 @@ type Tool struct {
 	Tasks *task.Registry
 }
 
-func (t *Tool) Name() string                { return "TaskCreate" }
-func (t *Tool) Description() string          { return "Create a new task to track work progress." }
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"TaskCreate\"")
+	return "TaskCreate"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Create a new task to track work progress.\"")
+	return "Create a new task to track work progress."
+}
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: true}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "taskcreate", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "taskcreate", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "taskcreate", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskCreate\", \"\")")
 	return checker.Check(ctx, "TaskCreate", "")
 }
 
 func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var in TaskCreateInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Subject == "" {
+		observe.GlobalTrace("if: in.Subject == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"subject is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("subject is required")
 	}
 
 	created := t.Tasks.Create(in.Subject, in.Description)
+	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Task %s created: %s\", created.ID, c...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("Task %s created: %s", created.ID, created.Subject),
 	}, nil

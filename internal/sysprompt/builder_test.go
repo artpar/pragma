@@ -28,8 +28,14 @@ func TestBuild_FullPrompt(t *testing.T) {
 		t.Fatalf("got %d blocks, want 6", len(prompt.Blocks))
 	}
 
-	// First 4 blocks should be cacheable (static)
-	for i := 0; i < 4; i++ {
+	// First 2 blocks NOT cacheable (identity + system rules — avoids Anthropic 4-block cache_control limit)
+	// Last 2 static blocks cacheable (task guidance + tone/style)
+	for i := 0; i < 2; i++ {
+		if prompt.Blocks[i].Cacheable {
+			t.Errorf("block %d should NOT be cacheable", i)
+		}
+	}
+	for i := 2; i < 4; i++ {
 		if !prompt.Blocks[i].Cacheable {
 			t.Errorf("block %d should be cacheable", i)
 		}

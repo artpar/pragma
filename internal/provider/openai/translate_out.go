@@ -12,6 +12,8 @@ import (
 
 // buildWireRequest converts internal RequestParams to an OpenAI wire request.
 func buildWireRequest(params provider.RequestParams, mapper *IDMapper, stream bool, bus *observe.EventBus) wireRequest {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	normalized := normalizeMessages(params.Messages)
 
 	modelInfo, _ := LookupModel(params.Model)
@@ -22,99 +24,122 @@ func buildWireRequest(params provider.RequestParams, mapper *IDMapper, stream bo
 		Stream:   stream,
 	}
 
-	// Max tokens, capped at model limit
 	maxTokens := params.MaxTokens
 	if modelInfo.MaxOutput > 0 && maxTokens > modelInfo.MaxOutput {
+		observe.GlobalTrace("if: modelInfo.MaxOutput > 0 && maxTokens > modelInfo.MaxOutput")
 		maxTokens = modelInfo.MaxOutput
 	}
 	if maxTokens > 0 {
+		observe.GlobalTrace("if: maxTokens > 0")
 		req.MaxCompletionTokens = maxTokens
 	}
 
-	// Temperature
 	if params.Temperature != nil {
+		observe.GlobalTrace("if: params.Temperature != nil")
 		req.Temperature = params.Temperature
 	}
 
-	// Tools
 	if len(params.Tools) > 0 {
+		observe.GlobalTrace("if: len(params.Tools) > 0")
 		req.Tools = toolsToWire(params.Tools)
 		req.ToolChoice = "auto"
 		if modelInfo.ParallelTools {
+			observe.GlobalTrace("if: modelInfo.ParallelTools")
 			t := true
 			req.ParallelToolCalls = &t
 		}
 	}
 
-	// Stream options
 	if stream {
+		observe.GlobalTrace("if: stream")
 		req.StreamOptions = &wireStreamOpt{IncludeUsage: true}
 	}
+	observe.GlobalTrace("return: req")
 
 	return req
 }
 
 // messagesToWire converts system prompt + internal messages to OpenAI wire messages.
 func messagesToWire(system model.SystemPrompt, msgs []model.Message, mapper *IDMapper, bus *observe.EventBus) []wireMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var out []wireMessage
 
-	// System prompt as first message
 	if len(system.Blocks) > 0 {
+		observe.GlobalTrace("if: len(system.Blocks) > 0")
 		var sb strings.Builder
 		for i, block := range system.Blocks {
+			observe.GlobalTrace("range system.Blocks")
 			if i > 0 {
+				observe.GlobalTrace("if: i > 0")
 				sb.WriteString("\n\n")
 			}
 			sb.WriteString(block.Text)
 		}
 		if sb.Len() > 0 {
+			observe.GlobalTrace("if: sb.Len() > 0")
 			out = append(out, wireMessage{Role: "system", Content: sb.String()})
 		}
 	}
 
-	// Build toolCallID -> toolName map for tool result name resolution
 	toolNameMap := buildToolNameMap(msgs)
 
 	for _, m := range msgs {
+		observe.GlobalTrace("range msgs")
 		switch m.Role {
 		case model.RoleAssistant:
+			observe.GlobalTrace("case: model.RoleAssistant")
 			out = append(out, assistantToWire(m, mapper))
 		case model.RoleUser:
+			observe.GlobalTrace("case: model.RoleUser")
 			out = append(out, userToWire(m, mapper, toolNameMap, bus)...)
 		}
 	}
+	observe.GlobalTrace("return: out")
 
 	return out
 }
 
 // buildToolNameMap scans all assistant messages and builds toolCallID -> toolName.
 func buildToolNameMap(msgs []model.Message) map[string]string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	names := make(map[string]string)
 	for _, m := range msgs {
+		observe.GlobalTrace("range msgs")
 		if m.Role != model.RoleAssistant {
+			observe.GlobalTrace("if: m.Role != model.RoleAssistant")
 			continue
 		}
 		for _, p := range m.Content {
+			observe.GlobalTrace("range m.Content")
 			if tc, ok := p.(model.ToolCallPart); ok {
+				observe.GlobalTrace("if: ok")
 				names[tc.ID] = tc.Name
 			}
 		}
 	}
+	observe.GlobalTrace("return: names")
 	return names
 }
 
 // assistantToWire converts an assistant message to a wire message.
 func assistantToWire(m model.Message, mapper *IDMapper) wireMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	msg := wireMessage{Role: "assistant"}
 
 	var textParts []string
 	var toolCalls []wireToolCall
 
 	for _, p := range m.Content {
+		observe.GlobalTrace("range m.Content")
 		switch part := p.(type) {
 		case model.TextPart:
+			observe.GlobalTrace("typecase: model.TextPart")
 			textParts = append(textParts, part.Text)
 		case model.ToolCallPart:
+			observe.GlobalTrace("typecase: model.ToolCallPart")
 			wireID := mapper.ToWire(part.ID)
 			if wireID == "" {
 				wireID = syntheticWireID(part.ID)
@@ -133,18 +158,23 @@ func assistantToWire(m model.Message, mapper *IDMapper) wireMessage {
 				},
 			})
 		case model.ThinkingPart:
-			// OpenAI doesn't support thinking blocks, skip
+			observe.GlobalTrace("typecase: model.ThinkingPart")
+
 		case model.ImagePart, model.DocumentPart, model.ToolResultPart:
-			// Not valid in assistant messages, skip
+			observe.GlobalTrace("typecase: model.ImagePart, model.DocumentPart, model.ToolResultPart")
+
 		}
 	}
 
 	if len(textParts) > 0 {
+		observe.GlobalTrace("if: len(textParts) > 0")
 		msg.Content = strings.Join(textParts, "")
 	}
 	if len(toolCalls) > 0 {
+		observe.GlobalTrace("if: len(toolCalls) > 0")
 		msg.ToolCalls = toolCalls
 	}
+	observe.GlobalTrace("return: msg")
 
 	return msg
 }
@@ -152,13 +182,17 @@ func assistantToWire(m model.Message, mapper *IDMapper) wireMessage {
 // userToWire converts a user message to one or more wire messages.
 // Tool results become separate role:"tool" messages.
 func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string, bus *observe.EventBus) []wireMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var toolResults []wireMessage
 	var contentParts []wireContentPart
 	hasMultipart := false
 
 	for _, p := range m.Content {
+		observe.GlobalTrace("range m.Content")
 		switch part := p.(type) {
 		case model.ToolResultPart:
+			observe.GlobalTrace("typecase: model.ToolResultPart")
 			wireID := mapper.ToWire(part.ToolCallID)
 			if wireID == "" {
 				wireID = syntheticWireID(part.ToolCallID)
@@ -171,8 +205,10 @@ func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string
 				Content:    part.Content,
 			})
 		case model.TextPart:
+			observe.GlobalTrace("typecase: model.TextPart")
 			contentParts = append(contentParts, wireContentPart{Type: "text", Text: part.Text})
 		case model.ImagePart:
+			observe.GlobalTrace("typecase: model.ImagePart")
 			hasMultipart = true
 			dataURI := fmt.Sprintf("data:%s;base64,%s", part.MimeType, base64.StdEncoding.EncodeToString(part.Data))
 			contentParts = append(contentParts, wireContentPart{
@@ -180,7 +216,8 @@ func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string
 				ImageURL: &wireImageURL{URL: dataURI},
 			})
 		case model.DocumentPart:
-			// OpenAI doesn't support native PDF blocks — degrade to text placeholder
+			observe.GlobalTrace("typecase: model.DocumentPart")
+
 			if bus != nil {
 				bus.Emit(observe.ErrorOccurred{
 					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
@@ -195,36 +232,43 @@ func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string
 				Text: fmt.Sprintf("[Document: %s, not supported by this provider]", part.MimeType),
 			})
 		case model.ThinkingPart:
-			// Not valid in user messages, skip
+			observe.GlobalTrace("typecase: model.ThinkingPart")
+
 		case model.ToolCallPart:
-			// Not valid in user messages, skip
+			observe.GlobalTrace("typecase: model.ToolCallPart")
+
 		}
 	}
 
 	var out []wireMessage
 
-	// Tool results first (matching previous assistant's tool calls)
 	out = append(out, toolResults...)
 
-	// Then user content (if any)
 	if len(contentParts) > 0 {
+		observe.GlobalTrace("if: len(contentParts) > 0")
 		msg := wireMessage{Role: "user"}
 		if !hasMultipart && len(contentParts) == 1 && contentParts[0].Type == "text" {
-			// Simple string content (most common case)
+			observe.GlobalTrace("if: !hasMultipart && len(contentParts) == 1 && contentParts[0].Type == \"text\"")
+
 			msg.Content = contentParts[0].Text
 		} else {
+			observe.GlobalTrace("else: !hasMultipart && len(contentParts) == 1 && contentParts[0].Type == \"text\"")
 			msg.Content = contentParts
 		}
 		out = append(out, msg)
 	}
+	observe.GlobalTrace("return: out")
 
 	return out
 }
 
 // toolsToWire converts internal tool definitions to OpenAI wire format.
 func toolsToWire(tools []model.ToolDef) []wireTool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := make([]wireTool, len(tools))
 	for i, t := range tools {
+		observe.GlobalTrace("range tools")
 		out[i] = wireTool{
 			Type: "function",
 			Function: wireToolFunction{
@@ -234,6 +278,7 @@ func toolsToWire(tools []model.ToolDef) []wireTool {
 			},
 		}
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -241,14 +286,21 @@ func toolsToWire(tools []model.ToolDef) []wireTool {
 // for all ToolCallParts that don't already have mappings, ensuring consistent
 // IDs when history is sent back without clobbering real wire IDs from responses.
 func prePopulateMapper(msgs []model.Message, mapper *IDMapper) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, m := range msgs {
+		observe.GlobalTrace("range msgs")
 		if m.Role != model.RoleAssistant {
+			observe.GlobalTrace("if: m.Role != model.RoleAssistant")
 			continue
 		}
 		for _, p := range m.Content {
+			observe.GlobalTrace("range m.Content")
 			if tc, ok := p.(model.ToolCallPart); ok {
-				// Only register if not already mapped (preserves real wire IDs from responses)
+				observe.GlobalTrace("if: ok")
+
 				if !mapper.HasInternal(tc.ID) {
+					observe.GlobalTrace("if: !mapper.HasInternal(tc.ID)")
 					wireID := syntheticWireID(tc.ID)
 					mapper.RegisterPair(tc.ID, wireID)
 				}

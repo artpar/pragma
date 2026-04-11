@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // ModelInfo describes an Anthropic model's capabilities and pricing.
@@ -110,13 +111,20 @@ var registry = map[string]ModelInfo{
 // LookupModel returns the ModelInfo for a model ID, resolving aliases.
 // Returns false if the model is not known.
 func LookupModel(modelID string) (ModelInfo, bool) {
-	// Try direct lookup
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
 	if info, ok := registry[modelID]; ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: info, true")
 		return info, true
 	}
-	// Try alias resolution
+
 	if resolved, ok := aliases[modelID]; ok {
+		observe.GlobalTrace("if: ok")
 		if info, ok := registry[resolved]; ok {
+			observe.GlobalTrace("if: ok")
+			observe.GlobalTrace("return: info, true")
 			return info, true
 		}
 	}
@@ -124,13 +132,18 @@ func LookupModel(modelID string) (ModelInfo, bool) {
 	// Collect all matches and sort alphabetically for deterministic results.
 	var candidates []string
 	for id := range registry {
+		observe.GlobalTrace("range registry")
 		if strings.HasPrefix(id, modelID) {
+			observe.GlobalTrace("if: strings.HasPrefix(id, modelID)")
 			candidates = append(candidates, id)
 		}
 	}
 	if len(candidates) > 0 {
+		observe.GlobalTrace("if: len(candidates) > 0")
 		sort.Strings(candidates)
+		observe.GlobalTrace("return: registry[candidates[0]], true")
 		return registry[candidates[0]], true
 	}
+	observe.GlobalTrace("return: ModelInfo{}, false")
 	return ModelInfo{}, false
 }

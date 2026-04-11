@@ -10,6 +10,7 @@ import (
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/slash"
 )
@@ -38,11 +39,11 @@ type Model struct {
 	slashDeps   slash.Deps
 
 	// Components
-	viewport   viewport.Model
-	input      inputComponent
-	perm       permissionDialog
-	ask        askDialog
-	toolbar    toolbar
+	viewport viewport.Model
+	input    inputComponent
+	perm     permissionDialog
+	ask      askDialog
+	toolbar  toolbar
 
 	// Streaming state
 	outputBuf      *strings.Builder // accumulated rendered output for viewport
@@ -61,11 +62,15 @@ type Model struct {
 
 // New creates a new TUI model with all dependencies.
 func New(cfg Config) Model {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	parentCtx := cfg.ParentCtx
 	if parentCtx == nil {
+		observe.GlobalTrace("if: parentCtx == nil")
 		parentCtx = context.Background()
 	}
 	ctx, cancel := context.WithCancel(parentCtx)
+	observe.GlobalTrace("return: Model{\n\tengine:\t\tcfg.Engine,\n\tstore:\t\tcfg.Store,\n\tcostTracker:\tcfg.CostTracke...")
 
 	return Model{
 		engine:      cfg.Engine,
@@ -86,178 +91,223 @@ func New(cfg Config) Model {
 
 // Init is the bubbletea initialization command.
 func (m Model) Init() tea.Cmd {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: m.input.textarea.Focus()")
 	return m.input.textarea.Focus()
 }
 
 // Update handles all messages in the bubbletea event loop.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		observe.GlobalTrace("typecase: tea.WindowSizeMsg")
 		return m.handleResize(msg)
 
 	case tea.KeyMsg:
+		observe.GlobalTrace("typecase: tea.KeyMsg")
 		return m.handleKey(msg)
 
 	case InputSubmittedMsg:
+		observe.GlobalTrace("typecase: InputSubmittedMsg")
 		return m.handleInputSubmitted(msg)
 
 	case LoopEventMsg:
+		observe.GlobalTrace("typecase: LoopEventMsg")
 		return m.handleLoopEvent(msg)
 
 	case PermRequestMsg:
+		observe.GlobalTrace("typecase: PermRequestMsg")
 		return m.handlePermRequest(msg)
 
 	case PermResponseMsg:
+		observe.GlobalTrace("typecase: PermResponseMsg")
 		return m.handlePermResponse(msg)
 
 	case AskRequestMsg:
+		observe.GlobalTrace("typecase: AskRequestMsg")
 		return m.handleAskRequest(msg)
 
 	case SlashResultMsg:
+		observe.GlobalTrace("typecase: SlashResultMsg")
 		return m.handleSlashResult(msg)
 
 	case sessionSavedMsg:
+		observe.GlobalTrace("typecase: sessionSavedMsg")
 		return m, nil
 	}
 
-	// Pass unhandled messages to active components
 	if m.ask.active {
-		return m, nil // ask dialog only handles key messages
+		observe.GlobalTrace("if: m.ask.active")
+		observe.GlobalTrace("return: m, nil")
+		return m, nil
 	}
 	if m.perm.active {
+		observe.GlobalTrace("if: m.perm.active")
 		cmd := m.perm.Update(msg)
+		observe.GlobalTrace("return: m, cmd")
 		return m, cmd
 	}
 
 	cmd := m.input.Update(msg)
+	observe.GlobalTrace("return: m, cmd")
 	return m, cmd
 }
 
 // View renders the full TUI layout.
 func (m Model) View() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !m.ready {
+		observe.GlobalTrace("if: !m.ready")
+		observe.GlobalTrace("return: \"Initializing...\"")
 		return "Initializing..."
 	}
 
 	var b strings.Builder
 
-	// Viewport (scrollable output)
 	b.WriteString(m.viewport.View())
 	b.WriteString("\n")
 
-	// Permission dialog (if active)
 	if m.perm.active {
+		observe.GlobalTrace("if: m.perm.active")
 		b.WriteString(m.perm.View())
 		b.WriteString("\n")
 	}
 
-	// Ask dialog (if active)
 	if m.ask.active {
+		observe.GlobalTrace("if: m.ask.active")
 		b.WriteString(m.ask.View())
 		b.WriteString("\n")
 	}
 
-	// Toolbar
 	b.WriteString(m.toolbar.View(m.width))
 	b.WriteString("\n")
 
-	// Input
 	b.WriteString(m.input.View())
+	observe.GlobalTrace("return: b.String()")
 
 	return b.String()
 }
 
 // handleResize adjusts all components to the new terminal size.
 func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.width = msg.Width
 	m.height = msg.Height
 
-	inputHeight := 3  // textarea default height
+	inputHeight := 3
 	toolbarHeight := 1
-	headerHeight := inputHeight + toolbarHeight + 2 // +2 for newlines
+	headerHeight := inputHeight + toolbarHeight + 2
 
 	vpHeight := max(m.height-headerHeight, 1)
 
 	if !m.ready {
+		observe.GlobalTrace("if: !m.ready")
 		m.viewport = viewport.New(m.width, vpHeight)
 		m.ready = true
 
-		// If resuming a session, render existing conversation
 		snap := m.store.Snapshot()
 		if len(snap.Conversation.Messages) > 0 {
+			observe.GlobalTrace("if: len(snap.Conversation.Messages) > 0")
 			m.outputBuf.WriteString(renderConversation(snap.Conversation.Messages))
 			m.viewport.SetContent(m.outputBuf.String())
 			m.viewport.GotoBottom()
 		}
 	} else {
+		observe.GlobalTrace("else: !m.ready")
 		m.viewport.Width = m.width
 		m.viewport.Height = vpHeight
 	}
 
 	m.input.SetWidth(m.width)
+	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
 // handleKey processes keyboard input.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch msg.Type {
 	case tea.KeyCtrlC:
+		observe.GlobalTrace("case: tea.KeyCtrlC")
 		if m.streaming {
 			m.interruptCount++
 			if m.interruptCount >= 2 {
+				observe.GlobalTrace("if: m.interruptCount >= 2")
+				observe.GlobalTrace("return: m.quit()")
 				return m.quit()
 			}
-			// First Ctrl+C during streaming: cancel the engine
+
 			m.cancel()
+			observe.GlobalTrace("return: m, nil")
 			return m, nil
 		}
 		return m.quit()
 
 	case tea.KeyEsc:
+		observe.GlobalTrace("case: tea.KeyEsc")
 		if m.perm.active {
 			cmd := m.perm.Update(msg)
+			observe.GlobalTrace("return: m, cmd")
 			return m, cmd
 		}
 		if m.ask.active {
-			// Esc in ask dialog — ignore (user must answer)
+			observe.GlobalTrace("return: m, nil")
+
 			return m, nil
 		}
 	}
 
-	// Delegate to active component
 	if m.perm.active {
+		observe.GlobalTrace("if: m.perm.active")
 		cmd := m.perm.Update(msg)
+		observe.GlobalTrace("return: m, cmd")
 		return m, cmd
 	}
 	if m.ask.active {
+		observe.GlobalTrace("if: m.ask.active")
 		cmd := m.ask.Update(msg)
 		if !m.ask.active {
-			// Ask dialog just completed — restore status
+			observe.GlobalTrace("if: !m.ask.active")
+
 			if m.streaming {
+				observe.GlobalTrace("if: m.streaming")
 				m.toolbar.SetStatus("streaming...")
 			} else {
+				observe.GlobalTrace("else: m.streaming")
 				m.toolbar.SetStatus("ready")
 			}
 		}
+		observe.GlobalTrace("return: m, cmd")
 		return m, cmd
 	}
 
 	cmd := m.input.Update(msg)
+	observe.GlobalTrace("return: m, cmd")
 	return m, cmd
 }
 
 // handleInputSubmitted processes user message submission.
 func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.streaming {
+		observe.GlobalTrace("if: m.streaming")
+		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
 
-	// Check for slash command BEFORE starting engine
 	if name, args, ok := slash.Parse(msg.Text); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: m.handleSlashCommand(name, args)")
 		return m.handleSlashCommand(name, args)
 	}
 
-	// Render user message to viewport
 	userMsg := model.Message{
 		ID:   model.NewUUID(),
 		Role: model.RoleUser,
@@ -269,29 +319,30 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	m.viewport.SetContent(m.outputBuf.String())
 	m.viewport.GotoBottom()
 
-	// Start streaming
 	m.streaming = true
 	m.interruptCount = 0
 	m.input.SetActive(false)
 	m.toolbar.SetStatus("streaming...")
 	m.toolbar.IncrementTurn()
 
-	// Fresh context for this turn
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	m.eventCh = m.engine.Run(m.ctx, msg.Text)
 
-	// Write assistant label immediately
 	m.outputBuf.WriteString(assistantLabelStyle.Render("Assistant"))
 	m.outputBuf.WriteString("\n")
+	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
 }
 
 // handleSlashCommand dispatches a slash command and returns a SlashResultMsg.
 func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	trimmedArgs := strings.TrimSpace(args)
 	label := "/" + name
 	if trimmedArgs != "" {
+		observe.GlobalTrace("if: trimmedArgs != \"\"")
 		label += " " + trimmedArgs
 	}
 	m.outputBuf.WriteString(userLabelStyle.Render("> "+label) + "\n")
@@ -300,6 +351,7 @@ func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 
 	slashCmds := m.slashCmds
 	slashDeps := m.slashDeps
+	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(context.Background(), n...")
 	return m, func() tea.Msg {
 		result, err := slashCmds.Execute(context.Background(), name, trimmedArgs, slashDeps)
 		return SlashResultMsg{Result: result, Err: err}
@@ -308,33 +360,47 @@ func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 
 // handleSlashResult processes the output of a slash command.
 func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if msg.Err != nil {
+		observe.GlobalTrace("if: msg.Err != nil")
 		m.outputBuf.WriteString(errorStyle.Render("Error: "+msg.Err.Error()) + "\n\n")
 	} else {
+		observe.GlobalTrace("else: msg.Err != nil")
 		if msg.Result.Quit {
+			observe.GlobalTrace("if: msg.Result.Quit")
+			observe.GlobalTrace("return: m.quit()")
 			return m.quit()
 		}
 		if msg.Result.ClearConversation {
+			observe.GlobalTrace("if: msg.Result.ClearConversation")
 			m.outputBuf.Reset()
 		}
 		if msg.Result.DisplayText != "" {
+			observe.GlobalTrace("if: msg.Result.DisplayText != \"\"")
 			m.outputBuf.WriteString(msg.Result.DisplayText + "\n\n")
 		}
 	}
 	m.viewport.SetContent(m.outputBuf.String())
 	m.viewport.GotoBottom()
+	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
 // handleLoopEvent processes a streaming event from the query engine.
 func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if msg.Event == nil {
-		// Channel closed — turn is done (shouldn't normally happen without TurnComplete)
+		observe.GlobalTrace("if: msg.Event == nil")
+		observe.GlobalTrace("return: m.finishTurn(), nil")
+
 		return m.finishTurn(), nil
 	}
 
 	switch e := msg.Event.(type) {
 	case query.CompactionEvent:
+		observe.GlobalTrace("typecase: query.CompactionEvent")
 		m.flushStreamBuf()
 		m.outputBuf.WriteString(thinkingStyle.Render(
 			fmt.Sprintf("[auto-compacted: %d → %d tokens]", e.PreTokens, e.PostTokens)) + "\n")
@@ -342,18 +408,21 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 
 	case query.TextEvent:
+		observe.GlobalTrace("typecase: query.TextEvent")
 		m.streamBuf.WriteString(e.Text)
 		m.viewport.SetContent(m.outputBuf.String() + m.streamBuf.String())
 		m.viewport.GotoBottom()
 
 	case query.ThinkingEvent:
+		observe.GlobalTrace("typecase: query.ThinkingEvent")
 		m.flushStreamBuf()
 		m.outputBuf.WriteString(thinkingStyle.Render(e.Text))
 		m.viewport.SetContent(m.outputBuf.String())
 		m.viewport.GotoBottom()
 
 	case query.ToolCallEvent:
-		// Flush any pending stream text
+		observe.GlobalTrace("typecase: query.ToolCallEvent")
+
 		m.flushStreamBuf()
 		m.outputBuf.WriteString(renderToolCall(e.Call))
 		m.outputBuf.WriteString("\n")
@@ -362,6 +431,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 
 	case query.ToolResultEvent:
+		observe.GlobalTrace("typecase: query.ToolResultEvent")
 		m.outputBuf.WriteString(renderToolResult(e.Result))
 		m.outputBuf.WriteString("\n")
 		m.toolbar.SetStatus("streaming...")
@@ -369,63 +439,83 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 
 	case query.TurnCompleteEvent:
+		observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 		m.flushStreamBuf()
 		m.outputBuf.WriteString("\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
 		return m.finishTurn(), saveSessionCmd(m.sessionSave)
 
 	case query.ErrorEvent:
+		observe.GlobalTrace("typecase: query.ErrorEvent")
 		m.flushStreamBuf()
 		if m.ctx.Err() != nil {
-			// Context cancelled (Ctrl+C) — not an error, just stop
+
 			m.outputBuf.WriteString("\n" + thinkingStyle.Render("[interrupted]") + "\n\n")
 		} else {
 			m.outputBuf.WriteString("\n" + errorStyle.Render("Error: "+e.Err.Error()) + "\n\n")
 		}
 		return m.finishTurn(), nil
 	}
+	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
 }
 
 // handleAskRequest shows the ask dialog for a tool question.
 func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.ask.Show(&msg)
 	m.toolbar.SetStatus("waiting for answer...")
+	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
 // handlePermRequest shows the permission dialog.
 func (m Model) handlePermRequest(msg PermRequestMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.perm.Show(&msg)
 	m.toolbar.SetStatus("waiting for permission...")
+	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
 // handlePermResponse hides the permission dialog after user decision.
 func (m Model) handlePermResponse(_ PermResponseMsg) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.streaming {
+		observe.GlobalTrace("if: m.streaming")
 		m.toolbar.SetStatus("streaming...")
 	} else {
+		observe.GlobalTrace("else: m.streaming")
 		m.toolbar.SetStatus("ready")
 	}
+	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
 // finishTurn resets streaming state and re-enables input.
 func (m Model) finishTurn() Model {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.streaming = false
 	m.eventCh = nil
 	m.input.SetActive(true)
 	m.toolbar.SetStatus("ready")
 	m.viewport.SetContent(m.outputBuf.String())
 	m.viewport.GotoBottom()
+	observe.GlobalTrace("return: m")
 	return m
 }
 
 // flushStreamBuf moves accumulated streaming text into the permanent output buffer.
 func (m Model) flushStreamBuf() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.streamBuf.Len() > 0 {
+		observe.GlobalTrace("if: m.streamBuf.Len() > 0")
 		m.outputBuf.WriteString(m.streamBuf.String())
 		m.streamBuf.Reset()
 	}
@@ -433,15 +523,22 @@ func (m Model) flushStreamBuf() {
 
 // quit saves the session and exits.
 func (m Model) quit() (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.cancel()
 	if m.sessionSave != nil {
+		observe.GlobalTrace("if: m.sessionSave != nil")
 		m.sessionSave()
 	}
+	observe.GlobalTrace("return: m, tea.Quit")
 	return m, tea.Quit
 }
 
 // waitForEvent returns a tea.Cmd that reads the next event from the channel.
 func waitForEvent(ch <-chan query.LoopEvent) tea.Cmd {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func() tea.Msg {\n\tevent, ok := <-ch\n\tif !ok {\n\t\treturn LoopEventMsg{Event: ni...")
 	return func() tea.Msg {
 		event, ok := <-ch
 		if !ok {
@@ -453,9 +550,14 @@ func waitForEvent(ch <-chan query.LoopEvent) tea.Cmd {
 
 // saveSessionCmd returns a tea.Cmd that saves the session in the background.
 func saveSessionCmd(saveFn func()) tea.Cmd {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if saveFn == nil {
+		observe.GlobalTrace("if: saveFn == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: func() tea.Msg {\n\tsaveFn()\n\treturn sessionSavedMsg{}\n}")
 	return func() tea.Msg {
 		saveFn()
 		return sessionSavedMsg{}

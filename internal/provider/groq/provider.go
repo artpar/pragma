@@ -32,16 +32,33 @@ type Provider struct {
 type Option func(*Provider)
 
 // WithMaxRetries sets the maximum number of retry attempts. Default: 10.
-func WithMaxRetries(n int) Option { return func(p *Provider) { p.maxRetries = n } }
+func WithMaxRetries(n int) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
+	return func(p *Provider) { p.maxRetries = n }
+}
 
 // WithBaseURL overrides the API base URL (for testing).
-func WithBaseURL(url string) Option { return func(p *Provider) { p.baseURL = url } }
+func WithBaseURL(url string) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
+	return func(p *Provider) { p.baseURL = url }
+}
 
 // WithIdleTimeout sets the stream idle timeout. Default: 90s.
-func WithIdleTimeout(d time.Duration) Option { return func(p *Provider) { p.idleTimeout = d } }
+func WithIdleTimeout(d time.Duration) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
+	return func(p *Provider) { p.idleTimeout = d }
+}
 
 // New creates a Groq provider with the given API key and options.
 func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	p := &Provider{
 		apiKey:      apiKey,
 		baseURL:     defaultBaseURL,
@@ -51,46 +68,70 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
 		idleTimeout: 90 * time.Second,
 	}
 	for _, opt := range opts {
+		observe.GlobalTrace("range opts")
 		opt(p)
 	}
+	observe.GlobalTrace("return: p")
 	return p
 }
 
 // Name returns "groq".
-func (p *Provider) Name() string { return "groq" }
+func (p *Provider) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"groq\"")
+	return "groq"
+}
 
 // SupportsFeature returns true for features Groq supports.
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch feature {
 	case provider.FeatureToolUse,
 		provider.FeatureStreaming,
 		provider.FeatureImages,
 		provider.FeatureThinking:
+		observe.GlobalTrace("case: provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages, p...")
 		return true
 	case provider.FeaturePrefixCaching:
-		return false // automatic, no explicit control
+		observe.GlobalTrace("case: provider.FeaturePrefixCaching")
+		return false
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 // Pricing returns pricing info for a known model.
 func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if info, ok := LookupModel(modelID); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: info.Pricing, true")
 		return info.Pricing, true
 	}
+	observe.GlobalTrace("return: model.Pricing{}, false")
 	return model.Pricing{}, false
 }
 
 // ContextWindow returns the context window size for a known model.
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if info, ok := LookupModel(modelID); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: info.MaxContext, true")
 		return info.MaxContext, true
 	}
-	return 131_072, false // conservative default for Groq models
+	observe.GlobalTrace("return: 131_072, false")
+	return 131_072, false
 }
 
 // Complete sends a non-streaming request and returns the complete response.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
+	observe.TraceCtx(ctx, "groq", "Provider.Complete", "enter")
+	defer observe.TraceCtx(ctx, "groq", "Provider.Complete", "exit")
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
 	wireReq := buildWireRequest(params, mapper, false, p.bus)
@@ -141,7 +182,9 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	})
 
 	if err != nil {
-		// withRetry already emitted APIRequestFailed with correct error type
+		observe.TraceCtx(ctx, "groq", "Provider.Complete", "if: err != nil")
+		observe.TraceCtx(ctx, "groq", "Provider.Complete", "return: model.Response{}, err")
+
 		return model.Response{}, err
 	}
 
@@ -153,11 +196,14 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		DurationMs:  time.Since(start).Milliseconds(),
 		Model:       resp.Model,
 	})
+	observe.TraceCtx(ctx, "groq", "Provider.Complete", "return: resp, nil")
 	return resp, nil
 }
 
 // Stream starts a streaming request and returns a channel of StreamChunks.
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
+	observe.TraceCtx(ctx, "groq", "Provider.Stream", "enter")
+	defer observe.TraceCtx(ctx, "groq", "Provider.Stream", "exit")
 	mapper := NewIDMapper()
 	prePopulateMapper(params.Messages, mapper)
 	wireReq := buildWireRequest(params, mapper, true, p.bus)
@@ -207,11 +253,14 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	})
 
 	if err != nil {
-		// withRetry already emitted APIRequestFailed with correct error type
+		observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: err != nil")
+		observe.TraceCtx(ctx, "groq", "Provider.Stream", "return: nil, err")
+
 		return nil, err
 	}
 
 	ch := p.startStream(ctx, httpResp, mapper, p.bus, traceID, spanID)
+	observe.TraceCtx(ctx, "groq", "Provider.Stream", "return: ch, nil")
 	return ch, nil
 }
 
@@ -219,27 +268,35 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 // Gives up after 3 consecutive 529 (overloaded) responses to avoid hammering
 // a service that is under pressure.
 func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func(attempt int) error) error {
+	observe.TraceCtx(ctx, "groq", "Provider.withRetry", "enter")
+	defer observe.TraceCtx(ctx, "groq", "Provider.withRetry", "exit")
 	var consecutiveOverloaded int
 	for attempt := range p.maxRetries + 1 {
+		observe.TraceCtx(ctx, "groq", "Provider.withRetry", "range p.maxRetries + 1")
 		err := fn(attempt)
 		if err == nil {
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "if: err == nil")
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "return: nil")
 			return nil
 		}
 
 		classified := classifyError(err)
 
-		// Track consecutive overloaded responses — give up after 3
 		if classified.errorType == "overloaded" {
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "if: classified.errorType == \"overloaded\"")
 			consecutiveOverloaded++
 			if consecutiveOverloaded >= 3 {
+				observe.TraceCtx(ctx, "groq", "Provider.withRetry", "if: consecutiveOverloaded >= 3")
 				classified.retryable = false
 			}
 		} else {
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "else: classified.errorType == \"overloaded\"")
 			consecutiveOverloaded = 0
 		}
 
 		if !classified.retryable || attempt >= p.maxRetries {
-			// Emit final failure event with correct error type (before wrapping loses it)
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "if: !classified.retryable || attempt >= p.maxRetries")
+
 			p.bus.Emit(observe.APIRequestFailed{
 				EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
 				ErrorType:    classified.errorType,
@@ -247,13 +304,16 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 				Retryable:    false,
 				Attempt:      attempt + 1,
 			})
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "return: classified.wrapped")
 			return classified.wrapped
 		}
 
 		delay := classified.retryAfter
 		if delay == 0 {
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "if: delay == 0")
 			baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
 			if baseDelay > 32*time.Second {
+				observe.TraceCtx(ctx, "groq", "Provider.withRetry", "if: baseDelay > 32*time.Second")
 				baseDelay = 32 * time.Second
 			}
 			jitter := time.Duration(rand.Float64() * 0.25 * float64(baseDelay))
@@ -277,36 +337,51 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 
 		select {
 		case <-time.After(delay):
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "select: <-time.After(delay)")
 		case <-ctx.Done():
+			observe.TraceCtx(ctx, "groq", "Provider.withRetry", "select: <-ctx.Done()")
 			return ctx.Err()
 		}
 	}
+	observe.TraceCtx(ctx, "groq", "Provider.withRetry", "return: fmt.Errorf(\"exhausted %d retries\", p.maxRetries)")
 	return fmt.Errorf("exhausted %d retries", p.maxRetries)
 }
 
 // estimateTokens provides a rough token estimate for observability events.
 func estimateTokens(params provider.RequestParams) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	total := 0
 	for _, block := range params.System.Blocks {
+		observe.GlobalTrace("range params.System.Blocks")
 		total += len(block.Text) / 4
 	}
 	for _, m := range params.Messages {
+		observe.GlobalTrace("range params.Messages")
 		for _, part := range m.Content {
+			observe.GlobalTrace("range m.Content")
 			switch p := part.(type) {
 			case model.TextPart:
+				observe.GlobalTrace("typecase: model.TextPart")
 				total += len(p.Text) / 4
 			case model.ToolCallPart:
+				observe.GlobalTrace("typecase: model.ToolCallPart")
 				total += len(p.Input) / 4
 			case model.ToolResultPart:
+				observe.GlobalTrace("typecase: model.ToolResultPart")
 				total += len(p.Content) / 4
 			case model.ThinkingPart:
+				observe.GlobalTrace("typecase: model.ThinkingPart")
 				total += len(p.Text) / 4
 			case model.ImagePart:
+				observe.GlobalTrace("typecase: model.ImagePart")
 				total += 1000
 			case model.DocumentPart:
+				observe.GlobalTrace("typecase: model.DocumentPart")
 				total += len(p.Data) / 4
 			}
 		}
 	}
+	observe.GlobalTrace("return: total")
 	return total
 }

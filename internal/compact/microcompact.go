@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // largeToolResultThreshold is the character count above which tool results
@@ -23,28 +24,37 @@ const largeToolResultThreshold = 500
 // - TextParts are preserved verbatim
 // - ToolCallParts are preserved (show what was requested)
 func Microcompact(msgs []model.Message) []model.Message {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	result := make([]model.Message, 0, len(msgs))
 
-	// Build a map of tool call ID → tool name for result stubbing
 	toolNames := make(map[string]string)
 	for _, msg := range msgs {
+		observe.GlobalTrace("range msgs")
 		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
 			if tc, ok := part.(model.ToolCallPart); ok {
+				observe.GlobalTrace("if: ok")
 				toolNames[tc.ID] = tc.Name
 			}
 		}
 	}
 
 	for _, msg := range msgs {
+		observe.GlobalTrace("range msgs")
 		trimmed := trimMessage(msg, toolNames)
 		if len(trimmed.Content) > 0 {
+			observe.GlobalTrace("if: len(trimmed.Content) > 0")
 			result = append(result, trimmed)
 		}
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }
 
 func trimMessage(msg model.Message, toolNames map[string]string) model.Message {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := model.Message{
 		ID:        msg.ID,
 		Role:      msg.Role,
@@ -54,28 +64,34 @@ func trimMessage(msg model.Message, toolNames map[string]string) model.Message {
 
 	parts := make([]model.ContentPart, 0, len(msg.Content))
 	for _, part := range msg.Content {
+		observe.GlobalTrace("range msg.Content")
 		if trimmed := trimPart(part, toolNames); trimmed != nil {
+			observe.GlobalTrace("if: trimmed != nil")
 			parts = append(parts, trimmed)
 		}
 	}
 	out.Content = parts
+	observe.GlobalTrace("return: out")
 	return out
 }
 
 func trimPart(part model.ContentPart, toolNames map[string]string) model.ContentPart {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch p := part.(type) {
 	case model.TextPart:
-		// Preserve text verbatim — this is the actual conversation content
+		observe.GlobalTrace("typecase: model.TextPart")
+
 		return p
 
 	case model.ThinkingPart:
-		// Strip entirely — model already used its reasoning, the output
-		// text response captures the synthesized result
+		observe.GlobalTrace("typecase: model.ThinkingPart")
+
 		return nil
 
 	case model.ToolCallPart:
-		// Preserve — shows what was requested (important context)
-		// Deep copy the input
+		observe.GlobalTrace("typecase: model.ToolCallPart")
+
 		inputCopy := make(json.RawMessage, len(p.Input))
 		copy(inputCopy, p.Input)
 		return model.ToolCallPart{
@@ -85,10 +101,12 @@ func trimPart(part model.ContentPart, toolNames map[string]string) model.Content
 		}
 
 	case model.ToolResultPart:
+		observe.GlobalTrace("typecase: model.ToolResultPart")
 		if len(p.Content) <= largeToolResultThreshold {
+			observe.GlobalTrace("return: p")
 			return p
 		}
-		// Stub large results — model already synthesized this content
+
 		name := toolNames[p.ToolCallID]
 		if name == "" {
 			name = "unknown"
@@ -100,14 +118,17 @@ func trimPart(part model.ContentPart, toolNames map[string]string) model.Content
 		}
 
 	case model.ImagePart:
-		// Replace with marker — image content can't be summarized as text
+		observe.GlobalTrace("typecase: model.ImagePart")
+
 		return model.TextPart{Text: fmt.Sprintf("[image: %s]", p.MimeType)}
 
 	case model.DocumentPart:
-		// Replace with marker
+		observe.GlobalTrace("typecase: model.DocumentPart")
+
 		return model.TextPart{Text: fmt.Sprintf("[document: %s, %d bytes]", p.MimeType, len(p.Data))}
 
 	default:
+		observe.GlobalTrace("typedefault")
 		return part
 	}
 }

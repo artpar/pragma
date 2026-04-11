@@ -90,12 +90,69 @@ func (l *Logger) writeText(event Event) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	ts := event.EventTimestamp().Format(time.RFC3339)
-	line := fmt.Sprintf("[%s] %s trace=%s span=%s\n",
-		ts, event.EventKind(), event.EventTraceID(), event.EventSpanID())
+	detail := eventDetail(event)
+	var line string
+	if detail != "" {
+		line = fmt.Sprintf("[%s] %s %s\n", ts, event.EventKind(), detail)
+	} else {
+		line = fmt.Sprintf("[%s] %s\n", ts, event.EventKind())
+	}
 	if _, err := l.writer.Write([]byte(line)); err != nil {
 		l.writeErr = err
 	} else {
 		l.writeErr = nil
+	}
+}
+
+// eventDetail extracts a human-readable summary of an event's key fields.
+func eventDetail(event Event) string {
+	switch e := event.(type) {
+	case APIRequestStarted:
+		return fmt.Sprintf("model=%s msgs=%d tools=%d tokens~%d", e.Model, e.MessageCount, e.ToolCount, e.TokenEstimate)
+	case APIRequestCompleted:
+		return fmt.Sprintf("stop=%s in=%d out=%d cache_create=%d cache_read=%d dur=%dms",
+			e.StopReason, e.Usage.InputTokens, e.Usage.OutputTokens,
+			e.Usage.CacheCreationInputTokens, e.Usage.CacheReadInputTokens, e.DurationMs)
+	case APIRequestFailed:
+		return fmt.Sprintf("type=%s retryable=%v attempt=%d err=%s", e.ErrorType, e.Retryable, e.Attempt, e.ErrorMessage)
+	case APIRetryScheduled:
+		return fmt.Sprintf("attempt=%d delay=%dms reason=%s", e.Attempt, e.DelayMs, e.Reason)
+	case ToolExecutionStarted:
+		return fmt.Sprintf("tool=%s call=%s", e.ToolName, e.ToolCallID)
+	case ToolExecutionCompleted:
+		return fmt.Sprintf("tool=%s dur=%dms error=%v", e.ToolName, e.DurationMs, e.IsError)
+	case ToolExecutionFailed:
+		return fmt.Sprintf("tool=%s err=%s", e.ToolName, e.ErrorMessage)
+	case ToolPermissionChecked:
+		return fmt.Sprintf("tool=%s decision=%s", e.ToolName, e.Decision)
+	case ErrorOccurred:
+		return fmt.Sprintf("[%s] %s: %s", e.Severity, e.Component, e.ErrorMessage)
+	case SlashCommandExecuted:
+		return fmt.Sprintf("cmd=/%s success=%v dur=%dms", e.CommandName, e.Success, e.DurationMs)
+	case CompactionCompleted:
+		return fmt.Sprintf("post=%d summarized=%d dur=%dms", e.PostTokenCount, e.SummarizedCount, e.DurationMs)
+	case MCPServerConnected:
+		return fmt.Sprintf("server=%s tools=%d", e.ServerName, e.ToolCount)
+	case MCPServerFailed:
+		return fmt.Sprintf("server=%s err=%s", e.ServerName, e.ErrorMessage)
+	case AgentMDLoaded:
+		return fmt.Sprintf("path=%s scope=%s bytes=%d", e.Path, e.Scope, e.Bytes)
+	case AgentMDNotFound:
+		return fmt.Sprintf("path=%s scope=%s", e.Path, e.Scope)
+	case SystemPromptBuilt:
+		return fmt.Sprintf("blocks=%d bytes=%d", e.BlockCount, e.TotalBytes)
+	case SubAgentSpawned:
+		return fmt.Sprintf("agent=%s model=%s", e.AgentName, e.Model)
+	case SubAgentCompleted:
+		return fmt.Sprintf("id=%s turns=%d dur=%dms", e.SubAgentID, e.TurnCount, e.DurationMs)
+	case SessionStarted:
+		return fmt.Sprintf("id=%s", e.SessionID)
+	case SessionSaved:
+		return fmt.Sprintf("id=%s msgs=%d", e.SessionID, e.MessageCount)
+	case FlowTrace:
+		return fmt.Sprintf("[%s.%s] %s", e.Component, e.Function, e.Message)
+	default:
+		return ""
 	}
 }
 
@@ -121,7 +178,7 @@ func (l *Logger) Err() error {
 // eventLevel maps event kinds to log levels.
 func eventLevel(kind string) Level {
 	switch kind {
-	case "APIStreamChunk":
+	case "APIStreamChunk", "FlowTrace":
 		return LevelTrace
 	case "ToolExecutionStarted", "APIRequestStarted", "ToolCallReceived",
 		"MCPServerConnecting", "MCPToolCallStarted":
@@ -178,6 +235,8 @@ func eventTopic(kind string) string {
 		return "error"
 	case "AgentMDLoaded", "AgentMDNotFound", "SystemPromptBuilt":
 		return "sysprompt"
+	case "FlowTrace":
+		return "trace"
 	default:
 		return "unknown"
 	}

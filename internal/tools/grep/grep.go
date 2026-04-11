@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
 )
@@ -62,94 +63,130 @@ var inputSchema = json.RawMessage(`{
 // Tool implements the Grep tool for content search.
 type Tool struct{}
 
-func (t *Tool) Name() string                { return "Grep" }
-func (t *Tool) Description() string          { return "Search file contents using regular expressions (powered by ripgrep)." }
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Grep\"")
+	return "Grep"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"Search file contents using regular expressions (powered by ripgrep).\"")
+	return "Search file contents using regular expressions (powered by ripgrep)."
+}
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "exit")
 	var in struct {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "if: err != nil")
+		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", \"\")")
 		return checker.Check(ctx, "Grep", "")
 	}
+	observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", in.Path)")
 	return checker.Check(ctx, "Grep", in.Path)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "grep", "Tool.Invoke", "enter")
+	defer observe.TraceCtx(ctx, "grep", "Tool.Invoke", "exit")
 	var in GrepInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Pattern == "" {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Pattern == \"\"")
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"pattern is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("pattern is required")
 	}
 
 	outputMode := in.OutputMode
 	if outputMode == "" {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: outputMode == \"\"")
 		outputMode = "files_with_matches"
 	}
 
 	searchPath := state.WorkDir()
 	if in.Path != "" {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Path != \"\"")
 		if filepath.IsAbs(in.Path) {
+			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: filepath.IsAbs(in.Path)")
 			searchPath = in.Path
 		} else {
+			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "else: filepath.IsAbs(in.Path)")
 			searchPath = filepath.Join(state.WorkDir(), in.Path)
 		}
 	}
 
-	// Verify path exists
 	if _, err := os.Stat(searchPath); err != nil {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path not found: %s\", searchPath)")
 		return tool.InvokeResult{}, fmt.Errorf("path not found: %s", searchPath)
 	}
 
-	// Build ripgrep args
 	args := []string{"--hidden"}
 
-	// Exclude VCS directories
 	for _, dir := range vcsDirsToExclude {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "range vcsDirsToExclude")
 		args = append(args, "--glob", "!"+dir)
 	}
 
-	// Max columns to prevent base64/minified content clutter
 	args = append(args, "--max-columns", "500")
 
-	// Multiline
 	if in.Multiline != nil && *in.Multiline {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Multiline != nil && *in.Multiline")
 		args = append(args, "-U", "--multiline-dotall")
 	}
 
-	// Case insensitive
 	if in.CaseInsens != nil && *in.CaseInsens {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.CaseInsens != nil && *in.CaseInsens")
 		args = append(args, "-i")
 	}
 
-	// Output mode flags
 	switch outputMode {
 	case "files_with_matches":
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "case: \"files_with_matches\"")
 		args = append(args, "-l")
 	case "count":
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "case: \"count\"")
 		args = append(args, "-c")
 	}
 
-	// Line numbers in content mode
 	showLineNums := true
 	if in.LineNums != nil {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.LineNums != nil")
 		showLineNums = *in.LineNums
 	}
 	if showLineNums && outputMode == "content" {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: showLineNums && outputMode == \"content\"")
 		args = append(args, "-n")
 	}
 
-	// Context flags (context/-C takes precedence)
 	if outputMode == "content" {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: outputMode == \"content\"")
 		if in.Context != nil {
+			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Context != nil")
 			args = append(args, "-C", strconv.Itoa(*in.Context))
 		} else if in.ContextC != nil {
+			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "else-if: in.ContextC != nil")
 			args = append(args, "-C", strconv.Itoa(*in.ContextC))
 		} else {
 			if in.Before != nil {
@@ -161,39 +198,43 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		}
 	}
 
-	// Pattern (use -e if starts with -)
 	if strings.HasPrefix(in.Pattern, "-") {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: strings.HasPrefix(in.Pattern, \"-\")")
 		args = append(args, "-e", in.Pattern)
 	} else {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "else: strings.HasPrefix(in.Pattern, \"-\")")
 		args = append(args, in.Pattern)
 	}
 
-	// File type filter
 	if in.FileType != "" {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.FileType != \"\"")
 		args = append(args, "--type", in.FileType)
 	}
 
-	// Glob filter
 	if in.Glob != "" {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Glob != \"\"")
 		args = append(args, "--glob", in.Glob)
 	}
 
-	// Search path
 	args = append(args, searchPath)
 
-	// Execute ripgrep
 	cmd := exec.CommandContext(ctx, "rg", args...)
 	out, err := cmd.Output()
-	// rg exits 1 for "no matches" — that's not an error
+
 	if err != nil {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: err != nil")
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: ok")
 			if exitErr.ExitCode() == 1 {
-				// No matches
+				observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: exitErr.ExitCode() == 1")
+
 				out = nil
 			} else if exitErr.ExitCode() == 2 {
+				observe.TraceCtx(ctx, "grep", "Tool.Invoke", "else-if: exitErr.ExitCode() == 2")
 				return tool.InvokeResult{}, fmt.Errorf("ripgrep error: %s", string(exitErr.Stderr))
 			}
 		} else if ctx.Err() != nil {
+			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "else-if: ctx.Err() != nil")
 			return tool.InvokeResult{}, ctx.Err()
 		} else {
 			return tool.InvokeResult{}, fmt.Errorf("ripgrep: %w", err)
@@ -203,17 +244,19 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	// Parse results
 	var lines []string
 	if len(out) > 0 {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: len(out) > 0")
 		raw := strings.TrimRight(string(out), "\n")
 		lines = strings.Split(raw, "\n")
 	}
 
-	// Compute head_limit and offset
 	headLimit := defaultHeadLimit
 	if in.HeadLimit != nil {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.HeadLimit != nil")
 		headLimit = *in.HeadLimit
 	}
 	offset := 0
 	if in.Offset != nil {
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Offset != nil")
 		offset = *in.Offset
 	}
 
@@ -221,123 +264,168 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	switch outputMode {
 	case "content":
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "case: \"content\"")
 		return tool.InvokeResult{Content: buildContentResult(lines, headLimit, offset, workDir)}, nil
 	case "count":
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "case: \"count\"")
 		return tool.InvokeResult{Content: buildCountResult(lines, headLimit, offset, workDir)}, nil
 	default:
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "default")
 		return tool.InvokeResult{Content: buildFilesResult(lines, headLimit, offset, workDir)}, nil
 	}
 }
 
 // applyHeadLimit applies offset+limit pagination. headLimit=0 means unlimited.
 func applyHeadLimit(items []string, headLimit, offset int) (result []string, appliedLimit *int) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if offset > 0 {
+		observe.GlobalTrace("if: offset > 0")
 		if offset >= len(items) {
+			observe.GlobalTrace("if: offset >= len(items)")
+			observe.GlobalTrace("return: nil, nil")
 			return nil, nil
 		}
 		items = items[offset:]
 	}
 	if headLimit == 0 {
+		observe.GlobalTrace("if: headLimit == 0")
+		observe.GlobalTrace("return: items, nil")
 		return items, nil
 	}
 	if len(items) > headLimit {
+		observe.GlobalTrace("if: len(items) > headLimit")
 		truncated := headLimit
+		observe.GlobalTrace("return: items[:headLimit], &truncated")
 		return items[:headLimit], &truncated
 	}
+	observe.GlobalTrace("return: items, nil")
 	return items, nil
 }
 
 func relativizePath(absPath, workDir string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	rel, err := filepath.Rel(workDir, absPath)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: absPath")
 		return absPath
 	}
+	observe.GlobalTrace("return: rel")
 	return rel
 }
 
 func buildContentResult(lines []string, headLimit, offset int, workDir string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	limited, appliedLimit := applyHeadLimit(lines, headLimit, offset)
 
 	// Relativize paths in each line
 	var result []string
 	for _, line := range limited {
+		observe.GlobalTrace("range limited")
 		colonIdx := strings.Index(line, ":")
 		if colonIdx > 0 {
+			observe.GlobalTrace("if: colonIdx > 0")
 			path := line[:colonIdx]
 			rest := line[colonIdx:]
 			result = append(result, relativizePath(path, workDir)+rest)
 		} else {
+			observe.GlobalTrace("else: colonIdx > 0")
 			result = append(result, line)
 		}
 	}
 
 	out := strings.Join(result, "\n")
 	if out == "" {
+		observe.GlobalTrace("if: out == \"\"")
 		out = "No matches found"
 	}
 
 	if appliedLimit != nil {
+		observe.GlobalTrace("if: appliedLimit != nil")
 		out += fmt.Sprintf("\n\n[Showing results with pagination = limit: %d", *appliedLimit)
 		if offset > 0 {
+			observe.GlobalTrace("if: offset > 0")
 			out += fmt.Sprintf(", offset: %d", offset)
 		}
 		out += "]"
 	} else if offset > 0 {
+		observe.GlobalTrace("else-if: offset > 0")
 		out += fmt.Sprintf("\n\n[Showing results with pagination = offset: %d]", offset)
 	}
+	observe.GlobalTrace("return: out")
 
 	return out
 }
 
 func buildCountResult(lines []string, headLimit, offset int, workDir string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	limited, appliedLimit := applyHeadLimit(lines, headLimit, offset)
 
 	var totalMatches, fileCount int
 	var countLines []string
 	for _, line := range limited {
+		observe.GlobalTrace("range limited")
 		colonIdx := strings.LastIndex(line, ":")
 		if colonIdx > 0 {
+			observe.GlobalTrace("if: colonIdx > 0")
 			path := line[:colonIdx]
 			countStr := line[colonIdx+1:]
 			count, err := strconv.Atoi(strings.TrimSpace(countStr))
 			if err == nil {
+				observe.GlobalTrace("if: err == nil")
 				totalMatches += count
 				fileCount++
 			}
 			countLines = append(countLines, relativizePath(path, workDir)+":"+countStr)
 		} else {
+			observe.GlobalTrace("else: colonIdx > 0")
 			countLines = append(countLines, line)
 		}
 	}
 
 	out := strings.Join(countLines, "\n")
 	if out == "" {
+		observe.GlobalTrace("if: out == \"\"")
 		out = "No matches found"
 	}
 
 	occurrences := "occurrences"
 	if totalMatches == 1 {
+		observe.GlobalTrace("if: totalMatches == 1")
 		occurrences = "occurrence"
 	}
 	files := "files"
 	if fileCount == 1 {
+		observe.GlobalTrace("if: fileCount == 1")
 		files = "file"
 	}
 	summary := fmt.Sprintf("\n\nFound %d total %s across %d %s.", totalMatches, occurrences, fileCount, files)
 	if appliedLimit != nil {
+		observe.GlobalTrace("if: appliedLimit != nil")
 		summary += fmt.Sprintf(" with pagination = limit: %d", *appliedLimit)
 		if offset > 0 {
+			observe.GlobalTrace("if: offset > 0")
 			summary += fmt.Sprintf(", offset: %d", offset)
 		}
 	} else if offset > 0 {
+		observe.GlobalTrace("else-if: offset > 0")
 		summary += fmt.Sprintf(" with pagination = offset: %d", offset)
 	}
+	observe.GlobalTrace("return: out + summary")
 
 	return out + summary
 }
 
 func buildFilesResult(lines []string, headLimit, offset int, workDir string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(lines) == 0 {
+		observe.GlobalTrace("if: len(lines) == 0")
+		observe.GlobalTrace("return: \"No files found\"")
 		return "No files found"
 	}
 
@@ -348,12 +436,15 @@ func buildFilesResult(lines []string, headLimit, offset int, workDir string) str
 	}
 	var files []fileWithMtime
 	for _, line := range lines {
+		observe.GlobalTrace("range lines")
 		line = strings.TrimSpace(line)
 		if line == "" {
+			observe.GlobalTrace("if: line == \"\"")
 			continue
 		}
 		var mtimeMs int64
 		if info, err := os.Stat(line); err == nil {
+			observe.GlobalTrace("if: err == nil")
 			mtimeMs = info.ModTime().UnixMilli()
 		}
 		files = append(files, fileWithMtime{path: line, mtimeMs: mtimeMs})
@@ -366,35 +457,40 @@ func buildFilesResult(lines []string, headLimit, offset int, workDir string) str
 		return files[i].mtimeMs > files[j].mtimeMs
 	})
 
-	// Convert to string slice for pagination
 	sorted := make([]string, len(files))
 	for i, f := range files {
+		observe.GlobalTrace("range files")
 		sorted[i] = f.path
 	}
 
 	limited, appliedLimit := applyHeadLimit(sorted, headLimit, offset)
 
-	// Relativize paths
 	relative := make([]string, len(limited))
 	for i, p := range limited {
+		observe.GlobalTrace("range limited")
 		relative[i] = relativizePath(p, workDir)
 	}
 
 	numFiles := len(relative)
 	filesWord := "files"
 	if numFiles == 1 {
+		observe.GlobalTrace("if: numFiles == 1")
 		filesWord = "file"
 	}
 
 	header := fmt.Sprintf("Found %d %s", numFiles, filesWord)
 	if appliedLimit != nil {
+		observe.GlobalTrace("if: appliedLimit != nil")
 		header += fmt.Sprintf(" limit: %d", *appliedLimit)
 		if offset > 0 {
+			observe.GlobalTrace("if: offset > 0")
 			header += fmt.Sprintf(" offset: %d", offset)
 		}
 	} else if offset > 0 {
+		observe.GlobalTrace("else-if: offset > 0")
 		header += fmt.Sprintf(" offset: %d", offset)
 	}
+	observe.GlobalTrace("return: header + \"\\n\" + strings.Join(relative, \"\\n\")")
 
 	return header + "\n" + strings.Join(relative, "\n")
 }

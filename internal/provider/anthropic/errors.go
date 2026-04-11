@@ -12,6 +12,7 @@ import (
 	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // Sentinel errors for Anthropic API error categories.
@@ -36,8 +37,12 @@ type classifiedError struct {
 // For SDK API errors, extracts status code and retry-after header.
 // For other errors, classifies connection-level failures as retryable.
 func classifyError(err error) classifiedError {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var apiErr *sdk.Error
 	if errors.As(err, &apiErr) {
+		observe.GlobalTrace("if: errors.As(err, &apiErr)")
+		observe.GlobalTrace("return: classifyAPIError(apiErr)")
 		return classifyAPIError(apiErr)
 	}
 
@@ -46,6 +51,8 @@ func classifyError(err error) classifiedError {
 	// wrapped inside OpError, and errors.As unwraps the chain.
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
+		observe.GlobalTrace("if: errors.As(err, &dnsErr)")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"DNS resolution failed: %w\", ErrServerE...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("DNS resolution failed: %w", ErrServerError),
 			retryable: !dnsErr.IsNotFound,
@@ -55,6 +62,8 @@ func classifyError(err error) classifiedError {
 
 	var netErr *net.OpError
 	if errors.As(err, &netErr) {
+		observe.GlobalTrace("if: errors.As(err, &netErr)")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("connection error: %w", ErrServerError),
 			retryable: true,
@@ -65,6 +74,8 @@ func classifyError(err error) classifiedError {
 	// URL errors (wraps net errors for HTTP client)
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
+		observe.GlobalTrace("if: errors.As(err, &urlErr)")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("connection error: %w", ErrServerError),
 			retryable: true,
@@ -72,8 +83,9 @@ func classifyError(err error) classifiedError {
 		}
 	}
 
-	// EOF errors (server closed connection)
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		observe.GlobalTrace("if: errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection closed: %w\", ErrServerError...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("connection closed: %w", ErrServerError),
 			retryable: true,
@@ -81,18 +93,20 @@ func classifyError(err error) classifiedError {
 		}
 	}
 
-	// String fallback for errors that don't match any structured type
 	msg := err.Error()
 	if strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "broken pipe") ||
 		strings.Contains(msg, "ECONNRESET") ||
 		strings.Contains(msg, "EPIPE") {
+		observe.GlobalTrace("if: strings.Contains(msg, \"connection reset\") ||\n\tstrings.Contains(msg, \"broken p...")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("connection error: %w", ErrServerError),
 			retryable: true,
 			errorType: "connection",
 		}
 	}
+	observe.GlobalTrace("return: classifiedError{\n\twrapped:\terr,\n\tretryable:\tfalse,\n\terrorType:\t\"unknown\",\n}")
 
 	return classifiedError{
 		wrapped:   err,
@@ -102,17 +116,21 @@ func classifyError(err error) classifiedError {
 }
 
 func classifyAPIError(apiErr *sdk.Error) classifiedError {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	retryAfter := parseRetryAfter(apiErr.Response)
 
 	switch apiErr.StatusCode {
-	case http.StatusTooManyRequests: // 429
+	case http.StatusTooManyRequests:
+		observe.GlobalTrace("case: http.StatusTooManyRequests")
 		return classifiedError{
 			wrapped:    fmt.Errorf("%w: %s", ErrRateLimit, apiErr.Error()),
 			retryable:  true,
 			errorType:  "rate_limit",
 			retryAfter: retryAfter,
 		}
-	case 529: // Overloaded (Anthropic-specific)
+	case 529:
+		observe.GlobalTrace("case: 529")
 		return classifiedError{
 			wrapped:    fmt.Errorf("%w: %s", ErrOverloaded, apiErr.Error()),
 			retryable:  true,
@@ -120,19 +138,23 @@ func classifyAPIError(apiErr *sdk.Error) classifiedError {
 			retryAfter: retryAfter,
 		}
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable:
+		observe.GlobalTrace("case: http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnav...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("%w: %s", ErrServerError, apiErr.Error()),
 			retryable: true,
 			errorType: "server_error",
 		}
-	case http.StatusRequestTimeout: // 408
+	case http.StatusRequestTimeout:
+		observe.GlobalTrace("case: http.StatusRequestTimeout")
 		return classifiedError{
 			wrapped:   fmt.Errorf("%w: %s", ErrServerError, apiErr.Error()),
 			retryable: true,
 			errorType: "timeout",
 		}
-	case http.StatusBadRequest: // 400
+	case http.StatusBadRequest:
+		observe.GlobalTrace("case: http.StatusBadRequest")
 		if isContextOverflow(apiErr) {
+			observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"%w: %s\", ErrContextOverflow, apiErr.Er...")
 			return classifiedError{
 				wrapped:   fmt.Errorf("%w: %s", ErrContextOverflow, apiErr.Error()),
 				retryable: false,
@@ -145,12 +167,14 @@ func classifyAPIError(apiErr *sdk.Error) classifiedError {
 			errorType: "invalid_request",
 		}
 	case http.StatusUnauthorized, http.StatusForbidden:
+		observe.GlobalTrace("case: http.StatusUnauthorized, http.StatusForbidden")
 		return classifiedError{
 			wrapped:   fmt.Errorf("%w: %s", ErrAuthentication, apiErr.Error()),
 			retryable: false,
 			errorType: "authentication",
 		}
 	default:
+		observe.GlobalTrace("default")
 		return classifiedError{
 			wrapped:   fmt.Errorf("anthropic: HTTP %d: %s", apiErr.StatusCode, apiErr.Error()),
 			retryable: false,
@@ -161,7 +185,10 @@ func classifyAPIError(apiErr *sdk.Error) classifiedError {
 
 // isContextOverflow checks if a 400 error is specifically about context window limits.
 func isContextOverflow(apiErr *sdk.Error) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw := apiErr.RawJSON()
+	observe.GlobalTrace("return: strings.Contains(raw, \"prompt is too long\") ||\n\tstrings.Contains(raw, \"exceed...")
 	return strings.Contains(raw, "prompt is too long") ||
 		strings.Contains(raw, "exceeds the maximum") ||
 		strings.Contains(raw, "context length")
@@ -170,23 +197,35 @@ func isContextOverflow(apiErr *sdk.Error) bool {
 // parseRetryAfter extracts the Retry-After header value as a duration.
 // Returns zero if the header is absent or unparseable.
 func parseRetryAfter(resp *http.Response) time.Duration {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if resp == nil {
+		observe.GlobalTrace("if: resp == nil")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
 	val := resp.Header.Get("Retry-After")
 	if val == "" {
+		observe.GlobalTrace("if: val == \"\"")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
-	// Try parsing as integer seconds
+
 	if secs, err := strconv.Atoi(val); err == nil {
+		observe.GlobalTrace("if: err == nil")
+		observe.GlobalTrace("return: time.Duration(secs) * time.Second")
 		return time.Duration(secs) * time.Second
 	}
-	// Try parsing as HTTP-date
+
 	if t, err := http.ParseTime(val); err == nil {
+		observe.GlobalTrace("if: err == nil")
 		d := time.Until(t)
 		if d > 0 {
+			observe.GlobalTrace("if: d > 0")
+			observe.GlobalTrace("return: d")
 			return d
 		}
 	}
+	observe.GlobalTrace("return: 0")
 	return 0
 }

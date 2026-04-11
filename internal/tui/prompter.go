@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 )
 
@@ -26,22 +27,31 @@ type InteractivePrompter struct {
 
 // NewInteractivePrompter creates a prompter. Call SetProgram before use.
 func NewInteractivePrompter() *InteractivePrompter {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &InteractivePrompter{}")
 	return &InteractivePrompter{}
 }
 
 // SetProgram binds the bubbletea program. Must be called after tea.NewProgram
 // and before any tool execution.
 func (p *InteractivePrompter) SetProgram(prog *tea.Program) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	p.program = prog
 }
 
 // Prompt asks the user for a permission decision. It blocks the calling
 // goroutine until the user responds or the context is cancelled.
 func (p *InteractivePrompter) Prompt(ctx context.Context, toolName, content, reason string) (permission.Decision, *permission.Rule) {
+	observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "enter")
+	defer observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "exit")
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if p.program == nil {
+		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "if: p.program == nil")
+		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "return: permission.DecisionDeny, nil")
 		return permission.DecisionDeny, nil
 	}
 
@@ -55,8 +65,10 @@ func (p *InteractivePrompter) Prompt(ctx context.Context, toolName, content, rea
 
 	select {
 	case resp := <-respCh:
+		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "select: resp := <-respCh")
 		return resp.Decision, resp.Rule
 	case <-ctx.Done():
+		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "select: <-ctx.Done()")
 		return permission.DecisionDeny, nil
 	}
 }

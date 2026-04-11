@@ -22,26 +22,32 @@ const continuationPrompt = "Please continue."
 // The channel is closed when the loop finishes.
 // Implements SPEC.md §6.1.
 func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
+	observe.TraceCtx(ctx, "query", "Engine.Run", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.Run", "exit")
 	ch := make(chan LoopEvent, 16)
 	go func() {
 		defer close(ch)
 		defer func() {
 			if r := recover(); r != nil {
+				observe.TraceCtx(ctx, "query", "Engine.Run", "if: r != nil")
 				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
 			}
 		}()
 		e.runLoop(ctx, userMessage, ch)
 	}()
+	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
 	return ch
 }
 
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
+	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
 	maxTurns := e.config.MaxTurns
 	if maxTurns <= 0 {
+		observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: maxTurns <= 0")
 		maxTurns = DefaultMaxTurns
 	}
 
-	// 1. Create and append user message
 	userMsg := model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
@@ -52,18 +58,19 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		s.Conversation.Append(userMsg)
 	})
 
-	// 2. LOOP
 	for range maxTurns {
+		observe.TraceCtx(ctx, "query", "Engine.runLoop", "range maxTurns")
 		if err := ctx.Err(); err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: err != nil")
 			ch <- ErrorEvent{Err: fmt.Errorf("context cancelled: %w", model.ErrContextCancelled)}
 			return
 		}
 
 		snap := e.store.Snapshot()
 
-		// a. Build RequestParams
 		tools := e.registry.ToolDefs()
 		if snap.PlanMode {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: snap.PlanMode")
 			tools = e.filterReadOnlyTools(tools)
 		}
 
@@ -77,21 +84,20 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			Thinking:    e.config.Thinking,
 		}
 
-		// b. Stream — provider emits its own APIRequestStarted/Completed/Failed events
 		chunks, err := e.provider.Stream(ctx, params)
 		if err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
 		}
 
-		// c. Consume stream: emit deltas as they arrive, accumulate into Response
 		response, err := e.consumeStream(chunks, ch)
 		if err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
 		}
 
-		// d+e. Build assistant message, append to conversation
 		assistantMsg := model.Message{
 			ID:        model.NewUUID(),
 			Role:      model.RoleAssistant,
@@ -102,9 +108,9 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			s.Conversation.Append(assistantMsg)
 		})
 
-		// f. Record cost
 		pricing, known := e.provider.Pricing(e.config.Model)
 		if !known {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: !known")
 			e.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 				Severity:     "warn",
@@ -115,17 +121,19 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 		e.costTracker.Record(e.config.Model, e.provider.Name(), response.Usage, pricing)
 
-		// Auto-compaction check (between cost recording and stop reason switch).
-		// Only runs if compactor is set (nil for subagent engines, #27794).
 		if e.compactor != nil && e.autoTracker != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.compactor != nil && e.autoTracker != nil")
 			compSnap := e.store.Snapshot()
 			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
 			if e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig)")
 				compResult, compErr := e.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
 				if compErr != nil && ctx.Err() == nil {
-					// Only count real failures, not context cancellation (Ctrl+C)
+					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compErr != nil && ctx.Err() == nil")
+
 					tripped := e.autoTracker.RecordFailure()
 					if tripped {
+						observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: tripped")
 						e.bus.Emit(observe.ErrorOccurred{
 							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 							Severity:     "warn",
@@ -136,6 +144,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 						ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
 					}
 				} else {
+					observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: compErr != nil && ctx.Err() == nil")
 					e.autoTracker.RecordSuccess()
 					e.store.Update(func(s *app.AppState) {
 						s.Conversation.Messages = compResult.ReplacementMessages
@@ -147,14 +156,15 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			e.autoTracker.IncrementTurn()
 		}
 
-		// g+h. Switch on StopReason
 		switch response.StopReason {
 		case model.StopEndTurn, model.StopMaxTokens:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn, model.StopMaxTokens")
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
 
 		case model.StopPauseTurn:
-			// Model wants to continue — send continuation message (ADR-010)
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopPauseTurn")
+
 			contMsg := model.Message{
 				ID:        model.NewUUID(),
 				Role:      model.RoleUser,
@@ -167,6 +177,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			continue
 
 		case model.StopToolUse:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopToolUse")
 			toolCalls := extractToolCalls(response.Content)
 			for _, tc := range toolCalls {
 				ch <- ToolCallEvent{Call: tc}
@@ -177,7 +188,6 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ch <- ToolResultEvent{Result: r}
 			}
 
-			// Build user message with tool results + any supplements (e.g., PDF document blocks)
 			resultParts := make([]model.ContentPart, 0, len(execResult.Results)+len(execResult.Supplements))
 			for _, r := range execResult.Results {
 				resultParts = append(resultParts, r)
@@ -195,11 +205,12 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			continue
 
 		default:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "default")
 			ch <- ErrorEvent{Err: fmt.Errorf("unknown stop reason: %s", response.StopReason)}
 			return
 		}
 	}
-	// Loop exhausted maxTurns without a terminal stop reason
+
 	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
 }
 
@@ -216,6 +227,8 @@ func (e *Engine) consumeStream(
 	chunks <-chan provider.StreamChunk,
 	ch chan<- LoopEvent,
 ) (model.Response, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var textBuf strings.Builder
 	var thinkBuf strings.Builder
 	var thinkSigBuf strings.Builder
@@ -225,25 +238,32 @@ func (e *Engine) consumeStream(
 	var done *provider.StreamDone
 
 	for chunk := range chunks {
+		observe.GlobalTrace("range chunks")
 		if chunk.Error != nil {
+			observe.GlobalTrace("if: chunk.Error != nil")
+			observe.GlobalTrace("return: model.Response{}, chunk.Error")
 			return model.Response{}, chunk.Error
 		}
 
 		if chunk.TextDelta != "" {
+			observe.GlobalTrace("if: chunk.TextDelta != \"\"")
 			textBuf.WriteString(chunk.TextDelta)
 			ch <- TextEvent{Text: chunk.TextDelta}
 		}
 
 		if chunk.ThinkingDelta != "" {
+			observe.GlobalTrace("if: chunk.ThinkingDelta != \"\"")
 			thinkBuf.WriteString(chunk.ThinkingDelta)
 			ch <- ThinkingEvent{Text: chunk.ThinkingDelta}
 		}
 
 		if chunk.ThinkingSignatureDelta != "" {
+			observe.GlobalTrace("if: chunk.ThinkingSignatureDelta != \"\"")
 			thinkSigBuf.WriteString(chunk.ThinkingSignatureDelta)
 		}
 
 		if chunk.RedactedThinkingBlock != nil {
+			observe.GlobalTrace("if: chunk.RedactedThinkingBlock != nil")
 			redactedThinkingParts = append(redactedThinkingParts, model.ThinkingPart{
 				Redacted:     true,
 				RedactedData: chunk.RedactedThinkingBlock.Data,
@@ -251,8 +271,11 @@ func (e *Engine) consumeStream(
 		}
 
 		if chunk.ToolCallStart != nil {
+			observe.GlobalTrace("if: chunk.ToolCallStart != nil")
 			tc := chunk.ToolCallStart
 			if _, exists := toolCalls[tc.ID]; exists {
+				observe.GlobalTrace("if: exists")
+				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
 				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
 			}
 			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name}
@@ -260,42 +283,54 @@ func (e *Engine) consumeStream(
 		}
 
 		if chunk.ToolCallInputDelta != nil {
+			observe.GlobalTrace("if: chunk.ToolCallInputDelta != nil")
 			acc, ok := toolCalls[chunk.ToolCallInputDelta.ToolCallID]
 			if !ok {
+				observe.GlobalTrace("if: !ok")
+				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				return model.Response{}, fmt.Errorf("input delta for unknown tool call %q", chunk.ToolCallInputDelta.ToolCallID)
 			}
 			acc.inputBuf.WriteString(chunk.ToolCallInputDelta.JSONDelta)
 		}
 
 		if chunk.Done != nil {
+			observe.GlobalTrace("if: chunk.Done != nil")
 			done = chunk.Done
 		}
 	}
 
 	if done == nil {
+		observe.GlobalTrace("if: done == nil")
+		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done: %w\", model.ErrStream...")
 		return model.Response{}, fmt.Errorf("stream ended without Done: %w", model.ErrStreamClosed)
 	}
 
 	// Build content parts: thinking → redacted thinking → text → tool calls
 	var parts []model.ContentPart
 	if thinkBuf.Len() > 0 {
+		observe.GlobalTrace("if: thinkBuf.Len() > 0")
 		parts = append(parts, model.ThinkingPart{
 			Text:      thinkBuf.String(),
 			Signature: thinkSigBuf.String(),
 		})
 	}
 	for _, rtp := range redactedThinkingParts {
+		observe.GlobalTrace("range redactedThinkingParts")
 		parts = append(parts, rtp)
 	}
 	if textBuf.Len() > 0 {
+		observe.GlobalTrace("if: textBuf.Len() > 0")
 		parts = append(parts, model.TextPart{Text: textBuf.String()})
 	}
 	for _, id := range toolOrder {
+		observe.GlobalTrace("range toolOrder")
 		acc := toolCalls[id]
 		raw := json.RawMessage(acc.inputBuf.String())
 		if len(raw) == 0 {
+			observe.GlobalTrace("if: len(raw) == 0")
 			raw = json.RawMessage("{}")
 		} else if !json.Valid(raw) {
+			observe.GlobalTrace("else-if: !json.Valid(raw)")
 			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
 		}
 		parts = append(parts, model.ToolCallPart{
@@ -304,6 +339,7 @@ func (e *Engine) consumeStream(
 			Input: raw,
 		})
 	}
+	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
 
 	return model.Response{
 		Model:      done.Model,
@@ -316,23 +352,33 @@ func (e *Engine) consumeStream(
 // filterReadOnlyTools returns only tool defs whose Flags().ReadOnly is true.
 // Used in plan mode to restrict the LLM to non-mutating tools.
 func (e *Engine) filterReadOnlyTools(tools []model.ToolDef) []model.ToolDef {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	filtered := make([]model.ToolDef, 0, len(tools))
 	for _, td := range tools {
+		observe.GlobalTrace("range tools")
 		desc, ok := e.registry.Get(td.Name)
 		if ok && desc.Flags().ReadOnly {
+			observe.GlobalTrace("if: ok && desc.Flags().ReadOnly")
 			filtered = append(filtered, td)
 		}
 	}
+	observe.GlobalTrace("return: filtered")
 	return filtered
 }
 
 // extractToolCalls filters ToolCallPart values from a slice of ContentParts.
 func extractToolCalls(parts []model.ContentPart) []model.ToolCallPart {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var calls []model.ToolCallPart
 	for _, p := range parts {
+		observe.GlobalTrace("range parts")
 		if tc, ok := p.(model.ToolCallPart); ok {
+			observe.GlobalTrace("if: ok")
 			calls = append(calls, tc)
 		}
 	}
+	observe.GlobalTrace("return: calls")
 	return calls
 }

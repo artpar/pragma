@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"github.com/artpar/gogent/internal/observe"
 	"strings"
 	"sync"
 )
@@ -18,6 +19,9 @@ type IDMapper struct {
 
 // NewIDMapper creates an empty ID mapper.
 func NewIDMapper() *IDMapper {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &IDMapper{\n\tinternalToWire:\tmake(map[string]string),\n\twireToInternal:\tmake(ma...")
 	return &IDMapper{
 		internalToWire: make(map[string]string),
 		wireToInternal: make(map[string]string),
@@ -27,14 +31,18 @@ func NewIDMapper() *IDMapper {
 // RegisterPair records a bidirectional mapping between an internal UUID and
 // a wire ID. Overwrites any existing mapping for either ID.
 func (m *IDMapper) RegisterPair(internalID, wireID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Clean up stale reverse mapping when internal ID is reassigned
+
 	if oldWire, ok := m.internalToWire[internalID]; ok && oldWire != wireID {
+		observe.GlobalTrace("if: ok && oldWire != wireID")
 		delete(m.wireToInternal, oldWire)
 	}
-	// Clean up stale forward mapping when wire ID is reassigned
+
 	if oldInternal, ok := m.wireToInternal[wireID]; ok && oldInternal != internalID {
+		observe.GlobalTrace("if: ok && oldInternal != internalID")
 		delete(m.internalToWire, oldInternal)
 	}
 	m.internalToWire[internalID] = wireID
@@ -44,16 +52,22 @@ func (m *IDMapper) RegisterPair(internalID, wireID string) {
 // ToWire returns the wire ID for an internal UUID.
 // Returns "" if the internal ID is not registered.
 func (m *IDMapper) ToWire(internalID string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	observe.GlobalTrace("return: m.internalToWire[internalID]")
 	return m.internalToWire[internalID]
 }
 
 // ToInternal returns the internal UUID for a wire ID.
 // Returns "" if the wire ID is not registered.
 func (m *IDMapper) ToInternal(wireID string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	observe.GlobalTrace("return: m.wireToInternal[wireID]")
 	return m.wireToInternal[wireID]
 }
 
@@ -62,10 +76,13 @@ func (m *IDMapper) ToInternal(wireID string) string {
 // is not stored — Anthropic only requires that tool_use and tool_result
 // IDs match within the same request.
 func syntheticWireID(internalID string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	clean := strings.ReplaceAll(internalID, "-", "")
 	if len(clean) > 24 {
+		observe.GlobalTrace("if: len(clean) > 24")
 		clean = clean[:24]
 	}
+	observe.GlobalTrace("return: \"toolu_\" + clean")
 	return "toolu_" + clean
 }
-

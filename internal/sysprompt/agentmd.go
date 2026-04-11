@@ -24,6 +24,8 @@ type AgentMDSource struct {
 // LoadAgentMD reads AGENT.md files from all scopes in priority order.
 // Missing files are silently skipped (with event emission).
 func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	type candidate struct {
 		path  string
 		scope string
@@ -31,6 +33,7 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 
 	globalPath, globalErr := config.GlobalAgentMDPath()
 	if globalErr != nil && bus != nil {
+		observe.GlobalTrace("if: globalErr != nil && bus != nil")
 		bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 			Severity:     "warning",
@@ -47,13 +50,18 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 
 	var sources []AgentMDSource
 	for _, c := range candidates {
+		observe.GlobalTrace("range candidates")
 		if c.path == "" {
+			observe.GlobalTrace("if: c.path == \"\"")
 			continue
 		}
 		data, err := os.ReadFile(c.path)
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
 			if errors.Is(err, os.ErrNotExist) {
+				observe.GlobalTrace("if: errors.Is(err, os.ErrNotExist)")
 				if bus != nil {
+					observe.GlobalTrace("if: bus != nil")
 					bus.Emit(observe.AgentMDNotFound{
 						EventHeader: observe.NewEventHeader("AgentMDNotFound", "", observe.NewSpanID(), ""),
 						Path:        c.path,
@@ -62,8 +70,9 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 				}
 				continue
 			}
-			// Permission denied or other I/O errors: warn and skip
+
 			if bus != nil {
+				observe.GlobalTrace("if: bus != nil")
 				bus.Emit(observe.ErrorOccurred{
 					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 					Severity:     "warning",
@@ -78,11 +87,12 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 		content := stripFrontmatter(string(data))
 		content = strings.TrimSpace(content)
 		if content == "" {
+			observe.GlobalTrace("if: content == \"\"")
 			continue
 		}
 
-		// Truncate oversized files
 		if len(content) > maxAgentMDBytes {
+			observe.GlobalTrace("if: len(content) > maxAgentMDBytes")
 			content = content[:maxAgentMDBytes] + "\n\n[truncated — file exceeds 25KB limit]"
 		}
 
@@ -93,6 +103,7 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 		})
 
 		if bus != nil {
+			observe.GlobalTrace("if: bus != nil")
 			bus.Emit(observe.AgentMDLoaded{
 				EventHeader: observe.NewEventHeader("AgentMDLoaded", "", observe.NewSpanID(), ""),
 				Path:        c.path,
@@ -101,6 +112,7 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 			})
 		}
 	}
+	observe.GlobalTrace("return: sources")
 	return sources
 }
 
@@ -108,28 +120,40 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 // from the beginning of a string. If no frontmatter is found, returns the
 // original string unchanged.
 func stripFrontmatter(content string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !strings.HasPrefix(content, "---") {
+		observe.GlobalTrace("if: !strings.HasPrefix(content, \"---\")")
+		observe.GlobalTrace("return: content")
 		return content
 	}
-	// Find the closing ---
+
 	rest := content[3:]
 	idx := strings.Index(rest, "\n---")
 	if idx < 0 {
-		// Unclosed frontmatter — return original
+		observe.GlobalTrace("if: idx < 0")
+		observe.GlobalTrace("return: content")
+
 		return content
 	}
-	// Skip past the closing --- and its newline
+
 	after := rest[idx+4:]
 	if len(after) > 0 && after[0] == '\n' {
+		observe.GlobalTrace("if: len(after) > 0 && after[0] == '\\n'")
 		after = after[1:]
 	}
+	observe.GlobalTrace("return: after")
 	return after
 }
 
 // agentMDBlock formats loaded AGENT.md sources into a single SystemBlock
 // with path headers for attribution.
 func agentMDBlock(sources []AgentMDSource) model.SystemBlock {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(sources) == 0 {
+		observe.GlobalTrace("if: len(sources) == 0")
+		observe.GlobalTrace("return: model.SystemBlock{}")
 		return model.SystemBlock{}
 	}
 
@@ -138,26 +162,35 @@ func agentMDBlock(sources []AgentMDSource) model.SystemBlock {
 	b.WriteString("IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.\n\n")
 
 	for i, src := range sources {
+		observe.GlobalTrace("range sources")
 		if i > 0 {
+			observe.GlobalTrace("if: i > 0")
 			b.WriteString("\n")
 		}
 		fmt.Fprintf(&b, "Contents of %s (%s):\n\n", src.Path, scopeDescription(src.Scope))
 		b.WriteString(src.Content)
 		b.WriteString("\n")
 	}
+	observe.GlobalTrace("return: model.SystemBlock{Text: b.String(), Cacheable: false}")
 
 	return model.SystemBlock{Text: b.String(), Cacheable: false}
 }
 
 func scopeDescription(scope string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch scope {
 	case "global":
+		observe.GlobalTrace("case: \"global\"")
 		return "global instructions"
 	case "project":
+		observe.GlobalTrace("case: \"project\"")
 		return "project instructions"
 	case "local":
+		observe.GlobalTrace("case: \"local\"")
 		return "local instructions, not checked into version control"
 	default:
+		observe.GlobalTrace("default")
 		return scope
 	}
 }

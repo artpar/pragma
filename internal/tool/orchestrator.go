@@ -22,6 +22,9 @@ type Orchestrator struct {
 
 // NewOrchestrator creates an Orchestrator.
 func NewOrchestrator(registry *Registry, checker permission.Checker, prompter permission.Prompter, bus *observe.EventBus) *Orchestrator {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &Orchestrator{\n\tregistry:\tregistry,\n\tchecker:\tchecker,\n\tprompter:\tprompter,\n\t...")
 	return &Orchestrator{
 		registry: registry,
 		checker:  checker,
@@ -45,6 +48,8 @@ type singleResult struct {
 // Execute runs a batch of tool calls, partitioning into concurrent and serial groups.
 // Results are returned in the same order as the input calls.
 func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, state StateSnapshot) ExecuteResult {
+	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "enter")
+	defer observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "exit")
 	singles := make([]singleResult, len(calls))
 
 	// Partition
@@ -58,6 +63,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	batchSpan := observe.NewSpanID()
 
 	for i, call := range calls {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range calls")
 		o.bus.Emit(observe.ToolCallReceived{
 			EventHeader:    observe.NewEventHeader("ToolCallReceived", traceID, batchSpan, ""),
 			ToolCallID:     call.ID,
@@ -67,6 +73,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 
 		desc, ok := o.registry.Get(call.Name)
 		if !ok {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: !ok")
 			singles[i] = singleResult{
 				part: model.ToolResultPart{
 					ToolCallID: call.ID,
@@ -78,8 +85,10 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		}
 		ic := indexedCall{index: i, call: call}
 		if desc.Flags().Concurrent {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: desc.Flags().Concurrent")
 			concurrent = append(concurrent, ic)
 		} else {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "else: desc.Flags().Concurrent")
 			serial = append(serial, ic)
 		}
 	}
@@ -93,11 +102,12 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	batchStart := time.Now()
 	var concurrentDuration, serialDuration time.Duration
 
-	// Run concurrent tools
 	if len(concurrent) > 0 {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(concurrent) > 0")
 		concStart := time.Now()
 		g, gctx := errgroup.WithContext(ctx)
 		for _, ic := range concurrent {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range concurrent")
 			ic := ic
 			g.Go(func() error {
 				singles[ic.index] = o.executeSingle(gctx, ic.call, state, traceID, batchSpan, true)
@@ -105,6 +115,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			})
 		}
 		if err := g.Wait(); err != nil {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: err != nil")
 			o.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, batchSpan, ""),
 				Severity:     "warn",
@@ -116,10 +127,11 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		concurrentDuration = time.Since(concStart)
 	}
 
-	// Run serial tools
 	if len(serial) > 0 {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(serial) > 0")
 		serStart := time.Now()
 		for _, ic := range serial {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range serial")
 			singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
 		}
 		serialDuration = time.Since(serStart)
@@ -132,14 +144,15 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		SerialDurationMs:     serialDuration.Milliseconds(),
 	})
 
-	// Collect results and supplements
 	out := ExecuteResult{
 		Results: make([]model.ToolResultPart, len(singles)),
 	}
 	for i, s := range singles {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range singles")
 		out.Results[i] = s.part
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
+	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
 	return out
 }
 
@@ -150,19 +163,21 @@ func (o *Orchestrator) executeSingle(
 	traceID, parentSpan string,
 	concurrent bool,
 ) singleResult {
+	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "enter")
+	defer observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "exit")
 	spanID := observe.NewSpanID()
 
-	// Tool is guaranteed to exist — unknown tools are filtered in Execute()
 	desc, _ := o.registry.Get(call.Name)
 
-	// Permission check
 	permResult := desc.CheckPerm(ctx, call.Input, o.checker)
 
 	rulePattern := ""
 	ruleSource := ""
 	if permResult.Rule != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Rule != nil")
 		rulePattern = permResult.Rule.Content
 		if rulePattern == "" {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: rulePattern == \"\"")
 			rulePattern = permResult.Rule.ToolName
 		}
 		ruleSource = string(permResult.Rule.Source)
@@ -177,12 +192,14 @@ func (o *Orchestrator) executeSingle(
 	})
 
 	if permResult.Decision == permission.DecisionDeny {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Decision == permission.DecisionDeny")
 		o.bus.Emit(observe.PermissionDenialEnforced{
 			EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
 			ToolCallID:  call.ID,
 			ToolName:    call.Name,
 			WasExecuted: false,
 		})
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
 				ToolCallID: call.ID,
@@ -193,11 +210,13 @@ func (o *Orchestrator) executeSingle(
 	}
 
 	if permResult.Decision == permission.DecisionAsk {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Decision == permission.DecisionAsk")
 		promptStart := time.Now()
 		decision, sessionRule := o.prompter.Prompt(ctx, call.Name, permResult.Content, permResult.Reason)
 		promptDuration := time.Since(promptStart)
 
 		if sessionRule != nil {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: sessionRule != nil")
 			o.checker.AddSessionRule(*sessionRule)
 		}
 
@@ -210,12 +229,14 @@ func (o *Orchestrator) executeSingle(
 		})
 
 		if decision != permission.DecisionAllow {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: decision != permission.DecisionAllow")
 			o.bus.Emit(observe.PermissionDenialEnforced{
 				EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
 				ToolCallID:  call.ID,
 				ToolName:    call.Name,
 				WasExecuted: false,
 			})
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
 					ToolCallID: call.ID,
@@ -226,8 +247,9 @@ func (o *Orchestrator) executeSingle(
 		}
 	}
 
-	// Check context before execution
 	if ctx.Err() != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: ctx.Err() != nil")
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
 				ToolCallID: call.ID,
@@ -237,7 +259,6 @@ func (o *Orchestrator) executeSingle(
 		}
 	}
 
-	// Execute
 	o.bus.Emit(observe.ToolExecutionStarted{
 		EventHeader: observe.NewEventHeader("ToolExecutionStarted", traceID, spanID, parentSpan),
 		ToolCallID:  call.ID,
@@ -250,6 +271,7 @@ func (o *Orchestrator) executeSingle(
 	duration := time.Since(start)
 
 	if err != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: err != nil")
 		o.bus.Emit(observe.ToolExecutionFailed{
 			EventHeader:  observe.NewEventHeader("ToolExecutionFailed", traceID, spanID, parentSpan),
 			ToolCallID:   call.ID,
@@ -257,6 +279,7 @@ func (o *Orchestrator) executeSingle(
 			ErrorType:    "invocation_error",
 			ErrorMessage: err.Error(),
 		})
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
 				ToolCallID: call.ID,
@@ -274,6 +297,7 @@ func (o *Orchestrator) executeSingle(
 		OutputSizeBytes: len(invokeResult.Content),
 		IsError:         false,
 	})
+	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 
 	return singleResult{
 		part: model.ToolResultPart{

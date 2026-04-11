@@ -10,6 +10,7 @@ import (
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/compact"
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/session"
@@ -20,33 +21,53 @@ import (
 
 // RunDispatcher routes to interactive TUI, non-interactive mode, or list-sessions.
 func RunDispatcher(cmd *cobra.Command, args []string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	listSessions, _ := cmd.Flags().GetBool("list-sessions")
 	if listSessions {
+		observe.GlobalTrace("if: listSessions")
+		observe.GlobalTrace("return: RunListSessions()")
 		return RunListSessions()
 	}
 
 	prompt, _ := cmd.Flags().GetString("prompt")
 	if prompt != "" {
+		observe.GlobalTrace("if: prompt != \"\"")
+		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
 		return RunNonInteractive(cmd, args)
 	}
+	observe.GlobalTrace("return: RunInteractive(cmd)")
 
 	return RunInteractive(cmd)
 }
 
 // RunInteractive launches the bubbletea TUI for multi-turn conversation.
 func RunInteractive(cmd *cobra.Command) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	d, err := SetupDeps(cmd)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	if d.Cleanup != nil {
+		observe.GlobalTrace("if: d.Cleanup != nil")
 		defer d.Cleanup()
 	}
+
+	snap := d.Store.Snapshot()
+	d.Bus.Emit(observe.SessionStarted{
+		EventHeader: observe.NewEventHeader("SessionStarted", "", "", ""),
+		SessionID:   snap.Conversation.ID,
+	})
 
 	prompter := tui.NewInteractivePrompter()
 	asker := tui.NewInteractiveAsker()
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 
@@ -83,26 +104,42 @@ func RunInteractive(cmd *cobra.Command) error {
 	asker.SetProgram(program)
 
 	if _, err := program.Run(); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
+	observe.GlobalTrace("return: nil")
 
 	return nil
 }
 
 // RunNonInteractive runs a single prompt and exits.
 func RunNonInteractive(cmd *cobra.Command, _ []string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	d, err := SetupDeps(cmd)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	if d.Cleanup != nil {
+		observe.GlobalTrace("if: d.Cleanup != nil")
 		defer d.Cleanup()
 	}
+
+	snap := d.Store.Snapshot()
+	d.Bus.Emit(observe.SessionStarted{
+		EventHeader: observe.NewEventHeader("SessionStarted", "", "", ""),
+		SessionID:   snap.Conversation.ID,
+	})
 
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tui.NonInteractiveAsker{}
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 
@@ -112,6 +149,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	prompt, _ := cmd.Flags().GetString("prompt")
 	resumeID, _ := cmd.Flags().GetString("resume")
 	if resumeID != "" && prompt == "" {
+		observe.GlobalTrace("if: resumeID != \"\" && prompt == \"\"")
 		prompt = "Continue from where we left off."
 	}
 
@@ -119,28 +157,36 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	events := engine.Run(ctx, prompt)
 
 	for ev := range events {
+		observe.GlobalTrace("range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
+			observe.GlobalTrace("typecase: query.TextEvent")
 			fmt.Print(e.Text)
 		case query.ThinkingEvent:
+			observe.GlobalTrace("typecase: query.ThinkingEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprint(os.Stderr, e.Text)
 			}
 		case query.ToolCallEvent:
+			observe.GlobalTrace("typecase: query.ToolCallEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
 			}
 		case query.ToolResultEvent:
+			observe.GlobalTrace("typecase: query.ToolResultEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
 			}
 		case query.CompactionEvent:
+			observe.GlobalTrace("typecase: query.CompactionEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
 			}
 		case query.TurnCompleteEvent:
+			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 			fmt.Println()
 		case query.ErrorEvent:
+			observe.GlobalTrace("typecase: query.ErrorEvent")
 			SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
 			return e.Err
 		}
@@ -149,38 +195,53 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
 
 	if d.Cfg.Verbose {
+		observe.GlobalTrace("if: d.Cfg.Verbose")
 		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", d.CostTracker.TotalUSD())
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 // RunListSessions lists all saved sessions.
 func RunListSessions() error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	sessionStore, err := session.NewStore()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"open session store: %w\", err)")
 		return fmt.Errorf("open session store: %w", err)
 	}
 	summaries, err := sessionStore.List()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"list sessions: %w\", err)")
 		return fmt.Errorf("list sessions: %w", err)
 	}
 	if len(summaries) == 0 {
+		observe.GlobalTrace("if: len(summaries) == 0")
 		fmt.Println("No saved sessions.")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	for _, s := range summaries {
+		observe.GlobalTrace("range summaries")
 		summary := s.Summary
 		if len(summary) > 80 {
+			observe.GlobalTrace("if: len(summary) > 80")
 			summary = summary[:80] + "..."
 		}
 		fmt.Printf("%-38s  %s  %d turns  $%.4f  %s\n",
 			s.ID, s.Model, s.TurnCount, s.CostUSD, summary)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 // BuildCompactionDeps creates compaction dependencies from the Deps struct.
 func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	secondaryModel := SecondaryModelFor(d.Cfg.Provider)
 	compactor := compact.NewService(d.Prov, d.Bus, d.CostTracker, secondaryModel)
 
@@ -189,11 +250,13 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 
 	ctxWindow := 200_000
 	if cw, ok := d.Prov.ContextWindow(d.Cfg.Model); ok {
+		observe.GlobalTrace("if: ok")
 		ctxWindow = cw
 	}
 
 	snap := d.Store.Snapshot()
 	sysTokEst := compact.EstimateSystemPromptTokens(snap.Conversation.System)
+	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 
 	return query.CompactionDeps{
 		Compactor:   compactor,
@@ -208,22 +271,31 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 
 // SaveSession persists the current conversation to disk.
 func SaveSession(store *app.StateStore, costTracker *model.CostTracker, systemOverride, cwd string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	sessionStore, err := session.NewStore()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		return
 	}
 	snap := store.Snapshot()
 	if len(snap.Conversation.Messages) == 0 {
+		observe.GlobalTrace("if: len(snap.Conversation.Messages) == 0")
 		return
 	}
 
 	summary := ""
 	for _, msg := range snap.Conversation.Messages {
+		observe.GlobalTrace("range snap.Conversation.Messages")
 		if msg.Role == model.RoleUser {
+			observe.GlobalTrace("if: msg.Role == model.RoleUser")
 			for _, part := range msg.Content {
+				observe.GlobalTrace("range msg.Content")
 				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+					observe.GlobalTrace("if: ok && tp.Text != \"\"")
 					summary = tp.Text
 					if len(summary) > 100 {
+						observe.GlobalTrace("if: len(summary) > 100")
 						summary = summary[:100]
 					}
 					break
@@ -235,7 +307,9 @@ func SaveSession(store *app.StateStore, costTracker *model.CostTracker, systemOv
 
 	turnCount := 0
 	for _, msg := range snap.Conversation.Messages {
+		observe.GlobalTrace("range snap.Conversation.Messages")
 		if msg.Role == model.RoleUser {
+			observe.GlobalTrace("if: msg.Role == model.RoleUser")
 			turnCount++
 		}
 	}
