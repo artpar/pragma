@@ -6,31 +6,51 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/artpar/gogent/internal/hook"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 )
 
 // Orchestrator executes tool calls with permission checking,
-// concurrent/serial partitioning, and event emission.
+// concurrent/serial partitioning, hook execution, and event emission.
 type Orchestrator struct {
-	registry *Registry
-	checker  permission.Checker
-	prompter permission.Prompter
-	bus      *observe.EventBus
+	registry  *Registry
+	checker   permission.Checker
+	prompter  permission.Prompter
+	bus       *observe.EventBus
+	hookMgr   *hook.Manager   // nil if no hooks configured
+	persister *PermPersister  // nil to skip permission persistence
+}
+
+// PermPersister persists permission rules to settings.local.json.
+// Defined as an interface-like func to avoid circular imports with permission package.
+type PermPersister struct {
+	WorkDir string
+	Persist func(workDir string, rule permission.Rule) error
 }
 
 // NewOrchestrator creates an Orchestrator.
 func NewOrchestrator(registry *Registry, checker permission.Checker, prompter permission.Prompter, bus *observe.EventBus) *Orchestrator {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: &Orchestrator{\n\tregistry:\tregistry,\n\tchecker:\tchecker,\n\tprompter:\tprompter,\n\t...")
+	observe.GlobalTrace("return: &Orchestrator{...}")
 	return &Orchestrator{
 		registry: registry,
 		checker:  checker,
 		prompter: prompter,
 		bus:      bus,
 	}
+}
+
+// SetHookManager sets the hook manager for PreToolUse/PostToolUse hooks.
+func (o *Orchestrator) SetHookManager(mgr *hook.Manager) {
+	o.hookMgr = mgr
+}
+
+// SetPermPersister sets the permission persistence handler.
+func (o *Orchestrator) SetPermPersister(p *PermPersister) {
+	o.persister = p
 }
 
 // ExecuteResult holds the results of a tool batch execution.
@@ -169,6 +189,29 @@ func (o *Orchestrator) executeSingle(
 
 	desc, _ := o.registry.Get(call.Name)
 
+	// PreToolUse hook — fires before permission check, can block
+	if o.hookMgr != nil {
+		hookResult := o.hookMgr.Execute(ctx, hook.PreToolUse, hook.HookInput{
+			ToolName:  call.Name,
+			ToolInput: call.Input,
+		})
+		if hookResult.Blocked {
+			o.bus.Emit(observe.PermissionDenialEnforced{
+				EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
+				ToolCallID:  call.ID,
+				ToolName:    call.Name,
+				WasExecuted: false,
+			})
+			return singleResult{
+				part: model.ToolResultPart{
+					ToolCallID: call.ID,
+					Content:    "blocked by hook: " + hookResult.BlockMsg,
+					IsError:    true,
+				},
+			}
+		}
+	}
+
 	permResult := desc.CheckPerm(ctx, call.Input, o.checker)
 
 	rulePattern := ""
@@ -218,6 +261,25 @@ func (o *Orchestrator) executeSingle(
 		if sessionRule != nil {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: sessionRule != nil")
 			o.checker.AddSessionRule(*sessionRule)
+			// Persist the rule to settings.local.json so it survives restart
+			if o.persister != nil {
+				if err := o.persister.Persist(o.persister.WorkDir, *sessionRule); err != nil {
+					o.bus.Emit(observe.ErrorOccurred{
+						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
+						Severity:     "warn",
+						Component:    "orchestrator",
+						ErrorType:    "permission_persist_failed",
+						ErrorMessage: err.Error(),
+					})
+				} else {
+					o.bus.Emit(observe.PermissionPersisted{
+						EventHeader: observe.NewEventHeader("PermissionPersisted", traceID, spanID, parentSpan),
+						ToolName:    sessionRule.ToolName,
+						Content:     sessionRule.Content,
+						Decision:    string(sessionRule.Decision),
+					})
+				}
+			}
 		}
 
 		o.bus.Emit(observe.ToolPermissionPrompted{
@@ -297,7 +359,15 @@ func (o *Orchestrator) executeSingle(
 		OutputSizeBytes: len(invokeResult.Content),
 		IsError:         false,
 	})
-	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
+
+	// PostToolUse hook — fire-and-forget, cannot block
+	if o.hookMgr != nil {
+		o.hookMgr.Execute(ctx, hook.PostToolUse, hook.HookInput{
+			ToolName:  call.Name,
+			ToolInput: call.Input,
+			Response:  invokeResult.Content,
+		})
+	}
 
 	return singleResult{
 		part: model.ToolResultPart{

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/artpar/gogent/internal/app"
+	"github.com/artpar/gogent/internal/hook"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/query"
@@ -26,6 +27,7 @@ type Config struct {
 	SessionSave func()
 	SlashCmds   *slash.Registry
 	SlashDeps   slash.Deps
+	HookMgr     *hook.Manager // nil if no hooks configured
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -37,6 +39,7 @@ type Model struct {
 	sessionSave func()
 	slashCmds   *slash.Registry
 	slashDeps   slash.Deps
+	hookMgr     *hook.Manager
 
 	// Components
 	viewport viewport.Model
@@ -79,6 +82,7 @@ func New(cfg Config) Model {
 		sessionSave: cfg.SessionSave,
 		slashCmds:   cfg.SlashCmds,
 		slashDeps:   cfg.SlashDeps,
+		hookMgr:     cfg.HookMgr,
 		input:       newInputComponent(),
 		perm:        newPermissionDialog(),
 		toolbar:     newToolbar(cfg.ModelName, cfg.Provider),
@@ -306,6 +310,19 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: m.handleSlashCommand(name, args)")
 		return m.handleSlashCommand(name, args)
+	}
+
+	// UserPromptSubmit hook — can block submission
+	if m.hookMgr != nil {
+		hookResult := m.hookMgr.Execute(context.Background(), hook.UserPromptSubmit, hook.HookInput{
+			Response: msg.Text, // reuse Response field for the user's prompt text
+		})
+		if hookResult.Blocked {
+			m.outputBuf.WriteString(errorStyle.Render("Blocked: "+hookResult.BlockMsg) + "\n")
+			m.viewport.SetContent(m.outputBuf.String())
+			m.viewport.GotoBottom()
+			return m, nil
+		}
 	}
 
 	userMsg := model.Message{

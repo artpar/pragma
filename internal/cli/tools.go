@@ -93,7 +93,17 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	}
 
 	orchestrator := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
+	if d.HookMgr != nil {
+		orchestrator.SetHookManager(d.HookMgr)
+		orchestrator.SetPermPersister(&tool.PermPersister{
+			WorkDir: d.Cwd,
+			Persist: permission.PersistRule,
+		})
+	}
 	engine := query.NewEngine(d.Prov, d.Registry, orchestrator, d.Store, d.CostTracker, d.Bus, d.EngineCfg)
+	if d.HookMgr != nil {
+		engine.SetHookManager(d.HookMgr)
+	}
 	observe.GlobalTrace("return: engine, nil")
 	return engine, nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/compact"
+	"github.com/artpar/gogent/internal/hook"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
@@ -42,6 +43,14 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
+
+	// Stop hook — fires when the query loop ends for any reason
+	defer func() {
+		if e.hookMgr != nil {
+			e.hookMgr.Execute(ctx, hook.Stop, hook.HookInput{})
+		}
+	}()
+
 	maxTurns := e.config.MaxTurns
 	if maxTurns <= 0 {
 		observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: maxTurns <= 0")

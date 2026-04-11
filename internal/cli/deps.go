@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/config"
 	"github.com/artpar/gogent/internal/cron"
+	"github.com/artpar/gogent/internal/hook"
 	"github.com/artpar/gogent/internal/lsp"
 	"github.com/artpar/gogent/internal/mcp"
 	"github.com/artpar/gogent/internal/model"
@@ -42,6 +43,7 @@ type Deps struct {
 	McpManager  *mcp.Manager
 	LspManager  *lsp.Manager
 	CronSched   *cron.Scheduler
+	HookMgr     *hook.Manager
 	Metrics     *observe.Metrics
 	Auditor     *observe.Auditor
 	Cwd         string
@@ -172,6 +174,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		mode = permission.ModeBypassPermissions
 	}
 	checker := permission.NewRuleChecker(rules, mode, cwd, bus)
+
+	// Hook manager — loads from all 3 settings scopes
+	hookMgr := hook.NewManager(cwd, "", bus) // sessionID set after conversation is created
 
 	// System prompt
 	var sysPrompt model.SystemPrompt
@@ -317,6 +322,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		McpManager:  mcpManager,
 		LspManager:  lspManager,
 		CronSched:   cronSched,
+		HookMgr:     hookMgr,
 		Metrics:     metrics,
 		Auditor:     auditor,
 		Cwd:         cwd,

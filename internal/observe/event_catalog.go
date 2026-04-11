@@ -437,6 +437,40 @@ type LSPRequestCompleted struct {
 
 func (LSPRequestCompleted) eventSealed() {}
 
+// --- Hook Events ---
+
+// HookExecuted records a hook command execution with its outcome.
+type HookExecuted struct {
+	EventHeader
+	HookEvent string `json:"hook_event"` // PreToolUse, PostToolUse, Stop, etc.
+	Command   string `json:"command"`
+	ExitCode  int    `json:"exit_code"`
+	Outcome   string `json:"outcome"` // ok, block, error, timeout
+	HasJSON   bool   `json:"has_json"`
+}
+
+func (HookExecuted) eventSealed() {}
+
+// HookBlocked records when a hook blocks an operation (exit code 2).
+type HookBlocked struct {
+	EventHeader
+	HookEvent string `json:"hook_event"`
+	Command   string `json:"command"`
+	Message   string `json:"message"` // stderr from the hook
+}
+
+func (HookBlocked) eventSealed() {}
+
+// PermissionPersisted records when a permission rule is written to settings.local.json.
+type PermissionPersisted struct {
+	EventHeader
+	ToolName string `json:"tool_name"`
+	Content  string `json:"content,omitempty"`
+	Decision string `json:"decision"`
+}
+
+func (PermissionPersisted) eventSealed() {}
+
 // --- Flow Trace Events ---
 
 // FlowTrace captures a decision point, branch, or loop iteration in the code.

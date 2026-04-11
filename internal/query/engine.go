@@ -3,6 +3,7 @@ package query
 import (
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/compact"
+	"github.com/artpar/gogent/internal/hook"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
@@ -38,6 +39,9 @@ type Engine struct {
 	compactor    *compact.Service
 	autoTracker  *compact.AutoTracker
 	windowConfig compact.WindowConfig
+
+	// Hooks — nil means no hook manager configured.
+	hookMgr *hook.Manager
 }
 
 // CompactionDeps holds optional compaction dependencies.
@@ -78,6 +82,11 @@ func NewEngine(
 	}
 	observe.GlobalTrace("return: e")
 	return e
+}
+
+// SetHookManager configures the hook manager for Stop hooks.
+func (e *Engine) SetHookManager(mgr *hook.Manager) {
+	e.hookMgr = mgr
 }
 
 // SetCompaction configures auto-compaction after engine creation.
