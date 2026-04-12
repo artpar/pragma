@@ -63,9 +63,17 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Send a message to a running or completed agent by name or task ID. The agent...")
-	return "Send a message to a running or completed agent by name or task ID. The agent will receive the message between turns."
+	observe.GlobalTrace("return: \"Send a message to a running or completed agent by name or task ID...\"")
+	return sendMsgDescription
 }
+
+const sendMsgDescription = `Send a message to a running or completed agent by name or task ID. The agent will receive the message between turns and resume with its full context preserved.
+
+Usage:
+- Use the agent's name or task ID as the ` + "`to`" + ` field
+- Your plain text output is NOT visible to other agents — to communicate, you MUST call this tool
+- Refer to agents by name, never by UUID
+- Use this to continue a previously spawned agent with follow-up instructions or additional context`
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "sendmsg", "Tool.CheckPerm", "enter")

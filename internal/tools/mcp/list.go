@@ -53,9 +53,18 @@ func (t *ListTool) Flags() tool.ToolFlags {
 func (t *ListTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"List resources available from connected MCP servers. Resources provide data ...")
-	return "List resources available from connected MCP servers. Resources provide data the server wants to expose (files, database records, API responses, etc.)."
+	observe.GlobalTrace("return: \"Lists available resources from configured MCP servers...\"")
+	return listMcpDescription
 }
+
+const listMcpDescription = `Lists available resources from configured MCP servers. Each resource object includes a 'server' field indicating which server it's from.
+
+Usage examples:
+- List all resources from all servers: ListMcpResources
+- List resources from a specific server: ListMcpResources({ server: "myserver" })
+
+Parameters:
+- server (optional): The name of a specific MCP server to get resources from. If not provided, resources from all servers will be returned.`
 
 func (t *ListTool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "toolmcp", "ListTool.CheckPerm", "enter")

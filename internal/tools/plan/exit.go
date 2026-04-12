@@ -29,9 +29,19 @@ func (t *ExitTool) Name() string {
 func (t *ExitTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Exit plan mode and re-enable all tools for execution.\"")
-	return "Exit plan mode and re-enable all tools for execution."
+	observe.GlobalTrace("return: \"Exit plan mode and re-enable all tools for execution...\"")
+	return exitPlanDescription
 }
+
+const exitPlanDescription = `Exit plan mode and re-enable all tools for execution. Use this when you have finished writing your plan to the plan file and are ready for user approval.
+
+How this works:
+- You should have already written your plan to the plan file specified in the plan mode system message
+- This tool does NOT take the plan content as a parameter — it reads the plan from the file
+- The user will see the contents of your plan file when they review it
+
+Important: Do NOT use AskUserQuestion to ask "Is this plan okay?" or "Should I proceed?" — that's exactly what THIS tool does.`
+
 func (t *ExitTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

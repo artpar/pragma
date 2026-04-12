@@ -39,9 +39,20 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"List all tasks, optionally filtered by status.\"")
-	return "List all tasks, optionally filtered by status."
+	observe.GlobalTrace("return: \"List all tasks, optionally filtered by status. Returns a summary...\"")
+	return taskListDescription
 }
+
+const taskListDescription = `List all tasks, optionally filtered by status. Returns a summary of each task including id, subject, status, and dependencies.
+
+When to use:
+- To see what tasks are available to work on
+- To check overall progress
+- After completing a task, to find newly unblocked work
+- Prefer working on tasks in ID order (lowest first) when multiple are available
+
+Use TaskGet with a specific task ID to view full details.`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

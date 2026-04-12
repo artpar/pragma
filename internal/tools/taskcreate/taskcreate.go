@@ -44,9 +44,26 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Create a new task to track work progress.\"")
-	return "Create a new task to track work progress."
+	observe.GlobalTrace("return: \"Create a new task to track work progress. Use proactively...\"")
+	return taskCreateDescription
 }
+
+const taskCreateDescription = `Create a new task to track work progress. Use proactively to organize complex, multi-step work.
+
+When to use:
+- Complex multi-step tasks requiring 3+ distinct steps
+- Plan mode — create a task list to track the work
+- User provides multiple tasks (numbered or comma-separated)
+- After receiving new instructions — capture requirements as tasks
+
+When NOT to use:
+- Single, straightforward task completable in <3 trivial steps
+- Purely conversational or informational requests
+
+Tips:
+- Create tasks with clear, specific subjects in imperative form (e.g., "Fix authentication bug")
+- Check TaskList first to avoid creating duplicate tasks`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

@@ -66,9 +66,20 @@ func (t *ReadTool) Flags() tool.ToolFlags {
 func (t *ReadTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Read a specific resource from an MCP server by its URI. Returns text content...")
-	return "Read a specific resource from an MCP server by its URI. Returns text content inline or saves binary content to a local file."
+	observe.GlobalTrace("return: \"Reads a specific resource from an MCP server...\"")
+	return readMcpDescription
 }
+
+const readMcpDescription = `Reads a specific resource from an MCP server, identified by server name and resource URI.
+- server: The name of the MCP server to read from
+- uri: The URI of the resource to read
+
+Usage examples:
+- Read a resource: ReadMcpResource({ server: "myserver", uri: "my-resource-uri" })
+
+Parameters:
+- server (required): The name of the MCP server from which to read the resource
+- uri (required): The URI of the resource to read`
 
 func (t *ReadTool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "enter")

@@ -40,9 +40,14 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Pause execution for a specified number of seconds.\"")
-	return "Pause execution for a specified number of seconds."
+	observe.GlobalTrace("return: \"Wait for a specified duration. The user can interrupt...\"")
+	return sleepDescription
 }
+
+const sleepDescription = `Wait for a specified duration. The user can interrupt the sleep at any time.
+
+Use this when the user tells you to sleep or rest, when you have nothing to do, or when you're waiting for something. You can call this concurrently with other tools — it won't interfere with them. Prefer this over Bash(sleep ...) — it doesn't hold a shell process.`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

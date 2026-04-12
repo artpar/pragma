@@ -39,9 +39,23 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Ask the user a question and wait for their response.\"")
-	return "Ask the user a question and wait for their response."
+	observe.GlobalTrace("return: \"Asks the user a question to gather information, clarify ambiguity...\"")
+	return askDescription
 }
+
+const askDescription = `Asks the user a question to gather information, clarify ambiguity, or get decisions.
+
+Use this tool when you need to:
+1. Gather user preferences or requirements
+2. Clarify ambiguous instructions
+3. Get decisions on implementation choices as you work
+4. Offer choices to the user about what direction to take
+
+Usage notes:
+- Use this tool sparingly — prefer making reasonable decisions autonomously
+- If you recommend a specific option, make that the first option
+- In plan mode, use this tool to clarify requirements BEFORE finalizing your plan. Do NOT use this tool to ask "Is my plan ready?" — use ExitPlanMode for plan approval.`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

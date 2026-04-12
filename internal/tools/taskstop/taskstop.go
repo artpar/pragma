@@ -39,8 +39,8 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Cancel a running or pending task.\"")
-	return "Cancel a running or pending task."
+	observe.GlobalTrace("return: \"Cancel a running or pending task by its ID...\"")
+	return "Cancel a running or pending task by its ID. Stops background agents and returns a success or failure status. Use this when you need to terminate a long-running background task."
 }
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")

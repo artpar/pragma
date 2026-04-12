@@ -29,9 +29,26 @@ func (t *EnterTool) Name() string {
 func (t *EnterTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Enter plan mode. Only read-only tools will be available until plan mode is e...")
-	return "Enter plan mode. Only read-only tools will be available until plan mode is exited."
+	observe.GlobalTrace("return: \"Enter plan mode for non-trivial implementation tasks...\"")
+	return enterPlanDescription
 }
+
+const enterPlanDescription = `Enter plan mode for non-trivial implementation tasks. Only read-only tools will be available until plan mode is exited. Use this to get user sign-off on your approach before writing code.
+
+When to use:
+1. New feature implementation — adding meaningful new functionality
+2. Multiple valid approaches — the task can be solved several ways
+3. Code modifications — changes affecting existing behavior
+4. Architectural decisions — choosing between patterns/technologies
+5. Multi-file changes — will likely touch more than 2-3 files
+6. Unclear requirements — need to explore before understanding scope
+
+When NOT to use:
+- Single-line/few-line fixes (typos, obvious bugs)
+- Single function with clear requirements
+- Very specific, detailed user instructions
+- Pure research/exploration (use Agent instead)`
+
 func (t *EnterTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

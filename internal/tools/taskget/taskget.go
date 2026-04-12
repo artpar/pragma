@@ -39,9 +39,21 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Get details of a specific task by ID.\"")
-	return "Get details of a specific task by ID."
+	observe.GlobalTrace("return: \"Get details of a specific task by ID. Returns full task details...\"")
+	return taskGetDescription
 }
+
+const taskGetDescription = `Get details of a specific task by ID. Returns full task details including subject, description, status, and dependencies.
+
+When to use:
+- When you need the full description and context before starting work on a task
+- To understand task dependencies (what it blocks, what blocks it)
+- After being assigned a task, to get complete requirements
+
+Tips:
+- After fetching a task, verify its blockedBy list is empty before beginning work
+- Use TaskList to see all tasks in summary form`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

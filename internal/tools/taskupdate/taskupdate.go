@@ -55,9 +55,24 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Update a task's status, description, or result.\"")
-	return "Update a task's status, description, or result."
+	observe.GlobalTrace("return: \"Update a task's status, description, or result...\"")
+	return taskUpdateDescription
 }
+
+const taskUpdateDescription = `Update a task's status, description, or result.
+
+Status workflow: pending → in_progress → completed. Use 'deleted' to permanently remove.
+
+When to use:
+- Mark tasks in_progress BEFORE beginning work
+- Mark tasks completed ONLY when fully accomplished
+- If blocked, keep as in_progress and create a new task for the blocker
+- Never mark a task completed if tests are failing or implementation is partial
+
+Tips:
+- Read a task's latest state with TaskGet before updating
+- Set status to in_progress when starting, completed when done`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

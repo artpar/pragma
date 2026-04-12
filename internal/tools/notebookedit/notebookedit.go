@@ -81,9 +81,18 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Edit Jupyter notebook cells (replace, insert, or delete).\"")
-	return "Edit Jupyter notebook cells (replace, insert, or delete)."
+	observe.GlobalTrace("return: \"Replaces the contents of a specific cell in a Jupyter notebook...\"")
+	return notebookEditDescription
 }
+
+const notebookEditDescription = `Replaces the contents of a specific cell in a Jupyter notebook (.ipynb file) with new source. Jupyter notebooks are interactive documents combining code, text, and visualizations, commonly used for data analysis.
+
+Usage:
+- The notebook_path parameter must be an absolute path, not a relative path
+- The cell_number is 0-indexed
+- Use edit_mode=insert to add a new cell at the index specified by cell_number
+- Use edit_mode=delete to delete the cell at the index specified by cell_number`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
