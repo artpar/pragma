@@ -43,7 +43,12 @@ func buildWireRequest(params provider.RequestParams, mapper *IDMapper, bus *obse
 	if params.Thinking != nil && params.Thinking.Enabled && modelInfo.SupportsThinking {
 		tc := &wireThinkConfig{IncludeThoughts: true}
 		if params.Thinking.BudgetTokens > 0 {
-			tc.ThinkingBudget = params.Thinking.BudgetTokens
+			if strings.HasPrefix(params.Model, "gemini-3") {
+				// Gemini 3.x uses thinkingLevel, not thinkingBudget
+				tc.ThinkingLevel = budgetToLevel(params.Thinking.BudgetTokens)
+			} else {
+				tc.ThinkingBudget = params.Thinking.BudgetTokens
+			}
 		}
 		genConfig.ThinkingConfig = tc
 		hasGenConfig = true
@@ -61,6 +66,18 @@ func buildWireRequest(params provider.RequestParams, mapper *IDMapper, bus *obse
 	}
 
 	return req
+}
+
+// budgetToLevel maps a token budget to a Gemini 3.x thinking level.
+func budgetToLevel(budget int) string {
+	switch {
+	case budget <= 1024:
+		return "low"
+	case budget <= 8192:
+		return "medium"
+	default:
+		return "high"
+	}
 }
 
 // messagesToWire converts system prompt + internal messages to Google wire format.
@@ -243,8 +260,9 @@ func toolsToWire(tools []model.ToolDef) []wireTool {
 }
 
 // sanitizeSchema cleans a JSON Schema for Gemini compatibility.
-// Gemini rejects empty strings in enum arrays and other schema quirks
-// that Anthropic/OpenAI tolerate.
+// Gemini rejects fields like "default", "additionalProperties", "$schema",
+// "oneOf", "minimum", "maximum" etc. that Anthropic/OpenAI tolerate.
+// Source: https://ai.google.dev/gemini-api/docs/function-calling
 func sanitizeSchema(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return raw
@@ -261,9 +279,26 @@ func sanitizeSchema(raw json.RawMessage) json.RawMessage {
 	return out
 }
 
-// sanitizeSchemaObj recursively walks a JSON Schema object and fixes
-// Gemini-incompatible patterns.
+// geminiAllowedSchemaFields is the set of JSON Schema keywords supported by
+// Google Gemini's function declaration API. All other fields are stripped.
+var geminiAllowedSchemaFields = map[string]bool{
+	"type": true, "nullable": true, "required": true,
+	"format": true, "description": true, "properties": true,
+	"items": true, "enum": true, "anyOf": true,
+	"$ref": true, "$defs": true,
+}
+
+// sanitizeSchemaObj recursively walks a JSON Schema object and strips
+// fields unsupported by Google Gemini's function declaration API.
 func sanitizeSchemaObj(obj map[string]any) {
+	// Strip unsupported fields (default, additionalProperties, $schema,
+	// oneOf, minimum, maximum, contentEncoding, patternProperties, etc.)
+	for key := range obj {
+		if !geminiAllowedSchemaFields[key] {
+			delete(obj, key)
+		}
+	}
+
 	// Remove empty strings from enum arrays
 	if enum, ok := obj["enum"].([]any); ok {
 		var cleaned []any
@@ -292,6 +327,24 @@ func sanitizeSchemaObj(obj map[string]any) {
 	// Recurse into items (array schemas)
 	if items, ok := obj["items"].(map[string]any); ok {
 		sanitizeSchemaObj(items)
+	}
+
+	// Recurse into anyOf variants
+	if anyOf, ok := obj["anyOf"].([]any); ok {
+		for _, v := range anyOf {
+			if variant, isMap := v.(map[string]any); isMap {
+				sanitizeSchemaObj(variant)
+			}
+		}
+	}
+
+	// Recurse into $defs
+	if defs, ok := obj["$defs"].(map[string]any); ok {
+		for _, v := range defs {
+			if defObj, isMap := v.(map[string]any); isMap {
+				sanitizeSchemaObj(defObj)
+			}
+		}
 	}
 }
 

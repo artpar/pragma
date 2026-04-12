@@ -243,6 +243,126 @@ func TestBuildWireRequest_ThinkingConfig(t *testing.T) {
 	}
 }
 
+func TestBuildWireRequest_ThinkingGemini3UsesLevel(t *testing.T) {
+	bus := observe.NewEventBus(16)
+	params := provider.RequestParams{
+		Model: "gemini-3-flash-preview",
+		Thinking: &provider.ThinkingConfig{
+			Enabled:      true,
+			BudgetTokens: 10000,
+		},
+	}
+
+	mapper := NewIDMapper()
+	req := buildWireRequest(params, mapper, bus)
+
+	tc := req.GenerationConfig.ThinkingConfig
+	if tc == nil {
+		t.Fatal("ThinkingConfig should be set")
+	}
+	if tc.ThinkingLevel != "high" {
+		t.Errorf("thinkingLevel=%q, want high", tc.ThinkingLevel)
+	}
+	if tc.ThinkingBudget != 0 {
+		t.Errorf("thinkingBudget=%d, want 0 (Gemini 3 should use level)", tc.ThinkingBudget)
+	}
+}
+
+func TestSanitizeSchema_StripsUnsupportedFields(t *testing.T) {
+	input := json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"name": {"type": "string", "default": "foo", "description": "A name"},
+			"flag": {"type": "boolean", "default": false}
+		},
+		"required": ["name"],
+		"additionalProperties": false
+	}`)
+
+	result := sanitizeSchema(input)
+	var obj map[string]any
+	if err := json.Unmarshal(result, &obj); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, has := obj["additionalProperties"]; has {
+		t.Error("additionalProperties should be stripped")
+	}
+	props := obj["properties"].(map[string]any)
+	name := props["name"].(map[string]any)
+	if _, has := name["default"]; has {
+		t.Error("default should be stripped from name property")
+	}
+	if _, has := name["description"]; !has {
+		t.Error("description should be preserved")
+	}
+	if _, has := name["type"]; !has {
+		t.Error("type should be preserved")
+	}
+	flag := props["flag"].(map[string]any)
+	if _, has := flag["default"]; has {
+		t.Error("default should be stripped from flag property")
+	}
+	// required should survive
+	if _, has := obj["required"]; !has {
+		t.Error("required should be preserved")
+	}
+}
+
+func TestSanitizeSchema_RecursesAnyOfAndDefs(t *testing.T) {
+	input := json.RawMessage(`{
+		"anyOf": [
+			{"type": "string", "minLength": 1},
+			{"type": "integer", "minimum": 0, "maximum": 100}
+		],
+		"$defs": {
+			"thing": {"type": "object", "additionalProperties": true, "properties": {"x": {"type": "number"}}}
+		}
+	}`)
+
+	result := sanitizeSchema(input)
+	var obj map[string]any
+	json.Unmarshal(result, &obj)
+
+	anyOf := obj["anyOf"].([]any)
+	strVariant := anyOf[0].(map[string]any)
+	if _, has := strVariant["minLength"]; has {
+		t.Error("minLength should be stripped from anyOf variant")
+	}
+	intVariant := anyOf[1].(map[string]any)
+	if _, has := intVariant["minimum"]; has {
+		t.Error("minimum should be stripped from anyOf variant")
+	}
+
+	defs := obj["$defs"].(map[string]any)
+	thing := defs["thing"].(map[string]any)
+	if _, has := thing["additionalProperties"]; has {
+		t.Error("additionalProperties should be stripped from $defs")
+	}
+	if _, has := thing["properties"]; !has {
+		t.Error("properties should be preserved in $defs")
+	}
+}
+
+func TestBudgetToLevel(t *testing.T) {
+	tests := []struct {
+		budget int
+		want   string
+	}{
+		{512, "low"},
+		{1024, "low"},
+		{4096, "medium"},
+		{8192, "medium"},
+		{10000, "high"},
+		{100000, "high"},
+	}
+	for _, tt := range tests {
+		if got := budgetToLevel(tt.budget); got != tt.want {
+			t.Errorf("budgetToLevel(%d)=%q, want %q", tt.budget, got, tt.want)
+		}
+	}
+}
+
 func TestBuildWireRequest_ThinkingNotSupportedOnOldModel(t *testing.T) {
 	bus := observe.NewEventBus(16)
 	params := provider.RequestParams{
