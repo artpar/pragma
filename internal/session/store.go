@@ -140,15 +140,15 @@ func (s *Store) Delete(id string) error {
 }
 
 func (s *Store) sessionPath(id string) (string, error) {
-	if !isValidSessionID(id) {
+	if !IsValidSessionID(id) {
 		return "", fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", id)
 	}
 	return filepath.Join(s.dir, id+".json"), nil
 }
 
-// isValidSessionID checks that the ID contains only safe characters
+// IsValidSessionID checks that the ID contains only safe characters
 // to prevent path traversal attacks via crafted --resume values.
-func isValidSessionID(id string) bool {
+func IsValidSessionID(id string) bool {
 	if id == "" {
 		return false
 	}

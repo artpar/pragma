@@ -166,7 +166,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		if doErr != nil {
 			return doErr
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			respBody, _ := io.ReadAll(resp.Body)

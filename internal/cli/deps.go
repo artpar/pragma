@@ -197,6 +197,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	resumeID, _ := cmd.Flags().GetString("resume")
 	if resumeID != "" {
 		observe.GlobalTrace("if: resumeID != \"\"")
+		if !session.IsValidSessionID(resumeID) {
+			return nil, fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", resumeID)
+		}
 		sessionStore, storeErr := session.NewStore()
 		if storeErr != nil {
 			observe.GlobalTrace("if: storeErr != nil")

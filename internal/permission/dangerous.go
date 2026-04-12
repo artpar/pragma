@@ -1,10 +1,12 @@
 package permission
 
 import (
-	"github.com/artpar/gogent/internal/observe"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // DangerousFiles lists file names that require explicit permission to edit.
@@ -96,48 +98,119 @@ func isFilePath(content string) bool {
 }
 
 // resolvePathsForCheck returns all paths that should be checked for permissions:
-// the cleaned original path and, if it's a symlink, the resolved target.
-// This prevents symlink-based permission bypasses (GitHub issues #5938, #23960, #10252).
+// the cleaned original path, all intermediate symlink targets in the chain,
+// and the final resolved path. This prevents symlink-based permission bypasses.
+// Matches the TS reference getPathsForPermissionCheck() (fsOperations.ts:288-382).
 func resolvePathsForCheck(content, workDir string) []string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	absPath := content
 	if !filepath.IsAbs(absPath) {
-		observe.GlobalTrace("if: !filepath.IsAbs(absPath)")
 		absPath = filepath.Join(workDir, absPath)
 	}
 	absPath = filepath.Clean(absPath)
 
-	paths := []string{absPath}
-
-	resolved, err := filepath.EvalSymlinks(absPath)
-	if err == nil && resolved != absPath {
-		observe.GlobalTrace("if: err == nil && resolved != absPath")
-		paths = append(paths, resolved)
-	}
-
-	if os.IsNotExist(ignoreStat(absPath)) {
-		observe.GlobalTrace("if: os.IsNotExist(ignoreStat(absPath))")
-		parentResolved, err := filepath.EvalSymlinks(filepath.Dir(absPath))
-		if err == nil {
-			observe.GlobalTrace("if: err == nil")
-			resolvedViaParent := filepath.Join(parentResolved, filepath.Base(absPath))
-			if resolvedViaParent != absPath && resolvedViaParent != resolved {
-				observe.GlobalTrace("if: resolvedViaParent != absPath && resolvedViaParent != resolved")
-				paths = append(paths, resolvedViaParent)
-			}
+	seen := make(map[string]bool)
+	var paths []string
+	addPath := func(p string) {
+		if !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
 		}
 	}
-	observe.GlobalTrace("return: paths")
+
+	// 1. Always check the original path
+	addPath(absPath)
+
+	// 2. Follow symlink chain for existing paths (collect intermediates)
+	current := absPath
+	visited := make(map[string]bool)
+	for i := 0; i < 40; i++ { // max depth matches SYMLOOP_MAX
+		if visited[current] {
+			break // circular symlink
+		}
+		visited[current] = true
+
+		info, err := os.Lstat(current)
+		if err != nil {
+			break // path doesn't exist — handled below
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			break // not a symlink
+		}
+		target, err := os.Readlink(current)
+		if err != nil {
+			break
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(current), target)
+		}
+		target = filepath.Clean(target)
+		addPath(target)
+		current = target
+	}
+
+	// 3. For non-existent files: walk up ancestors to find symlinks
+	if _, err := os.Stat(absPath); errors.Is(err, os.ErrNotExist) {
+		if resolved := resolveDeepestExistingAncestor(absPath); resolved != "" {
+			addPath(resolved)
+		}
+	}
+
+	// 4. Final resolve via EvalSymlinks (catches directory-component symlinks)
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil && resolved != absPath {
+		addPath(resolved)
+	}
 
 	return paths
 }
 
-// ignoreStat returns the error from os.Stat (for IsNotExist checks).
-func ignoreStat(path string) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	_, err := os.Stat(path)
-	observe.GlobalTrace("return: err")
-	return err
+// resolveDeepestExistingAncestor walks up from absPath using Lstat until it
+// finds an existing component, then resolves symlinks there. This handles the
+// case where a file doesn't exist but an ancestor directory is a symlink.
+// Matches the TS resolveDeepestExistingAncestorSync() (fsOperations.ts:215-270).
+func resolveDeepestExistingAncestor(absPath string) string {
+	dir := absPath
+	var segments []string
+	for dir != filepath.Dir(dir) { // stop at root
+		info, err := os.Lstat(dir)
+		if err != nil {
+			// Doesn't exist — accumulate segment, walk up
+			segments = append([]string{filepath.Base(dir)}, segments...)
+			dir = filepath.Dir(dir)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			// Found a symlink — resolve it
+			resolved, err := filepath.EvalSymlinks(dir)
+			if err != nil {
+				// Dangling symlink — try readlink
+				target, err := os.Readlink(dir)
+				if err != nil {
+					return ""
+				}
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(filepath.Dir(dir), target)
+				}
+				if len(segments) > 0 {
+					return filepath.Join(append([]string{target}, segments...)...)
+				}
+				return target
+			}
+			if len(segments) > 0 {
+				return filepath.Join(append([]string{resolved}, segments...)...)
+			}
+			return resolved
+		}
+		// Non-symlink exists — check if ancestors have symlinks via EvalSymlinks
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err == nil && resolved != dir {
+			if len(segments) > 0 {
+				return filepath.Join(append([]string{resolved}, segments...)...)
+			}
+			return resolved
+		}
+		return "" // no symlinks found in ancestor chain
+	}
+	return ""
 }

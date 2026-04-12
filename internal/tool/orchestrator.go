@@ -260,8 +260,10 @@ func (o *Orchestrator) executeSingle(
 
 		if sessionRule != nil {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: sessionRule != nil")
+			// Always add to session rules so current session works regardless of persist outcome
+			o.checker.AddSessionRule(*sessionRule)
+
 			if o.persister != nil {
-				// Persist first — only add to session rules if persistence succeeds
 				if err := o.persister.Persist(o.persister.WorkDir, *sessionRule); err != nil {
 					o.bus.Emit(observe.ErrorOccurred{
 						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
@@ -271,7 +273,6 @@ func (o *Orchestrator) executeSingle(
 						ErrorMessage: err.Error(),
 					})
 				} else {
-					o.checker.AddSessionRule(*sessionRule)
 					o.bus.Emit(observe.PermissionPersisted{
 						EventHeader: observe.NewEventHeader("PermissionPersisted", traceID, spanID, parentSpan),
 						ToolName:    sessionRule.ToolName,
@@ -279,9 +280,6 @@ func (o *Orchestrator) executeSingle(
 						Decision:    string(sessionRule.Decision),
 					})
 				}
-			} else {
-				// No persister configured — add to in-memory session rules only
-				o.checker.AddSessionRule(*sessionRule)
 			}
 		}
 

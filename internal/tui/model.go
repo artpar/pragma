@@ -316,7 +316,7 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 
 	// UserPromptSubmit hook — can block submission
 	if m.hookMgr != nil {
-		hookResult := m.hookMgr.Execute(context.Background(), hook.UserPromptSubmit, hook.HookInput{
+		hookResult := m.hookMgr.Execute(m.ctx, hook.UserPromptSubmit, hook.HookInput{
 			PromptText: msg.Text,
 		})
 		if hookResult.Blocked {
@@ -372,9 +372,9 @@ func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 
 	slashCmds := m.slashCmds
 	slashDeps := m.slashDeps
-	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(context.Background(), n...")
+	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(m.ctx, n...")
 	return m, func() tea.Msg {
-		result, err := slashCmds.Execute(context.Background(), name, trimmedArgs, slashDeps)
+		result, err := slashCmds.Execute(m.ctx, name, trimmedArgs, slashDeps)
 		return SlashResultMsg{Result: result, Err: err}
 	}
 }

@@ -57,6 +57,8 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 	input.Event = event
 	input.CWD = m.workDir
 	input.SessionID = m.sessionID
+	sessionID := m.sessionID // snapshot under lock for env vars
+	workDir := m.workDir
 	entries := m.hooks[event]
 	m.mu.RUnlock()
 	if len(entries) == 0 {
@@ -82,8 +84,8 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 
 	envVars := map[string]string{
 		"GOGENT_HOOK_EVENT":  string(event),
-		"GOGENT_SESSION_ID":  m.sessionID,
-		"GOGENT_CWD":         m.workDir,
+		"GOGENT_SESSION_ID":  sessionID,
+		"GOGENT_CWD":         workDir,
 		"GOGENT_TOOL_NAME":   input.ToolName,
 	}
 

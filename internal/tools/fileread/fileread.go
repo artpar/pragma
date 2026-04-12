@@ -266,7 +266,7 @@ func readPDF(ctx context.Context, filePath, displayPath string, size int64, page
 		return tool.InvokeResult{}, fmt.Errorf("open PDF: %w", err)
 	}
 	n, err := f.Read(header)
-	f.Close()
+	_ = f.Close()
 	if err != nil || n < 5 || string(header[:5]) != "%PDF-" {
 		observe.TraceCtx(ctx, "fileread", "readPDF", "if: err != nil || n < 5 || string(header[:5]) != \"%PDF-\"")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"file is not a valid PDF (missing %%PDF- head...")

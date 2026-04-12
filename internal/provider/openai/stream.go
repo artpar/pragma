@@ -19,7 +19,8 @@ type streamState struct {
 	toolCalls    map[int]*inProgressToolCall // index -> accumulating tool call
 	model        string
 	doneSent     bool
-	finishReason *string // saved from chunk with finish_reason but no usage
+	finishReason *string             // saved from chunk with finish_reason but no usage
+	usage        model.TokenUsage    // accumulated from any chunk carrying usage data
 	startTime    time.Time
 }
 
@@ -46,7 +47,7 @@ func (p *Provider) startStream(
 
 	go func() {
 		defer close(ch)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		state := &streamState{
 			toolCalls: make(map[int]*inProgressToolCall),
@@ -142,23 +143,23 @@ func (p *Provider) consumeSSE(
 
 			if !state.doneSent && state.finishReason != nil {
 				observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !state.doneSent && state.finishReason != nil")
-				if bus != nil {
-					observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: bus != nil")
-					bus.Emit(observe.ErrorOccurred{
-						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
-						Severity:     "warning",
-						Component:    "openai/stream",
-						ErrorType:    "missing_usage",
-						ErrorMessage: "stream ended without usage data; cost tracking will report $0",
-					})
-				}
 				ch <- provider.StreamChunk{
 					Done: &provider.StreamDone{
 						StopReason: stopReasonFromWire(*state.finishReason),
+						Usage:      state.usage,
 						Model:      state.model,
 					},
 				}
 				state.doneSent = true
+				if bus != nil {
+					bus.Emit(observe.APIRequestCompleted{
+						EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
+						StopReason:  stopReasonFromWire(*state.finishReason),
+						Usage:       state.usage,
+						DurationMs:  time.Since(state.startTime).Milliseconds(),
+						Model:       state.model,
+					})
+				}
 			}
 			if !state.doneSent {
 				observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !state.doneSent")
@@ -219,23 +220,23 @@ func (p *Provider) consumeSSE(
 
 	if !state.doneSent && state.finishReason != nil {
 		observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: !state.doneSent && state.finishReason != nil")
-		if bus != nil {
-			observe.TraceCtx(ctx, "openai", "Provider.consumeSSE", "if: bus != nil")
-			bus.Emit(observe.ErrorOccurred{
-				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, ""),
-				Severity:     "warning",
-				Component:    "openai/stream",
-				ErrorType:    "missing_usage",
-				ErrorMessage: "stream ended without usage data; cost tracking will report $0",
-			})
-		}
 		ch <- provider.StreamChunk{
 			Done: &provider.StreamDone{
 				StopReason: stopReasonFromWire(*state.finishReason),
+				Usage:      state.usage,
 				Model:      state.model,
 			},
 		}
 		state.doneSent = true
+		if bus != nil {
+			bus.Emit(observe.APIRequestCompleted{
+				EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
+				StopReason:  stopReasonFromWire(*state.finishReason),
+				Usage:       state.usage,
+				DurationMs:  time.Since(state.startTime).Milliseconds(),
+				Model:       state.model,
+			})
+		}
 	}
 
 	if !state.doneSent {
@@ -313,6 +314,7 @@ func (p *Provider) dispatchStreamChunk(
 			if chunk.Usage != nil {
 				observe.GlobalTrace("if: chunk.Usage != nil")
 				usage := usageFromWire(*chunk.Usage)
+				state.usage = usage
 				ch <- provider.StreamChunk{
 					Done: &provider.StreamDone{
 						StopReason: stopReasonFromWire(*choice.FinishReason),
@@ -339,6 +341,7 @@ func (p *Provider) dispatchStreamChunk(
 	if chunk.Usage != nil && !state.doneSent {
 		observe.GlobalTrace("if: chunk.Usage != nil && !state.doneSent")
 		usage := usageFromWire(*chunk.Usage)
+		state.usage = usage
 
 		stopReason := model.StopEndTurn
 		if state.finishReason != nil {

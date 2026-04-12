@@ -197,7 +197,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return tool.InvokeResult{}, fmt.Errorf("read response body: %w", err)
+	}
 	content := fmt.Sprintf("HTTP %d\n%s", resp.StatusCode, string(respBody))
 	observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 
