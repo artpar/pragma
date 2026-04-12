@@ -47,16 +47,17 @@ internal/
     google/           ← Google adapter (translates model ↔ Google wire)
 
   tool/               ← Tool system (Descriptor interface, Registry, Orchestrator, Asker)
-  tools/              ← Tool implementations (19 tools — see list below)
+  tools/              ← Tool implementations (31 tools — see list below)
   query/              ← Agentic loop (stream → tool execute → continue), plan mode filtering
   permission/         ← Permission system (rule-based checker, content matching, dangerous paths)
   app/                ← AppState (TodoItem, PlanMode) + StateStore (references model/)
   tui/                ← Bubbletea TUI (permission dialog, ask dialog, streaming display)
   config/             ← Settings + merge + path resolution (~/.gogent/)
-  sysprompt/          ← System prompt builder (AGENT.md loading, env detection, block composition)
+  sysprompt/          ← System prompt builder (AGENT.md loading, env detection, skill listing)
   session/            ← Session persistence (save/load/list to ~/.gogent/sessions/)
   task/               ← Background tasks
-  mcp/                ← MCP client + tool adapter
+  skill/              ← Skill type, disk loader, frontmatter parsing, arg substitution
+  mcp/                ← MCP client + tool adapter + OAuth PKCE flow + token storage
   compact/            ← Context window management, compaction service, auto-compaction
   slash/              ← Slash command framework + built-in commands
   cli/                ← Cobra CLI wiring (deps, tools, run modes, flags)
