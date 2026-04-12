@@ -7,14 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
-	"math/rand/v2"
 	"strings"
 	"time"
 
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/gogent/internal/provider/shared"
 	"google.golang.org/genai"
 )
 
@@ -72,6 +71,9 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	return 1_048_576, false
 }
 
+// googleClassify classifies errors using HTTP status code string matching.
+var googleClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504", "RESOURCE_EXHAUSTED"})
+
 // Complete sends a non-streaming request.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
 	traceID := observe.NewTraceID()
@@ -82,7 +84,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	contents, cfg := p.buildRequest(params)
 
 	var resp *genai.GenerateContentResponse
-	err := p.withRetry(ctx, traceID, spanID, func() error {
+	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, googleClassify, func() error {
 		var reqErr error
 		resp, reqErr = p.client.Models.GenerateContent(ctx, params.Model, contents, cfg)
 		return reqErr
@@ -457,8 +459,9 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 
 func usageFromGenai(u *genai.GenerateContentResponseUsageMetadata) model.TokenUsage {
 	return model.TokenUsage{
-		InputTokens:  int(u.PromptTokenCount),
-		OutputTokens: int(u.CandidatesTokenCount) + int(u.ThoughtsTokenCount),
+		InputTokens:         int(u.PromptTokenCount),
+		OutputTokens:        int(u.CandidatesTokenCount) + int(u.ThoughtsTokenCount),
+		CacheReadInputTokens: int(u.CachedContentTokenCount),
 	}
 }
 
@@ -479,64 +482,6 @@ func (p *Provider) emitStart(traceID, spanID string, params provider.RequestPara
 		Model:         params.Model,
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
-		TokenEstimate: estimateTokens(params),
+		TokenEstimate: shared.EstimateTokens(params),
 	})
-}
-
-func estimateTokens(params provider.RequestParams) int {
-	total := 0
-	for _, block := range params.System.Blocks {
-		total += len(block.Text) / 4
-	}
-	for _, m := range params.Messages {
-		for _, part := range m.Content {
-			switch p := part.(type) {
-			case model.TextPart:
-				total += len(p.Text) / 4
-			case model.ToolCallPart:
-				total += len(p.Input) / 4
-			case model.ToolResultPart:
-				total += len(p.Content) / 4
-			}
-		}
-	}
-	return total
-}
-
-func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func() error) error {
-	for attempt := range p.maxRetries + 1 {
-		err := fn()
-		if err == nil {
-			return nil
-		}
-		if attempt >= p.maxRetries || !isRetryable(err) {
-			p.bus.Emit(observe.APIRequestFailed{
-				EventHeader: observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-				ErrorType: "request_failed", ErrorMessage: err.Error(),
-				Retryable: false, Attempt: attempt + 1,
-			})
-			return err
-		}
-		baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
-		if baseDelay > 32*time.Second {
-			baseDelay = 32 * time.Second
-		}
-		delay := baseDelay + time.Duration(rand.Float64()*0.25*float64(baseDelay))
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return fmt.Errorf("exhausted %d retries", p.maxRetries)
-}
-
-func isRetryable(err error) bool {
-	msg := err.Error()
-	for _, s := range []string{"429", "500", "502", "503", "504", "RESOURCE_EXHAUSTED"} {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
 }

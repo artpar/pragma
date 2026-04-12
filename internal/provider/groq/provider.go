@@ -4,14 +4,13 @@ package groq
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/rand/v2"
 	"time"
 
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/provider/anyllm"
+	"github.com/artpar/gogent/internal/provider/shared"
 	"github.com/mozilla-ai/any-llm-go/config"
 	"github.com/mozilla-ai/any-llm-go/providers"
 	groqprov "github.com/mozilla-ai/any-llm-go/providers/groq"
@@ -37,7 +36,7 @@ func (p *Provider) Name() string { return "groq" }
 
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	switch feature {
-	case provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages, provider.FeatureThinking:
+	case provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureThinking:
 		return true
 	}
 	return false
@@ -57,6 +56,10 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	return 131_072, false
 }
 
+// groqClassify classifies errors using HTTP status code string matching.
+// Includes 529 (Groq-specific overloaded status).
+var groqClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504", "529"})
+
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
@@ -65,7 +68,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 
 	llmParams := anyllm.RequestToParams(params)
 	var comp *providers.ChatCompletion
-	err := p.withRetry(ctx, traceID, spanID, func() error {
+	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, groqClassify, func() error {
 		var reqErr error
 		comp, reqErr = p.inner.Completion(ctx, llmParams)
 		return reqErr
@@ -164,66 +167,6 @@ func (p *Provider) emitStart(traceID, spanID string, params provider.RequestPara
 	p.bus.Emit(observe.APIRequestStarted{
 		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:         params.Model, MessageCount: len(params.Messages),
-		ToolCount:     len(params.Tools), TokenEstimate: estimateTokens(params),
+		ToolCount:     len(params.Tools), TokenEstimate: shared.EstimateTokens(params),
 	})
-}
-
-func estimateTokens(params provider.RequestParams) int {
-	total := 0
-	for _, block := range params.System.Blocks {
-		total += len(block.Text) / 4
-	}
-	for _, m := range params.Messages {
-		for _, part := range m.Content {
-			switch p := part.(type) {
-			case model.TextPart:
-				total += len(p.Text) / 4
-			case model.ToolCallPart:
-				total += len(p.Input) / 4
-			case model.ToolResultPart:
-				total += len(p.Content) / 4
-			}
-		}
-	}
-	return total
-}
-
-func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func() error) error {
-	for attempt := range p.maxRetries + 1 {
-		err := fn()
-		if err == nil {
-			return nil
-		}
-		if attempt >= p.maxRetries || !isRetryable(err) {
-			p.bus.Emit(observe.APIRequestFailed{
-				EventHeader: observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-				ErrorType: "request_failed", ErrorMessage: err.Error(),
-				Retryable: false, Attempt: attempt + 1,
-			})
-			return err
-		}
-		baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
-		if baseDelay > 32*time.Second {
-			baseDelay = 32 * time.Second
-		}
-		delay := baseDelay + time.Duration(rand.Float64()*0.25*float64(baseDelay))
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return fmt.Errorf("exhausted %d retries", p.maxRetries)
-}
-
-func isRetryable(err error) bool {
-	msg := err.Error()
-	for _, s := range []string{"429", "500", "502", "503", "504", "529"} {
-		for i := 0; i <= len(msg)-len(s); i++ {
-			if msg[i:i+len(s)] == s {
-				return true
-			}
-		}
-	}
-	return false
 }

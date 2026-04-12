@@ -9,10 +9,14 @@ LDFLAGS   := -X github.com/artpar/gogent/internal/buildinfo.Version=$(VERSION) \
              -X github.com/artpar/gogent/internal/buildinfo.Date=$(DATE) \
              -X github.com/artpar/gogent/internal/buildinfo.GoVersion=$(GOVERSION)
 
-.PHONY: build test archtest smoke ci clean completions
+.PHONY: build test archtest smoke ci clean completions instrument
 
-# Build the binary
-build:
+# Re-run AST instrumentation (idempotent)
+instrument:
+	go run ./cmd/gogent-instrument/ ./internal/...
+
+# Build the binary (instrumentation runs first)
+build: instrument
 	@mkdir -p bin
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/gogent/
 

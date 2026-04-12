@@ -6,8 +6,6 @@ package anthropic
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/rand/v2"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +16,7 @@ import (
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/gogent/internal/provider/shared"
 )
 
 // Provider implements provider.Provider for the Anthropic Messages API.
@@ -192,30 +191,21 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		Model:         params.Model,
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
-		TokenEstimate: estimateTokens(params),
+		TokenEstimate: shared.EstimateTokens(params),
 	})
 
 	start := time.Now()
 	var msg *sdk.Message
 
-	err = p.withRetry(ctx, traceID, spanID, func(attempt int) error {
+	err = shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, anthropicClassify, func() error {
 		var apiErr error
 		msg, apiErr = p.client.Messages.New(ctx, wireParams)
 		return apiErr
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "if: err != nil")
-		classified := classifyError(err)
-		p.bus.Emit(observe.APIRequestFailed{
-			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-			ErrorType:    classified.errorType,
-			ErrorMessage: err.Error(),
-			Retryable:    classified.retryable,
-			Attempt:      p.maxRetries + 1,
-		})
-		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, classified.wrapped")
-		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, classified.wrapped")
-		return model.Response{}, classified.wrapped
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, err")
+		return model.Response{}, err
 	}
 
 	resp := responseFromWire(msg, mapper, p.bus)
@@ -254,7 +244,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		Model:         params.Model,
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
-		TokenEstimate: estimateTokens(params),
+		TokenEstimate: shared.EstimateTokens(params),
 	})
 
 	stream := p.client.Messages.NewStreaming(ctx, wireParams)
@@ -264,121 +254,13 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	return ch, nil
 }
 
-// withRetry executes fn with exponential backoff retry for retryable errors.
-func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func(attempt int) error) error {
-	observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "enter")
-	defer observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "exit")
-	var consecutive529 int
-
-	for attempt := range p.maxRetries + 1 {
-		observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "range p.maxRetries + 1")
-		err := fn(attempt)
-		if err == nil {
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: err == nil")
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: nil")
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: nil")
-			return nil
-		}
-
-		classified := classifyError(err)
-
-		if !classified.retryable || attempt >= p.maxRetries {
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: !classified.retryable || attempt >= p.maxRetries")
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
-			return classified.wrapped
-		}
-
-		if classified.errorType == "overloaded" {
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: classified.errorType == \"overloaded\"")
-			consecutive529++
-			if consecutive529 >= 3 {
-				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: consecutive529 >= 3")
-				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
-				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
-				return classified.wrapped
-			}
-		} else {
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "else: classified.errorType == \"overloaded\"")
-			consecutive529 = 0
-		}
-
-		delay := classified.retryAfter
-		if delay == 0 {
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: delay == 0")
-			baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
-			if baseDelay > 32*time.Second {
-				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: baseDelay > 32*time.Second")
-				baseDelay = 32 * time.Second
-			}
-			jitter := time.Duration(rand.Float64() * 0.25 * float64(baseDelay))
-			delay = baseDelay + jitter
-		}
-
-		p.bus.Emit(observe.APIRetryScheduled{
-			EventHeader: observe.NewEventHeader("APIRetryScheduled", traceID, spanID, ""),
-			Attempt:     attempt + 1,
-			DelayMs:     delay.Milliseconds(),
-			Reason:      classified.errorType,
-		})
-
-		p.bus.Emit(observe.APIRequestFailed{
-			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-			ErrorType:    classified.errorType,
-			ErrorMessage: err.Error(),
-			Retryable:    true,
-			Attempt:      attempt + 1,
-		})
-
-		select {
-		case <-time.After(delay):
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "select: <-time.After(delay)")
-		case <-ctx.Done():
-			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "select: <-ctx.Done()")
-			return ctx.Err()
-		}
+// anthropicClassify wraps classifyError to match the shared.ClassifyFn signature.
+func anthropicClassify(err error) shared.ErrorClassification {
+	c := classifyError(err)
+	return shared.ErrorClassification{
+		Wrapped:    c.wrapped,
+		Retryable:  c.retryable,
+		ErrorType:  c.errorType,
+		RetryAfter: c.retryAfter,
 	}
-	observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: fmt.Errorf(\"exhausted %d retries\", p.maxRetries)")
-	observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: fmt.Errorf(\"exhausted %d retries\", p.maxRetries)")
-	return fmt.Errorf("exhausted %d retries", p.maxRetries)
-}
-
-// estimateTokens provides a rough token estimate for observability events.
-func estimateTokens(params provider.RequestParams) int {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	total := 0
-	for _, block := range params.System.Blocks {
-		observe.GlobalTrace("range params.System.Blocks")
-		total += len(block.Text) / 4
-	}
-	for _, m := range params.Messages {
-		observe.GlobalTrace("range params.Messages")
-		for _, part := range m.Content {
-			observe.GlobalTrace("range m.Content")
-			switch p := part.(type) {
-			case model.TextPart:
-				observe.GlobalTrace("typecase: model.TextPart")
-				total += len(p.Text) / 4
-			case model.ToolCallPart:
-				observe.GlobalTrace("typecase: model.ToolCallPart")
-				total += len(p.Input) / 4
-			case model.ToolResultPart:
-				observe.GlobalTrace("typecase: model.ToolResultPart")
-				total += len(p.Content) / 4
-			case model.ThinkingPart:
-				observe.GlobalTrace("typecase: model.ThinkingPart")
-				total += len(p.Text) / 4
-			case model.ImagePart:
-				observe.GlobalTrace("typecase: model.ImagePart")
-				total += 1000
-			case model.DocumentPart:
-				observe.GlobalTrace("typecase: model.DocumentPart")
-				total += len(p.Data) / 4
-			}
-		}
-	}
-	observe.GlobalTrace("return: total")
-	observe.GlobalTrace("return: total")
-	return total
 }
