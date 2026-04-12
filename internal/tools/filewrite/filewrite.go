@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/artpar/gogent/internal/lsp"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
@@ -34,7 +35,9 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the FileWrite tool.
-type Tool struct{}
+type Tool struct {
+	LSP *lsp.Manager // optional; nil if no LSP servers configured
+}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -124,11 +127,15 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 	}
 
+	// Notify LSP servers of the file change (fire-and-forget).
+	if t.LSP != nil {
+		_ = t.LSP.ChangeFile(ctx, filePath, in.Content)
+		_ = t.LSP.SaveFile(ctx, filePath)
+	}
+
 	if isCreate {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: isCreate")
-		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been created successf...")
 		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been created successfully.", in.FilePath)}, nil
 	}
-	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
 	return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
 }

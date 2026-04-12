@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/artpar/gogent/internal/lsp"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
@@ -48,7 +49,9 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the FileEdit tool.
-type Tool struct{}
+type Tool struct {
+	LSP *lsp.Manager // optional; nil if no LSP servers configured
+}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -172,11 +175,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		}
 
 		if err := os.WriteFile(filePath, []byte(in.NewString), 0644); err != nil {
-			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
-			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 		}
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
+		if t.LSP != nil {
+			_ = t.LSP.ChangeFile(ctx, filePath, in.NewString)
+			_ = t.LSP.SaveFile(ctx, filePath)
+		}
 		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
 	}
 
@@ -206,16 +210,18 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if err := os.WriteFile(filePath, []byte(updated), 0644); err != nil {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 	}
 
+	// Notify LSP servers of the file change (fire-and-forget).
+	if t.LSP != nil {
+		_ = t.LSP.ChangeFile(ctx, filePath, updated)
+		_ = t.LSP.SaveFile(ctx, filePath)
+	}
+
 	if in.ReplaceAll && count > 1 {
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.ReplaceAll && count > 1")
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated. All %d ...")
 		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count)}, nil
 	}
-	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
 	return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
 }
 
