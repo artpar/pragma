@@ -309,14 +309,14 @@ func TestSanitizeSchema_StripsUnsupportedFields(t *testing.T) {
 	}
 }
 
-func TestSanitizeSchema_RecursesAnyOfAndDefs(t *testing.T) {
+func TestSanitizeSchema_RecursesAnyOf(t *testing.T) {
 	input := json.RawMessage(`{
 		"anyOf": [
 			{"type": "string", "minLength": 1},
 			{"type": "integer", "minimum": 0, "maximum": 100}
 		],
 		"$defs": {
-			"thing": {"type": "object", "additionalProperties": true, "properties": {"x": {"type": "number"}}}
+			"thing": {"type": "object"}
 		}
 	}`)
 
@@ -334,13 +334,9 @@ func TestSanitizeSchema_RecursesAnyOfAndDefs(t *testing.T) {
 		t.Error("minimum should be stripped from anyOf variant")
 	}
 
-	defs := obj["$defs"].(map[string]any)
-	thing := defs["thing"].(map[string]any)
-	if _, has := thing["additionalProperties"]; has {
-		t.Error("additionalProperties should be stripped from $defs")
-	}
-	if _, has := thing["properties"]; !has {
-		t.Error("properties should be preserved in $defs")
+	// $defs is not supported in function declarations — should be stripped entirely
+	if _, has := obj["$defs"]; has {
+		t.Error("$defs should be stripped (not supported in function declarations)")
 	}
 }
 

@@ -74,6 +74,7 @@ const enterDescription = `Use this tool ONLY when the user explicitly asks to wo
 - Switches the session's working directory to the new worktree
 - Use ExitWorktree to leave the worktree mid-session (keep or remove)
 - On session exit, if still in the worktree, the user will be prompted to keep or remove it`
+
 func (t *EnterTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

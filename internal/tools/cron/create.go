@@ -73,6 +73,7 @@ const createDescription = `Schedule a prompt to run automatically on a cron sche
 - The user asks to run something on a schedule or interval
 - The user wants periodic checks, polling, or recurring automation
 - Use CronList to see existing jobs, CronDelete to remove them`
+
 func (t *CreateTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

@@ -78,6 +78,7 @@ If called outside an EnterWorktree session, the tool is a no-op: it reports that
 - If the worktree has no changes (no uncommitted files, no new commits), it is automatically removed
 - If the worktree has changes, it is kept and the diff stat is returned so the user can decide what to do
 - Restores the session's working directory to where it was before EnterWorktree`
+
 func (t *ExitTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

@@ -90,6 +90,7 @@ NOTE: do not use this tool if there is only one trivial task. Just do the task d
 - Each call REPLACES the entire todo list — always include all items (completed and pending)
 - Statuses: "pending", "in_progress", "completed"
 - When all items are marked "completed", the list is automatically cleared`
+
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

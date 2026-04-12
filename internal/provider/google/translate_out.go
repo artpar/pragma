@@ -281,11 +281,14 @@ func sanitizeSchema(raw json.RawMessage) json.RawMessage {
 
 // geminiAllowedSchemaFields is the set of JSON Schema keywords supported by
 // Google Gemini's function declaration API. All other fields are stripped.
+// Source: Google AI docs + empirical validation from LiteLLM, adk-python, python-genai.
+// Note: $ref/$defs are NOT supported — the API requires inlined schemas.
+// Note: additionalProperties works in response_schema but NOT in function declarations.
 var geminiAllowedSchemaFields = map[string]bool{
 	"type": true, "nullable": true, "required": true,
 	"format": true, "description": true, "properties": true,
 	"items": true, "enum": true, "anyOf": true,
-	"$ref": true, "$defs": true,
+	"propertyOrdering": true, // Gemini-specific extension for field order
 }
 
 // sanitizeSchemaObj recursively walks a JSON Schema object and strips
@@ -334,15 +337,6 @@ func sanitizeSchemaObj(obj map[string]any) {
 		for _, v := range anyOf {
 			if variant, isMap := v.(map[string]any); isMap {
 				sanitizeSchemaObj(variant)
-			}
-		}
-	}
-
-	// Recurse into $defs
-	if defs, ok := obj["$defs"].(map[string]any); ok {
-		for _, v := range defs {
-			if defObj, isMap := v.(map[string]any); isMap {
-				sanitizeSchemaObj(defObj)
 			}
 		}
 	}
