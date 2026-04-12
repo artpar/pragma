@@ -63,7 +63,7 @@ internal/
   util/               ← Pure utilities
 ```
 
-**Dependency rule**: Only `internal/provider/anthropic/`, `internal/provider/openai/`, `internal/provider/google/` know about wire formats. Everything else imports only `internal/model/` and `internal/provider/` (the interface).
+**Dependency rule**: Only `internal/provider/anthropic/`, `internal/provider/openai/`, `internal/provider/google/`, `internal/provider/groq/` know about wire formats. `internal/provider/shared/` holds cross-provider utilities (token estimation, retry logic). `internal/provider/anyllm/` bridges gogent types ↔ any-llm-go types for OpenAI/Groq. Everything else imports only `internal/model/` and `internal/provider/` (the interface).
 
 ---
 
