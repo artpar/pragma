@@ -48,11 +48,13 @@ func (t *ExitTool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"ExitWorktree\"")
+	observe.GlobalTrace("return: \"ExitWorktree\"")
 	return "ExitWorktree"
 }
 func (t *ExitTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: exitDescription")
 	observe.GlobalTrace("return: exitDescription")
 	return exitDescription
 }
@@ -83,11 +85,13 @@ func (t *ExitTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: exitSchema")
+	observe.GlobalTrace("return: exitSchema")
 	return exitSchema
 }
 func (t *ExitTool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
@@ -101,8 +105,10 @@ func (t *ExitTool) CheckPerm(ctx context.Context, input json.RawMessage, checker
 	if err := json.Unmarshal(input, &in); err != nil || in.WorktreePath == "" {
 		observe.TraceCtx(ctx, "worktree", "ExitTool.CheckPerm", "if: err != nil || in.WorktreePath == \"\"")
 		observe.TraceCtx(ctx, "worktree", "ExitTool.CheckPerm", "return: checker.Check(ctx, \"ExitWorktree\", \"\")")
+		observe.TraceCtx(ctx, "worktree", "ExitTool.CheckPerm", "return: checker.Check(ctx, \"ExitWorktree\", \"\")")
 		return checker.Check(ctx, "ExitWorktree", "")
 	}
+	observe.TraceCtx(ctx, "worktree", "ExitTool.CheckPerm", "return: checker.Check(ctx, \"ExitWorktree\", in.WorktreePath)")
 	observe.TraceCtx(ctx, "worktree", "ExitTool.CheckPerm", "return: checker.Check(ctx, \"ExitWorktree\", in.WorktreePath)")
 	return checker.Check(ctx, "ExitWorktree", in.WorktreePath)
 }
@@ -114,10 +120,12 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.WorktreePath == "" {
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: in.WorktreePath == \"\"")
+		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"worktree_path is required\")")
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"worktree_path is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("worktree_path is required")
 	}
@@ -126,6 +134,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 	if err != nil {
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"resolve worktree path: %w\", err)")
+		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"resolve worktree path: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("resolve worktree path: %w", err)
 	}
 
@@ -133,6 +142,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 	branchOut, err := branchCmd.Output()
 	if err != nil {
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get worktree branch: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get worktree branch: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("get worktree branch: %w", err)
 	}
@@ -147,6 +157,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		if revErr != nil {
 			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: revErr != nil")
 			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get HEAD: %w\", revErr)")
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get HEAD: %w\", revErr)")
 			return tool.InvokeResult{}, fmt.Errorf("get HEAD: %w", revErr)
 		}
 		headCommit = strings.TrimSpace(string(revOut))
@@ -155,6 +166,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 	changed, err := HasChanges(wtPath, headCommit)
 	if err != nil {
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"check changes: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"check changes: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("check changes: %w", err)
 	}
@@ -167,6 +179,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		if err != nil {
 			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
 			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"find git root: %w\", err)")
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"find git root: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("find git root: %w", err)
 		}
 		gitRoot := strings.TrimSpace(string(gitRootOut))
@@ -175,6 +188,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		removeOut, err := removeCmd.CombinedOutput()
 		if err != nil {
 			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git worktree remove: %s: %w\", strings.TrimSp...")
 			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git worktree remove: %s: %w\", strings.TrimSp...")
 			return tool.InvokeResult{}, fmt.Errorf("git worktree remove: %s: %w", strings.TrimSpace(string(removeOut)), err)
 		}
@@ -185,6 +199,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 			Message:      "Worktree removed (no changes detected)",
 		}
 		data, _ := json.Marshal(result)
+		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 		return tool.InvokeResult{Content: string(data)}, nil
 	}
@@ -214,6 +229,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		Message:      "Worktree kept — has uncommitted changes or new commits",
 	}
 	data, _ := json.Marshal(result)
+	observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }

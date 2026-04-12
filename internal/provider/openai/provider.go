@@ -1,194 +1,101 @@
+// Package openai implements provider.Provider for OpenAI via any-llm-go.
 package openai
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/rand/v2"
-	"net/http"
 	"time"
 
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/gogent/internal/provider/anyllm"
+	"github.com/mozilla-ai/any-llm-go/config"
+	"github.com/mozilla-ai/any-llm-go/providers"
+	oai "github.com/mozilla-ai/any-llm-go/providers/openai"
 )
 
-const defaultBaseURL = "https://api.openai.com/v1"
-
-// Provider implements provider.Provider for the OpenAI API.
+// Provider wraps any-llm-go's OpenAI provider for gogent.
 type Provider struct {
-	apiKey      string
-	baseURL     string
-	client      *http.Client
-	bus         *observe.EventBus
-	maxRetries  int
-	idleTimeout time.Duration
+	inner      providers.Provider
+	bus        *observe.EventBus
+	maxRetries int
 }
 
 // Option configures the Provider.
-type Option func(*Provider)
+type Option func(*providerConfig)
 
-// WithMaxRetries sets the maximum number of retry attempts. Default: 10.
-func WithMaxRetries(n int) Option {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
-	return func(p *Provider) { p.maxRetries = n }
+type providerConfig struct {
+	baseURL string
 }
 
-// WithBaseURL overrides the API base URL (for testing).
+// WithBaseURL overrides the API base URL.
 func WithBaseURL(url string) Option {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
-	return func(p *Provider) { p.baseURL = url }
+	return func(c *providerConfig) { c.baseURL = url }
 }
 
-// WithIdleTimeout sets the stream idle timeout. Default: 90s.
-func WithIdleTimeout(d time.Duration) Option {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
-	return func(p *Provider) { p.idleTimeout = d }
-}
-
-// New creates an OpenAI provider with the given API key and options.
-func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	p := &Provider{
-		apiKey:      apiKey,
-		baseURL:     defaultBaseURL,
-		client:      &http.Client{Timeout: 5 * time.Minute},
-		bus:         bus,
-		maxRetries:  10,
-		idleTimeout: 90 * time.Second,
-	}
+// New creates an OpenAI provider backed by any-llm-go.
+func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error) {
+	var pc providerConfig
 	for _, opt := range opts {
-		observe.GlobalTrace("range opts")
-		opt(p)
+		opt(&pc)
 	}
-	observe.GlobalTrace("return: p")
-	return p
+	cfgOpts := []config.Option{config.WithAPIKey(apiKey)}
+	if pc.baseURL != "" {
+		cfgOpts = append(cfgOpts, config.WithBaseURL(pc.baseURL))
+	}
+	inner, err := oai.New(cfgOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("openai: create provider: %w", err)
+	}
+	return &Provider{inner: inner, bus: bus, maxRetries: 10}, nil
 }
 
-// Name returns "openai".
-func (p *Provider) Name() string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"openai\"")
-	return "openai"
-}
+func (p *Provider) Name() string { return "openai" }
 
-// SupportsFeature returns true for features OpenAI supports.
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
 	switch feature {
-	case provider.FeatureToolUse,
-		provider.FeatureStreaming,
-		provider.FeatureImages:
-		observe.GlobalTrace("case: provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages")
+	case provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages:
 		return true
-	case provider.FeatureThinking,
-		provider.FeaturePrefixCaching:
-		observe.GlobalTrace("case: provider.FeatureThinking, provider.FeaturePrefixCaching")
-		return false
 	}
-	observe.GlobalTrace("return: false")
 	return false
 }
 
-// Pricing returns pricing info for a known model.
 func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
 	if info, ok := LookupModel(modelID); ok {
-		observe.GlobalTrace("if: ok")
-		observe.GlobalTrace("return: info.Pricing, true")
 		return info.Pricing, true
 	}
-	observe.GlobalTrace("return: model.Pricing{}, false")
 	return model.Pricing{}, false
 }
 
-// ContextWindow returns the context window size for a known model.
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
 	if info, ok := LookupModel(modelID); ok {
-		observe.GlobalTrace("if: ok")
-		observe.GlobalTrace("return: info.MaxContext, true")
 		return info.MaxContext, true
 	}
-	observe.GlobalTrace("return: 128_000, false")
 	return 128_000, false
 }
 
-// Complete sends a non-streaming request and returns the complete response.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
-	observe.TraceCtx(ctx, "openai", "Provider.Complete", "enter")
-	defer observe.TraceCtx(ctx, "openai", "Provider.Complete", "exit")
-	mapper := NewIDMapper()
-	prePopulateMapper(params.Messages, mapper)
-	wireReq := buildWireRequest(params, mapper, false, p.bus)
-
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
-
-	p.bus.Emit(observe.APIRequestStarted{
-		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
-		Model:         params.Model,
-		MessageCount:  len(params.Messages),
-		ToolCount:     len(params.Tools),
-		TokenEstimate: estimateTokens(params),
-	})
-
+	p.emitStart(traceID, spanID, params)
 	start := time.Now()
-	var wireResp wireResponse
 
-	err := p.withRetry(ctx, traceID, spanID, func(_ int) error {
-		body, marshalErr := json.Marshal(wireReq)
-		if marshalErr != nil {
-			return fmt.Errorf("marshal request: %w", marshalErr)
-		}
-		req, reqErr := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(body))
-		if reqErr != nil {
-			return fmt.Errorf("create request: %w", reqErr)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	llmParams := anyllm.RequestToParams(params)
 
-		resp, doErr := p.client.Do(req)
-		if doErr != nil {
-			return doErr
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
-			return &httpError{
-				statusCode: resp.StatusCode,
-				body:       respBody,
-				resp:       resp,
-				message:    fmt.Sprintf("openai: HTTP %d: %s", resp.StatusCode, extractErrorMessage(respBody)),
-			}
-		}
-
-		return json.NewDecoder(resp.Body).Decode(&wireResp)
+	var comp *providers.ChatCompletion
+	err := p.withRetry(ctx, traceID, spanID, func() error {
+		var reqErr error
+		comp, reqErr = p.inner.Completion(ctx, llmParams)
+		return reqErr
 	})
-
 	if err != nil {
-		observe.TraceCtx(ctx, "openai", "Provider.Complete", "if: err != nil")
-		observe.TraceCtx(ctx, "openai", "Provider.Complete", "return: model.Response{}, err")
-
 		return model.Response{}, err
 	}
 
-	resp := responseFromWire(&wireResp, mapper, p.bus)
+	resp := anyllm.ResponseFromCompletion(comp)
 	p.bus.Emit(observe.APIRequestCompleted{
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  resp.StopReason,
@@ -196,21 +103,87 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		DurationMs:  time.Since(start).Milliseconds(),
 		Model:       resp.Model,
 	})
-	observe.TraceCtx(ctx, "openai", "Provider.Complete", "return: resp, nil")
 	return resp, nil
 }
 
-// Stream starts a streaming request and returns a channel of StreamChunks.
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
-	observe.TraceCtx(ctx, "openai", "Provider.Stream", "enter")
-	defer observe.TraceCtx(ctx, "openai", "Provider.Stream", "exit")
-	mapper := NewIDMapper()
-	prePopulateMapper(params.Messages, mapper)
-	wireReq := buildWireRequest(params, mapper, true, p.bus)
-
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
+	p.emitStart(traceID, spanID, params)
 
+	llmParams := anyllm.RequestToParams(params)
+	chunks, errs := p.inner.CompletionStream(ctx, llmParams)
+
+	ch := make(chan provider.StreamChunk, 32)
+	go func() {
+		defer close(ch)
+		start := time.Now()
+		var usage model.TokenUsage
+		var respModel string
+		var toolCallIDs []string // ordered list of tool call IDs
+		seenToolCalls := make(map[string]bool)
+
+		for chunk := range chunks {
+			if chunk.Usage != nil {
+				usage = anyllm.UsageFromAnyLLM(chunk.Usage)
+			}
+			if chunk.Model != "" {
+				respModel = chunk.Model
+			}
+			for _, choice := range chunk.Choices {
+				delta := choice.Delta
+				if delta.Content != "" {
+					ch <- provider.StreamChunk{TextDelta: delta.Content}
+				}
+				if delta.Reasoning != nil && delta.Reasoning.Content != "" {
+					ch <- provider.StreamChunk{ThinkingDelta: delta.Reasoning.Content}
+				}
+				for _, tc := range delta.ToolCalls {
+					if tc.ID != "" && !seenToolCalls[tc.ID] {
+						seenToolCalls[tc.ID] = true
+						toolCallIDs = append(toolCallIDs, tc.ID)
+						ch <- provider.StreamChunk{
+							ToolCallStart: &model.ToolCallPart{ID: tc.ID, Name: tc.Function.Name},
+						}
+					}
+					if tc.Function.Arguments != "" {
+						id := tc.ID
+						if id == "" && len(toolCallIDs) > 0 {
+							id = toolCallIDs[len(toolCallIDs)-1]
+						}
+						ch <- provider.StreamChunk{
+							ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: id, JSONDelta: tc.Function.Arguments},
+						}
+					}
+				}
+				if choice.FinishReason != "" {
+					stopReason := anyllm.StopReasonFromAnyLLM(choice.FinishReason)
+					if stopReason == model.StopEndTurn && len(seenToolCalls) > 0 {
+						stopReason = model.StopToolUse
+					}
+					ch <- provider.StreamChunk{
+						Done: &provider.StreamDone{StopReason: stopReason, Usage: usage, Model: respModel},
+					}
+					p.bus.Emit(observe.APIRequestCompleted{
+						EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
+						StopReason:  stopReason, Usage: usage,
+						DurationMs: time.Since(start).Milliseconds(), Model: respModel,
+					})
+				}
+			}
+		}
+		select {
+		case err, ok := <-errs:
+			if ok && err != nil {
+				ch <- provider.StreamChunk{Error: err}
+			}
+		default:
+		}
+	}()
+	return ch, nil
+}
+
+func (p *Provider) emitStart(traceID, spanID string, params provider.RequestParams) {
 	p.bus.Emit(observe.APIRequestStarted{
 		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:         params.Model,
@@ -218,170 +191,66 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		ToolCount:     len(params.Tools),
 		TokenEstimate: estimateTokens(params),
 	})
-
-	var httpResp *http.Response
-	err := p.withRetry(ctx, traceID, spanID, func(_ int) error {
-		body, marshalErr := json.Marshal(wireReq)
-		if marshalErr != nil {
-			return fmt.Errorf("marshal request: %w", marshalErr)
-		}
-		req, reqErr := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(body))
-		if reqErr != nil {
-			return fmt.Errorf("create request: %w", reqErr)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-		resp, doErr := p.client.Do(req)
-		if doErr != nil {
-			return doErr
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return &httpError{
-				statusCode: resp.StatusCode,
-				body:       respBody,
-				resp:       resp,
-				message:    fmt.Sprintf("openai: HTTP %d: %s", resp.StatusCode, extractErrorMessage(respBody)),
-			}
-		}
-
-		httpResp = resp
-		return nil
-	})
-
-	if err != nil {
-		observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: err != nil")
-		observe.TraceCtx(ctx, "openai", "Provider.Stream", "return: nil, err")
-
-		return nil, err
-	}
-
-	ch := p.startStream(ctx, httpResp, mapper, p.bus, traceID, spanID)
-	observe.TraceCtx(ctx, "openai", "Provider.Stream", "return: ch, nil")
-	return ch, nil
 }
 
-// withRetry executes fn with exponential backoff retry for retryable errors.
-// Gives up after 3 consecutive 529 (overloaded) responses to avoid hammering
-// a service that is under pressure.
-func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func(attempt int) error) error {
-	observe.TraceCtx(ctx, "openai", "Provider.withRetry", "enter")
-	defer observe.TraceCtx(ctx, "openai", "Provider.withRetry", "exit")
-	var consecutiveOverloaded int
-	for attempt := range p.maxRetries + 1 {
-		observe.TraceCtx(ctx, "openai", "Provider.withRetry", "range p.maxRetries + 1")
-		err := fn(attempt)
-		if err == nil {
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "if: err == nil")
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "return: nil")
-			return nil
-		}
-
-		classified := classifyError(err)
-
-		if classified.errorType == "overloaded" {
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "if: classified.errorType == \"overloaded\"")
-			consecutiveOverloaded++
-			if consecutiveOverloaded >= 3 {
-				observe.TraceCtx(ctx, "openai", "Provider.withRetry", "if: consecutiveOverloaded >= 3")
-				classified.retryable = false
-			}
-		} else {
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "else: classified.errorType == \"overloaded\"")
-			consecutiveOverloaded = 0
-		}
-
-		if !classified.retryable || attempt >= p.maxRetries {
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "if: !classified.retryable || attempt >= p.maxRetries")
-
-			p.bus.Emit(observe.APIRequestFailed{
-				EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-				ErrorType:    classified.errorType,
-				ErrorMessage: classified.wrapped.Error(),
-				Retryable:    false,
-				Attempt:      attempt + 1,
-			})
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "return: classified.wrapped")
-			return classified.wrapped
-		}
-
-		delay := classified.retryAfter
-		if delay == 0 {
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "if: delay == 0")
-			baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
-			if baseDelay > 32*time.Second {
-				observe.TraceCtx(ctx, "openai", "Provider.withRetry", "if: baseDelay > 32*time.Second")
-				baseDelay = 32 * time.Second
-			}
-			jitter := time.Duration(rand.Float64() * 0.25 * float64(baseDelay))
-			delay = baseDelay + jitter
-		}
-
-		p.bus.Emit(observe.APIRetryScheduled{
-			EventHeader: observe.NewEventHeader("APIRetryScheduled", traceID, spanID, ""),
-			Attempt:     attempt + 1,
-			DelayMs:     delay.Milliseconds(),
-			Reason:      classified.errorType,
-		})
-
-		p.bus.Emit(observe.APIRequestFailed{
-			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-			ErrorType:    classified.errorType,
-			ErrorMessage: err.Error(),
-			Retryable:    true,
-			Attempt:      attempt + 1,
-		})
-
-		select {
-		case <-time.After(delay):
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "select: <-time.After(delay)")
-		case <-ctx.Done():
-			observe.TraceCtx(ctx, "openai", "Provider.withRetry", "select: <-ctx.Done()")
-			return ctx.Err()
-		}
-	}
-	observe.TraceCtx(ctx, "openai", "Provider.withRetry", "return: fmt.Errorf(\"exhausted %d retries\", p.maxRetries)")
-	return fmt.Errorf("exhausted %d retries", p.maxRetries)
-}
-
-// estimateTokens provides a rough token estimate for observability events.
 func estimateTokens(params provider.RequestParams) int {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
 	total := 0
 	for _, block := range params.System.Blocks {
-		observe.GlobalTrace("range params.System.Blocks")
 		total += len(block.Text) / 4
 	}
 	for _, m := range params.Messages {
-		observe.GlobalTrace("range params.Messages")
 		for _, part := range m.Content {
-			observe.GlobalTrace("range m.Content")
 			switch p := part.(type) {
 			case model.TextPart:
-				observe.GlobalTrace("typecase: model.TextPart")
 				total += len(p.Text) / 4
 			case model.ToolCallPart:
-				observe.GlobalTrace("typecase: model.ToolCallPart")
 				total += len(p.Input) / 4
 			case model.ToolResultPart:
-				observe.GlobalTrace("typecase: model.ToolResultPart")
 				total += len(p.Content) / 4
-			case model.ThinkingPart:
-				observe.GlobalTrace("typecase: model.ThinkingPart")
-				total += len(p.Text) / 4
-			case model.ImagePart:
-				observe.GlobalTrace("typecase: model.ImagePart")
-				total += 1000
-			case model.DocumentPart:
-				observe.GlobalTrace("typecase: model.DocumentPart")
-				total += len(p.Data) / 4
 			}
 		}
 	}
-	observe.GlobalTrace("return: total")
 	return total
+}
+
+func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func() error) error {
+	for attempt := range p.maxRetries + 1 {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if attempt >= p.maxRetries || !isRetryable(err) {
+			p.bus.Emit(observe.APIRequestFailed{
+				EventHeader: observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
+				ErrorType: "request_failed", ErrorMessage: err.Error(),
+				Retryable: false, Attempt: attempt + 1,
+			})
+			return err
+		}
+		baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
+		if baseDelay > 32*time.Second {
+			baseDelay = 32 * time.Second
+		}
+		delay := baseDelay + time.Duration(rand.Float64()*0.25*float64(baseDelay))
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return fmt.Errorf("exhausted %d retries", p.maxRetries)
+}
+
+func isRetryable(err error) bool {
+	msg := err.Error()
+	for _, s := range []string{"429", "500", "502", "503", "504"} {
+		if len(msg) >= len(s) {
+			for i := 0; i <= len(msg)-len(s); i++ {
+				if msg[i:i+len(s)] == s {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

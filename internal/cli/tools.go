@@ -23,9 +23,9 @@ import (
 	toolgrep "github.com/artpar/gogent/internal/tools/grep"
 	toollsp "github.com/artpar/gogent/internal/tools/lsp"
 	toolmcp "github.com/artpar/gogent/internal/tools/mcp"
-	toolremote "github.com/artpar/gogent/internal/tools/remote"
 	toolnotebookedit "github.com/artpar/gogent/internal/tools/notebookedit"
 	toolplan "github.com/artpar/gogent/internal/tools/plan"
+	toolremote "github.com/artpar/gogent/internal/tools/remote"
 	toolsendmsg "github.com/artpar/gogent/internal/tools/sendmsg"
 	toolsleep "github.com/artpar/gogent/internal/tools/sleep"
 	tooltaskcreate "github.com/artpar/gogent/internal/tools/taskcreate"
@@ -75,6 +75,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		if err := d.Registry.Register(td); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
 			return nil, fmt.Errorf("register tool %s: %w", td.Name(), err)
 		}
 	}
@@ -83,17 +84,20 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	if err := d.Registry.Register(agentTool); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
 		return nil, fmt.Errorf("register agent tool: %w", err)
 	}
 	askTool := &toolask.Tool{Asker: asker}
 	if err := d.Registry.Register(askTool); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
 		return nil, fmt.Errorf("register ask tool: %w", err)
 	}
 
 	orchestrator := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
 	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
 		orchestrator.SetHookManager(d.HookMgr)
 		orchestrator.SetPermPersister(&tool.PermPersister{
 			WorkDir: d.Cwd,
@@ -102,8 +106,10 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	}
 	engine := query.NewEngine(d.Prov, d.Registry, orchestrator, d.Store, d.CostTracker, d.Bus, d.EngineCfg)
 	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
 		engine.SetHookManager(d.HookMgr)
 	}
+	observe.GlobalTrace("return: engine, nil")
 	observe.GlobalTrace("return: engine, nil")
 	return engine, nil
 }
@@ -145,8 +151,8 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toollsp.Tool{Manager: d.LspManager},
 	}
 
-	// Feature-gated: RemoteTrigger tool (GOGENT_FEATURE_REMOTE_TRIGGERS=1)
 	if os.Getenv("GOGENT_FEATURE_REMOTE_TRIGGERS") == "1" {
+		observe.GlobalTrace("if: os.Getenv(\"GOGENT_FEATURE_REMOTE_TRIGGERS\") == \"1\"")
 		tools = append(tools, &toolremote.Tool{
 			HTTPClient: &http.Client{Timeout: 20 * time.Second},
 			BaseURL:    "https://api.anthropic.com",
@@ -166,6 +172,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 			},
 		})
 	}
+	observe.GlobalTrace("return: tools")
 
 	return tools
 }

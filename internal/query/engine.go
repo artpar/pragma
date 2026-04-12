@@ -81,11 +81,14 @@ func NewEngine(
 		e.windowConfig = compDeps[0].WindowConfig
 	}
 	observe.GlobalTrace("return: e")
+	observe.GlobalTrace("return: e")
 	return e
 }
 
 // SetHookManager configures the hook manager for Stop hooks.
 func (e *Engine) SetHookManager(mgr *hook.Manager) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	e.hookMgr = mgr
 }
 

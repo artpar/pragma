@@ -64,6 +64,7 @@ func NewRegistry() *Registry {
 	}
 	registerBuiltins(r)
 	observe.GlobalTrace("return: r")
+	observe.GlobalTrace("return: r")
 	return r
 }
 
@@ -88,6 +89,7 @@ func (r *Registry) Execute(ctx context.Context, name, args string, deps Deps) (R
 	if !ok {
 		observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: !ok")
 		observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: Result{}, fmt.Errorf(\"%w: /%s\", ErrUnknownCommand, name)")
+		observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: Result{}, fmt.Errorf(\"%w: /%s\", ErrUnknownCommand, name)")
 		return Result{}, fmt.Errorf("%w: /%s", ErrUnknownCommand, name)
 	}
 	deps.Commands = r.Commands()
@@ -104,6 +106,7 @@ func (r *Registry) Execute(ctx context.Context, name, args string, deps Deps) (R
 		})
 	}
 	observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: result, err")
+	observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: result, err")
 	return result, err
 }
 
@@ -116,6 +119,7 @@ func (r *Registry) Commands() []Command {
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Name < sorted[j].Name
 	})
+	observe.GlobalTrace("return: sorted")
 	observe.GlobalTrace("return: sorted")
 	return sorted
 }
@@ -130,12 +134,14 @@ func Parse(input string) (name string, args string, ok bool) {
 	if !strings.HasPrefix(trimmed, "/") {
 		observe.GlobalTrace("if: !strings.HasPrefix(trimmed, \"/\")")
 		observe.GlobalTrace("return: \"\", \"\", false")
+		observe.GlobalTrace("return: \"\", \"\", false")
 		return "", "", false
 	}
 
 	withoutSlash := trimmed[1:]
 	if withoutSlash == "" {
 		observe.GlobalTrace("if: withoutSlash == \"\"")
+		observe.GlobalTrace("return: \"\", \"\", false")
 		observe.GlobalTrace("return: \"\", \"\", false")
 		return "", "", false
 	}
@@ -146,6 +152,7 @@ func Parse(input string) (name string, args string, ok bool) {
 		observe.GlobalTrace("if: len(parts) > 1")
 		args = parts[1]
 	}
+	observe.GlobalTrace("return: name, args, true")
 	observe.GlobalTrace("return: name, args, true")
 
 	return name, args, true

@@ -16,6 +16,7 @@ func normalizeMessages(msgs []model.Message) []model.Message {
 	msgs = mergeConsecutiveSameRole(msgs)
 	msgs = ensureToolResultPairing(msgs)
 	observe.GlobalTrace("return: msgs")
+	observe.GlobalTrace("return: msgs")
 	return msgs
 }
 
@@ -32,6 +33,7 @@ func filterEmpty(msgs []model.Message) []model.Message {
 		}
 	}
 	observe.GlobalTrace("return: out")
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -43,6 +45,7 @@ func mergeConsecutiveSameRole(msgs []model.Message) []model.Message {
 	defer observe.GlobalTrace("exit")
 	if len(msgs) == 0 {
 		observe.GlobalTrace("if: len(msgs) == 0")
+		observe.GlobalTrace("return: msgs")
 		observe.GlobalTrace("return: msgs")
 		return msgs
 	}
@@ -59,6 +62,7 @@ func mergeConsecutiveSameRole(msgs []model.Message) []model.Message {
 			out = append(out, msgs[i])
 		}
 	}
+	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	return out
 }
@@ -179,6 +183,7 @@ func ensureToolResultPairing(msgs []model.Message) []model.Message {
 		}
 		nextMsg.Content = cleaned
 	}
+	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 
 	return out

@@ -75,6 +75,7 @@ func New(cfg Config) Model {
 	}
 	ctx, cancel := context.WithCancel(parentCtx)
 	observe.GlobalTrace("return: Model{\n\tengine:\t\tcfg.Engine,\n\tstore:\t\tcfg.Store,\n\tcostTracker:\tcfg.CostTracke...")
+	observe.GlobalTrace("return: Model{\n\tengine:\t\tcfg.Engine,\n\tstore:\t\tcfg.Store,\n\tcostTracker:\tcfg.CostTracke...")
 
 	return Model{
 		engine:      cfg.Engine,
@@ -99,6 +100,7 @@ func New(cfg Config) Model {
 func (m Model) Init() tea.Cmd {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: m.input.textarea.Focus()")
 	observe.GlobalTrace("return: m.input.textarea.Focus()")
 	return m.input.textarea.Focus()
 }
@@ -148,16 +150,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.ask.active {
 		observe.GlobalTrace("if: m.ask.active")
 		observe.GlobalTrace("return: m, nil")
+		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
 	if m.perm.active {
 		observe.GlobalTrace("if: m.perm.active")
 		cmd := m.perm.Update(msg)
 		observe.GlobalTrace("return: m, cmd")
+		observe.GlobalTrace("return: m, cmd")
 		return m, cmd
 	}
 
 	cmd := m.input.Update(msg)
+	observe.GlobalTrace("return: m, cmd")
 	observe.GlobalTrace("return: m, cmd")
 	return m, cmd
 }
@@ -168,6 +173,7 @@ func (m Model) View() string {
 	defer observe.GlobalTrace("exit")
 	if !m.ready {
 		observe.GlobalTrace("if: !m.ready")
+		observe.GlobalTrace("return: \"Initializing...\"")
 		observe.GlobalTrace("return: \"Initializing...\"")
 		return "Initializing..."
 	}
@@ -193,6 +199,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	b.WriteString(m.input.View())
+	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
 
 	return b.String()
@@ -231,6 +238,7 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 	m.input.SetWidth(m.width)
 	observe.GlobalTrace("return: m, nil")
+	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
@@ -246,10 +254,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.interruptCount >= 2 {
 				observe.GlobalTrace("if: m.interruptCount >= 2")
 				observe.GlobalTrace("return: m.quit()")
+				observe.GlobalTrace("return: m.quit()")
 				return m.quit()
 			}
 
 			m.cancel()
+			observe.GlobalTrace("return: m, nil")
 			observe.GlobalTrace("return: m, nil")
 			return m, nil
 		}
@@ -260,9 +270,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.perm.active {
 			cmd := m.perm.Update(msg)
 			observe.GlobalTrace("return: m, cmd")
+			observe.GlobalTrace("return: m, cmd")
 			return m, cmd
 		}
 		if m.ask.active {
+			observe.GlobalTrace("return: m, nil")
 			observe.GlobalTrace("return: m, nil")
 
 			return m, nil
@@ -272,6 +284,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.perm.active {
 		observe.GlobalTrace("if: m.perm.active")
 		cmd := m.perm.Update(msg)
+		observe.GlobalTrace("return: m, cmd")
 		observe.GlobalTrace("return: m, cmd")
 		return m, cmd
 	}
@@ -290,10 +303,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		observe.GlobalTrace("return: m, cmd")
+		observe.GlobalTrace("return: m, cmd")
 		return m, cmd
 	}
 
 	cmd := m.input.Update(msg)
+	observe.GlobalTrace("return: m, cmd")
 	observe.GlobalTrace("return: m, cmd")
 	return m, cmd
 }
@@ -305,24 +320,28 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	if m.streaming {
 		observe.GlobalTrace("if: m.streaming")
 		observe.GlobalTrace("return: m, nil")
+		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
 
 	if name, args, ok := slash.Parse(msg.Text); ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: m.handleSlashCommand(name, args)")
+		observe.GlobalTrace("return: m.handleSlashCommand(name, args)")
 		return m.handleSlashCommand(name, args)
 	}
 
-	// UserPromptSubmit hook — can block submission
 	if m.hookMgr != nil {
+		observe.GlobalTrace("if: m.hookMgr != nil")
 		hookResult := m.hookMgr.Execute(m.ctx, hook.UserPromptSubmit, hook.HookInput{
 			PromptText: msg.Text,
 		})
 		if hookResult.Blocked {
+			observe.GlobalTrace("if: hookResult.Blocked")
 			m.outputBuf.WriteString(errorStyle.Render("Blocked: "+hookResult.BlockMsg) + "\n")
 			m.viewport.SetContent(m.outputBuf.String())
 			m.viewport.GotoBottom()
+			observe.GlobalTrace("return: m, nil")
 			return m, nil
 		}
 	}
@@ -344,13 +363,13 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	m.toolbar.SetStatus("streaming...")
 	m.toolbar.IncrementTurn()
 
-	// Cancel previous context before creating a new one to avoid goroutine leaks.
 	m.cancel()
 	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
 	m.eventCh = m.engine.Run(m.ctx, msg.Text)
 
 	m.outputBuf.WriteString(assistantLabelStyle.Render("Assistant"))
 	m.outputBuf.WriteString("\n")
+	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
@@ -366,6 +385,7 @@ func (m Model) finishTurn() Model {
 	m.toolbar.SetStatus("ready")
 	m.viewport.SetContent(m.outputBuf.String())
 	m.viewport.GotoBottom()
+	observe.GlobalTrace("return: m")
 	observe.GlobalTrace("return: m")
 	return m
 }
@@ -389,14 +409,18 @@ func (m Model) flushStreamBuf() {
 // trimOutputBuf trims the output buffer to maxOutputBufBytes, keeping the tail.
 // The viewport only renders visible content, so losing old prefix is invisible to the user.
 func (m Model) trimOutputBuf() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.outputBuf.Len() <= maxOutputBufBytes {
+		observe.GlobalTrace("if: m.outputBuf.Len() <= maxOutputBufBytes")
 		return
 	}
 	content := m.outputBuf.String()
-	// Find a newline boundary near the trim point to avoid splitting a line
+
 	trimAt := len(content) - maxOutputBufBytes
 	idx := strings.IndexByte(content[trimAt:], '\n')
 	if idx >= 0 {
+		observe.GlobalTrace("if: idx >= 0")
 		trimAt += idx + 1
 	}
 	m.outputBuf.Reset()
@@ -413,6 +437,7 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 		m.sessionSave()
 	}
 	observe.GlobalTrace("return: m, tea.Quit")
+	observe.GlobalTrace("return: m, tea.Quit")
 	return m, tea.Quit
 }
 
@@ -420,6 +445,7 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 func waitForEvent(ch <-chan query.LoopEvent) tea.Cmd {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func() tea.Msg {\n\tevent, ok := <-ch\n\tif !ok {\n\t\treturn LoopEventMsg{Event: ni...")
 	observe.GlobalTrace("return: func() tea.Msg {\n\tevent, ok := <-ch\n\tif !ok {\n\t\treturn LoopEventMsg{Event: ni...")
 	return func() tea.Msg {
 		event, ok := <-ch
@@ -437,8 +463,10 @@ func saveSessionCmd(saveFn func()) tea.Cmd {
 	if saveFn == nil {
 		observe.GlobalTrace("if: saveFn == nil")
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: func() tea.Msg {\n\tsaveFn()\n\treturn sessionSavedMsg{}\n}")
 	observe.GlobalTrace("return: func() tea.Msg {\n\tsaveFn()\n\treturn sessionSavedMsg{}\n}")
 	return func() tea.Msg {
 		saveFn()

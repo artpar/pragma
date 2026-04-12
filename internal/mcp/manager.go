@@ -25,6 +25,7 @@ func NewManager(bus *observe.EventBus, registry *tool.Registry) *Manager {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Manager{\n\tclients:\t\tmake(map[string]*Client),\n\tregisteredTools:\tmake(map[str...")
+	observe.GlobalTrace("return: &Manager{\n\tclients:\t\tmake(map[string]*Client),\n\tregisteredTools:\tmake(map[str...")
 	return &Manager{
 		clients:         make(map[string]*Client),
 		registeredTools: make(map[string][]string),
@@ -110,6 +111,7 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 
 	wg.Wait()
 	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "return: errs")
+	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "return: errs")
 	return errs
 }
 
@@ -162,6 +164,7 @@ func (m *Manager) RegisterTools(ctx context.Context) error {
 		m.registeredTools[name] = registered
 	}
 	observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "return: nil")
+	observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "return: nil")
 
 	return nil
 }
@@ -206,6 +209,7 @@ func (m *Manager) ServerStatus() map[string]string {
 		}
 	}
 	observe.GlobalTrace("return: status")
+	observe.GlobalTrace("return: status")
 	return status
 }
 
@@ -224,6 +228,7 @@ func (m *Manager) ConnectedCount() int {
 		}
 	}
 	observe.GlobalTrace("return: count")
+	observe.GlobalTrace("return: count")
 	return count
 }
 
@@ -238,6 +243,7 @@ func (m *Manager) Clients() map[string]*Client {
 		observe.GlobalTrace("range m.clients")
 		result[name] = client
 	}
+	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	return result
 }

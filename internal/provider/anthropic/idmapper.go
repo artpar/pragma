@@ -22,6 +22,7 @@ func NewIDMapper() *IDMapper {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &IDMapper{\n\tinternalToWire:\tmake(map[string]string),\n\twireToInternal:\tmake(ma...")
+	observe.GlobalTrace("return: &IDMapper{\n\tinternalToWire:\tmake(map[string]string),\n\twireToInternal:\tmake(ma...")
 	return &IDMapper{
 		internalToWire: make(map[string]string),
 		wireToInternal: make(map[string]string),
@@ -57,6 +58,7 @@ func (m *IDMapper) ToWire(internalID string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	observe.GlobalTrace("return: m.internalToWire[internalID]")
+	observe.GlobalTrace("return: m.internalToWire[internalID]")
 	return m.internalToWire[internalID]
 }
 
@@ -67,6 +69,7 @@ func (m *IDMapper) ToInternal(wireID string) string {
 	defer observe.GlobalTrace("exit")
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	observe.GlobalTrace("return: m.wireToInternal[wireID]")
 	observe.GlobalTrace("return: m.wireToInternal[wireID]")
 	return m.wireToInternal[wireID]
 }
@@ -83,6 +86,7 @@ func syntheticWireID(internalID string) string {
 		observe.GlobalTrace("if: len(clean) > 24")
 		clean = clean[:24]
 	}
+	observe.GlobalTrace("return: \"toolu_\" + clean")
 	observe.GlobalTrace("return: \"toolu_\" + clean")
 	return "toolu_" + clean
 }

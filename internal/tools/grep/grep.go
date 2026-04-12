@@ -67,12 +67,14 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Grep\"")
+	observe.GlobalTrace("return: \"Grep\"")
 	return "Grep"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"A powerful search tool built on ripgrep...\"")
+	observe.GlobalTrace("return: grepDescription")
 	return grepDescription
 }
 
@@ -92,11 +94,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
@@ -110,8 +114,10 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "if: err != nil")
 		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", \"\")")
+		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", \"\")")
 		return checker.Check(ctx, "Grep", "")
 	}
+	observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", in.Path)")
 	observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", in.Path)")
 	return checker.Check(ctx, "Grep", in.Path)
 }
@@ -123,10 +129,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Pattern == "" {
 		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Pattern == \"\"")
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"pattern is required\")")
 		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"pattern is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("pattern is required")
 	}
@@ -151,6 +159,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if _, err := os.Stat(searchPath); err != nil {
 		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path not found: %s\", searchPath)")
 		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path not found: %s\", searchPath)")
 		return tool.InvokeResult{}, fmt.Errorf("path not found: %s", searchPath)
 	}
@@ -297,6 +306,7 @@ func applyHeadLimit(items []string, headLimit, offset int) (result []string, app
 		if offset >= len(items) {
 			observe.GlobalTrace("if: offset >= len(items)")
 			observe.GlobalTrace("return: nil, nil")
+			observe.GlobalTrace("return: nil, nil")
 			return nil, nil
 		}
 		items = items[offset:]
@@ -304,14 +314,17 @@ func applyHeadLimit(items []string, headLimit, offset int) (result []string, app
 	if headLimit == 0 {
 		observe.GlobalTrace("if: headLimit == 0")
 		observe.GlobalTrace("return: items, nil")
+		observe.GlobalTrace("return: items, nil")
 		return items, nil
 	}
 	if len(items) > headLimit {
 		observe.GlobalTrace("if: len(items) > headLimit")
 		truncated := headLimit
 		observe.GlobalTrace("return: items[:headLimit], &truncated")
+		observe.GlobalTrace("return: items[:headLimit], &truncated")
 		return items[:headLimit], &truncated
 	}
+	observe.GlobalTrace("return: items, nil")
 	observe.GlobalTrace("return: items, nil")
 	return items, nil
 }
@@ -323,8 +336,10 @@ func relativizePath(absPath, workDir string) string {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: absPath")
+		observe.GlobalTrace("return: absPath")
 		return absPath
 	}
+	observe.GlobalTrace("return: rel")
 	observe.GlobalTrace("return: rel")
 	return rel
 }
@@ -368,6 +383,7 @@ func buildContentResult(lines []string, headLimit, offset int, workDir string) s
 		observe.GlobalTrace("else-if: offset > 0")
 		out += fmt.Sprintf("\n\n[Showing results with pagination = offset: %d]", offset)
 	}
+	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 
 	return out
@@ -429,6 +445,7 @@ func buildCountResult(lines []string, headLimit, offset int, workDir string) str
 		summary += fmt.Sprintf(" with pagination = offset: %d", offset)
 	}
 	observe.GlobalTrace("return: out + summary")
+	observe.GlobalTrace("return: out + summary")
 
 	return out + summary
 }
@@ -438,6 +455,7 @@ func buildFilesResult(lines []string, headLimit, offset int, workDir string) str
 	defer observe.GlobalTrace("exit")
 	if len(lines) == 0 {
 		observe.GlobalTrace("if: len(lines) == 0")
+		observe.GlobalTrace("return: \"No files found\"")
 		observe.GlobalTrace("return: \"No files found\"")
 		return "No files found"
 	}
@@ -503,6 +521,7 @@ func buildFilesResult(lines []string, headLimit, offset int, workDir string) str
 		observe.GlobalTrace("else-if: offset > 0")
 		header += fmt.Sprintf(" offset: %d", offset)
 	}
+	observe.GlobalTrace("return: header + \"\\n\" + strings.Join(relative, \"\\n\")")
 	observe.GlobalTrace("return: header + \"\\n\" + strings.Join(relative, \"\\n\")")
 
 	return header + "\n" + strings.Join(relative, "\n")

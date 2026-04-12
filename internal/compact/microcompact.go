@@ -49,6 +49,7 @@ func Microcompact(msgs []model.Message) []model.Message {
 		}
 	}
 	observe.GlobalTrace("return: result")
+	observe.GlobalTrace("return: result")
 	return result
 }
 
@@ -71,6 +72,7 @@ func trimMessage(msg model.Message, toolNames map[string]string) model.Message {
 		}
 	}
 	out.Content = parts
+	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	return out
 }
@@ -103,6 +105,7 @@ func trimPart(part model.ContentPart, toolNames map[string]string) model.Content
 	case model.ToolResultPart:
 		observe.GlobalTrace("typecase: model.ToolResultPart")
 		if len(p.Content) <= largeToolResultThreshold {
+			observe.GlobalTrace("return: p")
 			observe.GlobalTrace("return: p")
 			return p
 		}

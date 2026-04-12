@@ -1,6 +1,9 @@
 package hook
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"github.com/artpar/gogent/internal/observe"
+)
 
 // Event identifies when a hook fires.
 type Event string
@@ -69,15 +72,22 @@ const (
 
 // Outcome returns the classified outcome of a hook result.
 func (r Result) Outcome() Outcome {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if r.Err != nil {
+		observe.GlobalTrace("if: r.Err != nil")
+		observe.GlobalTrace("return: OutcomeTimeout")
 		return OutcomeTimeout
 	}
 	switch r.ExitCode {
 	case 0:
+		observe.GlobalTrace("case: 0")
 		return OutcomeOK
 	case 2:
+		observe.GlobalTrace("case: 2")
 		return OutcomeBlock
 	default:
+		observe.GlobalTrace("default")
 		return OutcomeError
 	}
 }

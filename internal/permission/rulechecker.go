@@ -26,6 +26,7 @@ func NewRuleChecker(rules []Rule, mode PermissionMode, workDir string, bus *obse
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &RuleChecker{\n\trules:\t\trules,\n\tmode:\t\tmode,\n\tworkDir:\tworkDir,\n\tbus:\t\tbus,\n}")
+	observe.GlobalTrace("return: &RuleChecker{\n\trules:\t\trules,\n\tmode:\t\tmode,\n\tworkDir:\tworkDir,\n\tbus:\t\tbus,\n}")
 	return &RuleChecker{
 		rules:   rules,
 		mode:    mode,
@@ -54,6 +55,7 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: rule.Content == \"\"")
 			rc.emitRuleMatched(toolName, rule.Content, string(rule.Source), string(rule.Decision))
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\trule.Decision,\n\tRule:\t\trule,\n\tContent:\tcontent,\n}")
+			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\trule.Decision,\n\tRule:\t\trule,\n\tContent:\tcontent,\n}")
 			return CheckResult{
 				Decision: rule.Decision,
 				Rule:     rule,
@@ -64,6 +66,7 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 		if content != "" && MatchContent(rule.Content, content, rc.workDir) {
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: content != \"\" && MatchContent(rule.Content, content, rc.workDir)")
 			rc.emitRuleMatched(toolName, rule.Content, string(rule.Source), string(rule.Decision))
+			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\trule.Decision,\n\tRule:\t\trule,\n\tContent:\tcontent,\n}")
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\trule.Decision,\n\tRule:\t\trule,\n\tContent:\tcontent,\n}")
 			return CheckResult{
 				Decision: rule.Decision,
@@ -81,6 +84,7 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 				observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: IsDangerousPath(absPath, rc.workDir)")
 				rc.emitRuleMatched(toolName, "", "dangerous_path", string(DecisionAsk))
 				observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tDecisionAsk,\n\tReason:\t\t\"dangerous path: \" + filepath....")
+				observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tDecisionAsk,\n\tReason:\t\t\"dangerous path: \" + filepath....")
 				return CheckResult{
 					Decision: DecisionAsk,
 					Reason:   "dangerous path: " + filepath.Base(absPath),
@@ -96,6 +100,7 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: ok")
 			rc.emitRuleMatched(toolName, "", "mode_accept_edits", string(decision))
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tdecision,\n\tReason:\t\t\"acceptEdits mode: auto-allow rea...")
+			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tdecision,\n\tReason:\t\t\"acceptEdits mode: auto-allow rea...")
 			return CheckResult{
 				Decision: decision,
 				Reason:   "acceptEdits mode: auto-allow read/write tools in project directory",
@@ -106,6 +111,7 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 
 	decision := rc.modeDefault()
 	rc.emitRuleMatched(toolName, "", "mode_default", string(decision))
+	observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tdecision,\n\tReason:\t\t\"no matching rule, mode default: ...")
 	observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tdecision,\n\tReason:\t\t\"no matching rule, mode default: ...")
 	return CheckResult{
 		Decision: decision,
@@ -162,11 +168,13 @@ func (rc *RuleChecker) acceptEditsDecision(toolName, content string) (Decision, 
 	if !acceptEditsTools[toolName] {
 		observe.GlobalTrace("if: !acceptEditsTools[toolName]")
 		observe.GlobalTrace("return: \"\", false")
+		observe.GlobalTrace("return: \"\", false")
 		return "", false
 	}
 
 	if content == "" {
 		observe.GlobalTrace("if: content == \"\"")
+		observe.GlobalTrace("return: DecisionAllow, true")
 		observe.GlobalTrace("return: DecisionAllow, true")
 		return DecisionAllow, true
 	}
@@ -177,9 +185,11 @@ func (rc *RuleChecker) acceptEditsDecision(toolName, content string) (Decision, 
 		if !strings.HasPrefix(absPath, workDir+string(filepath.Separator)) && absPath != workDir {
 			observe.GlobalTrace("if: !strings.HasPrefix(absPath, workDir+string(filepath.Separator)) && absPath !=...")
 			observe.GlobalTrace("return: \"\", false")
+			observe.GlobalTrace("return: \"\", false")
 			return "", false
 		}
 	}
+	observe.GlobalTrace("return: DecisionAllow, true")
 	observe.GlobalTrace("return: DecisionAllow, true")
 	return DecisionAllow, true
 }

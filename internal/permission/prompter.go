@@ -19,5 +19,6 @@ func (p *NonInteractivePrompter) Prompt(_ context.Context, _ string, _ string, _
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: DecisionDeny, nil")
+	observe.GlobalTrace("return: DecisionDeny, nil")
 	return DecisionDeny, nil
 }

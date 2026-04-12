@@ -49,6 +49,7 @@ func IsDangerousPath(absPath, workDir string) bool {
 		if strings.EqualFold(baseName, df) {
 			observe.GlobalTrace("if: strings.EqualFold(baseName, df)")
 			observe.GlobalTrace("return: true")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
@@ -57,6 +58,7 @@ func IsDangerousPath(absPath, workDir string) bool {
 		observe.GlobalTrace("range DangerousFilePatterns")
 		if matched, _ := filepath.Match(pat, baseName); matched {
 			observe.GlobalTrace("if: matched")
+			observe.GlobalTrace("return: true")
 			observe.GlobalTrace("return: true")
 			return true
 		}
@@ -78,10 +80,12 @@ func IsDangerousPath(absPath, workDir string) bool {
 			if strings.EqualFold(part, dd) {
 				observe.GlobalTrace("if: strings.EqualFold(part, dd)")
 				observe.GlobalTrace("return: true")
+				observe.GlobalTrace("return: true")
 				return true
 			}
 		}
 	}
+	observe.GlobalTrace("return: false")
 	observe.GlobalTrace("return: false")
 
 	return false
@@ -93,6 +97,7 @@ func IsDangerousPath(absPath, workDir string) bool {
 func isFilePath(content string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.HasPrefix(content, \"/\") || strings.HasPrefix(content, \"~\")")
 	observe.GlobalTrace("return: strings.HasPrefix(content, \"/\") || strings.HasPrefix(content, \"~\")")
 	return strings.HasPrefix(content, "/") || strings.HasPrefix(content, "~")
 }
@@ -106,6 +111,7 @@ func resolvePathsForCheck(content, workDir string) []string {
 	defer observe.GlobalTrace("exit")
 	absPath := content
 	if !filepath.IsAbs(absPath) {
+		observe.GlobalTrace("if: !filepath.IsAbs(absPath)")
 		absPath = filepath.Join(workDir, absPath)
 	}
 	absPath = filepath.Clean(absPath)
@@ -119,30 +125,34 @@ func resolvePathsForCheck(content, workDir string) []string {
 		}
 	}
 
-	// 1. Always check the original path
 	addPath(absPath)
 
-	// 2. Follow symlink chain for existing paths (collect intermediates)
 	current := absPath
 	visited := make(map[string]bool)
-	for i := 0; i < 40; i++ { // max depth matches SYMLOOP_MAX
+	for i := 0; i < 40; i++ {
+		observe.GlobalTrace("for: i < 40")
 		if visited[current] {
-			break // circular symlink
+			observe.GlobalTrace("if: visited[current]")
+			break
 		}
 		visited[current] = true
 
 		info, err := os.Lstat(current)
 		if err != nil {
-			break // path doesn't exist — handled below
+			observe.GlobalTrace("if: err != nil")
+			break
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
-			break // not a symlink
+			observe.GlobalTrace("if: info.Mode()&os.ModeSymlink == 0")
+			break
 		}
 		target, err := os.Readlink(current)
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
 			break
 		}
 		if !filepath.IsAbs(target) {
+			observe.GlobalTrace("if: !filepath.IsAbs(target)")
 			target = filepath.Join(filepath.Dir(current), target)
 		}
 		target = filepath.Clean(target)
@@ -150,17 +160,19 @@ func resolvePathsForCheck(content, workDir string) []string {
 		current = target
 	}
 
-	// 3. For non-existent files: walk up ancestors to find symlinks
 	if _, err := os.Stat(absPath); errors.Is(err, os.ErrNotExist) {
+		observe.GlobalTrace("if: errors.Is(err, os.ErrNotExist)")
 		if resolved := resolveDeepestExistingAncestor(absPath); resolved != "" {
+			observe.GlobalTrace("if: resolved != \"\"")
 			addPath(resolved)
 		}
 	}
 
-	// 4. Final resolve via EvalSymlinks (catches directory-component symlinks)
 	if resolved, err := filepath.EvalSymlinks(absPath); err == nil && resolved != absPath {
+		observe.GlobalTrace("if: err == nil && resolved != absPath")
 		addPath(resolved)
 	}
+	observe.GlobalTrace("return: paths")
 
 	return paths
 }
@@ -170,47 +182,68 @@ func resolvePathsForCheck(content, workDir string) []string {
 // case where a file doesn't exist but an ancestor directory is a symlink.
 // Matches the TS resolveDeepestExistingAncestorSync() (fsOperations.ts:215-270).
 func resolveDeepestExistingAncestor(absPath string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	dir := absPath
 	var segments []string
-	for dir != filepath.Dir(dir) { // stop at root
+	for dir != filepath.Dir(dir) {
+		observe.GlobalTrace("for: dir != filepath.Dir(dir)")
 		info, err := os.Lstat(dir)
 		if err != nil {
-			// Doesn't exist — accumulate segment, walk up
+			observe.GlobalTrace("if: err != nil")
+
 			segments = append([]string{filepath.Base(dir)}, segments...)
 			dir = filepath.Dir(dir)
 			continue
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			// Found a symlink — resolve it
+			observe.GlobalTrace("if: info.Mode()&os.ModeSymlink != 0")
+
 			resolved, err := filepath.EvalSymlinks(dir)
 			if err != nil {
-				// Dangling symlink — try readlink
+				observe.GlobalTrace("if: err != nil")
+
 				target, err := os.Readlink(dir)
 				if err != nil {
+					observe.GlobalTrace("if: err != nil")
+					observe.GlobalTrace("return: \"\"")
 					return ""
 				}
 				if !filepath.IsAbs(target) {
+					observe.GlobalTrace("if: !filepath.IsAbs(target)")
 					target = filepath.Join(filepath.Dir(dir), target)
 				}
 				if len(segments) > 0 {
+					observe.GlobalTrace("if: len(segments) > 0")
+					observe.GlobalTrace("return: filepath.Join(append([]string{target}, segments...)...)")
 					return filepath.Join(append([]string{target}, segments...)...)
 				}
+				observe.GlobalTrace("return: target")
 				return target
 			}
 			if len(segments) > 0 {
+				observe.GlobalTrace("if: len(segments) > 0")
+				observe.GlobalTrace("return: filepath.Join(append([]string{resolved}, segments...)...)")
 				return filepath.Join(append([]string{resolved}, segments...)...)
 			}
+			observe.GlobalTrace("return: resolved")
 			return resolved
 		}
-		// Non-symlink exists — check if ancestors have symlinks via EvalSymlinks
+
 		resolved, err := filepath.EvalSymlinks(dir)
 		if err == nil && resolved != dir {
+			observe.GlobalTrace("if: err == nil && resolved != dir")
 			if len(segments) > 0 {
+				observe.GlobalTrace("if: len(segments) > 0")
+				observe.GlobalTrace("return: filepath.Join(append([]string{resolved}, segments...)...)")
 				return filepath.Join(append([]string{resolved}, segments...)...)
 			}
+			observe.GlobalTrace("return: resolved")
 			return resolved
 		}
-		return "" // no symlinks found in ancestor chain
+		observe.GlobalTrace("return: \"\"")
+		return ""
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }

@@ -35,12 +35,14 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Sleep\"")
+	observe.GlobalTrace("return: \"Sleep\"")
 	return "Sleep"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Wait for a specified duration. The user can interrupt...\"")
+	observe.GlobalTrace("return: sleepDescription")
 	return sleepDescription
 }
 
@@ -52,11 +54,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
@@ -64,6 +68,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "sleep", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "sleep", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "sleep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Sleep\", \"\")")
 	observe.TraceCtx(ctx, "sleep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Sleep\", \"\")")
 	return checker.Check(ctx, "Sleep", "")
 }
@@ -74,6 +79,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	var in sleepInput
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "sleep", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "sleep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.TraceCtx(ctx, "sleep", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}

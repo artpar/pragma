@@ -17,10 +17,12 @@ func MatchContent(ruleContent, actualContent, workDir string) bool {
 	if ruleContent == "" || actualContent == "" {
 		observe.GlobalTrace("if: ruleContent == \"\" || actualContent == \"\"")
 		observe.GlobalTrace("return: false")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	if strings.HasPrefix(ruleContent, "domain:") {
 		observe.GlobalTrace("if: strings.HasPrefix(ruleContent, \"domain:\")")
+		observe.GlobalTrace("return: MatchDomainContent(ruleContent, actualContent)")
 		observe.GlobalTrace("return: MatchDomainContent(ruleContent, actualContent)")
 		return MatchDomainContent(ruleContent, actualContent)
 	}
@@ -28,8 +30,10 @@ func MatchContent(ruleContent, actualContent, workDir string) bool {
 	if strings.HasPrefix(actualContent, "/") || strings.HasPrefix(actualContent, "~") {
 		observe.GlobalTrace("if: strings.HasPrefix(actualContent, \"/\") || strings.HasPrefix(actualContent, \"~\")")
 		observe.GlobalTrace("return: MatchPathContent(ruleContent, actualContent, workDir)")
+		observe.GlobalTrace("return: MatchPathContent(ruleContent, actualContent, workDir)")
 		return MatchPathContent(ruleContent, actualContent, workDir)
 	}
+	observe.GlobalTrace("return: MatchShellContent(ruleContent, actualContent)")
 	observe.GlobalTrace("return: MatchShellContent(ruleContent, actualContent)")
 	return MatchShellContent(ruleContent, actualContent)
 }
@@ -45,6 +49,7 @@ func MatchShellContent(pattern, command string) bool {
 	if pattern == command {
 		observe.GlobalTrace("if: pattern == command")
 		observe.GlobalTrace("return: true")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 
@@ -52,8 +57,10 @@ func MatchShellContent(pattern, command string) bool {
 		observe.GlobalTrace("if: strings.HasSuffix(pattern, \":*\")")
 		prefix := strings.TrimSuffix(pattern, ":*")
 		observe.GlobalTrace("return: command == prefix || strings.HasPrefix(command, prefix+\" \")")
+		observe.GlobalTrace("return: command == prefix || strings.HasPrefix(command, prefix+\" \")")
 		return command == prefix || strings.HasPrefix(command, prefix+" ")
 	}
+	observe.GlobalTrace("return: matchWildcard(pattern, command)")
 	observe.GlobalTrace("return: matchWildcard(pattern, command)")
 
 	return matchWildcard(pattern, command)
@@ -77,8 +84,10 @@ func MatchPathContent(pattern, filePath, workDir string) bool {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: false")
+		observe.GlobalTrace("return: false")
 		return false
 	}
+	observe.GlobalTrace("return: matched")
 	observe.GlobalTrace("return: matched")
 	return matched
 }
@@ -91,10 +100,12 @@ func MatchDomainContent(ruleContent, actualContent string) bool {
 	if !strings.HasPrefix(ruleContent, "domain:") || !strings.HasPrefix(actualContent, "domain:") {
 		observe.GlobalTrace("if: !strings.HasPrefix(ruleContent, \"domain:\") || !strings.HasPrefix(actualConten...")
 		observe.GlobalTrace("return: false")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	ruleDomain := strings.TrimPrefix(ruleContent, "domain:")
 	actualDomain := strings.TrimPrefix(actualContent, "domain:")
+	observe.GlobalTrace("return: strings.EqualFold(ruleDomain, actualDomain)")
 	observe.GlobalTrace("return: strings.EqualFold(ruleDomain, actualDomain)")
 	return strings.EqualFold(ruleDomain, actualDomain)
 }
@@ -144,10 +155,12 @@ func matchWildcard(pattern, input string) bool {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: false")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	if compiled.MatchString(input) {
 		observe.GlobalTrace("if: compiled.MatchString(input)")
+		observe.GlobalTrace("return: true")
 		observe.GlobalTrace("return: true")
 		return true
 	}
@@ -156,8 +169,10 @@ func matchWildcard(pattern, input string) bool {
 		observe.GlobalTrace("if: trailingOptional")
 		barePattern := strings.TrimSuffix(pattern, " *")
 		observe.GlobalTrace("return: input == barePattern")
+		observe.GlobalTrace("return: input == barePattern")
 		return input == barePattern
 	}
+	observe.GlobalTrace("return: false")
 	observe.GlobalTrace("return: false")
 	return false
 }

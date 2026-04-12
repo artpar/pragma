@@ -35,17 +35,20 @@ func (t *ListTool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"ListMcpResourcesTool\"")
+	observe.GlobalTrace("return: \"ListMcpResourcesTool\"")
 	return "ListMcpResourcesTool"
 }
 func (t *ListTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: listInputSchema")
+	observe.GlobalTrace("return: listInputSchema")
 	return listInputSchema
 }
 func (t *ListTool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
@@ -54,6 +57,7 @@ func (t *ListTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Lists available resources from configured MCP servers...\"")
+	observe.GlobalTrace("return: listMcpDescription")
 	return listMcpDescription
 }
 
@@ -70,6 +74,7 @@ func (t *ListTool) CheckPerm(ctx context.Context, _ json.RawMessage, checker per
 	observe.TraceCtx(ctx, "toolmcp", "ListTool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "toolmcp", "ListTool.CheckPerm", "exit")
 	observe.TraceCtx(ctx, "toolmcp", "ListTool.CheckPerm", "return: checker.Check(ctx, \"ListMcpResourcesTool\", \"\")")
+	observe.TraceCtx(ctx, "toolmcp", "ListTool.CheckPerm", "return: checker.Check(ctx, \"ListMcpResourcesTool\", \"\")")
 	return checker.Check(ctx, "ListMcpResourcesTool", "")
 }
 
@@ -82,6 +87,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 		if err := json.Unmarshal(input, &in); err != nil {
 			observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: err != nil")
 			observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+			observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 		}
 	}
@@ -89,6 +95,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 	clients := t.Manager.Clients()
 	if len(clients) == 0 {
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(clients) == 0")
+		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: \"No MCP servers connected.\"}, nil")
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: \"No MCP servers connected.\"}, nil")
 		return tool.InvokeResult{Content: "No MCP servers connected."}, nil
 	}
@@ -142,6 +149,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 			msg += "\nErrors: " + strings.Join(errors, "; ")
 		}
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: msg}, nil")
+		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: msg}, nil")
 		return tool.InvokeResult{Content: msg}, nil
 	}
 
@@ -151,6 +159,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(errors) > 0")
 		result += "\nErrors from some servers: " + strings.Join(errors, "; ")
 	}
+	observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	return tool.InvokeResult{Content: result}, nil
 }

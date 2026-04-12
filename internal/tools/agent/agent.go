@@ -84,12 +84,14 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Agent\"")
+	observe.GlobalTrace("return: \"Agent\"")
 	return "Agent"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Launch a new agent to handle complex, multi-step tasks autonomously...\"")
+	observe.GlobalTrace("return: agentDescription")
 	return agentDescription
 }
 
@@ -133,11 +135,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
@@ -145,6 +149,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "agent", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "agent", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "agent", "Tool.CheckPerm", "return: checker.Check(ctx, \"Agent\", \"\")")
 	observe.TraceCtx(ctx, "agent", "Tool.CheckPerm", "return: checker.Check(ctx, \"Agent\", \"\")")
 	return checker.Check(ctx, "Agent", "")
 }
@@ -156,15 +161,18 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Prompt == "" {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Prompt == \"\"")
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("prompt is required")
 	}
 	if in.Isolation != "" && in.Isolation != "worktree" {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Isolation != \"\" && in.Isolation != \"worktree\"")
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"isolation must be 'worktree' or empty, got %...")
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"isolation must be 'worktree' or empty, got %...")
 		return tool.InvokeResult{}, fmt.Errorf("isolation must be 'worktree' or empty, got %q", in.Isolation)
 	}
@@ -188,6 +196,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		tt.Status = task.TaskRunning
 		tt.AgentName = subject
 	}); err != nil {
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: err != nil")
 		t.Bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 			Severity:     "warn",
@@ -209,6 +218,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				tt.Status = task.TaskFailed
 				tt.Error = err.Error()
 			})
+			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create worktree: %w\", err)")
 			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create worktree: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("create worktree: %w", err)
 		}
@@ -233,8 +243,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if in.RunInBackground {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.RunInBackground")
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)")
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)")
 		return t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)
 	}
+	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, wtPath, wtBranch, wtHeadCommit)")
 	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, wtPath, wtBranch, wtHeadCommit)")
 	return t.runSync(ctx, tk.ID, engine, in, wtPath, wtBranch, wtHeadCommit)
 }
@@ -319,8 +331,10 @@ func (t *Tool) runSync(
 	if err != nil {
 		observe.TraceCtx(ctx, "agent", "Tool.runSync", "if: err != nil")
 		observe.TraceCtx(ctx, "agent", "Tool.runSync", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent completed but failed to marshal...")
+		observe.TraceCtx(ctx, "agent", "Tool.runSync", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent completed but failed to marshal...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent completed but failed to marshal result: %v", err)}, nil
 	}
+	observe.TraceCtx(ctx, "agent", "Tool.runSync", "return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.TraceCtx(ctx, "agent", "Tool.runSync", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
@@ -415,15 +429,20 @@ func (t *Tool) runBackground(
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent launched but failed to marshal ...")
+		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent launched but failed to marshal ...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent launched but failed to marshal result: %v", err)}, nil
 	}
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
 // updateTask applies a mutation to a task, emitting an error event on failure.
 func (t *Tool) updateTask(taskID string, fn func(*task.Task)) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if err := t.Tasks.Update(taskID, fn); err != nil {
+		observe.GlobalTrace("if: err != nil")
 		t.Bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 			Severity:     "warn",
@@ -447,6 +466,7 @@ func (t *Tool) createWorktree(ctx context.Context, workDir, taskID string) (stri
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "if: err != nil")
 		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: \"\", \"\", \"\", fmt.Errorf(\"create worktree parent dir: %w\", err)")
+		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: \"\", \"\", \"\", fmt.Errorf(\"create worktree parent dir: %w\", err)")
 		return "", "", "", fmt.Errorf("create worktree parent dir: %w", err)
 	}
 
@@ -457,6 +477,7 @@ func (t *Tool) createWorktree(ctx context.Context, workDir, taskID string) (stri
 	if err != nil {
 		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "if: err != nil")
 		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: \"\", \"\", \"\", fmt.Errorf(\"git worktree add: %s: %w\", strings.TrimSpace(string(o...")
+		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: \"\", \"\", \"\", fmt.Errorf(\"git worktree add: %s: %w\", strings.TrimSpace(string(o...")
 		return "", "", "", fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 
@@ -465,9 +486,11 @@ func (t *Tool) createWorktree(ctx context.Context, workDir, taskID string) (stri
 	if err != nil {
 		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "if: err != nil")
 		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: \"\", \"\", \"\", fmt.Errorf(\"git rev-parse HEAD: %w\", err)")
+		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: \"\", \"\", \"\", fmt.Errorf(\"git rev-parse HEAD: %w\", err)")
 		return "", "", "", fmt.Errorf("git rev-parse HEAD: %w", err)
 	}
 	headCommit := strings.TrimSpace(string(revOut))
+	observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: dir, branch, headCommit, nil")
 	observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "return: dir, branch, headCommit, nil")
 
 	return dir, branch, headCommit, nil
@@ -498,6 +521,7 @@ func excludeTool(names []string, exclude string) []string {
 	if names == nil {
 		observe.GlobalTrace("if: names == nil")
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	result := make([]string, 0, len(names))
@@ -508,6 +532,7 @@ func excludeTool(names []string, exclude string) []string {
 			result = append(result, n)
 		}
 	}
+	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	return result
 }

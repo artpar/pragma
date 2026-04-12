@@ -1,87 +1,63 @@
+// Package google implements provider.Provider for Google Gemini via google.golang.org/genai.
+// Uses the genai SDK directly (not any-llm-go wrapper) for full control over ThinkingConfig,
+// which is required to work around gemini-2.5-flash's empty response bug with many tools.
 package google
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/rand/v2"
-	"net/http"
+	"strings"
 	"time"
 
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
+	"google.golang.org/genai"
 )
 
-const defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
-
-// Provider implements provider.Provider for the Google Gemini API.
+// Provider implements provider.Provider for Google Gemini.
 type Provider struct {
-	apiKey      string
-	baseURL     string
-	client      *http.Client
-	bus         *observe.EventBus
-	maxRetries  int
-	idleTimeout time.Duration
+	client     *genai.Client
+	bus        *observe.EventBus
+	maxRetries int
 }
 
 // Option configures the Provider.
 type Option func(*Provider)
 
-// WithMaxRetries sets the maximum number of retry attempts. Default: 10.
-func WithMaxRetries(n int) Option {
-	return func(p *Provider) { p.maxRetries = n }
-}
+// WithBaseURL is a no-op placeholder for API compatibility.
+func WithBaseURL(_ string) Option { return func(_ *Provider) {} }
 
-// WithBaseURL overrides the API base URL (for testing).
-func WithBaseURL(url string) Option {
-	return func(p *Provider) { p.baseURL = url }
-}
-
-// WithIdleTimeout sets the stream idle timeout. Default: 90s.
-func WithIdleTimeout(d time.Duration) Option {
-	return func(p *Provider) { p.idleTimeout = d }
-}
-
-// New creates a Google Gemini provider with the given API key and options.
-func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
-	p := &Provider{
-		apiKey:      apiKey,
-		baseURL:     defaultBaseURL,
-		client:      &http.Client{Timeout: 5 * time.Minute},
-		bus:         bus,
-		maxRetries:  10,
-		idleTimeout: 90 * time.Second,
+// New creates a Google Gemini provider.
+func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error) {
+	client, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("google: create client: %w", err)
 	}
+	p := &Provider{client: client, bus: bus, maxRetries: 10}
 	for _, opt := range opts {
 		opt(p)
 	}
-	return p
+	return p, nil
 }
 
-// Name returns "google".
-func (p *Provider) Name() string {
-	return "google"
-}
+func (p *Provider) Name() string { return "google" }
 
-// SupportsFeature returns true for features Google Gemini supports.
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	switch feature {
-	case provider.FeatureToolUse,
-		provider.FeatureStreaming,
-		provider.FeatureImages,
-		provider.FeatureThinking:
+	case provider.FeatureToolUse, provider.FeatureStreaming,
+		provider.FeatureImages, provider.FeatureThinking:
 		return true
-	case provider.FeaturePrefixCaching:
-		return false
 	}
 	return false
 }
 
-// Pricing returns pricing info for a known model.
 func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 	if info, ok := LookupModel(modelID); ok {
 		return info.Pricing, true
@@ -89,7 +65,6 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 	return model.Pricing{}, false
 }
 
-// ContextWindow returns the context window size for a known model.
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	if info, ok := LookupModel(modelID); ok {
 		return info.MaxContext, true
@@ -97,83 +72,408 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	return 1_048_576, false
 }
 
-// Complete sends a non-streaming request and returns the complete response.
+// Complete sends a non-streaming request.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
-	mapper := NewIDMapper()
-	prePopulateMapper(params.Messages, mapper)
-	wireReq := buildWireRequest(params, mapper, p.bus)
-
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
-
-	p.bus.Emit(observe.APIRequestStarted{
-		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
-		Model:         params.Model,
-		MessageCount:  len(params.Messages),
-		ToolCount:     len(params.Tools),
-		TokenEstimate: estimateTokens(params),
-	})
-
+	p.emitStart(traceID, spanID, params)
 	start := time.Now()
-	var wireResp wireResponse
 
-	err := p.withRetry(ctx, traceID, spanID, func(_ int) error {
-		body, marshalErr := json.Marshal(wireReq)
-		if marshalErr != nil {
-			return fmt.Errorf("marshal request: %w", marshalErr)
-		}
+	contents, cfg := p.buildRequest(params)
 
-		url := fmt.Sprintf("%s/models/%s:generateContent", p.baseURL, params.Model)
-		req, reqErr := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-		if reqErr != nil {
-			return fmt.Errorf("create request: %w", reqErr)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-goog-api-key", p.apiKey)
-
-		resp, doErr := p.client.Do(req)
-		if doErr != nil {
-			return doErr
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
-			return &httpError{
-				statusCode: resp.StatusCode,
-				body:       respBody,
-				resp:       resp,
-				message:    fmt.Sprintf("google: HTTP %d: %s", resp.StatusCode, extractErrorMessage(respBody)),
-			}
-		}
-
-		return json.NewDecoder(resp.Body).Decode(&wireResp)
+	var resp *genai.GenerateContentResponse
+	err := p.withRetry(ctx, traceID, spanID, func() error {
+		var reqErr error
+		resp, reqErr = p.client.Models.GenerateContent(ctx, params.Model, contents, cfg)
+		return reqErr
 	})
-
 	if err != nil {
 		return model.Response{}, err
 	}
 
-	resp := responseFromWire(&wireResp, mapper, p.bus)
+	result := responseFromGenai(resp, params.Model)
 	p.bus.Emit(observe.APIRequestCompleted{
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
-		StopReason:  resp.StopReason,
-		Usage:       resp.Usage,
-		DurationMs:  time.Since(start).Milliseconds(),
-		Model:       resp.Model,
+		StopReason:  result.StopReason, Usage: result.Usage,
+		DurationMs: time.Since(start).Milliseconds(), Model: result.Model,
 	})
-	return resp, nil
+	return result, nil
 }
 
-// Stream starts a streaming request and returns a channel of StreamChunks.
+// Stream starts a streaming request.
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
-	mapper := NewIDMapper()
-	prePopulateMapper(params.Messages, mapper)
-	wireReq := buildWireRequest(params, mapper, p.bus)
-
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
+	p.emitStart(traceID, spanID, params)
 
+	contents, cfg := p.buildRequest(params)
+	ch := make(chan provider.StreamChunk, 32)
+
+	go func() {
+		defer close(ch)
+		start := time.Now()
+		var usage model.TokenUsage
+		seenToolCalls := make(map[string]bool)
+
+		for resp, err := range p.client.Models.GenerateContentStream(ctx, params.Model, contents, cfg) {
+			if err != nil {
+				ch <- provider.StreamChunk{Error: err}
+				p.bus.Emit(observe.APIRequestFailed{
+					EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
+					ErrorType:    "stream_error",
+					ErrorMessage: err.Error(),
+					Retryable:    false,
+				})
+				return
+			}
+
+			if resp.UsageMetadata != nil {
+				usage = usageFromGenai(resp.UsageMetadata)
+			}
+
+			for _, cand := range resp.Candidates {
+				if cand.Content == nil {
+					continue
+				}
+				for _, part := range cand.Content.Parts {
+					switch {
+					case part.Text != "" && part.Thought:
+						ch <- provider.StreamChunk{ThinkingDelta: part.Text}
+						if len(part.ThoughtSignature) > 0 {
+							ch <- provider.StreamChunk{ThinkingSignatureDelta: string(part.ThoughtSignature)}
+						}
+					case part.Text != "":
+						ch <- provider.StreamChunk{TextDelta: part.Text}
+					case part.FunctionCall != nil:
+						fc := part.FunctionCall
+						id := fc.ID
+						if id == "" {
+							id = model.NewUUID()
+						}
+						seenToolCalls[id] = true
+						ch <- provider.StreamChunk{
+							ToolCallStart: &model.ToolCallPart{ID: id, Name: fc.Name},
+						}
+						if fc.Args != nil {
+							argsJSON, _ := json.Marshal(fc.Args)
+							ch <- provider.StreamChunk{
+								ToolCallInputDelta: &provider.ToolCallDelta{
+									ToolCallID: id, JSONDelta: string(argsJSON),
+								},
+							}
+						}
+					}
+				}
+
+				if cand.FinishReason != "" {
+					stopReason := stopReasonFromGenai(cand.FinishReason)
+					if stopReason == model.StopEndTurn && len(seenToolCalls) > 0 {
+						stopReason = model.StopToolUse
+					}
+					ch <- provider.StreamChunk{
+						Done: &provider.StreamDone{
+							StopReason: stopReason, Usage: usage, Model: params.Model,
+						},
+					}
+					p.bus.Emit(observe.APIRequestCompleted{
+						EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
+						StopReason:  stopReason, Usage: usage,
+						DurationMs: time.Since(start).Milliseconds(), Model: params.Model,
+					})
+				}
+			}
+		}
+	}()
+
+	return ch, nil
+}
+
+// buildRequest converts gogent params to genai SDK types.
+func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content, *genai.GenerateContentConfig) {
+	cfg := &genai.GenerateContentConfig{}
+
+	// System prompt
+	if len(params.System.Blocks) > 0 {
+		var sb strings.Builder
+		for i, block := range params.System.Blocks {
+			if i > 0 {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString(block.Text)
+		}
+		cfg.SystemInstruction = &genai.Content{
+			Parts: []*genai.Part{{Text: sb.String()}},
+		}
+	}
+
+	// Max tokens
+	if params.MaxTokens > 0 {
+		cfg.MaxOutputTokens = int32(params.MaxTokens)
+	}
+
+	// Temperature
+	if params.Temperature != nil {
+		t := float32(*params.Temperature)
+		cfg.Temperature = &t
+	}
+
+	// Tools
+	if len(params.Tools) > 0 {
+		cfg.Tools = toolsToGenai(params.Tools)
+	}
+
+	// Thinking config
+	if params.Thinking != nil && params.Thinking.Enabled {
+		budget := int32(params.Thinking.BudgetTokens)
+		cfg.ThinkingConfig = &genai.ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  &budget,
+		}
+	} else if strings.Contains(params.Model, "flash") {
+		// Explicitly disable thinking for flash models to prevent
+		// gemini-2.5-flash's default thinking from causing empty responses
+		// with many tools (known Gemini bug).
+		zero := int32(0)
+		cfg.ThinkingConfig = &genai.ThinkingConfig{
+			ThinkingBudget: &zero,
+		}
+	}
+	// Pro models: don't set ThinkingConfig — they require thinking enabled.
+
+	// Convert messages
+	contents := messagesToGenai(params.Messages)
+
+	return contents, cfg
+}
+
+// messagesToGenai converts internal messages to genai Content.
+func messagesToGenai(msgs []model.Message) []*genai.Content {
+	// Build tool name map for tool results
+	toolNames := make(map[string]string)
+	for _, m := range msgs {
+		if m.Role == model.RoleAssistant {
+			for _, p := range m.Content {
+				if tc, ok := p.(model.ToolCallPart); ok {
+					toolNames[tc.ID] = tc.Name
+				}
+			}
+		}
+	}
+
+	var contents []*genai.Content
+	for _, m := range msgs {
+		role := "user"
+		if m.Role == model.RoleAssistant {
+			role = "model"
+		}
+
+		var parts []*genai.Part
+		var toolResponses []*genai.Part
+
+		for _, p := range m.Content {
+			switch part := p.(type) {
+			case model.TextPart:
+				if part.Text != "" {
+					parts = append(parts, &genai.Part{Text: part.Text})
+				}
+			case model.ToolCallPart:
+				var args map[string]any
+				if len(part.Input) > 0 {
+					_ = json.Unmarshal(part.Input, &args)
+				}
+				parts = append(parts, genai.NewPartFromFunctionCall(part.Name, args))
+			case model.ToolResultPart:
+				name := toolNames[part.ToolCallID]
+				if name == "" {
+					name = "function"
+				}
+				var resp map[string]any
+				if err := json.Unmarshal([]byte(part.Content), &resp); err != nil {
+					resp = map[string]any{"result": part.Content}
+				}
+				toolResponses = append(toolResponses, genai.NewPartFromFunctionResponse(name, resp))
+			case model.ThinkingPart:
+				tp := &genai.Part{Text: part.Text, Thought: true}
+				if part.Signature != "" {
+					tp.ThoughtSignature = []byte(part.Signature)
+				}
+				parts = append(parts, tp)
+			case model.ImagePart:
+				parts = append(parts, &genai.Part{
+					InlineData: &genai.Blob{
+						MIMEType: part.MimeType,
+						Data:     part.Data,
+					},
+				})
+			}
+		}
+
+		// Tool responses go in a user-role content
+		if len(toolResponses) > 0 {
+			contents = append(contents, &genai.Content{
+				Role: "user", Parts: toolResponses,
+			})
+		}
+
+		if len(parts) > 0 {
+			contents = append(contents, &genai.Content{
+				Role: role, Parts: parts,
+			})
+		}
+	}
+	return contents
+}
+
+// toolsToGenai converts gogent tool definitions to genai tools.
+func toolsToGenai(tools []model.ToolDef) []*genai.Tool {
+	var decls []*genai.FunctionDeclaration
+	for _, t := range tools {
+		var schema *genai.Schema
+		if len(t.InputSchema) > 0 {
+			sanitized := sanitizeSchema(t.InputSchema)
+			schema = &genai.Schema{}
+			_ = json.Unmarshal(sanitized, schema)
+		}
+		decls = append(decls, &genai.FunctionDeclaration{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  schema,
+		})
+	}
+	return []*genai.Tool{{FunctionDeclarations: decls}}
+}
+
+// sanitizeSchema cleans a JSON Schema for Gemini compatibility.
+// Gemini rejects fields like "default", "additionalProperties", "$schema",
+// empty enum strings, etc.
+func sanitizeSchema(raw json.RawMessage) json.RawMessage {
+	var obj map[string]any
+	if json.Unmarshal(raw, &obj) != nil {
+		return raw
+	}
+	sanitizeObj(obj)
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+var allowedFields = map[string]bool{
+	"type": true, "nullable": true, "required": true,
+	"format": true, "description": true, "properties": true,
+	"items": true, "enum": true, "anyOf": true,
+	"propertyOrdering": true,
+}
+
+func sanitizeObj(obj map[string]any) {
+	for key := range obj {
+		if !allowedFields[key] {
+			delete(obj, key)
+		}
+	}
+	if enum, ok := obj["enum"].([]any); ok {
+		var cleaned []any
+		for _, v := range enum {
+			if s, isStr := v.(string); isStr && s == "" {
+				continue
+			}
+			cleaned = append(cleaned, v)
+		}
+		if len(cleaned) == 0 {
+			delete(obj, "enum")
+		} else {
+			obj["enum"] = cleaned
+		}
+	}
+	if props, ok := obj["properties"].(map[string]any); ok {
+		for _, v := range props {
+			if propObj, isMap := v.(map[string]any); isMap {
+				sanitizeObj(propObj)
+			}
+		}
+	}
+	if items, ok := obj["items"].(map[string]any); ok {
+		sanitizeObj(items)
+	}
+	if anyOf, ok := obj["anyOf"].([]any); ok {
+		for _, v := range anyOf {
+			if variant, isMap := v.(map[string]any); isMap {
+				sanitizeObj(variant)
+			}
+		}
+	}
+}
+
+// responseFromGenai converts a genai response to gogent model.Response.
+func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) model.Response {
+	result := model.Response{Model: modelName}
+	if resp.UsageMetadata != nil {
+		result.Usage = usageFromGenai(resp.UsageMetadata)
+	}
+	if len(resp.Candidates) == 0 {
+		result.StopReason = model.StopError
+		return result
+	}
+	cand := resp.Candidates[0]
+	result.StopReason = stopReasonFromGenai(cand.FinishReason)
+
+	if cand.Content != nil {
+		for _, part := range cand.Content.Parts {
+			switch {
+			case part.Text != "" && part.Thought:
+				tp := model.ThinkingPart{Text: part.Text}
+				if len(part.ThoughtSignature) > 0 {
+					tp.Signature = string(part.ThoughtSignature)
+				}
+				result.Content = append(result.Content, tp)
+			case part.Text != "":
+				result.Content = append(result.Content, model.TextPart{Text: part.Text})
+			case part.FunctionCall != nil:
+				fc := part.FunctionCall
+				id := fc.ID
+				if id == "" {
+					id = model.NewUUID()
+				}
+				argsJSON, _ := json.Marshal(fc.Args)
+				result.Content = append(result.Content, model.ToolCallPart{
+					ID: id, Name: fc.Name, Input: argsJSON,
+				})
+			}
+		}
+	}
+
+	// Override stop reason if tool calls present
+	if result.StopReason == model.StopEndTurn {
+		for _, p := range result.Content {
+			if _, ok := p.(model.ToolCallPart); ok {
+				result.StopReason = model.StopToolUse
+				break
+			}
+		}
+	}
+	return result
+}
+
+func usageFromGenai(u *genai.GenerateContentResponseUsageMetadata) model.TokenUsage {
+	return model.TokenUsage{
+		InputTokens:  int(u.PromptTokenCount),
+		OutputTokens: int(u.CandidatesTokenCount) + int(u.ThoughtsTokenCount),
+	}
+}
+
+func stopReasonFromGenai(fr genai.FinishReason) model.StopReason {
+	switch fr {
+	case genai.FinishReasonStop:
+		return model.StopEndTurn
+	case genai.FinishReasonMaxTokens:
+		return model.StopMaxTokens
+	default:
+		return model.StopError
+	}
+}
+
+func (p *Provider) emitStart(traceID, spanID string, params provider.RequestParams) {
 	p.bus.Emit(observe.APIRequestStarted{
 		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:         params.Model,
@@ -181,116 +481,8 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		ToolCount:     len(params.Tools),
 		TokenEstimate: estimateTokens(params),
 	})
-
-	var httpResp *http.Response
-	err := p.withRetry(ctx, traceID, spanID, func(_ int) error {
-		body, marshalErr := json.Marshal(wireReq)
-		if marshalErr != nil {
-			return fmt.Errorf("marshal request: %w", marshalErr)
-		}
-
-		url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", p.baseURL, params.Model)
-		req, reqErr := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-		if reqErr != nil {
-			return fmt.Errorf("create request: %w", reqErr)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-goog-api-key", p.apiKey)
-
-		resp, doErr := p.client.Do(req)
-		if doErr != nil {
-			return doErr
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return &httpError{
-				statusCode: resp.StatusCode,
-				body:       respBody,
-				resp:       resp,
-				message:    fmt.Sprintf("google: HTTP %d: %s", resp.StatusCode, extractErrorMessage(respBody)),
-			}
-		}
-
-		httpResp = resp
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	ch := p.startStream(ctx, httpResp, mapper, p.bus, traceID, spanID)
-	return ch, nil
 }
 
-// withRetry executes fn with exponential backoff retry for retryable errors.
-func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func(attempt int) error) error {
-	var consecutiveOverloaded int
-	for attempt := range p.maxRetries + 1 {
-		err := fn(attempt)
-		if err == nil {
-			return nil
-		}
-
-		classified := classifyError(err)
-
-		if classified.errorType == "overloaded" {
-			consecutiveOverloaded++
-			if consecutiveOverloaded >= 3 {
-				classified.retryable = false
-			}
-		} else {
-			consecutiveOverloaded = 0
-		}
-
-		if !classified.retryable || attempt >= p.maxRetries {
-			p.bus.Emit(observe.APIRequestFailed{
-				EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-				ErrorType:    classified.errorType,
-				ErrorMessage: classified.wrapped.Error(),
-				Retryable:    false,
-				Attempt:      attempt + 1,
-			})
-			return classified.wrapped
-		}
-
-		delay := classified.retryAfter
-		if delay == 0 {
-			baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
-			if baseDelay > 32*time.Second {
-				baseDelay = 32 * time.Second
-			}
-			jitter := time.Duration(rand.Float64() * 0.25 * float64(baseDelay))
-			delay = baseDelay + jitter
-		}
-
-		p.bus.Emit(observe.APIRetryScheduled{
-			EventHeader: observe.NewEventHeader("APIRetryScheduled", traceID, spanID, ""),
-			Attempt:     attempt + 1,
-			DelayMs:     delay.Milliseconds(),
-			Reason:      classified.errorType,
-		})
-
-		p.bus.Emit(observe.APIRequestFailed{
-			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
-			ErrorType:    classified.errorType,
-			ErrorMessage: err.Error(),
-			Retryable:    true,
-			Attempt:      attempt + 1,
-		})
-
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return fmt.Errorf("exhausted %d retries", p.maxRetries)
-}
-
-// estimateTokens provides a rough token estimate for observability events.
 func estimateTokens(params provider.RequestParams) int {
 	total := 0
 	for _, block := range params.System.Blocks {
@@ -305,14 +497,46 @@ func estimateTokens(params provider.RequestParams) int {
 				total += len(p.Input) / 4
 			case model.ToolResultPart:
 				total += len(p.Content) / 4
-			case model.ThinkingPart:
-				total += len(p.Text) / 4
-			case model.ImagePart:
-				total += 1000
-			case model.DocumentPart:
-				total += len(p.Data) / 4
 			}
 		}
 	}
 	return total
+}
+
+func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn func() error) error {
+	for attempt := range p.maxRetries + 1 {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if attempt >= p.maxRetries || !isRetryable(err) {
+			p.bus.Emit(observe.APIRequestFailed{
+				EventHeader: observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
+				ErrorType: "request_failed", ErrorMessage: err.Error(),
+				Retryable: false, Attempt: attempt + 1,
+			})
+			return err
+		}
+		baseDelay := time.Duration(500*math.Pow(2, float64(attempt))) * time.Millisecond
+		if baseDelay > 32*time.Second {
+			baseDelay = 32 * time.Second
+		}
+		delay := baseDelay + time.Duration(rand.Float64()*0.25*float64(baseDelay))
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return fmt.Errorf("exhausted %d retries", p.maxRetries)
+}
+
+func isRetryable(err error) bool {
+	msg := err.Error()
+	for _, s := range []string{"429", "500", "502", "503", "504", "RESOURCE_EXHAUSTED"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }

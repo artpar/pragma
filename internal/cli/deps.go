@@ -61,6 +61,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"get working directory: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"get working directory: %w\", err)")
 		return nil, fmt.Errorf("get working directory: %w", err)
 	}
 
@@ -68,17 +69,18 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"load config: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"load config: %w\", err)")
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 
 	ApplyFlagOverrides(cmd, &cfg)
-	if cfg.Model == "" {
-		observe.GlobalTrace("if: cfg.Model == \"\"")
-		cfg.Model = "claude-sonnet-4-20250514"
-	}
 	if cfg.Provider == "" {
 		observe.GlobalTrace("if: cfg.Provider == \"\"")
 		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" {
+		observe.GlobalTrace("if: cfg.Model == \"\"")
+		cfg.Model = DefaultModelFor(cfg.Provider)
 	}
 	if cfg.MaxTokens == 0 {
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
@@ -115,6 +117,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			observe.GlobalTrace("case: \"google\"")
 			envVar = "GOOGLE_API_KEY"
 		}
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"API key required: set --api-key or %s environment variable\",...")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"API key required: set --api-key or %s environment variable\",...")
 		return nil, fmt.Errorf("API key required: set --api-key or %s environment variable", envVar)
 	}
@@ -165,13 +168,17 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		if recErr != nil {
 			observe.GlobalTrace("if: recErr != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"create recorder: %w\", recErr)")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"create recorder: %w\", recErr)")
 			return nil, fmt.Errorf("create recorder: %w", recErr)
 		}
 		bus.Subscribe(recorder)
 		cleanupFns = append(cleanupFns, func() { recorder.Close() })
 	}
 
-	prov := CreateProvider(cfg, bus)
+	prov, err := CreateProvider(cfg, bus)
+	if err != nil {
+		return nil, err
+	}
 
 	permEntries, permMode, _ := config.LoadPermissions(cwd)
 	rules := permission.RulesFromConfigEntries(permEntries)
@@ -182,8 +189,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	}
 	checker := permission.NewRuleChecker(rules, mode, cwd, bus)
 
-	// Hook manager — loads from all 3 settings scopes
-	// sessionID is set below after the conversation is created/resumed
 	hookMgr := hook.NewManager(cwd, "", bus)
 
 	// System prompt
@@ -205,17 +210,21 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	if resumeID != "" {
 		observe.GlobalTrace("if: resumeID != \"\"")
 		if !session.IsValidSessionID(resumeID) {
+			observe.GlobalTrace("if: !session.IsValidSessionID(resumeID)")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid session ID %q: must contain only alphanumeric charac...")
 			return nil, fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", resumeID)
 		}
 		sessionStore, storeErr := session.NewStore()
 		if storeErr != nil {
 			observe.GlobalTrace("if: storeErr != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"open session store: %w\", storeErr)")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"open session store: %w\", storeErr)")
 			return nil, fmt.Errorf("open session store: %w", storeErr)
 		}
 		sess, loadErr := sessionStore.Load(resumeID)
 		if loadErr != nil {
 			observe.GlobalTrace("if: loadErr != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"resume session: %w\", loadErr)")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"resume session: %w\", loadErr)")
 			return nil, fmt.Errorf("resume session: %w", loadErr)
 		}
@@ -247,7 +256,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Temperature:  cfg.Temperature,
 	})
 
-	// Now that conversation ID is known, set it on the hook manager
 	hookMgr.SetSessionID(conv.ID)
 
 	taskReg := task.NewRegistry(bus)
@@ -321,6 +329,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			fn()
 		}
 	}
+	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tProv:\t\tprov,\n\tChecker:\tchecker,\n\tStore:\t\tstor...")
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tProv:\t\tprov,\n\tChecker:\tchecker,\n\tStore:\t\tstor...")
 
 	return &Deps{
@@ -397,13 +406,13 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 }
 
 // CreateProvider creates a provider from config.
-func CreateProvider(cfg config.Config, bus *observe.EventBus) provider.Provider {
+func CreateProvider(cfg config.Config, bus *observe.EventBus) (provider.Provider, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch cfg.Provider {
 	case "anthropic":
 		observe.GlobalTrace("case: \"anthropic\"")
-		return anthropic.New(cfg.APIKey, bus)
+		return anthropic.New(cfg.APIKey, bus), nil
 	case "groq":
 		observe.GlobalTrace("case: \"groq\"")
 		return groqprov.New(cfg.APIKey, bus)
@@ -423,8 +432,27 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) provider.Provider 
 		return googleprov.New(cfg.APIKey, bus, opts...)
 	default:
 		observe.GlobalTrace("default")
-		fmt.Fprintf(os.Stderr, "unknown provider %q, falling back to anthropic\n", cfg.Provider)
-		return anthropic.New(cfg.APIKey, bus)
+		return nil, fmt.Errorf("unknown provider %q", cfg.Provider)
+	}
+}
+
+// DefaultModelFor returns the default primary model for a given provider.
+func DefaultModelFor(providerName string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	switch providerName {
+	case "groq":
+		observe.GlobalTrace("case: \"groq\"")
+		return "llama-3.3-70b-versatile"
+	case "openai":
+		observe.GlobalTrace("case: \"openai\"")
+		return "gpt-4o"
+	case "google":
+		observe.GlobalTrace("case: \"google\"")
+		return "gemini-2.5-flash"
+	default:
+		observe.GlobalTrace("default")
+		return "claude-sonnet-4-20250514"
 	}
 }
 

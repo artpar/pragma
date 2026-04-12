@@ -29,6 +29,7 @@ func Parse(expr string) (*CronExpr, error) {
 	if len(fields) != 5 {
 		observe.GlobalTrace("if: len(fields) != 5")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron: expected 5 fields, got %d in %q\", len(fields), expr)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron: expected 5 fields, got %d in %q\", len(fields), expr)")
 		return nil, fmt.Errorf("cron: expected 5 fields, got %d in %q", len(fields), expr)
 	}
 
@@ -36,10 +37,12 @@ func Parse(expr string) (*CronExpr, error) {
 	if err := parseField(fields[0], c.minute[:], 0, 59); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron minute: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron minute: %w\", err)")
 		return nil, fmt.Errorf("cron minute: %w", err)
 	}
 	if err := parseField(fields[1], c.hour[:], 0, 23); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron hour: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron hour: %w\", err)")
 		return nil, fmt.Errorf("cron hour: %w", err)
 	}
@@ -47,10 +50,12 @@ func Parse(expr string) (*CronExpr, error) {
 	if err := parseField(fields[2], c.dom[:], 1, 31); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron day-of-month: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron day-of-month: %w\", err)")
 		return nil, fmt.Errorf("cron day-of-month: %w", err)
 	}
 	if err := parseField(fields[3], c.month[:], 1, 12); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron month: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron month: %w\", err)")
 		return nil, fmt.Errorf("cron month: %w", err)
 	}
@@ -58,8 +63,10 @@ func Parse(expr string) (*CronExpr, error) {
 	if err := parseField(fields[4], c.dow[:], 0, 6); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron day-of-week: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron day-of-week: %w\", err)")
 		return nil, fmt.Errorf("cron day-of-week: %w", err)
 	}
+	observe.GlobalTrace("return: &c, nil")
 	observe.GlobalTrace("return: &c, nil")
 	return &c, nil
 }
@@ -74,9 +81,11 @@ func parseField(field string, bits []bool, lo, hi int) error {
 		if err := parseFieldPart(part, bits, lo, hi); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: err")
+			observe.GlobalTrace("return: err")
 			return err
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -120,15 +129,18 @@ func parseFieldPart(part string, bits []bool, lo, hi int) error {
 	if rangeStart < lo || rangeStart > hi {
 		observe.GlobalTrace("if: rangeStart < lo || rangeStart > hi")
 		observe.GlobalTrace("return: fmt.Errorf(\"value %d out of range [%d, %d]\", rangeStart, lo, hi)")
+		observe.GlobalTrace("return: fmt.Errorf(\"value %d out of range [%d, %d]\", rangeStart, lo, hi)")
 		return fmt.Errorf("value %d out of range [%d, %d]", rangeStart, lo, hi)
 	}
 	if rangeEnd < lo || rangeEnd > hi {
 		observe.GlobalTrace("if: rangeEnd < lo || rangeEnd > hi")
 		observe.GlobalTrace("return: fmt.Errorf(\"value %d out of range [%d, %d]\", rangeEnd, lo, hi)")
+		observe.GlobalTrace("return: fmt.Errorf(\"value %d out of range [%d, %d]\", rangeEnd, lo, hi)")
 		return fmt.Errorf("value %d out of range [%d, %d]", rangeEnd, lo, hi)
 	}
 	if rangeStart > rangeEnd {
 		observe.GlobalTrace("if: rangeStart > rangeEnd")
+		observe.GlobalTrace("return: fmt.Errorf(\"range start %d > end %d\", rangeStart, rangeEnd)")
 		observe.GlobalTrace("return: fmt.Errorf(\"range start %d > end %d\", rangeStart, rangeEnd)")
 		return fmt.Errorf("range start %d > end %d", rangeStart, rangeEnd)
 	}
@@ -141,10 +153,12 @@ func parseFieldPart(part string, bits []bool, lo, hi int) error {
 		if err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: fmt.Errorf(\"invalid step %q: %w\", stepStr, err)")
+			observe.GlobalTrace("return: fmt.Errorf(\"invalid step %q: %w\", stepStr, err)")
 			return fmt.Errorf("invalid step %q: %w", stepStr, err)
 		}
 		if step < 1 {
 			observe.GlobalTrace("if: step < 1")
+			observe.GlobalTrace("return: fmt.Errorf(\"step must be >= 1, got %d\", step)")
 			observe.GlobalTrace("return: fmt.Errorf(\"step must be >= 1, got %d\", step)")
 			return fmt.Errorf("step must be >= 1, got %d", step)
 		}
@@ -154,6 +168,7 @@ func parseFieldPart(part string, bits []bool, lo, hi int) error {
 		observe.GlobalTrace("for: i <= rangeEnd")
 		bits[i] = true
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -203,8 +218,10 @@ func (e *CronExpr) NextAfter(after time.Time) time.Time {
 			continue
 		}
 		observe.GlobalTrace("return: t")
+		observe.GlobalTrace("return: t")
 		return t
 	}
+	observe.GlobalTrace("return: time.Time{}")
 	observe.GlobalTrace("return: time.Time{}")
 
 	return time.Time{}
@@ -218,6 +235,7 @@ func ToHuman(expr string) string {
 	if len(fields) != 5 {
 		observe.GlobalTrace("if: len(fields) != 5")
 		observe.GlobalTrace("return: expr")
+		observe.GlobalTrace("return: expr")
 		return expr
 	}
 
@@ -226,22 +244,26 @@ func ToHuman(expr string) string {
 	if min == "*" && hr == "*" && dom == "*" && mon == "*" && dow == "*" {
 		observe.GlobalTrace("if: min == \"*\" && hr == \"*\" && dom == \"*\" && mon == \"*\" && dow == \"*\"")
 		observe.GlobalTrace("return: \"every minute\"")
+		observe.GlobalTrace("return: \"every minute\"")
 		return "every minute"
 	}
 	if strings.HasPrefix(min, "*/") && hr == "*" && dom == "*" && mon == "*" && dow == "*" {
 		observe.GlobalTrace("if: strings.HasPrefix(min, \"*/\") && hr == \"*\" && dom == \"*\" && mon == \"*\" && dow ...")
 		n := min[2:]
 		observe.GlobalTrace("return: \"every \" + n + \" minutes\"")
+		observe.GlobalTrace("return: \"every \" + n + \" minutes\"")
 		return "every " + n + " minutes"
 	}
 	if hr == "*" && dom == "*" && mon == "*" && dow == "*" {
 		observe.GlobalTrace("if: hr == \"*\" && dom == \"*\" && mon == \"*\" && dow == \"*\"")
+		observe.GlobalTrace("return: \"at minute \" + min + \" of every hour\"")
 		observe.GlobalTrace("return: \"at minute \" + min + \" of every hour\"")
 		return "at minute " + min + " of every hour"
 	}
 	if strings.HasPrefix(hr, "*/") && dom == "*" && mon == "*" && dow == "*" {
 		observe.GlobalTrace("if: strings.HasPrefix(hr, \"*/\") && dom == \"*\" && mon == \"*\" && dow == \"*\"")
 		n := hr[2:]
+		observe.GlobalTrace("return: \"every \" + n + \" hours at minute \" + min")
 		observe.GlobalTrace("return: \"every \" + n + \" hours at minute \" + min")
 		return "every " + n + " hours at minute " + min
 	}
@@ -274,6 +296,7 @@ func ToHuman(expr string) string {
 		timePart = "at minute " + min
 	}
 	observe.GlobalTrace("return: timePart + dayPart + monPart")
+	observe.GlobalTrace("return: timePart + dayPart + monPart")
 
 	return timePart + dayPart + monPart
 }
@@ -285,11 +308,13 @@ func formatTime(hr, min string) string {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: hr + \":\" + min")
+		observe.GlobalTrace("return: hr + \":\" + min")
 		return hr + ":" + min
 	}
 	m, err := strconv.Atoi(min)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: hr + \":\" + min")
 		observe.GlobalTrace("return: hr + \":\" + min")
 		return hr + ":" + min
 	}
@@ -307,6 +332,7 @@ func formatTime(hr, min string) string {
 		h = 12
 	}
 	observe.GlobalTrace("return: fmt.Sprintf(\"%d:%02d %s\", h, m, suffix)")
+	observe.GlobalTrace("return: fmt.Sprintf(\"%d:%02d %s\", h, m, suffix)")
 	return fmt.Sprintf("%d:%02d %s", h, m, suffix)
 }
 
@@ -321,8 +347,10 @@ func dowName(field string) string {
 	if n, ok := names[field]; ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: n")
+		observe.GlobalTrace("return: n")
 		return n
 	}
+	observe.GlobalTrace("return: \"day-of-week \" + field")
 	observe.GlobalTrace("return: \"day-of-week \" + field")
 	return "day-of-week " + field
 }
@@ -338,8 +366,10 @@ func monName(field string) string {
 	if n, ok := names[field]; ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: n")
+		observe.GlobalTrace("return: n")
 		return n
 	}
+	observe.GlobalTrace("return: \"month \" + field")
 	observe.GlobalTrace("return: \"month \" + field")
 	return "month " + field
 }

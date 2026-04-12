@@ -51,12 +51,14 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Glob\"")
+	observe.GlobalTrace("return: \"Glob\"")
 	return "Glob"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Fast file pattern matching tool that works with any codebase size...\"")
+	observe.GlobalTrace("return: globDescription")
 	return globDescription
 }
 
@@ -71,11 +73,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
@@ -90,14 +94,17 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if err := json.Unmarshal(input, &in); err != nil || in.Pattern == "" {
 		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "if: err != nil || in.Pattern == \"\"")
 		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", \"\")")
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", \"\")")
 		return checker.Check(ctx, "Glob", "")
 	}
 
 	if in.Path != "" && filepath.IsAbs(in.Path) {
 		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "if: in.Path != \"\" && filepath.IsAbs(in.Path)")
 		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Path)")
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Path)")
 		return checker.Check(ctx, "Glob", in.Path)
 	}
+	observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Pattern)")
 	observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Pattern)")
 	return checker.Check(ctx, "Glob", in.Pattern)
 }
@@ -109,10 +116,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Pattern == "" {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: in.Pattern == \"\"")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"pattern is required\")")
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"pattern is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("pattern is required")
 	}
@@ -133,10 +142,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err != nil {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"directory not found: %s\", baseDir)")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"directory not found: %s\", baseDir)")
 		return tool.InvokeResult{}, fmt.Errorf("directory not found: %s", baseDir)
 	}
 	if !info.IsDir() {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: !info.IsDir()")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"not a directory: %s\", baseDir)")
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"not a directory: %s\", baseDir)")
 		return tool.InvokeResult{}, fmt.Errorf("not a directory: %s", baseDir)
 	}
@@ -182,6 +193,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err != nil && !errors.Is(err, errMaxResults) && ctx.Err() == nil {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: err != nil && !errors.Is(err, errMaxResults) && ctx.Err() == nil")
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"glob error: %w\", err)")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"glob error: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("glob error: %w", err)
 	}
 
@@ -194,6 +206,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if len(matches) == 0 {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: len(matches) == 0")
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: \"No files found\"}, nil")
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: \"No files found\"}, nil")
 		return tool.InvokeResult{Content: "No files found"}, nil
 	}
@@ -209,6 +222,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: truncated")
 		sb.WriteString("(Results are truncated. Consider using a more specific path or pattern.)\n")
 	}
+	observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: strings.TrimRight(sb.String(), \"\\n\")}, nil")
 	observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: strings.TrimRight(sb.String(), \"\\n\")}, nil")
 
 	return tool.InvokeResult{Content: strings.TrimRight(sb.String(), "\n")}, nil

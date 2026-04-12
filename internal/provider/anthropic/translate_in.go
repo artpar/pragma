@@ -40,6 +40,7 @@ func responseFromWire(msg *sdk.Message, mapper *IDMapper, bus *observe.EventBus)
 		})
 	}
 	observe.GlobalTrace("return: model.Response{\n\tID:\t\tmsg.ID,\n\tModel:\t\tstring(msg.Model),\n\tContent:\tparts,\n\tS...")
+	observe.GlobalTrace("return: model.Response{\n\tID:\t\tmsg.ID,\n\tModel:\t\tstring(msg.Model),\n\tContent:\tparts,\n\tS...")
 	return model.Response{
 		ID:         msg.ID,
 		Model:      string(msg.Model),
@@ -130,6 +131,7 @@ func stopReasonFromWire(sr sdk.StopReason) model.StopReason {
 func usageFromWire(u sdk.Usage) model.TokenUsage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: model.TokenUsage{\n\tInputTokens:\t\t\tint(u.InputTokens),\n\tOutputTokens:\t\t\tint(u....")
 	observe.GlobalTrace("return: model.TokenUsage{\n\tInputTokens:\t\t\tint(u.InputTokens),\n\tOutputTokens:\t\t\tint(u....")
 	return model.TokenUsage{
 		InputTokens:              int(u.InputTokens),

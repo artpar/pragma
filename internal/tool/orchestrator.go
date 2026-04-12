@@ -19,8 +19,8 @@ type Orchestrator struct {
 	checker   permission.Checker
 	prompter  permission.Prompter
 	bus       *observe.EventBus
-	hookMgr   *hook.Manager   // nil if no hooks configured
-	persister *PermPersister  // nil to skip permission persistence
+	hookMgr   *hook.Manager  // nil if no hooks configured
+	persister *PermPersister // nil to skip permission persistence
 }
 
 // PermPersister persists permission rules to settings.local.json.
@@ -35,6 +35,7 @@ func NewOrchestrator(registry *Registry, checker permission.Checker, prompter pe
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Orchestrator{...}")
+	observe.GlobalTrace("return: &Orchestrator{\n\tregistry:\tregistry,\n\tchecker:\tchecker,\n\tprompter:\tprompter,\n\t...")
 	return &Orchestrator{
 		registry: registry,
 		checker:  checker,
@@ -45,11 +46,15 @@ func NewOrchestrator(registry *Registry, checker permission.Checker, prompter pe
 
 // SetHookManager sets the hook manager for PreToolUse/PostToolUse hooks.
 func (o *Orchestrator) SetHookManager(mgr *hook.Manager) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	o.hookMgr = mgr
 }
 
 // SetPermPersister sets the permission persistence handler.
 func (o *Orchestrator) SetPermPersister(p *PermPersister) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	o.persister = p
 }
 
@@ -173,6 +178,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
+	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
 	return out
 }
 
@@ -189,19 +195,21 @@ func (o *Orchestrator) executeSingle(
 
 	desc, _ := o.registry.Get(call.Name)
 
-	// PreToolUse hook — fires before permission check, can block
 	if o.hookMgr != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.hookMgr != nil")
 		hookResult := o.hookMgr.Execute(ctx, hook.PreToolUse, hook.HookInput{
 			ToolName:  call.Name,
 			ToolInput: call.Input,
 		})
 		if hookResult.Blocked {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: hookResult.Blocked")
 			o.bus.Emit(observe.PermissionDenialEnforced{
 				EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
 				ToolCallID:  call.ID,
 				ToolName:    call.Name,
 				WasExecuted: false,
 			})
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
 					ToolCallID: call.ID,
@@ -243,6 +251,7 @@ func (o *Orchestrator) executeSingle(
 			WasExecuted: false,
 		})
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
 				ToolCallID: call.ID,
@@ -260,11 +269,13 @@ func (o *Orchestrator) executeSingle(
 
 		if sessionRule != nil {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: sessionRule != nil")
-			// Always add to session rules so current session works regardless of persist outcome
+
 			o.checker.AddSessionRule(*sessionRule)
 
 			if o.persister != nil {
+				observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.persister != nil")
 				if err := o.persister.Persist(o.persister.WorkDir, *sessionRule); err != nil {
+					observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: err != nil")
 					o.bus.Emit(observe.ErrorOccurred{
 						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
 						Severity:     "warn",
@@ -273,6 +284,7 @@ func (o *Orchestrator) executeSingle(
 						ErrorMessage: err.Error(),
 					})
 				} else {
+					observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "else: err != nil")
 					o.bus.Emit(observe.PermissionPersisted{
 						EventHeader: observe.NewEventHeader("PermissionPersisted", traceID, spanID, parentSpan),
 						ToolName:    sessionRule.ToolName,
@@ -300,6 +312,7 @@ func (o *Orchestrator) executeSingle(
 				WasExecuted: false,
 			})
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
 					ToolCallID: call.ID,
@@ -312,6 +325,7 @@ func (o *Orchestrator) executeSingle(
 
 	if ctx.Err() != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: ctx.Err() != nil")
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
@@ -343,6 +357,7 @@ func (o *Orchestrator) executeSingle(
 			ErrorMessage: err.Error(),
 		})
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
 				ToolCallID: call.ID,
@@ -361,14 +376,15 @@ func (o *Orchestrator) executeSingle(
 		IsError:         false,
 	})
 
-	// PostToolUse hook — fire-and-forget, cannot block
 	if o.hookMgr != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.hookMgr != nil")
 		o.hookMgr.Execute(ctx, hook.PostToolUse, hook.HookInput{
 			ToolName:  call.Name,
 			ToolInput: call.Input,
 			Response:  invokeResult.Content,
 		})
 	}
+	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 
 	return singleResult{
 		part: model.ToolResultPart{

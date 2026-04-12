@@ -39,12 +39,14 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"TaskCreate\"")
+	observe.GlobalTrace("return: \"TaskCreate\"")
 	return "TaskCreate"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Create a new task to track work progress. Use proactively...\"")
+	observe.GlobalTrace("return: taskCreateDescription")
 	return taskCreateDescription
 }
 
@@ -68,11 +70,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: true}
 }
@@ -80,6 +84,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "taskcreate", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "taskcreate", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "taskcreate", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskCreate\", \"\")")
 	observe.TraceCtx(ctx, "taskcreate", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskCreate\", \"\")")
 	return checker.Check(ctx, "TaskCreate", "")
 }
@@ -91,15 +96,18 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Subject == "" {
 		observe.GlobalTrace("if: in.Subject == \"\"")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"subject is required\")")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"subject is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("subject is required")
 	}
 
 	created := t.Tasks.Create(in.Subject, in.Description)
+	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Task %s created: %s\", created.ID, c...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Task %s created: %s\", created.ID, c...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("Task %s created: %s", created.ID, created.Subject),

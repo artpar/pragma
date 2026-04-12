@@ -52,12 +52,14 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Bash\"")
+	observe.GlobalTrace("return: \"Bash\"")
 	return "Bash"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Executes a given bash command and returns its output...\"")
+	observe.GlobalTrace("return: bashDescription")
 	return bashDescription
 }
 
@@ -179,11 +181,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true}
 }
@@ -197,8 +201,10 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if err := json.Unmarshal(input, &in); err != nil || in.Command == "" {
 		observe.TraceCtx(ctx, "bash", "Tool.CheckPerm", "if: err != nil || in.Command == \"\"")
 		observe.TraceCtx(ctx, "bash", "Tool.CheckPerm", "return: checker.Check(ctx, \"Bash\", \"\")")
+		observe.TraceCtx(ctx, "bash", "Tool.CheckPerm", "return: checker.Check(ctx, \"Bash\", \"\")")
 		return checker.Check(ctx, "Bash", "")
 	}
+	observe.TraceCtx(ctx, "bash", "Tool.CheckPerm", "return: checker.Check(ctx, \"Bash\", in.Command)")
 	observe.TraceCtx(ctx, "bash", "Tool.CheckPerm", "return: checker.Check(ctx, \"Bash\", in.Command)")
 	return checker.Check(ctx, "Bash", in.Command)
 }
@@ -210,10 +216,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Command == "" {
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: in.Command == \"\"")
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"command is required\")")
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"command is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("command is required")
 	}
@@ -262,6 +270,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			}
 			output += fmt.Sprintf("Command timed out after %dms", timeoutMs)
 			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 			return tool.InvokeResult{Content: output}, nil
 		}
 
@@ -274,13 +283,16 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			}
 			output += fmt.Sprintf("Exit code %d", exitCode)
 			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 
 			return tool.InvokeResult{Content: output}, nil
 		}
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"execute command: %w\", err)")
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"execute command: %w\", err)")
 
 		return tool.InvokeResult{}, fmt.Errorf("execute command: %w", err)
 	}
+	observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 	observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 
 	return tool.InvokeResult{Content: output}, nil

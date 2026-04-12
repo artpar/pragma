@@ -17,6 +17,7 @@ func New(workDir, modelID string, bus *observe.EventBus) *Builder {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Builder{\n\tworkDir:\tworkDir,\n\tmodel:\t\tmodelID,\n\tbus:\t\tbus,\n}")
+	observe.GlobalTrace("return: &Builder{\n\tworkDir:\tworkDir,\n\tmodel:\t\tmodelID,\n\tbus:\t\tbus,\n}")
 	return &Builder{
 		workDir: workDir,
 		model:   modelID,
@@ -55,6 +56,7 @@ func (b *Builder) Build() model.SystemPrompt {
 			TotalBytes:  totalBytes,
 		})
 	}
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
 	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
 
 	return model.SystemPrompt{Blocks: blocks}

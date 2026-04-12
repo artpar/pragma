@@ -28,6 +28,7 @@ func RunDispatcher(cmd *cobra.Command, args []string) error {
 	if listSessions {
 		observe.GlobalTrace("if: listSessions")
 		observe.GlobalTrace("return: RunListSessions()")
+		observe.GlobalTrace("return: RunListSessions()")
 		return RunListSessions()
 	}
 
@@ -35,8 +36,10 @@ func RunDispatcher(cmd *cobra.Command, args []string) error {
 	if prompt != "" {
 		observe.GlobalTrace("if: prompt != \"\"")
 		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
+		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
 		return RunNonInteractive(cmd, args)
 	}
+	observe.GlobalTrace("return: RunInteractive(cmd)")
 	observe.GlobalTrace("return: RunInteractive(cmd)")
 
 	return RunInteractive(cmd)
@@ -49,6 +52,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	d, err := SetupDeps(cmd)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		return err
 	}
@@ -63,8 +67,8 @@ func RunInteractive(cmd *cobra.Command) error {
 		SessionID:   snap.Conversation.ID,
 	})
 
-	// SessionStart hook
 	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
 		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
 	}
 
@@ -73,6 +77,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		return err
 	}
@@ -110,9 +115,9 @@ func RunInteractive(cmd *cobra.Command) error {
 	prompter.SetProgram(program)
 	asker.SetProgram(program)
 
-	// SessionEnd hook on exit
 	defer func() {
 		if d.HookMgr != nil {
+			observe.GlobalTrace("if: d.HookMgr != nil")
 			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
 		}
 	}()
@@ -120,8 +125,10 @@ func RunInteractive(cmd *cobra.Command) error {
 	if _, err := program.Run(); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
+		observe.GlobalTrace("return: err")
 		return err
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 
 	return nil
@@ -134,6 +141,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	d, err := SetupDeps(cmd)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		return err
 	}
@@ -148,13 +156,14 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		SessionID:   snap.Conversation.ID,
 	})
 
-	// SessionStart hook
 	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
 		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
 	}
-	// SessionEnd hook on exit
+
 	defer func() {
 		if d.HookMgr != nil {
+			observe.GlobalTrace("if: d.HookMgr != nil")
 			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
 		}
 	}()
@@ -164,6 +173,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		return err
 	}
@@ -224,6 +234,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", d.CostTracker.TotalUSD())
 	}
 	observe.GlobalTrace("return: nil")
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -235,17 +246,20 @@ func RunListSessions() error {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"open session store: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"open session store: %w\", err)")
 		return fmt.Errorf("open session store: %w", err)
 	}
 	summaries, err := sessionStore.List()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"list sessions: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"list sessions: %w\", err)")
 		return fmt.Errorf("list sessions: %w", err)
 	}
 	if len(summaries) == 0 {
 		observe.GlobalTrace("if: len(summaries) == 0")
 		fmt.Println("No saved sessions.")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
@@ -259,6 +273,7 @@ func RunListSessions() error {
 		fmt.Printf("%-38s  %s  %d turns  $%.4f  %s\n",
 			s.ID, s.Model, s.TurnCount, s.CostUSD, summary)
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -281,6 +296,7 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 
 	snap := d.Store.Snapshot()
 	sysTokEst := compact.EstimateSystemPromptTokens(snap.Conversation.System)
+	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 
 	return query.CompactionDeps{

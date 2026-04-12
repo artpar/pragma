@@ -72,6 +72,7 @@ func NewDiagnosticRegistry() *DiagnosticRegistry {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &DiagnosticRegistry{\n\tpending:\tmake(map[string]*PendingDiagnostic),\n\tdelivere...")
+	observe.GlobalTrace("return: &DiagnosticRegistry{\n\tpending:\tmake(map[string]*PendingDiagnostic),\n\tdelivere...")
 	return &DiagnosticRegistry{
 		pending:   make(map[string]*PendingDiagnostic),
 		delivered: make(map[string]map[string]bool),
@@ -115,6 +116,7 @@ func (r *DiagnosticRegistry) Check() []DiagnosticResult {
 
 	if len(r.pending) == 0 {
 		observe.GlobalTrace("if: len(r.pending) == 0")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
@@ -178,6 +180,7 @@ func (r *DiagnosticRegistry) Check() []DiagnosticResult {
 		delete(r.delivered, oldest)
 	}
 	observe.GlobalTrace("return: results")
+	observe.GlobalTrace("return: results")
 
 	return results
 }
@@ -209,6 +212,7 @@ func diagKey(d Diagnostic) string {
 	key := fmt.Sprintf("%s|%s|%s|%d|%d:%d",
 		d.Message, d.Source, d.Code, d.Severity,
 		d.Range.Start.Line, d.Range.Start.Character)
+	observe.GlobalTrace("return: key")
 	observe.GlobalTrace("return: key")
 	return key
 }

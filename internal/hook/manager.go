@@ -19,6 +19,9 @@ type Manager struct {
 
 // NewManager creates a Manager, loading hooks from all settings scopes.
 func NewManager(workDir, sessionID string, bus *observe.EventBus) *Manager {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &Manager{\n\thooks:\t\tLoadHooks(workDir),\n\tworkDir:\tworkDir,\n\tsessionID:\tsession...")
 	return &Manager{
 		hooks:     LoadHooks(workDir),
 		workDir:   workDir,
@@ -29,6 +32,8 @@ func NewManager(workDir, sessionID string, bus *observe.EventBus) *Manager {
 
 // SetSessionID updates the session ID used in hook input and env vars.
 func (m *Manager) SetSessionID(id string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionID = id
@@ -36,6 +41,8 @@ func (m *Manager) SetSessionID(id string) {
 
 // Reload re-reads hooks from settings files. Call after config changes.
 func (m *Manager) Reload() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.hooks = LoadHooks(m.workDir)
@@ -43,9 +50,12 @@ func (m *Manager) Reload() {
 
 // HasHooks returns true if any hooks are configured for the given event.
 func (m *Manager) HasHooks(event Event) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	entries := m.hooks[event]
+	observe.GlobalTrace("return: len(entries) > 0")
 	return len(entries) > 0
 }
 
@@ -53,47 +63,57 @@ func (m *Manager) HasHooks(event Event) bool {
 // For PreToolUse/PostToolUse, input.ToolName is used to filter by matcher.
 // Hooks run sequentially — simpler than parallel, avoids race conditions.
 func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) AggregatedResult {
+	observe.TraceCtx(ctx, "hook", "Manager.Execute", "enter")
+	defer observe.TraceCtx(ctx, "hook", "Manager.Execute", "exit")
 	m.mu.RLock()
 	input.Event = event
 	input.CWD = m.workDir
 	input.SessionID = m.sessionID
-	sessionID := m.sessionID // snapshot under lock for env vars
+	sessionID := m.sessionID
 	workDir := m.workDir
 	entries := m.hooks[event]
 	m.mu.RUnlock()
 	if len(entries) == 0 {
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: len(entries) == 0")
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
 		return AggregatedResult{}
 	}
 
-	// For tool-related events, filter by matcher against tool name
 	matchValue := ""
 	switch event {
 	case PreToolUse, PostToolUse:
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: PreToolUse, PostToolUse")
 		matchValue = input.ToolName
 	}
 
 	commands := MatchCommands(entries, matchValue)
 	if len(commands) == 0 {
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: len(commands) == 0")
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
 		return AggregatedResult{}
 	}
 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: err != nil")
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
 		return AggregatedResult{}
 	}
 
 	envVars := map[string]string{
-		"GOGENT_HOOK_EVENT":  string(event),
-		"GOGENT_SESSION_ID":  sessionID,
-		"GOGENT_CWD":         workDir,
-		"GOGENT_TOOL_NAME":   input.ToolName,
+		"GOGENT_HOOK_EVENT": string(event),
+		"GOGENT_SESSION_ID": sessionID,
+		"GOGENT_CWD":        workDir,
+		"GOGENT_TOOL_NAME":  input.ToolName,
 	}
 
 	var agg AggregatedResult
 
 	for _, cmd := range commands {
+		observe.TraceCtx(ctx, "hook", "Manager.Execute", "range commands")
 		if cmd.Type != "" && cmd.Type != "command" {
-			continue // only shell commands supported
+			observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: cmd.Type != \"\" && cmd.Type != \"command\"")
+			continue
 		}
 
 		result := ExecCommand(ctx, cmd, inputJSON, m.workDir, envVars)
@@ -104,14 +124,16 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 
 		switch outcome {
 		case OutcomeBlock:
+			observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: OutcomeBlock")
 			agg.Blocked = true
 			agg.BlockMsg = result.Stderr
 			if agg.BlockMsg == "" {
 				agg.BlockMsg = "hook blocked execution (exit code 2)"
 			}
-			return agg // first block wins, stop processing
+			return agg
 
 		case OutcomeOK:
+			observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: OutcomeOK")
 			if result.Stdout != "" {
 				agg.Stdout += result.Stdout
 			}
@@ -120,21 +142,27 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 			}
 
 		case OutcomeError:
-			// Non-blocking: stderr shown to user but execution continues
+			observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: OutcomeError")
+
 			if result.JSON != nil && result.JSON.AdditionalContext != "" {
 				agg.Feedback = append(agg.Feedback, result.JSON.AdditionalContext)
 			}
 
 		case OutcomeTimeout:
-			// Timeout: treat as non-blocking error
+			observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: OutcomeTimeout")
+
 		}
 	}
+	observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: agg")
 
 	return agg
 }
 
 func (m *Manager) emitHookEvent(event Event, command string, result Result) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.bus == nil {
+		observe.GlobalTrace("if: m.bus == nil")
 		return
 	}
 	outcome := result.Outcome()
@@ -148,6 +176,7 @@ func (m *Manager) emitHookEvent(event Event, command string, result Result) {
 	})
 
 	if outcome == OutcomeBlock {
+		observe.GlobalTrace("if: outcome == OutcomeBlock")
 		m.bus.Emit(observe.HookBlocked{
 			EventHeader: observe.NewEventHeader("HookBlocked", "", observe.NewSpanID(), ""),
 			HookEvent:   string(event),

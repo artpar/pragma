@@ -50,12 +50,14 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"TaskUpdate\"")
+	observe.GlobalTrace("return: \"TaskUpdate\"")
 	return "TaskUpdate"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Update a task's status, description, or result...\"")
+	observe.GlobalTrace("return: taskUpdateDescription")
 	return taskUpdateDescription
 }
 
@@ -77,11 +79,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: true}
 }
@@ -89,6 +93,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "taskupdate", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "taskupdate", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "taskupdate", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskUpdate\", \"\")")
 	observe.TraceCtx(ctx, "taskupdate", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskUpdate\", \"\")")
 	return checker.Check(ctx, "TaskUpdate", "")
 }
@@ -100,10 +105,12 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.ID == "" {
 		observe.GlobalTrace("if: in.ID == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("id is required")
 	}
@@ -122,8 +129,10 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: err.Error()}, nil")
+		observe.GlobalTrace("return: tool.InvokeResult{Content: err.Error()}, nil")
 		return tool.InvokeResult{Content: err.Error()}, nil
 	}
+	observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Task %s updated\", in.ID)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Task %s updated\", in.ID)}, nil")
 	return tool.InvokeResult{Content: fmt.Sprintf("Task %s updated", in.ID)}, nil
 }

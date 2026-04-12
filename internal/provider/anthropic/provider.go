@@ -37,6 +37,7 @@ func WithMaxRetries(n int) Option {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
+	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
 	return func(p *Provider) { p.maxRetries = n }
 }
 
@@ -45,6 +46,7 @@ func WithBaseURL(url string) Option {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
+	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
 	return func(p *Provider) { p.baseURL = url }
 }
 
@@ -52,6 +54,7 @@ func WithBaseURL(url string) Option {
 func WithIdleTimeout(d time.Duration) Option {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
 	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
 	return func(p *Provider) { p.idleTimeout = d }
 }
@@ -80,6 +83,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
 	}
 	p.client = sdk.NewClient(clientOpts...)
 	observe.GlobalTrace("return: p")
+	observe.GlobalTrace("return: p")
 	return p
 }
 
@@ -87,6 +91,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
 func (p *Provider) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"anthropic\"")
 	observe.GlobalTrace("return: \"anthropic\"")
 	return "anthropic"
 }
@@ -105,6 +110,7 @@ func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 		return true
 	}
 	observe.GlobalTrace("return: false")
+	observe.GlobalTrace("return: false")
 	return false
 }
 
@@ -116,8 +122,10 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 	if info, ok := LookupModel(modelID); ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: info.Pricing, true")
+		observe.GlobalTrace("return: info.Pricing, true")
 		return info.Pricing, true
 	}
+	observe.GlobalTrace("return: model.Pricing{}, false")
 	observe.GlobalTrace("return: model.Pricing{}, false")
 	return model.Pricing{}, false
 }
@@ -138,6 +146,7 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 			if n, err := strconv.Atoi(multiplierStr); err == nil {
 				observe.GlobalTrace("if: err == nil")
 				observe.GlobalTrace("return: n * 1_000_000, true")
+				observe.GlobalTrace("return: n * 1_000_000, true")
 				return n * 1_000_000, true
 			}
 		}
@@ -152,8 +161,10 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 			cw = 200_000
 		}
 		observe.GlobalTrace("return: cw, true")
+		observe.GlobalTrace("return: cw, true")
 		return cw, true
 	}
+	observe.GlobalTrace("return: 200_000, false")
 	observe.GlobalTrace("return: 200_000, false")
 	return 200_000, false
 }
@@ -167,6 +178,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	wireParams, err := buildWireParams(params, mapper)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, fmt.Errorf(\"building wire params: %w\", err)")
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, fmt.Errorf(\"building wire params: %w\", err)")
 		return model.Response{}, fmt.Errorf("building wire params: %w", err)
 	}
@@ -202,6 +214,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 			Attempt:      p.maxRetries + 1,
 		})
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, classified.wrapped")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, classified.wrapped")
 		return model.Response{}, classified.wrapped
 	}
 
@@ -213,6 +226,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		DurationMs:  time.Since(start).Milliseconds(),
 		Model:       resp.Model,
 	})
+	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: resp, nil")
 	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: resp, nil")
 	return resp, nil
 }
@@ -226,6 +240,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	wireParams, err := buildWireParams(params, mapper)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: nil, fmt.Errorf(\"building wire params: %w\", err)")
 		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: nil, fmt.Errorf(\"building wire params: %w\", err)")
 		return nil, fmt.Errorf("building wire params: %w", err)
 	}
@@ -245,6 +260,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	stream := p.client.Messages.NewStreaming(ctx, wireParams)
 	ch := p.startStream(ctx, stream, mapper, p.bus, traceID, spanID)
 	observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: ch, nil")
+	observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: ch, nil")
 	return ch, nil
 }
 
@@ -260,6 +276,7 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 		if err == nil {
 			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: err == nil")
 			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: nil")
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: nil")
 			return nil
 		}
 
@@ -267,6 +284,7 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 
 		if !classified.retryable || attempt >= p.maxRetries {
 			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: !classified.retryable || attempt >= p.maxRetries")
+			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
 			observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
 			return classified.wrapped
 		}
@@ -276,6 +294,7 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 			consecutive529++
 			if consecutive529 >= 3 {
 				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "if: consecutive529 >= 3")
+				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
 				observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: classified.wrapped")
 				return classified.wrapped
 			}
@@ -320,6 +339,7 @@ func (p *Provider) withRetry(ctx context.Context, traceID, spanID string, fn fun
 		}
 	}
 	observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: fmt.Errorf(\"exhausted %d retries\", p.maxRetries)")
+	observe.TraceCtx(ctx, "anthropic", "Provider.withRetry", "return: fmt.Errorf(\"exhausted %d retries\", p.maxRetries)")
 	return fmt.Errorf("exhausted %d retries", p.maxRetries)
 }
 
@@ -358,6 +378,7 @@ func estimateTokens(params provider.RequestParams) int {
 			}
 		}
 	}
+	observe.GlobalTrace("return: total")
 	observe.GlobalTrace("return: total")
 	return total
 }

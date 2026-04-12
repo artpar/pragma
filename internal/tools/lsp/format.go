@@ -71,8 +71,10 @@ func (h hoverContents) text() string {
 	if h.Value != "" {
 		observe.GlobalTrace("if: h.Value != \"\"")
 		observe.GlobalTrace("return: h.Value")
+		observe.GlobalTrace("return: h.Value")
 		return h.Value
 	}
+	observe.GlobalTrace("return: h.Raw")
 	observe.GlobalTrace("return: h.Raw")
 	return h.Raw
 }
@@ -131,6 +133,7 @@ func formatLocations(raw json.RawMessage, cwd, label string) (string, int, int) 
 	if len(locs) == 0 {
 		observe.GlobalTrace("if: len(locs) == 0")
 		observe.GlobalTrace("return: fmt.Sprintf(\"No %s found.\", label), 0, 0")
+		observe.GlobalTrace("return: fmt.Sprintf(\"No %s found.\", label), 0, 0")
 		return fmt.Sprintf("No %s found.", label), 0, 0
 	}
 
@@ -158,6 +161,7 @@ func formatLocations(raw json.RawMessage, cwd, label string) (string, int, int) 
 		}
 	}
 	observe.GlobalTrace("return: b.String(), len(locs), len(fileOrder)")
+	observe.GlobalTrace("return: b.String(), len(locs), len(fileOrder)")
 
 	return b.String(), len(locs), len(fileOrder)
 }
@@ -169,14 +173,17 @@ func formatHover(raw json.RawMessage, _ string) (string, int, int) {
 	if err := json.Unmarshal(raw, &h); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"No hover information.\", 0, 0")
+		observe.GlobalTrace("return: \"No hover information.\", 0, 0")
 		return "No hover information.", 0, 0
 	}
 	text := h.Contents.text()
 	if text == "" {
 		observe.GlobalTrace("if: text == \"\"")
 		observe.GlobalTrace("return: \"No hover information.\", 0, 0")
+		observe.GlobalTrace("return: \"No hover information.\", 0, 0")
 		return "No hover information.", 0, 0
 	}
+	observe.GlobalTrace("return: text, 1, 0")
 	observe.GlobalTrace("return: text, 1, 0")
 	return text, 1, 0
 }
@@ -190,6 +197,7 @@ func formatDocumentSymbols(raw json.RawMessage, _ string) (string, int, int) {
 		observe.GlobalTrace("if: err == nil && len(syms) > 0")
 		var b strings.Builder
 		count := writeSymbolTree(&b, syms, 0)
+		observe.GlobalTrace("return: b.String(), count, 0")
 		observe.GlobalTrace("return: b.String(), count, 0")
 		return b.String(), count, 0
 	}
@@ -205,8 +213,10 @@ func formatDocumentSymbols(raw json.RawMessage, _ string) (string, int, int) {
 				symbolKindName(info.Kind), info.Name, info.Location.Range.Start.Line+1)
 		}
 		observe.GlobalTrace("return: b.String(), len(infos), 0")
+		observe.GlobalTrace("return: b.String(), len(infos), 0")
 		return b.String(), len(infos), 0
 	}
+	observe.GlobalTrace("return: \"No symbols found.\", 0, 0")
 	observe.GlobalTrace("return: \"No symbols found.\", 0, 0")
 
 	return "No symbols found.", 0, 0
@@ -233,6 +243,7 @@ func writeSymbolTree(b *strings.Builder, syms []documentSymbol, indent int) int 
 		}
 	}
 	observe.GlobalTrace("return: count")
+	observe.GlobalTrace("return: count")
 	return count
 }
 
@@ -242,6 +253,7 @@ func formatWorkspaceSymbols(raw json.RawMessage, cwd string) (string, int, int) 
 	var infos []symbolInformation
 	if err := json.Unmarshal(raw, &infos); err != nil || len(infos) == 0 {
 		observe.GlobalTrace("if: err != nil || len(infos) == 0")
+		observe.GlobalTrace("return: \"No symbols found.\", 0, 0")
 		observe.GlobalTrace("return: \"No symbols found.\", 0, 0")
 		return "No symbols found.", 0, 0
 	}
@@ -272,6 +284,7 @@ func formatWorkspaceSymbols(raw json.RawMessage, cwd string) (string, int, int) 
 		}
 	}
 	observe.GlobalTrace("return: b.String(), len(infos), len(fileOrder)")
+	observe.GlobalTrace("return: b.String(), len(infos), len(fileOrder)")
 
 	return b.String(), len(infos), len(fileOrder)
 }
@@ -282,6 +295,7 @@ func formatCallHierarchyItems(raw json.RawMessage, cwd string) (string, int, int
 	var items []callHierarchyItem
 	if err := json.Unmarshal(raw, &items); err != nil || len(items) == 0 {
 		observe.GlobalTrace("if: err != nil || len(items) == 0")
+		observe.GlobalTrace("return: \"No call hierarchy items found.\", 0, 0")
 		observe.GlobalTrace("return: \"No call hierarchy items found.\", 0, 0")
 		return "No call hierarchy items found.", 0, 0
 	}
@@ -294,6 +308,7 @@ func formatCallHierarchyItems(raw json.RawMessage, cwd string) (string, int, int
 			symbolKindName(item.Kind), item.Name, rel, item.Range.Start.Line+1)
 	}
 	observe.GlobalTrace("return: b.String(), len(items), 0")
+	observe.GlobalTrace("return: b.String(), len(items), 0")
 
 	return b.String(), len(items), 0
 }
@@ -304,6 +319,7 @@ func formatIncomingCalls(raw json.RawMessage, cwd string) (string, int, int) {
 	var calls []callHierarchyIncomingCall
 	if err := json.Unmarshal(raw, &calls); err != nil || len(calls) == 0 {
 		observe.GlobalTrace("if: err != nil || len(calls) == 0")
+		observe.GlobalTrace("return: \"No incoming calls found.\", 0, 0")
 		observe.GlobalTrace("return: \"No incoming calls found.\", 0, 0")
 		return "No incoming calls found.", 0, 0
 	}
@@ -317,6 +333,7 @@ func formatIncomingCalls(raw json.RawMessage, cwd string) (string, int, int) {
 			symbolKindName(call.From.Kind), call.From.Name, rel, call.From.Range.Start.Line+1)
 	}
 	observe.GlobalTrace("return: b.String(), len(calls), 0")
+	observe.GlobalTrace("return: b.String(), len(calls), 0")
 
 	return b.String(), len(calls), 0
 }
@@ -327,6 +344,7 @@ func formatOutgoingCalls(raw json.RawMessage, cwd string) (string, int, int) {
 	var calls []callHierarchyOutgoingCall
 	if err := json.Unmarshal(raw, &calls); err != nil || len(calls) == 0 {
 		observe.GlobalTrace("if: err != nil || len(calls) == 0")
+		observe.GlobalTrace("return: \"No outgoing calls found.\", 0, 0")
 		observe.GlobalTrace("return: \"No outgoing calls found.\", 0, 0")
 		return "No outgoing calls found.", 0, 0
 	}
@@ -340,6 +358,7 @@ func formatOutgoingCalls(raw json.RawMessage, cwd string) (string, int, int) {
 			symbolKindName(call.To.Kind), call.To.Name, rel, call.To.Range.Start.Line+1)
 	}
 	observe.GlobalTrace("return: b.String(), len(calls), 0")
+	observe.GlobalTrace("return: b.String(), len(calls), 0")
 
 	return b.String(), len(calls), 0
 }
@@ -350,19 +369,23 @@ func relativePath(path, cwd string) string {
 	if cwd == "" {
 		observe.GlobalTrace("if: cwd == \"\"")
 		observe.GlobalTrace("return: path")
+		observe.GlobalTrace("return: path")
 		return path
 	}
 	rel, err := filepath.Rel(cwd, path)
 	if err != nil || strings.HasPrefix(rel, ".."+string(filepath.Separator)+"..") {
 		observe.GlobalTrace("if: err != nil || strings.HasPrefix(rel, \"..\"+string(filepath.Separator)+\"..\")")
 		observe.GlobalTrace("return: path")
+		observe.GlobalTrace("return: path")
 		return path
 	}
 	if len(rel) < len(path) {
 		observe.GlobalTrace("if: len(rel) < len(path)")
 		observe.GlobalTrace("return: rel")
+		observe.GlobalTrace("return: rel")
 		return rel
 	}
+	observe.GlobalTrace("return: path")
 	observe.GlobalTrace("return: path")
 	return path
 }
@@ -383,8 +406,10 @@ func symbolKindName(kind int) string {
 	if name, ok := symbolKindNames[kind]; ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: name")
+		observe.GlobalTrace("return: name")
 		return name
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"Kind(%d)\", kind)")
 	observe.GlobalTrace("return: fmt.Sprintf(\"Kind(%d)\", kind)")
 	return fmt.Sprintf("Kind(%d)", kind)
 }

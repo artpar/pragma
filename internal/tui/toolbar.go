@@ -19,6 +19,7 @@ func newToolbar(modelName, provider string) toolbar {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: toolbar{\n\tmodelName:\tmodelName,\n\tprovider:\tprovider,\n\tstatus:\t\t\"ready\",\n}")
+	observe.GlobalTrace("return: toolbar{\n\tmodelName:\tmodelName,\n\tprovider:\tprovider,\n\tstatus:\t\t\"ready\",\n}")
 	return toolbar{
 		modelName: modelName,
 		provider:  provider,
@@ -40,6 +41,7 @@ func (t toolbar) View(width int) string {
 	gap := max(width-len(left)-len(right), 0)
 
 	bar := left + strings.Repeat(" ", gap) + styledRight
+	observe.GlobalTrace("return: statusBarStyle.Render(bar)")
 	observe.GlobalTrace("return: statusBarStyle.Render(bar)")
 	return statusBarStyle.Render(bar)
 }

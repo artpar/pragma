@@ -24,12 +24,14 @@ func (t *EnterTool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"EnterPlanMode\"")
+	observe.GlobalTrace("return: \"EnterPlanMode\"")
 	return "EnterPlanMode"
 }
 func (t *EnterTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Enter plan mode for non-trivial implementation tasks...\"")
+	observe.GlobalTrace("return: enterPlanDescription")
 	return enterPlanDescription
 }
 
@@ -53,11 +55,13 @@ func (t *EnterTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: enterInputSchema")
+	observe.GlobalTrace("return: enterInputSchema")
 	return enterInputSchema
 }
 func (t *EnterTool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: false}
 }
@@ -65,6 +69,7 @@ func (t *EnterTool) Flags() tool.ToolFlags {
 func (t *EnterTool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "plan", "EnterTool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "plan", "EnterTool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "plan", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterPlanMode\", \"\")")
 	observe.TraceCtx(ctx, "plan", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterPlanMode\", \"\")")
 	return checker.Check(ctx, "EnterPlanMode", "")
 }
@@ -76,12 +81,14 @@ func (t *EnterTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSna
 	if snap.PlanMode {
 		observe.GlobalTrace("if: snap.PlanMode")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: \"Already in plan mode.\"}, nil")
+		observe.GlobalTrace("return: tool.InvokeResult{Content: \"Already in plan mode.\"}, nil")
 		return tool.InvokeResult{Content: "Already in plan mode."}, nil
 	}
 
 	t.Store.Update(func(s *app.AppState) {
 		s.PlanMode = true
 	})
+	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: \"Entered plan mode. Only read-only tools are now...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: \"Entered plan mode. Only read-only tools are now...")
 
 	return tool.InvokeResult{

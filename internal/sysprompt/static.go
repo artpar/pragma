@@ -12,6 +12,7 @@ func staticBlocks() []model.SystemBlock {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: []model.SystemBlock{7 blocks: identity, system, tools, tasks, actions, tone, output}")
+	observe.GlobalTrace("return: []model.SystemBlock{\n\t{Text: identityText, Cacheable: false},\n\t{Text: systemR...")
 	return []model.SystemBlock{
 		{Text: identityText, Cacheable: false},
 		{Text: systemRulesText, Cacheable: false},

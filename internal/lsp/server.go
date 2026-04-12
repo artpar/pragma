@@ -46,6 +46,7 @@ func NewServer(name string, cfg ServerConfig, bus *observe.EventBus) *Server {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Server{\n\tname:\tname,\n\tconfig:\tcfg,\n\tbus:\tbus,\n\tstate:\tStateStopped,\n}")
+	observe.GlobalTrace("return: &Server{\n\tname:\tname,\n\tconfig:\tcfg,\n\tbus:\tbus,\n\tstate:\tStateStopped,\n}")
 	return &Server{
 		name:   name,
 		config: cfg,
@@ -67,6 +68,7 @@ func (s *Server) EnsureStarted(ctx context.Context, workDir string) error {
 		observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "case: StateRunning")
 
 		if s.client != nil && s.client.IsRunning() {
+			observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: nil")
 			observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: nil")
 			return nil
 		}
@@ -90,6 +92,7 @@ func (s *Server) EnsureStarted(ctx context.Context, workDir string) error {
 		observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "if: s.state == StateError")
 		if s.restartCount >= s.config.maxRestartsOrDefault() {
 			observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "if: s.restartCount >= s.config.maxRestartsOrDefault()")
+			observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: fmt.Errorf(\"%w: %s restarted %d times\", ErrMaxRestarts, s.name, s.restartCount)")
 			observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: fmt.Errorf(\"%w: %s restarted %d times\", ErrMaxRestarts, s.name, s.restartCount)")
 			return fmt.Errorf("%w: %s restarted %d times", ErrMaxRestarts, s.name, s.restartCount)
 		}
@@ -118,6 +121,7 @@ func (s *Server) EnsureStarted(ctx context.Context, workDir string) error {
 		s.state = StateError
 		s.lastError = err
 		observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: fmt.Errorf(\"start %s: %w\", s.name, err)")
+		observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: fmt.Errorf(\"start %s: %w\", s.name, err)")
 		return fmt.Errorf("start %s: %w", s.name, err)
 	}
 
@@ -126,6 +130,7 @@ func (s *Server) EnsureStarted(ctx context.Context, workDir string) error {
 		s.state = StateError
 		s.lastError = err
 		_ = client.Stop()
+		observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: fmt.Errorf(\"initialize %s: %w\", s.name, err)")
 		observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: fmt.Errorf(\"initialize %s: %w\", s.name, err)")
 		return fmt.Errorf("initialize %s: %w", s.name, err)
 	}
@@ -149,6 +154,7 @@ func (s *Server) EnsureStarted(ctx context.Context, workDir string) error {
 		s.mu.Unlock()
 	}()
 	observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: nil")
+	observe.TraceCtx(ctx, "lsp", "Server.EnsureStarted", "return: nil")
 
 	return nil
 }
@@ -166,6 +172,7 @@ func (s *Server) SendRequest(ctx context.Context, method string, params any) (js
 	if client == nil {
 		observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "if: client == nil")
 		observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: nil, ErrNotInitialized")
+		observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: nil, ErrNotInitialized")
 		return nil, ErrNotInitialized
 	}
 
@@ -175,6 +182,7 @@ func (s *Server) SendRequest(ctx context.Context, method string, params any) (js
 		result, err := client.SendRequest(ctx, method, params)
 		if err == nil {
 			observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "if: err == nil")
+			observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: result, nil")
 			observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: result, nil")
 			return result, nil
 		}
@@ -194,9 +202,11 @@ func (s *Server) SendRequest(ctx context.Context, method string, params any) (js
 			}
 		}
 		observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: nil, err")
+		observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: nil, err")
 
 		return nil, err
 	}
+	observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: nil, fmt.Errorf(\"content modified after %d retries: %w\", retryMaxAttempts, la...")
 	observe.TraceCtx(ctx, "lsp", "Server.SendRequest", "return: nil, fmt.Errorf(\"content modified after %d retries: %w\", retryMaxAttempts, la...")
 
 	return nil, fmt.Errorf("content modified after %d retries: %w", retryMaxAttempts, lastErr)
@@ -212,8 +222,10 @@ func (s *Server) SendNotification(method string, params any) error {
 	if client == nil {
 		observe.GlobalTrace("if: client == nil")
 		observe.GlobalTrace("return: ErrNotInitialized")
+		observe.GlobalTrace("return: ErrNotInitialized")
 		return ErrNotInitialized
 	}
+	observe.GlobalTrace("return: client.SendNotification(method, params)")
 	observe.GlobalTrace("return: client.SendNotification(method, params)")
 	return client.SendNotification(method, params)
 }
@@ -240,6 +252,7 @@ func (s *Server) Stop() error {
 		observe.GlobalTrace("if: s.state == StateStopped || s.state == StateStopping")
 		s.mu.Unlock()
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	s.state = StateStopping
@@ -263,6 +276,7 @@ func (s *Server) Stop() error {
 		Reason:      "shutdown",
 	})
 	observe.GlobalTrace("return: err")
+	observe.GlobalTrace("return: err")
 
 	return err
 }
@@ -274,6 +288,7 @@ func (s *Server) State() ServerState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	observe.GlobalTrace("return: s.state")
+	observe.GlobalTrace("return: s.state")
 	return s.state
 }
 
@@ -281,6 +296,7 @@ func (s *Server) State() ServerState {
 func (s *Server) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: s.name")
 	observe.GlobalTrace("return: s.name")
 	return s.name
 }

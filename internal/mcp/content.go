@@ -16,6 +16,7 @@ func extractTextContent(result *mcp.CallToolResult) string {
 	if result == nil || len(result.Content) == 0 {
 		observe.GlobalTrace("if: result == nil || len(result.Content) == 0")
 		observe.GlobalTrace("return: \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
@@ -38,6 +39,7 @@ func extractTextContent(result *mcp.CallToolResult) string {
 			}
 		}
 	}
+	observe.GlobalTrace("return: strings.Join(parts, \"\\n\")")
 	observe.GlobalTrace("return: strings.Join(parts, \"\\n\")")
 	return strings.Join(parts, "\n")
 }

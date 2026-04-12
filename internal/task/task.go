@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"github.com/artpar/gogent/internal/observe"
 	"time"
 )
 
@@ -27,19 +28,23 @@ type Task struct {
 	CreatedAt       time.Time          `json:"created_at"`
 	UpdatedAt       time.Time          `json:"updated_at"`
 	TokensUsed      int                `json:"tokens_used,omitempty"`
-	Cancel          context.CancelFunc `json:"-"` // not serialized — used to cancel running tasks
-	PendingMessages []string           `json:"-"` // messages from SendMessage, consumed between turns
+	Cancel          context.CancelFunc `json:"-"`                    // not serialized — used to cancel running tasks
+	PendingMessages []string           `json:"-"`                    // messages from SendMessage, consumed between turns
 	AgentName       string             `json:"agent_name,omitempty"` // for name-based lookup by SendMessage
 }
 
 // snapshot returns a deep copy of the Task safe for reading outside the registry lock.
 // Cancel is nil in the copy — it's internal to the registry's Cancel method.
 func (t *Task) snapshot() Task {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cp := *t
-	cp.Cancel = nil // internal-only, not for external callers
+	cp.Cancel = nil
 	if len(t.PendingMessages) > 0 {
+		observe.GlobalTrace("if: len(t.PendingMessages) > 0")
 		cp.PendingMessages = make([]string, len(t.PendingMessages))
 		copy(cp.PendingMessages, t.PendingMessages)
 	}
+	observe.GlobalTrace("return: cp")
 	return cp
 }
