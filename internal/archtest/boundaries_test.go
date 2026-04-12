@@ -38,6 +38,13 @@ func TestEventEmissionAtBoundaries(t *testing.T) {
 				"APIRequestCompleted",
 			},
 		},
+		{
+			dir: filepath.Join(root, "internal", "provider", "google"),
+			requiredEvents: []string{
+				"APIRequestStarted",
+				"APIRequestCompleted",
+			},
+		},
 	}
 
 	for _, check := range checks {

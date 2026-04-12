@@ -20,6 +20,7 @@ import (
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/provider/anthropic"
+	googleprov "github.com/artpar/gogent/internal/provider/google"
 	groqprov "github.com/artpar/gogent/internal/provider/groq"
 	oaiprov "github.com/artpar/gogent/internal/provider/openai"
 	"github.com/artpar/gogent/internal/query"
@@ -92,6 +93,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		case "openai":
 			observe.GlobalTrace("case: \"openai\"")
 			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
+		case "google":
+			observe.GlobalTrace("case: \"google\"")
+			cfg.APIKey = os.Getenv("GOOGLE_API_KEY")
 		default:
 			observe.GlobalTrace("default")
 			cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
@@ -107,6 +111,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		case "openai":
 			observe.GlobalTrace("case: \"openai\"")
 			envVar = "OPENAI_API_KEY"
+		case "google":
+			observe.GlobalTrace("case: \"google\"")
+			envVar = "GOOGLE_API_KEY"
 		}
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"API key required: set --api-key or %s environment variable\",...")
 		return nil, fmt.Errorf("API key required: set --api-key or %s environment variable", envVar)
@@ -407,6 +414,13 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) provider.Provider 
 			opts = append(opts, oaiprov.WithBaseURL(baseURL))
 		}
 		return oaiprov.New(cfg.APIKey, bus, opts...)
+	case "google":
+		observe.GlobalTrace("case: \"google\"")
+		var opts []googleprov.Option
+		if baseURL := os.Getenv("GOOGLE_BASE_URL"); baseURL != "" {
+			opts = append(opts, googleprov.WithBaseURL(baseURL))
+		}
+		return googleprov.New(cfg.APIKey, bus, opts...)
 	default:
 		observe.GlobalTrace("default")
 		fmt.Fprintf(os.Stderr, "unknown provider %q, falling back to anthropic\n", cfg.Provider)
@@ -425,6 +439,9 @@ func SecondaryModelFor(providerName string) string {
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "gpt-4o-mini"
+	case "google":
+		observe.GlobalTrace("case: \"google\"")
+		return "gemini-2.5-flash"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
