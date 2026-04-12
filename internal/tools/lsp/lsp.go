@@ -181,6 +181,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "case: \"goToDefinition\"")
 		result, err = t.Manager.SendRequest(ctx, absPath, "textDocument/definition", positionParams(fileURI, line, char))
 		if err == nil {
+			result = filterLocationResults(ctx, cwd, result)
 			formatted, resultCount, fileCount = formatLocations(result, cwd, "definition(s)")
 		}
 
@@ -190,6 +191,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		params["context"] = map[string]bool{"includeDeclaration": true}
 		result, err = t.Manager.SendRequest(ctx, absPath, "textDocument/references", params)
 		if err == nil {
+			result = filterLocationResults(ctx, cwd, result)
 			formatted, resultCount, fileCount = formatLocations(result, cwd, "reference(s)")
 		}
 
@@ -223,6 +225,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "case: \"goToImplementation\"")
 		result, err = t.Manager.SendRequest(ctx, absPath, "textDocument/implementation", positionParams(fileURI, line, char))
 		if err == nil {
+			result = filterLocationResults(ctx, cwd, result)
 			formatted, resultCount, fileCount = formatLocations(result, cwd, "implementation(s)")
 		}
 
@@ -303,6 +306,62 @@ func (t *Tool) twoStepCallHierarchy(ctx context.Context, absPath, fileURI string
 	})
 	observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: result, err")
 	return result, err
+}
+
+// filterLocationResults removes gitignored files from location-based LSP results.
+// Works with both Location[] and LocationLink[] formats.
+func filterLocationResults(ctx context.Context, cwd string, raw json.RawMessage) json.RawMessage {
+	// Extract URIs from Location[] format
+	var locs []location
+	if err := json.Unmarshal(raw, &locs); err == nil && len(locs) > 0 {
+		uris := make([]string, len(locs))
+		for i, loc := range locs {
+			uris[i] = loc.URI
+		}
+		kept := filterGitIgnored(ctx, cwd, uris)
+		if len(kept) == len(uris) {
+			return raw // nothing filtered
+		}
+		keptSet := make(map[string]bool, len(kept))
+		for _, u := range kept {
+			keptSet[u] = true
+		}
+		var filtered []location
+		for _, loc := range locs {
+			if keptSet[loc.URI] {
+				filtered = append(filtered, loc)
+			}
+		}
+		out, _ := json.Marshal(filtered)
+		return out
+	}
+
+	// Try LocationLink[] format
+	var links []locationLink
+	if err := json.Unmarshal(raw, &links); err == nil && len(links) > 0 {
+		uris := make([]string, len(links))
+		for i, l := range links {
+			uris[i] = l.TargetURI
+		}
+		kept := filterGitIgnored(ctx, cwd, uris)
+		if len(kept) == len(uris) {
+			return raw
+		}
+		keptSet := make(map[string]bool, len(kept))
+		for _, u := range kept {
+			keptSet[u] = true
+		}
+		var filtered []locationLink
+		for _, l := range links {
+			if keptSet[l.TargetURI] {
+				filtered = append(filtered, l)
+			}
+		}
+		out, _ := json.Marshal(filtered)
+		return out
+	}
+
+	return raw
 }
 
 func positionParams(fileURI string, line, char int) map[string]any {

@@ -44,10 +44,13 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
 
-	// Stop hook — fires when the query loop ends for any reason
+	// Stop hook — fires when the query loop ends for any reason.
+	// Uses context.Background() because ctx may already be cancelled (e.g., Ctrl+C).
 	defer func() {
 		if e.hookMgr != nil {
-			e.hookMgr.Execute(ctx, hook.Stop, hook.HookInput{})
+			hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer hookCancel()
+			e.hookMgr.Execute(hookCtx, hook.Stop, hook.HookInput{})
 		}
 	}()
 
@@ -67,8 +70,9 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		s.Conversation.Append(userMsg)
 	})
 
-	for range maxTurns {
-		observe.TraceCtx(ctx, "query", "Engine.runLoop", "range maxTurns")
+	turnCount := 0
+	for turnCount < maxTurns {
+		observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("turn %d/%d", turnCount+1, maxTurns))
 		if err := ctx.Err(); err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: err != nil")
 			ch <- ErrorEvent{Err: fmt.Errorf("context cancelled: %w", model.ErrContextCancelled)}
@@ -184,7 +188,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			return
 
 		case model.StopPauseTurn:
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopPauseTurn")
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopPauseTurn — not counting as turn")
 
 			contMsg := model.Message{
 				ID:        model.NewUUID(),
@@ -195,6 +199,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			e.store.Update(func(s *app.AppState) {
 				s.Conversation.Append(contMsg)
 			})
+			// Don't increment turnCount — pause is not a real turn
 			continue
 
 		case model.StopToolUse:
@@ -223,6 +228,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			e.store.Update(func(s *app.AppState) {
 				s.Conversation.Append(resultMsg)
 			})
+			turnCount++
 			continue
 
 		default:

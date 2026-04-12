@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -57,6 +56,7 @@ type Model struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	interruptCount int
+	permQueue      []PermRequestMsg // queued permission requests when dialog is already visible
 
 	// Layout
 	width  int
@@ -356,170 +356,6 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	return m, waitForEvent(m.eventCh)
 }
 
-// handleSlashCommand dispatches a slash command and returns a SlashResultMsg.
-func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	trimmedArgs := strings.TrimSpace(args)
-	label := "/" + name
-	if trimmedArgs != "" {
-		observe.GlobalTrace("if: trimmedArgs != \"\"")
-		label += " " + trimmedArgs
-	}
-	m.outputBuf.WriteString(userLabelStyle.Render("> "+label) + "\n")
-	m.viewport.SetContent(m.outputBuf.String())
-	m.viewport.GotoBottom()
-
-	slashCmds := m.slashCmds
-	slashDeps := m.slashDeps
-	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(m.ctx, n...")
-	return m, func() tea.Msg {
-		result, err := slashCmds.Execute(m.ctx, name, trimmedArgs, slashDeps)
-		return SlashResultMsg{Result: result, Err: err}
-	}
-}
-
-// handleSlashResult processes the output of a slash command.
-func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if msg.Err != nil {
-		observe.GlobalTrace("if: msg.Err != nil")
-		m.outputBuf.WriteString(errorStyle.Render("Error: "+msg.Err.Error()) + "\n\n")
-	} else {
-		observe.GlobalTrace("else: msg.Err != nil")
-		if msg.Result.Quit {
-			observe.GlobalTrace("if: msg.Result.Quit")
-			observe.GlobalTrace("return: m.quit()")
-			return m.quit()
-		}
-		if msg.Result.ClearConversation {
-			observe.GlobalTrace("if: msg.Result.ClearConversation")
-			m.outputBuf.Reset()
-		}
-		if msg.Result.DisplayText != "" {
-			observe.GlobalTrace("if: msg.Result.DisplayText != \"\"")
-			m.outputBuf.WriteString(msg.Result.DisplayText + "\n\n")
-		}
-	}
-	m.viewport.SetContent(m.outputBuf.String())
-	m.viewport.GotoBottom()
-	observe.GlobalTrace("return: m, nil")
-	return m, nil
-}
-
-// handleLoopEvent processes a streaming event from the query engine.
-func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if msg.Event == nil {
-		observe.GlobalTrace("if: msg.Event == nil")
-		observe.GlobalTrace("return: m.finishTurn(), nil")
-
-		return m.finishTurn(), nil
-	}
-
-	switch e := msg.Event.(type) {
-	case query.CompactionEvent:
-		observe.GlobalTrace("typecase: query.CompactionEvent")
-		m.flushStreamBuf()
-		m.outputBuf.WriteString(thinkingStyle.Render(
-			fmt.Sprintf("[auto-compacted: %d → %d tokens]", e.PreTokens, e.PostTokens)) + "\n")
-		m.viewport.SetContent(m.outputBuf.String())
-		m.viewport.GotoBottom()
-
-	case query.TextEvent:
-		observe.GlobalTrace("typecase: query.TextEvent")
-		m.streamBuf.WriteString(e.Text)
-		m.viewport.SetContent(m.outputBuf.String() + m.streamBuf.String())
-		m.viewport.GotoBottom()
-
-	case query.ThinkingEvent:
-		observe.GlobalTrace("typecase: query.ThinkingEvent")
-		m.flushStreamBuf()
-		m.outputBuf.WriteString(thinkingStyle.Render(e.Text))
-		m.viewport.SetContent(m.outputBuf.String())
-		m.viewport.GotoBottom()
-
-	case query.ToolCallEvent:
-		observe.GlobalTrace("typecase: query.ToolCallEvent")
-
-		m.flushStreamBuf()
-		m.outputBuf.WriteString(renderToolCall(e.Call))
-		m.outputBuf.WriteString("\n")
-		m.toolbar.SetStatus("executing: " + e.Call.Name)
-		m.viewport.SetContent(m.outputBuf.String())
-		m.viewport.GotoBottom()
-
-	case query.ToolResultEvent:
-		observe.GlobalTrace("typecase: query.ToolResultEvent")
-		m.outputBuf.WriteString(renderToolResult(e.Result))
-		m.outputBuf.WriteString("\n")
-		m.toolbar.SetStatus("streaming...")
-		m.viewport.SetContent(m.outputBuf.String())
-		m.viewport.GotoBottom()
-
-	case query.TurnCompleteEvent:
-		observe.GlobalTrace("typecase: query.TurnCompleteEvent")
-		m.flushStreamBuf()
-		if e.StopReason == model.StopMaxTokens {
-			m.outputBuf.WriteString("\n" + thinkingStyle.Render("[response truncated — hit max_tokens limit]") + "\n")
-		}
-		m.outputBuf.WriteString("\n")
-		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
-		return m.finishTurn(), saveSessionCmd(m.sessionSave)
-
-	case query.ErrorEvent:
-		observe.GlobalTrace("typecase: query.ErrorEvent")
-		m.flushStreamBuf()
-		if m.ctx.Err() != nil {
-
-			m.outputBuf.WriteString("\n" + thinkingStyle.Render("[interrupted]") + "\n\n")
-		} else {
-			m.outputBuf.WriteString("\n" + errorStyle.Render("Error: "+e.Err.Error()) + "\n\n")
-		}
-		return m.finishTurn(), nil
-	}
-	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
-
-	return m, waitForEvent(m.eventCh)
-}
-
-// handleAskRequest shows the ask dialog for a tool question.
-func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	m.ask.Show(&msg)
-	m.toolbar.SetStatus("waiting for answer...")
-	observe.GlobalTrace("return: m, nil")
-	return m, nil
-}
-
-// handlePermRequest shows the permission dialog.
-func (m Model) handlePermRequest(msg PermRequestMsg) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	m.perm.Show(&msg)
-	m.toolbar.SetStatus("waiting for permission...")
-	observe.GlobalTrace("return: m, nil")
-	return m, nil
-}
-
-// handlePermResponse hides the permission dialog after user decision.
-func (m Model) handlePermResponse(_ PermResponseMsg) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if m.streaming {
-		observe.GlobalTrace("if: m.streaming")
-		m.toolbar.SetStatus("streaming...")
-	} else {
-		observe.GlobalTrace("else: m.streaming")
-		m.toolbar.SetStatus("ready")
-	}
-	observe.GlobalTrace("return: m, nil")
-	return m, nil
-}
-
 // finishTurn resets streaming state and re-enables input.
 func (m Model) finishTurn() Model {
 	observe.GlobalTrace("enter")
@@ -534,6 +370,10 @@ func (m Model) finishTurn() Model {
 	return m
 }
 
+// maxOutputBufBytes is the maximum size of the output buffer before trimming.
+// Prevents unbounded memory growth in long sessions.
+const maxOutputBufBytes = 512 * 1024 // 512KB
+
 // flushStreamBuf moves accumulated streaming text into the permanent output buffer.
 func (m Model) flushStreamBuf() {
 	observe.GlobalTrace("enter")
@@ -543,6 +383,24 @@ func (m Model) flushStreamBuf() {
 		m.outputBuf.WriteString(m.streamBuf.String())
 		m.streamBuf.Reset()
 	}
+	m.trimOutputBuf()
+}
+
+// trimOutputBuf trims the output buffer to maxOutputBufBytes, keeping the tail.
+// The viewport only renders visible content, so losing old prefix is invisible to the user.
+func (m Model) trimOutputBuf() {
+	if m.outputBuf.Len() <= maxOutputBufBytes {
+		return
+	}
+	content := m.outputBuf.String()
+	// Find a newline boundary near the trim point to avoid splitting a line
+	trimAt := len(content) - maxOutputBufBytes
+	idx := strings.IndexByte(content[trimAt:], '\n')
+	if idx >= 0 {
+		trimAt += idx + 1
+	}
+	m.outputBuf.Reset()
+	m.outputBuf.WriteString(content[trimAt:])
 }
 
 // quit saves the session and exits.
