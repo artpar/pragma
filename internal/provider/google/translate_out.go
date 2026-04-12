@@ -228,16 +228,71 @@ func userToWire(m model.Message, mapper *IDMapper, toolNameMap map[string]string
 }
 
 // toolsToWire converts internal tool definitions to Google wire format.
+// Sanitizes JSON Schemas to comply with Gemini's stricter validation
+// (e.g., empty strings in enum arrays are rejected).
 func toolsToWire(tools []model.ToolDef) []wireTool {
 	decls := make([]wireFunctionDecl, len(tools))
 	for i, t := range tools {
 		decls[i] = wireFunctionDecl{
 			Name:        t.Name,
 			Description: t.Description,
-			Parameters:  t.InputSchema,
+			Parameters:  sanitizeSchema(t.InputSchema),
 		}
 	}
 	return []wireTool{{FunctionDeclarations: decls}}
+}
+
+// sanitizeSchema cleans a JSON Schema for Gemini compatibility.
+// Gemini rejects empty strings in enum arrays and other schema quirks
+// that Anthropic/OpenAI tolerate.
+func sanitizeSchema(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var obj map[string]any
+	if json.Unmarshal(raw, &obj) != nil {
+		return raw
+	}
+	sanitizeSchemaObj(obj)
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+// sanitizeSchemaObj recursively walks a JSON Schema object and fixes
+// Gemini-incompatible patterns.
+func sanitizeSchemaObj(obj map[string]any) {
+	// Remove empty strings from enum arrays
+	if enum, ok := obj["enum"].([]any); ok {
+		var cleaned []any
+		for _, v := range enum {
+			if s, isStr := v.(string); isStr && s == "" {
+				continue
+			}
+			cleaned = append(cleaned, v)
+		}
+		if len(cleaned) == 0 {
+			delete(obj, "enum")
+		} else {
+			obj["enum"] = cleaned
+		}
+	}
+
+	// Recurse into properties
+	if props, ok := obj["properties"].(map[string]any); ok {
+		for _, v := range props {
+			if propObj, isMap := v.(map[string]any); isMap {
+				sanitizeSchemaObj(propObj)
+			}
+		}
+	}
+
+	// Recurse into items (array schemas)
+	if items, ok := obj["items"].(map[string]any); ok {
+		sanitizeSchemaObj(items)
+	}
 }
 
 // prePopulateMapper walks history messages and registers synthetic wire IDs
