@@ -28,6 +28,7 @@ func readPDF(ctx context.Context, filePath, displayPath string, size int64, page
 		observe.TraceCtx(ctx, "fileread", "readPDF", "if: err != nil")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"open PDF: %w\", err)")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"open PDF: %w\", err)")
+		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"open PDF: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("open PDF: %w", err)
 	}
 	n, err := f.Read(header)
@@ -36,6 +37,7 @@ func readPDF(ctx context.Context, filePath, displayPath string, size int64, page
 		observe.TraceCtx(ctx, "fileread", "readPDF", "if: err != nil || n < 5 || string(header[:5]) != \"%PDF-\"")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"file is not a valid PDF (missing %%PDF- head...\")")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"file is not a valid PDF (missing %%PDF- head...")
+		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"file is not a valid PDF (missing %%PDF- head...")
 		return tool.InvokeResult{}, fmt.Errorf("file is not a valid PDF (missing %%PDF- header): %s", displayPath)
 	}
 
@@ -43,11 +45,13 @@ func readPDF(ctx context.Context, filePath, displayPath string, size int64, page
 		observe.TraceCtx(ctx, "fileread", "readPDF", "if: pages != nil && *pages != \"\"")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: readPDFPages(ctx, filePath, displayPath, *pages)")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: readPDFPages(ctx, filePath, displayPath, *pages)")
+		observe.TraceCtx(ctx, "fileread", "readPDF", "return: readPDFPages(ctx, filePath, displayPath, *pages)")
 		return readPDFPages(ctx, filePath, displayPath, *pages)
 	}
 
 	if size > pdfMaxRawSize {
 		observe.TraceCtx(ctx, "fileread", "readPDF", "if: size > pdfMaxRawSize")
+		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\n\t\"PDF file is too large (%s). Maximum size f...")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\n\t\"PDF file is too large (%s). Maximum size f...")
 		return tool.InvokeResult{}, fmt.Errorf(
 			"PDF file is too large (%s). Maximum size for full PDF reading is %s. "+
@@ -61,8 +65,10 @@ func readPDF(ctx context.Context, filePath, displayPath string, size int64, page
 		observe.TraceCtx(ctx, "fileread", "readPDF", "if: err != nil")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"read PDF: %w\", err)")
 		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"read PDF: %w\", err)")
+		observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{}, fmt.Errorf(\"read PDF: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read PDF: %w", err)
 	}
+	observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"PDF file read: %s (%s)\", displayPat...")
 	observe.TraceCtx(ctx, "fileread", "readPDF", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"PDF file read: %s (%s)\", displayPat...")
 
 	return tool.InvokeResult{
@@ -85,6 +91,7 @@ func readPDFPages(ctx context.Context, filePath, displayPath string, pages strin
 	if err != nil {
 		observe.TraceCtx(ctx, "fileread", "readPDFPages", "if: err != nil")
 		observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: tool.InvokeResult{}, err")
+		observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
 
@@ -97,6 +104,7 @@ func readPDFPages(ctx context.Context, filePath, displayPath string, pages strin
 		if pageCount > pdfMaxPagesPerRead {
 			observe.TraceCtx(ctx, "fileread", "readPDFPages", "if: pageCount > pdfMaxPagesPerRead")
 			observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: tool.InvokeResult{}, fmt.Errorf(\n\t\"page range \\\"%s\\\" exceeds maximum of %d pa...")
+			observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: tool.InvokeResult{}, fmt.Errorf(\n\t\"page range \\\"%s\\\" exceeds maximum of %d pa...")
 			return tool.InvokeResult{}, fmt.Errorf(
 				"page range \"%s\" exceeds maximum of %d pages per request. Please use a smaller range.",
 				pages, pdfMaxPagesPerRead)
@@ -106,14 +114,17 @@ func readPDFPages(ctx context.Context, filePath, displayPath string, pages strin
 	if pdftoppmAvailable(ctx) {
 		observe.TraceCtx(ctx, "fileread", "readPDFPages", "if: pdftoppmAvailable(ctx)")
 		observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: extractPagesAsImages(ctx, filePath, displayPath, first, last)")
+		observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: extractPagesAsImages(ctx, filePath, displayPath, first, last)")
 		return extractPagesAsImages(ctx, filePath, displayPath, first, last)
 	}
 
 	if pdftotextAvailable(ctx) {
 		observe.TraceCtx(ctx, "fileread", "readPDFPages", "if: pdftotextAvailable(ctx)")
 		observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: extractPagesAsText(ctx, filePath, displayPath, first, last)")
+		observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: extractPagesAsText(ctx, filePath, displayPath, first, last)")
 		return extractPagesAsText(ctx, filePath, displayPath, first, last)
 	}
+	observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: tool.InvokeResult{}, fmt.Errorf(\n\t\"PDF page extraction requires poppler-utils...")
 	observe.TraceCtx(ctx, "fileread", "readPDFPages", "return: tool.InvokeResult{}, fmt.Errorf(\n\t\"PDF page extraction requires poppler-utils...")
 
 	return tool.InvokeResult{}, fmt.Errorf(
@@ -127,6 +138,7 @@ func extractPagesAsImages(ctx context.Context, filePath, displayPath string, fir
 	dir, err := os.MkdirTemp("", "gogent-pdf-*")
 	if err != nil {
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "if: err != nil")
+		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"create temp dir: %w\", err)")
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"create temp dir: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("create temp dir: %w", err)
 	}
@@ -147,12 +159,14 @@ func extractPagesAsImages(ctx context.Context, filePath, displayPath string, fir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "if: err != nil")
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"pdftoppm failed: %s\", strings.TrimSpace(stri...")
+		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"pdftoppm failed: %s\", strings.TrimSpace(stri...")
 		return tool.InvokeResult{}, fmt.Errorf("pdftoppm failed: %s", strings.TrimSpace(string(out)))
 	}
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "if: err != nil")
+		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"read extracted pages: %w\", err)")
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"read extracted pages: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read extracted pages: %w", err)
 	}
@@ -178,8 +192,10 @@ func extractPagesAsImages(ctx context.Context, filePath, displayPath string, fir
 	if len(supplements) == 0 {
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "if: len(supplements) == 0")
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"no pages extracted from PDF\")")
+		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"no pages extracted from PDF\")")
 		return tool.InvokeResult{}, fmt.Errorf("no pages extracted from PDF")
 	}
+	observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"PDF pages extracted: %d page(s) fro...")
 	observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"PDF pages extracted: %d page(s) fro...")
 
 	return tool.InvokeResult{
@@ -209,8 +225,10 @@ func extractPagesAsText(ctx context.Context, filePath, displayPath string, first
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "if: ok")
 			observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{}, fmt.Errorf(\"pdftotext failed: %s\", strings.TrimSpace(str...")
+			observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{}, fmt.Errorf(\"pdftotext failed: %s\", strings.TrimSpace(str...")
 			return tool.InvokeResult{}, fmt.Errorf("pdftotext failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
+		observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{}, fmt.Errorf(\"pdftotext: %w\", err)")
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{}, fmt.Errorf(\"pdftotext: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("pdftotext: %w", err)
 	}
@@ -219,8 +237,10 @@ func extractPagesAsText(ctx context.Context, filePath, displayPath string, first
 	if content == "" {
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "if: content == \"\"")
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{Content: fmt.Sprintf(\"PDF %s: no text content found in page...")
+		observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{Content: fmt.Sprintf(\"PDF %s: no text content found in page...")
 		return tool.InvokeResult{Content: fmt.Sprintf("PDF %s: no text content found in pages %d-%d", displayPath, first, last)}, nil
 	}
+	observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{Content: content}, nil")
 	observe.TraceCtx(ctx, "fileread", "extractPagesAsText", "return: tool.InvokeResult{Content: content}, nil")
 
 	return tool.InvokeResult{Content: content}, nil
@@ -235,6 +255,7 @@ func parsePDFPageRange(pages string) (first, last int, err error) {
 	if pages == "" {
 		observe.GlobalTrace("if: pages == \"\"")
 		observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"empty pages parameter\")")
+		observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"empty pages parameter\")")
 		return 0, 0, fmt.Errorf("empty pages parameter")
 	}
 
@@ -244,8 +265,10 @@ func parsePDFPageRange(pages string) (first, last int, err error) {
 		if err != nil || f < 1 {
 			observe.GlobalTrace("if: err != nil || f < 1")
 			observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"invalid pages parameter: %q. Use formats like \\\"1-5\\\", \\\"3\\...")
+			observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"invalid pages parameter: %q. Use formats like \\\"1-5\\\", \\\"3\\...")
 			return 0, 0, fmt.Errorf("invalid pages parameter: %q. Use formats like \"1-5\", \"3\", or \"10-20\"", pages)
 		}
+		observe.GlobalTrace("return: f, -1, nil")
 		observe.GlobalTrace("return: f, -1, nil")
 		return f, -1, nil
 	}
@@ -257,8 +280,10 @@ func parsePDFPageRange(pages string) (first, last int, err error) {
 		if err != nil || p < 1 {
 			observe.GlobalTrace("if: err != nil || p < 1")
 			observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"invalid pages parameter: %q. Pages are 1-indexed\", pages)")
+			observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"invalid pages parameter: %q. Pages are 1-indexed\", pages)")
 			return 0, 0, fmt.Errorf("invalid pages parameter: %q. Pages are 1-indexed", pages)
 		}
+		observe.GlobalTrace("return: p, p, nil")
 		observe.GlobalTrace("return: p, p, nil")
 		return p, p, nil
 	}
@@ -268,8 +293,10 @@ func parsePDFPageRange(pages string) (first, last int, err error) {
 	if err1 != nil || err2 != nil || f < 1 || l < 1 || l < f {
 		observe.GlobalTrace("if: err1 != nil || err2 != nil || f < 1 || l < 1 || l < f")
 		observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"invalid pages parameter: %q. Use formats like \\\"1-5\\\", \\\"3\\...")
+		observe.GlobalTrace("return: 0, 0, fmt.Errorf(\"invalid pages parameter: %q. Use formats like \\\"1-5\\\", \\\"3\\...")
 		return 0, 0, fmt.Errorf("invalid pages parameter: %q. Use formats like \"1-5\", \"3\", or \"10-20\"", pages)
 	}
+	observe.GlobalTrace("return: f, l, nil")
 	observe.GlobalTrace("return: f, l, nil")
 	return f, l, nil
 }
@@ -280,6 +307,7 @@ func pdftoppmAvailable(ctx context.Context) bool {
 	cmd := exec.CommandContext(ctx, "pdftoppm", "-v")
 	err := cmd.Run()
 	observe.TraceCtx(ctx, "fileread", "pdftoppmAvailable", "return: err == nil")
+	observe.TraceCtx(ctx, "fileread", "pdftoppmAvailable", "return: err == nil")
 	return err == nil
 }
 
@@ -288,6 +316,7 @@ func pdftotextAvailable(ctx context.Context) bool {
 	defer observe.TraceCtx(ctx, "fileread", "pdftotextAvailable", "exit")
 	cmd := exec.CommandContext(ctx, "pdftotext", "-v")
 	out, err := cmd.CombinedOutput()
+	observe.TraceCtx(ctx, "fileread", "pdftotextAvailable", "return: err == nil || len(out) > 0")
 	observe.TraceCtx(ctx, "fileread", "pdftotextAvailable", "return: err == nil || len(out) > 0")
 	return err == nil || len(out) > 0
 }

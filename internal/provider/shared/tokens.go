@@ -45,5 +45,6 @@ func EstimateTokens(params provider.RequestParams) int {
 		}
 	}
 	observe.GlobalTrace("return: total")
+	observe.GlobalTrace("return: total")
 	return total
 }

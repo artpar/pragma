@@ -36,12 +36,14 @@ func (t *DeleteTool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"CronDelete\"")
 	observe.GlobalTrace("return: \"CronDelete\"")
+	observe.GlobalTrace("return: \"CronDelete\"")
 	return "CronDelete"
 }
 func (t *DeleteTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Delete a scheduled cron job by ID...\"")
+	observe.GlobalTrace("return: \"Delete a scheduled cron job by ID. Use CronList first to find the job ID. Th...")
 	observe.GlobalTrace("return: \"Delete a scheduled cron job by ID. Use CronList first to find the job ID. Th...")
 	return "Delete a scheduled cron job by ID. Use CronList first to find the job ID. The job is stopped immediately and will not fire again."
 }
@@ -50,11 +52,13 @@ func (t *DeleteTool) InputSchema() json.RawMessage {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: deleteSchema")
 	observe.GlobalTrace("return: deleteSchema")
+	observe.GlobalTrace("return: deleteSchema")
 	return deleteSchema
 }
 func (t *DeleteTool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: true}
@@ -70,8 +74,10 @@ func (t *DeleteTool) CheckPerm(ctx context.Context, input json.RawMessage, check
 		observe.TraceCtx(ctx, "cron", "DeleteTool.CheckPerm", "if: err == nil && in.ID != \"\"")
 		observe.TraceCtx(ctx, "cron", "DeleteTool.CheckPerm", "return: checker.Check(ctx, \"CronDelete\", in.ID)")
 		observe.TraceCtx(ctx, "cron", "DeleteTool.CheckPerm", "return: checker.Check(ctx, \"CronDelete\", in.ID)")
+		observe.TraceCtx(ctx, "cron", "DeleteTool.CheckPerm", "return: checker.Check(ctx, \"CronDelete\", in.ID)")
 		return checker.Check(ctx, "CronDelete", in.ID)
 	}
+	observe.TraceCtx(ctx, "cron", "DeleteTool.CheckPerm", "return: checker.Check(ctx, \"CronDelete\", \"\")")
 	observe.TraceCtx(ctx, "cron", "DeleteTool.CheckPerm", "return: checker.Check(ctx, \"CronDelete\", \"\")")
 	observe.TraceCtx(ctx, "cron", "DeleteTool.CheckPerm", "return: checker.Check(ctx, \"CronDelete\", \"\")")
 	return checker.Check(ctx, "CronDelete", "")
@@ -85,10 +91,12 @@ func (t *DeleteTool) Invoke(_ context.Context, input json.RawMessage, _ tool.Sta
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.ID == "" {
 		observe.GlobalTrace("if: in.ID == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("id is required")
@@ -98,6 +106,7 @@ func (t *DeleteTool) Invoke(_ context.Context, input json.RawMessage, _ tool.Sta
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"delete cron job: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"delete cron job: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"delete cron job: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("delete cron job: %w", err)
 	}
 
@@ -105,6 +114,7 @@ func (t *DeleteTool) Invoke(_ context.Context, input json.RawMessage, _ tool.Sta
 		ID string `json:"id"`
 	}{ID: in.ID}
 	data, _ := json.Marshal(result)
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil

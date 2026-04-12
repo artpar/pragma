@@ -35,6 +35,7 @@ func (c *Client) ListResources(ctx context.Context) ([]ResourceInfo, error) {
 		c.mu.Unlock()
 		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
+		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
 	}
 	cli := c.mcpCli
@@ -43,6 +44,7 @@ func (c *Client) ListResources(ctx context.Context) ([]ResourceInfo, error) {
 	result, err := cli.ListResources(ctx, mcp.ListResourcesRequest{})
 	if err != nil {
 		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "if: err != nil")
+		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"list resources from %q: %w\", c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"list resources from %q: %w\", c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: nil, fmt.Errorf(\"list resources from %q: %w\", c.name, err)")
 		return nil, fmt.Errorf("list resources from %q: %w", c.name, err)
@@ -60,6 +62,7 @@ func (c *Client) ListResources(ctx context.Context) ([]ResourceInfo, error) {
 	}
 	observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: resources, nil")
 	observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: resources, nil")
+	observe.TraceCtx(ctx, "mcp", "Client.ListResources", "return: resources, nil")
 	return resources, nil
 }
 
@@ -73,6 +76,7 @@ func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceConten
 		c.mu.Unlock()
 		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
+		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
 	}
 	cli := c.mcpCli
@@ -83,6 +87,7 @@ func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceConten
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "if: err != nil")
+		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"read resource %q from %q: %w\", uri, c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"read resource %q from %q: %w\", uri, c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: nil, fmt.Errorf(\"read resource %q from %q: %w\", uri, c.name, err)")
 		return nil, fmt.Errorf("read resource %q from %q: %w", uri, c.name, err)
@@ -108,6 +113,7 @@ func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceConten
 			})
 		}
 	}
+	observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: contents, nil")
 	observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: contents, nil")
 	observe.TraceCtx(ctx, "mcp", "Client.ReadResource", "return: contents, nil")
 	return contents, nil

@@ -35,12 +35,14 @@ func (t *Tool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"TaskGet\"")
 	observe.GlobalTrace("return: \"TaskGet\"")
+	observe.GlobalTrace("return: \"TaskGet\"")
 	return "TaskGet"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Get details of a specific task by ID. Returns full task details...\"")
+	observe.GlobalTrace("return: taskGetDescription")
 	observe.GlobalTrace("return: taskGetDescription")
 	return taskGetDescription
 }
@@ -61,11 +63,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
@@ -74,6 +78,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "taskget", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "taskget", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "taskget", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskGet\", \"\")")
 	observe.TraceCtx(ctx, "taskget", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskGet\", \"\")")
 	observe.TraceCtx(ctx, "taskget", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskGet\", \"\")")
 	return checker.Check(ctx, "TaskGet", "")
@@ -87,10 +92,12 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.ID == "" {
 		observe.GlobalTrace("if: in.ID == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"id is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("id is required")
@@ -101,6 +108,7 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"task %q not found\", in.ID)}, nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"task %q not found\", in.ID)}, nil")
+		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"task %q not found\", in.ID)}, nil")
 		return tool.InvokeResult{Content: fmt.Sprintf("task %q not found", in.ID)}, nil
 	}
 
@@ -109,8 +117,10 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"marshal task: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"marshal task: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"marshal task: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("marshal task: %w", err)
 	}
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil

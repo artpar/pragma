@@ -14,7 +14,8 @@ const maxConcurrentStdio = 5
 // Manager handles multiple MCP server connections.
 type Manager struct {
 	clients         map[string]*Client
-	registeredTools map[string][]string // server name → registered tool names
+	configs         map[string]ServerConfig // stored for reconnection
+	registeredTools map[string][]string     // server name → registered tool names
 	mu              sync.RWMutex
 	bus             *observe.EventBus
 	registry        *tool.Registry
@@ -26,8 +27,10 @@ func NewManager(bus *observe.EventBus, registry *tool.Registry) *Manager {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Manager{\n\tclients:\t\tmake(map[string]*Client),\n\tregisteredTools:\tmake(map[str...")
 	observe.GlobalTrace("return: &Manager{\n\tclients:\t\tmake(map[string]*Client),\n\tregisteredTools:\tmake(map[str...")
+	observe.GlobalTrace("return: &Manager{\n\tclients:\t\tmake(map[string]*Client),\n\tconfigs:\t\tmake(map[string]Ser...")
 	return &Manager{
 		clients:         make(map[string]*Client),
+		configs:         make(map[string]ServerConfig),
 		registeredTools: make(map[string][]string),
 		bus:             bus,
 		registry:        registry,
@@ -105,11 +108,13 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 			}
 			m.mu.Lock()
 			m.clients[ns.name] = client
+			m.configs[ns.name] = ns.config
 			m.mu.Unlock()
 		}(ns)
 	}
 
 	wg.Wait()
+	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "return: errs")
 	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "return: errs")
 	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "return: errs")
 	return errs
@@ -165,6 +170,7 @@ func (m *Manager) RegisterTools(ctx context.Context) error {
 	}
 	observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "return: nil")
 	observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "return: nil")
+	observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "return: nil")
 
 	return nil
 }
@@ -210,6 +216,7 @@ func (m *Manager) ServerStatus() map[string]string {
 	}
 	observe.GlobalTrace("return: status")
 	observe.GlobalTrace("return: status")
+	observe.GlobalTrace("return: status")
 	return status
 }
 
@@ -229,7 +236,79 @@ func (m *Manager) ConnectedCount() int {
 	}
 	observe.GlobalTrace("return: count")
 	observe.GlobalTrace("return: count")
+	observe.GlobalTrace("return: count")
 	return count
+}
+
+// ReconnectServer disconnects and reconnects a single server, re-registering its tools.
+// Used after OAuth authentication completes to swap the auth pseudo-tool for real tools.
+func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
+	observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "exit")
+
+	m.mu.Lock()
+	cfg, ok := m.configs[name]
+	if !ok {
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: !ok")
+		m.mu.Unlock()
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"server %q not found in config\", name)")
+		return fmt.Errorf("server %q not found in config", name)
+	}
+
+	if old, exists := m.clients[name]; exists {
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: exists")
+		old.Disconnect()
+		delete(m.clients, name)
+	}
+
+	for _, toolName := range m.registeredTools[name] {
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "range m.registeredTools[name]")
+		m.registry.Unregister(toolName)
+	}
+	delete(m.registeredTools, name)
+	m.mu.Unlock()
+
+	client := NewClient(name, cfg, m.bus)
+	if err := client.Connect(ctx); err != nil {
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"reconnect %q: %w\", name, err)")
+		return fmt.Errorf("reconnect %q: %w", name, err)
+	}
+
+	m.mu.Lock()
+	m.clients[name] = client
+	m.mu.Unlock()
+
+	tools, err := client.ListTools(ctx)
+	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"list tools from %q after reconnect: %w\", name, err)")
+		return fmt.Errorf("list tools from %q after reconnect: %w", name, err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var registered []string
+	for _, info := range tools {
+		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "range tools")
+		adapter := NewMCPToolAdapter(client, info)
+		if err := m.registry.Register(adapter); err != nil {
+			observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
+			m.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
+				Severity:     "warn",
+				Component:    "mcp",
+				ErrorType:    "register_tool_error",
+				ErrorMessage: fmt.Sprintf("failed to register mcp tool %q after reconnect: %v", adapter.Name(), err),
+			})
+		} else {
+			observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "else: err != nil")
+			registered = append(registered, adapter.Name())
+		}
+	}
+	m.registeredTools[name] = registered
+	observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: nil")
+	return nil
 }
 
 // Clients returns a snapshot of all connected clients keyed by server name.
@@ -243,6 +322,7 @@ func (m *Manager) Clients() map[string]*Client {
 		observe.GlobalTrace("range m.clients")
 		result[name] = client
 	}
+	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	return result

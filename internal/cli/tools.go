@@ -11,10 +11,13 @@ import (
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/query"
+	"github.com/artpar/gogent/internal/skill"
 	"github.com/artpar/gogent/internal/tool"
 	toolagent "github.com/artpar/gogent/internal/tools/agent"
 	toolask "github.com/artpar/gogent/internal/tools/ask"
 	toolbash "github.com/artpar/gogent/internal/tools/bash"
+	toolbrief "github.com/artpar/gogent/internal/tools/brief"
+	toolconfig "github.com/artpar/gogent/internal/tools/config"
 	toolcron "github.com/artpar/gogent/internal/tools/cron"
 	toolfileedit "github.com/artpar/gogent/internal/tools/fileedit"
 	toolfileread "github.com/artpar/gogent/internal/tools/fileread"
@@ -27,6 +30,7 @@ import (
 	toolplan "github.com/artpar/gogent/internal/tools/plan"
 	toolremote "github.com/artpar/gogent/internal/tools/remote"
 	toolsendmsg "github.com/artpar/gogent/internal/tools/sendmsg"
+	toolskill "github.com/artpar/gogent/internal/tools/skill"
 	toolsleep "github.com/artpar/gogent/internal/tools/sleep"
 	tooltaskcreate "github.com/artpar/gogent/internal/tools/taskcreate"
 	tooltaskget "github.com/artpar/gogent/internal/tools/taskget"
@@ -37,6 +41,7 @@ import (
 	tooltodo "github.com/artpar/gogent/internal/tools/todo"
 	tooltoolsearch "github.com/artpar/gogent/internal/tools/toolsearch"
 	toolwebfetch "github.com/artpar/gogent/internal/tools/webfetch"
+	toolwebsearch "github.com/artpar/gogent/internal/tools/websearch"
 	toolworktree "github.com/artpar/gogent/internal/tools/worktree"
 )
 
@@ -76,6 +81,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
 			return nil, fmt.Errorf("register tool %s: %w", td.Name(), err)
 		}
 	}
@@ -85,6 +91,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
 		return nil, fmt.Errorf("register agent tool: %w", err)
 	}
 	askTool := &toolask.Tool{Asker: asker}
@@ -92,7 +99,21 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
 		return nil, fmt.Errorf("register ask tool: %w", err)
+	}
+
+	skillLoader := skill.NewLoader(d.Cwd)
+	skillTool := &toolskill.Tool{
+		EngineFactory: engineFactory,
+		Store:         d.Store,
+		Bus:           d.Bus,
+		Loader:        skillLoader,
+	}
+	if err := d.Registry.Register(skillTool); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register skill tool: %w\", err)")
+		return nil, fmt.Errorf("register skill tool: %w", err)
 	}
 
 	orchestrator := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
@@ -109,6 +130,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		observe.GlobalTrace("if: d.HookMgr != nil")
 		engine.SetHookManager(d.HookMgr)
 	}
+	observe.GlobalTrace("return: engine, nil")
 	observe.GlobalTrace("return: engine, nil")
 	observe.GlobalTrace("return: engine, nil")
 	return engine, nil
@@ -149,6 +171,9 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolcron.ListTool{Scheduler: d.CronSched},
 		&toolsendmsg.Tool{Tasks: d.TaskReg},
 		&toollsp.Tool{Manager: d.LspManager},
+		&toolwebsearch.Tool{},
+		&toolbrief.Tool{Bus: d.Bus},
+		&toolconfig.Tool{Store: d.Store, WorkDir: d.Cwd},
 	}
 
 	if os.Getenv("GOGENT_FEATURE_REMOTE_TRIGGERS") == "1" {
@@ -172,6 +197,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 			},
 		})
 	}
+	observe.GlobalTrace("return: tools")
 	observe.GlobalTrace("return: tools")
 
 	return tools

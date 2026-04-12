@@ -44,6 +44,7 @@ func classifyError(err error) classifiedError {
 		observe.GlobalTrace("if: errors.As(err, &apiErr)")
 		observe.GlobalTrace("return: classifyAPIError(apiErr)")
 		observe.GlobalTrace("return: classifyAPIError(apiErr)")
+		observe.GlobalTrace("return: classifyAPIError(apiErr)")
 		return classifyAPIError(apiErr)
 	}
 
@@ -53,6 +54,7 @@ func classifyError(err error) classifiedError {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		observe.GlobalTrace("if: errors.As(err, &dnsErr)")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"DNS resolution failed: %w\", ErrServerE...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"DNS resolution failed: %w\", ErrServerE...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"DNS resolution failed: %w\", ErrServerE...")
 		return classifiedError{
@@ -65,6 +67,7 @@ func classifyError(err error) classifiedError {
 	var netErr *net.OpError
 	if errors.As(err, &netErr) {
 		observe.GlobalTrace("if: errors.As(err, &netErr)")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		return classifiedError{
@@ -80,6 +83,7 @@ func classifyError(err error) classifiedError {
 		observe.GlobalTrace("if: errors.As(err, &urlErr)")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("connection error: %w", ErrServerError),
 			retryable: true,
@@ -89,6 +93,7 @@ func classifyError(err error) classifiedError {
 
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		observe.GlobalTrace("if: errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection closed: %w\", ErrServerError...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection closed: %w\", ErrServerError...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection closed: %w\", ErrServerError...")
 		return classifiedError{
@@ -106,12 +111,14 @@ func classifyError(err error) classifiedError {
 		observe.GlobalTrace("if: strings.Contains(msg, \"connection reset\") ||\n\tstrings.Contains(msg, \"broken p...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
+		observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"connection error: %w\", ErrServerError)...")
 		return classifiedError{
 			wrapped:   fmt.Errorf("connection error: %w", ErrServerError),
 			retryable: true,
 			errorType: "connection",
 		}
 	}
+	observe.GlobalTrace("return: classifiedError{\n\twrapped:\terr,\n\tretryable:\tfalse,\n\terrorType:\t\"unknown\",\n}")
 	observe.GlobalTrace("return: classifiedError{\n\twrapped:\terr,\n\tretryable:\tfalse,\n\terrorType:\t\"unknown\",\n}")
 	observe.GlobalTrace("return: classifiedError{\n\twrapped:\terr,\n\tretryable:\tfalse,\n\terrorType:\t\"unknown\",\n}")
 
@@ -163,6 +170,7 @@ func classifyAPIError(apiErr *sdk.Error) classifiedError {
 		if isContextOverflow(apiErr) {
 			observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"%w: %s\", ErrContextOverflow, apiErr.Er...")
 			observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"%w: %s\", ErrContextOverflow, apiErr.Er...")
+			observe.GlobalTrace("return: classifiedError{\n\twrapped:\tfmt.Errorf(\"%w: %s\", ErrContextOverflow, apiErr.Er...")
 			return classifiedError{
 				wrapped:   fmt.Errorf("%w: %s", ErrContextOverflow, apiErr.Error()),
 				retryable: false,
@@ -198,6 +206,7 @@ func isContextOverflow(apiErr *sdk.Error) bool {
 	raw := apiErr.RawJSON()
 	observe.GlobalTrace("return: strings.Contains(raw, \"prompt is too long\") ||\n\tstrings.Contains(raw, \"exceed...")
 	observe.GlobalTrace("return: strings.Contains(raw, \"prompt is too long\") ||\n\tstrings.Contains(raw, \"exceed...")
+	observe.GlobalTrace("return: strings.Contains(raw, \"prompt is too long\") ||\n\tstrings.Contains(raw, \"exceed...")
 	return strings.Contains(raw, "prompt is too long") ||
 		strings.Contains(raw, "exceeds the maximum") ||
 		strings.Contains(raw, "context length")
@@ -212,6 +221,7 @@ func parseRetryAfter(resp *http.Response) time.Duration {
 		observe.GlobalTrace("if: resp == nil")
 		observe.GlobalTrace("return: 0")
 		observe.GlobalTrace("return: 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
 	val := resp.Header.Get("Retry-After")
@@ -219,11 +229,13 @@ func parseRetryAfter(resp *http.Response) time.Duration {
 		observe.GlobalTrace("if: val == \"\"")
 		observe.GlobalTrace("return: 0")
 		observe.GlobalTrace("return: 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
 
 	if secs, err := strconv.Atoi(val); err == nil {
 		observe.GlobalTrace("if: err == nil")
+		observe.GlobalTrace("return: time.Duration(secs) * time.Second")
 		observe.GlobalTrace("return: time.Duration(secs) * time.Second")
 		observe.GlobalTrace("return: time.Duration(secs) * time.Second")
 		return time.Duration(secs) * time.Second
@@ -236,9 +248,11 @@ func parseRetryAfter(resp *http.Response) time.Duration {
 			observe.GlobalTrace("if: d > 0")
 			observe.GlobalTrace("return: d")
 			observe.GlobalTrace("return: d")
+			observe.GlobalTrace("return: d")
 			return d
 		}
 	}
+	observe.GlobalTrace("return: 0")
 	observe.GlobalTrace("return: 0")
 	observe.GlobalTrace("return: 0")
 	return 0

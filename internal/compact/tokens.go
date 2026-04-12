@@ -33,6 +33,7 @@ func EstimatePartTokens(part model.ContentPart) int {
 		if n == 0 && len(p.Text) > 0 {
 			observe.GlobalTrace("return: 1")
 			observe.GlobalTrace("return: 1")
+			observe.GlobalTrace("return: 1")
 			return 1
 		}
 		return n
@@ -80,6 +81,7 @@ func EstimateTokens(msg model.Message) int {
 	tokens += 4
 	observe.GlobalTrace("return: tokens")
 	observe.GlobalTrace("return: tokens")
+	observe.GlobalTrace("return: tokens")
 	return tokens
 }
 
@@ -92,6 +94,7 @@ func EstimateConversationTokens(msgs []model.Message) int {
 		observe.GlobalTrace("range msgs")
 		tokens += EstimateTokens(msg)
 	}
+	observe.GlobalTrace("return: tokens")
 	observe.GlobalTrace("return: tokens")
 	observe.GlobalTrace("return: tokens")
 	return tokens
@@ -108,6 +111,7 @@ func EstimateSystemPromptTokens(sp model.SystemPrompt) int {
 		observe.GlobalTrace("range sp.Blocks")
 		tokens += len(block.Text) / bytesPerToken
 	}
+	observe.GlobalTrace("return: tokens")
 	observe.GlobalTrace("return: tokens")
 	observe.GlobalTrace("return: tokens")
 	return tokens

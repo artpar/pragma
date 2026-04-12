@@ -32,47 +32,76 @@ type providerConfig struct {
 
 // WithBaseURL overrides the API base URL.
 func WithBaseURL(url string) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(c *providerConfig) { c.baseURL = url }")
 	return func(c *providerConfig) { c.baseURL = url }
 }
 
 // New creates an OpenAI provider backed by any-llm-go.
 func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var pc providerConfig
 	for _, opt := range opts {
+		observe.GlobalTrace("range opts")
 		opt(&pc)
 	}
 	cfgOpts := []config.Option{config.WithAPIKey(apiKey)}
 	if pc.baseURL != "" {
+		observe.GlobalTrace("if: pc.baseURL != \"\"")
 		cfgOpts = append(cfgOpts, config.WithBaseURL(pc.baseURL))
 	}
 	inner, err := oai.New(cfgOpts...)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"openai: create provider: %w\", err)")
 		return nil, fmt.Errorf("openai: create provider: %w", err)
 	}
+	observe.GlobalTrace("return: &Provider{inner: inner, bus: bus, maxRetries: 10}, nil")
 	return &Provider{inner: inner, bus: bus, maxRetries: 10}, nil
 }
 
-func (p *Provider) Name() string { return "openai" }
+func (p *Provider) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"openai\"")
+	return "openai"
+}
 
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch feature {
 	case provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages:
+		observe.GlobalTrace("case: provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages")
 		return true
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if info, ok := LookupModel(modelID); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: info.Pricing, true")
 		return info.Pricing, true
 	}
+	observe.GlobalTrace("return: model.Pricing{}, false")
 	return model.Pricing{}, false
 }
 
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if info, ok := LookupModel(modelID); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: info.MaxContext, true")
 		return info.MaxContext, true
 	}
+	observe.GlobalTrace("return: 128_000, false")
 	return 128_000, false
 }
 
@@ -80,6 +109,8 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 var openaiClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
 
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
+	observe.TraceCtx(ctx, "openai", "Provider.Complete", "enter")
+	defer observe.TraceCtx(ctx, "openai", "Provider.Complete", "exit")
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
 	p.emitStart(traceID, spanID, params)
@@ -94,6 +125,8 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		return reqErr
 	})
 	if err != nil {
+		observe.TraceCtx(ctx, "openai", "Provider.Complete", "if: err != nil")
+		observe.TraceCtx(ctx, "openai", "Provider.Complete", "return: model.Response{}, err")
 		return model.Response{}, err
 	}
 
@@ -105,10 +138,13 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		DurationMs:  time.Since(start).Milliseconds(),
 		Model:       resp.Model,
 	})
+	observe.TraceCtx(ctx, "openai", "Provider.Complete", "return: resp, nil")
 	return resp, nil
 }
 
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
+	observe.TraceCtx(ctx, "openai", "Provider.Stream", "enter")
+	defer observe.TraceCtx(ctx, "openai", "Provider.Stream", "exit")
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
 	p.emitStart(traceID, spanID, params)
@@ -126,22 +162,30 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		seenToolCalls := make(map[string]bool)
 
 		for chunk := range chunks {
+			observe.TraceCtx(ctx, "openai", "Provider.Stream", "range chunks")
 			if chunk.Usage != nil {
+				observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: chunk.Usage != nil")
 				usage = anyllm.UsageFromAnyLLM(chunk.Usage)
 			}
 			if chunk.Model != "" {
+				observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: chunk.Model != \"\"")
 				respModel = chunk.Model
 			}
 			for _, choice := range chunk.Choices {
+				observe.TraceCtx(ctx, "openai", "Provider.Stream", "range chunk.Choices")
 				delta := choice.Delta
 				if delta.Content != "" {
+					observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: delta.Content != \"\"")
 					ch <- provider.StreamChunk{TextDelta: delta.Content}
 				}
 				if delta.Reasoning != nil && delta.Reasoning.Content != "" {
+					observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: delta.Reasoning != nil && delta.Reasoning.Content != \"\"")
 					ch <- provider.StreamChunk{ThinkingDelta: delta.Reasoning.Content}
 				}
 				for _, tc := range delta.ToolCalls {
+					observe.TraceCtx(ctx, "openai", "Provider.Stream", "range delta.ToolCalls")
 					if tc.ID != "" && !seenToolCalls[tc.ID] {
+						observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: tc.ID != \"\" && !seenToolCalls[tc.ID]")
 						seenToolCalls[tc.ID] = true
 						toolCallIDs = append(toolCallIDs, tc.ID)
 						ch <- provider.StreamChunk{
@@ -149,8 +193,10 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						}
 					}
 					if tc.Function.Arguments != "" {
+						observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: tc.Function.Arguments != \"\"")
 						id := tc.ID
 						if id == "" && len(toolCallIDs) > 0 {
+							observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: id == \"\" && len(toolCallIDs) > 0")
 							id = toolCallIDs[len(toolCallIDs)-1]
 						}
 						ch <- provider.StreamChunk{
@@ -159,8 +205,10 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					}
 				}
 				if choice.FinishReason != "" {
+					observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: choice.FinishReason != \"\"")
 					stopReason := anyllm.StopReasonFromAnyLLM(choice.FinishReason)
 					if stopReason == model.StopEndTurn && len(seenToolCalls) > 0 {
+						observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: stopReason == model.StopEndTurn && len(seenToolCalls) > 0")
 						stopReason = model.StopToolUse
 					}
 					ch <- provider.StreamChunk{
@@ -176,16 +224,21 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		}
 		select {
 		case err, ok := <-errs:
+			observe.TraceCtx(ctx, "openai", "Provider.Stream", "select: err, ok := <-errs")
 			if ok && err != nil {
 				ch <- provider.StreamChunk{Error: err}
 			}
 		default:
+			observe.TraceCtx(ctx, "openai", "Provider.Stream", "select: default")
 		}
 	}()
+	observe.TraceCtx(ctx, "openai", "Provider.Stream", "return: ch, nil")
 	return ch, nil
 }
 
 func (p *Provider) emitStart(traceID, spanID string, params provider.RequestParams) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	p.bus.Emit(observe.APIRequestStarted{
 		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:         params.Model,

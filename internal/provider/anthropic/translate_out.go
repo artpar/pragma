@@ -24,6 +24,7 @@ func buildWireParams(params provider.RequestParams, mapper *IDMapper) (sdk.Messa
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: sdk.MessageNewParams{}, err")
 		observe.GlobalTrace("return: sdk.MessageNewParams{}, err")
+		observe.GlobalTrace("return: sdk.MessageNewParams{}, err")
 		return sdk.MessageNewParams{}, err
 	}
 	system := systemToWire(params.System)
@@ -59,6 +60,7 @@ func buildWireParams(params provider.RequestParams, mapper *IDMapper) (sdk.Messa
 	}
 	observe.GlobalTrace("return: p, nil")
 	observe.GlobalTrace("return: p, nil")
+	observe.GlobalTrace("return: p, nil")
 
 	return p, nil
 }
@@ -72,11 +74,13 @@ func thinkingToWire(cfg *provider.ThinkingConfig, info ModelInfo, known bool) sd
 		disabled := sdk.NewThinkingConfigDisabledParam()
 		observe.GlobalTrace("return: sdk.ThinkingConfigParamUnion{OfDisabled: &disabled}")
 		observe.GlobalTrace("return: sdk.ThinkingConfigParamUnion{OfDisabled: &disabled}")
+		observe.GlobalTrace("return: sdk.ThinkingConfigParamUnion{OfDisabled: &disabled}")
 		return sdk.ThinkingConfigParamUnion{OfDisabled: &disabled}
 	}
 
 	if known && info.ThinkingType == "adaptive" {
 		observe.GlobalTrace("if: known && info.ThinkingType == \"adaptive\"")
+		observe.GlobalTrace("return: sdk.ThinkingConfigParamUnion{OfAdaptive: &sdk.ThinkingConfigAdaptiveParam{}}")
 		observe.GlobalTrace("return: sdk.ThinkingConfigParamUnion{OfAdaptive: &sdk.ThinkingConfigAdaptiveParam{}}")
 		observe.GlobalTrace("return: sdk.ThinkingConfigParamUnion{OfAdaptive: &sdk.ThinkingConfigAdaptiveParam{}}")
 		return sdk.ThinkingConfigParamUnion{OfAdaptive: &sdk.ThinkingConfigAdaptiveParam{}}
@@ -91,6 +95,7 @@ func thinkingToWire(cfg *provider.ThinkingConfig, info ModelInfo, known bool) sd
 		observe.GlobalTrace("if: known && int(budget) > info.MaxThinking")
 		budget = int64(info.MaxThinking)
 	}
+	observe.GlobalTrace("return: sdk.ThinkingConfigParamOfEnabled(budget)")
 	observe.GlobalTrace("return: sdk.ThinkingConfigParamOfEnabled(budget)")
 	observe.GlobalTrace("return: sdk.ThinkingConfigParamOfEnabled(budget)")
 	return sdk.ThinkingConfigParamOfEnabled(budget)
@@ -108,10 +113,12 @@ func messagesToWire(msgs []model.Message, mapper *IDMapper) ([]sdk.MessageParam,
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: nil, err")
 			observe.GlobalTrace("return: nil, err")
+			observe.GlobalTrace("return: nil, err")
 			return nil, err
 		}
 		out = append(out, mp)
 	}
+	observe.GlobalTrace("return: out, nil")
 	observe.GlobalTrace("return: out, nil")
 	observe.GlobalTrace("return: out, nil")
 	return out, nil
@@ -143,10 +150,12 @@ func messageToWire(m model.Message, mapper *IDMapper) (sdk.MessageParam, error) 
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: sdk.MessageParam{}, err")
 			observe.GlobalTrace("return: sdk.MessageParam{}, err")
+			observe.GlobalTrace("return: sdk.MessageParam{}, err")
 			return sdk.MessageParam{}, err
 		}
 		blocks = append(blocks, block)
 	}
+	observe.GlobalTrace("return: sdk.MessageParam{\n\tRole:\t\trole,\n\tContent:\tblocks,\n}, nil")
 	observe.GlobalTrace("return: sdk.MessageParam{\n\tRole:\t\trole,\n\tContent:\tblocks,\n}, nil")
 	observe.GlobalTrace("return: sdk.MessageParam{\n\tRole:\t\trole,\n\tContent:\tblocks,\n}, nil")
 
@@ -210,6 +219,7 @@ func contentPartToWireAssistant(part model.ContentPart, mapper *IDMapper) (sdk.C
 				observe.GlobalTrace("if: err != nil")
 				observe.GlobalTrace("return: sdk.ContentBlockParamUnion{}, fmt.Errorf(\"malformed tool input JSON for %s: %...")
 				observe.GlobalTrace("return: sdk.ContentBlockParamUnion{}, fmt.Errorf(\"malformed tool input JSON for %s: %...")
+				observe.GlobalTrace("return: sdk.ContentBlockParamUnion{}, fmt.Errorf(\"malformed tool input JSON for %s: %...")
 				return sdk.ContentBlockParamUnion{}, fmt.Errorf("malformed tool input JSON for %s: %w", p.Name, err)
 			}
 		}
@@ -220,6 +230,7 @@ func contentPartToWireAssistant(part model.ContentPart, mapper *IDMapper) (sdk.C
 	case model.ThinkingPart:
 		observe.GlobalTrace("typecase: model.ThinkingPart")
 		if p.Redacted {
+			observe.GlobalTrace("return: sdk.NewRedactedThinkingBlock(p.RedactedData), nil")
 			observe.GlobalTrace("return: sdk.NewRedactedThinkingBlock(p.RedactedData), nil")
 			observe.GlobalTrace("return: sdk.NewRedactedThinkingBlock(p.RedactedData), nil")
 			return sdk.NewRedactedThinkingBlock(p.RedactedData), nil
@@ -237,6 +248,7 @@ func systemToWire(sys model.SystemPrompt) []sdk.TextBlockParam {
 	defer observe.GlobalTrace("exit")
 	if len(sys.Blocks) == 0 {
 		observe.GlobalTrace("if: len(sys.Blocks) == 0")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
@@ -263,6 +275,7 @@ func systemToWire(sys model.SystemPrompt) []sdk.TextBlockParam {
 	}
 	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -274,6 +287,7 @@ func toolsToWire(tools []model.ToolDef) []sdk.ToolUnionParam {
 		observe.GlobalTrace("if: len(tools) == 0")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := make([]sdk.ToolUnionParam, len(tools))
@@ -281,6 +295,7 @@ func toolsToWire(tools []model.ToolDef) []sdk.ToolUnionParam {
 		observe.GlobalTrace("range tools")
 		out[i] = toolDefToWire(td)
 	}
+	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	return out
@@ -298,6 +313,7 @@ func toolDefToWire(td model.ToolDef) sdk.ToolUnionParam {
 	}
 	observe.GlobalTrace("return: sdk.ToolUnionParam{OfTool: &tp}")
 	observe.GlobalTrace("return: sdk.ToolUnionParam{OfTool: &tp}")
+	observe.GlobalTrace("return: sdk.ToolUnionParam{OfTool: &tp}")
 	return sdk.ToolUnionParam{OfTool: &tp}
 }
 
@@ -311,12 +327,14 @@ func parseInputSchema(raw json.RawMessage) sdk.ToolInputSchemaParam {
 		observe.GlobalTrace("if: len(raw) == 0")
 		observe.GlobalTrace("return: sdk.ToolInputSchemaParam{}")
 		observe.GlobalTrace("return: sdk.ToolInputSchemaParam{}")
+		observe.GlobalTrace("return: sdk.ToolInputSchemaParam{}")
 		return sdk.ToolInputSchemaParam{}
 	}
 
 	var schema map[string]any
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: sdk.ToolInputSchemaParam{}")
 		observe.GlobalTrace("return: sdk.ToolInputSchemaParam{}")
 		observe.GlobalTrace("return: sdk.ToolInputSchemaParam{}")
 		return sdk.ToolInputSchemaParam{}
@@ -353,6 +371,7 @@ func parseInputSchema(raw json.RawMessage) sdk.ToolInputSchemaParam {
 			result.ExtraFields[k] = v
 		}
 	}
+	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 

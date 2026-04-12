@@ -79,6 +79,7 @@ func NewScheduler(bus *observe.EventBus, store *Store) *Scheduler {
 	}
 	observe.GlobalTrace("return: s")
 	observe.GlobalTrace("return: s")
+	observe.GlobalTrace("return: s")
 
 	return s
 }
@@ -91,6 +92,7 @@ func extractSeq(id string) int64 {
 		observe.GlobalTrace("if: len(id) <= 5 || id[:5] != \"cron-\"")
 		observe.GlobalTrace("return: 0")
 		observe.GlobalTrace("return: 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
 	var n int64
@@ -100,10 +102,12 @@ func extractSeq(id string) int64 {
 			observe.GlobalTrace("if: c < '0' || c > '9'")
 			observe.GlobalTrace("return: 0")
 			observe.GlobalTrace("return: 0")
+			observe.GlobalTrace("return: 0")
 			return 0
 		}
 		n = n*10 + int64(c-'0')
 	}
+	observe.GlobalTrace("return: n")
 	observe.GlobalTrace("return: n")
 	observe.GlobalTrace("return: n")
 	return n
@@ -119,6 +123,7 @@ func (s *Scheduler) Create(cronExpr, prompt string, recurring, durable bool) (*J
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, errors.Join(ErrInvalidExpr, err)")
 		observe.GlobalTrace("return: nil, errors.Join(ErrInvalidExpr, err)")
+		observe.GlobalTrace("return: nil, errors.Join(ErrInvalidExpr, err)")
 		return nil, errors.Join(ErrInvalidExpr, err)
 	}
 
@@ -126,6 +131,7 @@ func (s *Scheduler) Create(cronExpr, prompt string, recurring, durable bool) (*J
 	nextFire := expr.NextAfter(now)
 	if nextFire.IsZero() {
 		observe.GlobalTrace("if: nextFire.IsZero()")
+		observe.GlobalTrace("return: nil, errors.Join(ErrInvalidExpr, errors.New(\"expression never matches\"))")
 		observe.GlobalTrace("return: nil, errors.Join(ErrInvalidExpr, errors.New(\"expression never matches\"))")
 		observe.GlobalTrace("return: nil, errors.Join(ErrInvalidExpr, errors.New(\"expression never matches\"))")
 		return nil, errors.Join(ErrInvalidExpr, errors.New("expression never matches"))
@@ -136,6 +142,7 @@ func (s *Scheduler) Create(cronExpr, prompt string, recurring, durable bool) (*J
 
 	if len(s.jobs) >= 50 {
 		observe.GlobalTrace("if: len(s.jobs) >= 50")
+		observe.GlobalTrace("return: nil, ErrMaxJobs")
 		observe.GlobalTrace("return: nil, ErrMaxJobs")
 		observe.GlobalTrace("return: nil, ErrMaxJobs")
 		return nil, ErrMaxJobs
@@ -160,6 +167,7 @@ func (s *Scheduler) Create(cronExpr, prompt string, recurring, durable bool) (*J
 	copy := *j
 	observe.GlobalTrace("return: &copy, nil")
 	observe.GlobalTrace("return: &copy, nil")
+	observe.GlobalTrace("return: &copy, nil")
 	return &copy, nil
 }
 
@@ -174,10 +182,12 @@ func (s *Scheduler) Delete(id string) error {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: ErrNotFound")
 		observe.GlobalTrace("return: ErrNotFound")
+		observe.GlobalTrace("return: ErrNotFound")
 		return ErrNotFound
 	}
 	delete(s.jobs, id)
 	s.saveDurable()
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -199,6 +209,7 @@ func (s *Scheduler) List() []*Job {
 	sort.Slice(result, func(i, k int) bool {
 		return result[i].NextFire.Before(result[k].NextFire)
 	})
+	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	return result
@@ -316,6 +327,7 @@ func itoa(n int64) string {
 		observe.GlobalTrace("if: n == 0")
 		observe.GlobalTrace("return: \"0\"")
 		observe.GlobalTrace("return: \"0\"")
+		observe.GlobalTrace("return: \"0\"")
 		return "0"
 	}
 	var buf [20]byte
@@ -326,6 +338,7 @@ func itoa(n int64) string {
 		buf[i] = byte(n%10) + '0'
 		n /= 10
 	}
+	observe.GlobalTrace("return: string(buf[i:])")
 	observe.GlobalTrace("return: string(buf[i:])")
 	observe.GlobalTrace("return: string(buf[i:])")
 	return string(buf[i:])

@@ -15,6 +15,7 @@ import (
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/session"
+	"github.com/artpar/gogent/internal/skill"
 	"github.com/artpar/gogent/internal/slash"
 	"github.com/artpar/gogent/internal/sysprompt"
 	"github.com/artpar/gogent/internal/tui"
@@ -29,6 +30,7 @@ func RunDispatcher(cmd *cobra.Command, args []string) error {
 		observe.GlobalTrace("if: listSessions")
 		observe.GlobalTrace("return: RunListSessions()")
 		observe.GlobalTrace("return: RunListSessions()")
+		observe.GlobalTrace("return: RunListSessions()")
 		return RunListSessions()
 	}
 
@@ -37,8 +39,10 @@ func RunDispatcher(cmd *cobra.Command, args []string) error {
 		observe.GlobalTrace("if: prompt != \"\"")
 		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
 		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
+		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
 		return RunNonInteractive(cmd, args)
 	}
+	observe.GlobalTrace("return: RunInteractive(cmd)")
 	observe.GlobalTrace("return: RunInteractive(cmd)")
 	observe.GlobalTrace("return: RunInteractive(cmd)")
 
@@ -52,6 +56,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	d, err := SetupDeps(cmd)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		return err
@@ -79,6 +84,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 
@@ -88,6 +94,18 @@ func RunInteractive(cmd *cobra.Command) error {
 	sessionSaveFn := func() { SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd) }
 
 	slashCmds := slash.NewRegistry()
+
+	// Register discovered skills as slash commands
+	skillLoader := skill.NewLoader(d.Cwd)
+	if skills, err := skillLoader.LoadAll(); err == nil {
+		for _, s := range skills {
+			slashCmds.Register(slash.Command{
+				Name:        s.Name,
+				Description: s.Description,
+			})
+		}
+	}
+
 	slashDeps := slash.Deps{
 		Store:       d.Store,
 		CostTracker: d.CostTracker,
@@ -126,8 +144,10 @@ func RunInteractive(cmd *cobra.Command) error {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
+		observe.GlobalTrace("return: err")
 		return err
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 
@@ -141,6 +161,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	d, err := SetupDeps(cmd)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		return err
@@ -173,6 +194,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		observe.GlobalTrace("return: err")
 		return err
@@ -235,6 +257,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	}
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -247,6 +270,7 @@ func RunListSessions() error {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"open session store: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"open session store: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"open session store: %w\", err)")
 		return fmt.Errorf("open session store: %w", err)
 	}
 	summaries, err := sessionStore.List()
@@ -254,11 +278,13 @@ func RunListSessions() error {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"list sessions: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"list sessions: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"list sessions: %w\", err)")
 		return fmt.Errorf("list sessions: %w", err)
 	}
 	if len(summaries) == 0 {
 		observe.GlobalTrace("if: len(summaries) == 0")
 		fmt.Println("No saved sessions.")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
@@ -273,6 +299,7 @@ func RunListSessions() error {
 		fmt.Printf("%-38s  %s  %d turns  $%.4f  %s\n",
 			s.ID, s.Model, s.TurnCount, s.CostUSD, summary)
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -296,6 +323,7 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 
 	snap := d.Store.Snapshot()
 	sysTokEst := compact.EstimateSystemPromptTokens(snap.Conversation.System)
+	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 

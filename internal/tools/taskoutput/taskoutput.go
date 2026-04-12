@@ -36,6 +36,7 @@ func (t *Tool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"TaskOutput\"")
 	observe.GlobalTrace("return: \"TaskOutput\"")
+	observe.GlobalTrace("return: \"TaskOutput\"")
 	return "TaskOutput"
 }
 func (t *Tool) InputSchema() json.RawMessage {
@@ -43,11 +44,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
@@ -58,12 +61,14 @@ func (t *Tool) Description() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Read the output of a task. Returns the current status and result of a backgr...")
 	observe.GlobalTrace("return: \"Read the output of a task. Returns the current status and result of a backgr...")
+	observe.GlobalTrace("return: \"Read the output of a task. Returns the current status and result of a backgr...")
 	return "Read the output of a task. Returns the current status and result of a background task. Use this to check on async agent results."
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskOutput\", \"\")")
 	observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskOutput\", \"\")")
 	observe.TraceCtx(ctx, "taskoutput", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskOutput\", \"\")")
 	return checker.Check(ctx, "TaskOutput", "")
@@ -77,10 +82,12 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.TaskID == "" {
 		observe.GlobalTrace("if: in.TaskID == \"\"")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"task_id is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"task_id is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"task_id is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("task_id is required")
@@ -93,6 +100,7 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 			RetrievalStatus: "not_ready",
 		}
 		data, _ := json.Marshal(result)
+		observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 		return tool.InvokeResult{Content: string(data)}, nil

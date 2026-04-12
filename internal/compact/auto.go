@@ -25,6 +25,7 @@ func NewAutoTracker(disabled bool) *AutoTracker {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &AutoTracker{\n\tdisabled:\t\tdisabled,\n\tturnsSinceCompact:\tMinTurnsCooldown,\n}")
 	observe.GlobalTrace("return: &AutoTracker{\n\tdisabled:\t\tdisabled,\n\tturnsSinceCompact:\tMinTurnsCooldown,\n}")
+	observe.GlobalTrace("return: &AutoTracker{\n\tdisabled:\t\tdisabled,\n\tturnsSinceCompact:\tMinTurnsCooldown,\n}")
 	return &AutoTracker{
 		disabled:          disabled,
 		turnsSinceCompact: MinTurnsCooldown,
@@ -41,11 +42,13 @@ func (t *AutoTracker) ShouldAutoCompact(tokenCount int, wc WindowConfig) bool {
 		observe.GlobalTrace("if: t.disabled")
 		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 
 	if t.consecutiveFailures >= MaxConsecutiveFailures {
 		observe.GlobalTrace("if: t.consecutiveFailures >= MaxConsecutiveFailures")
+		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
 		return false
@@ -55,8 +58,10 @@ func (t *AutoTracker) ShouldAutoCompact(tokenCount int, wc WindowConfig) bool {
 		observe.GlobalTrace("if: t.compacted && t.turnsSinceCompact < MinTurnsCooldown")
 		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
+		observe.GlobalTrace("return: false")
 		return false
 	}
+	observe.GlobalTrace("return: tokenCount >= AutoCompactThreshold(wc)")
 	observe.GlobalTrace("return: tokenCount >= AutoCompactThreshold(wc)")
 	observe.GlobalTrace("return: tokenCount >= AutoCompactThreshold(wc)")
 
@@ -78,6 +83,7 @@ func (t *AutoTracker) RecordFailure() bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	t.consecutiveFailures++
+	observe.GlobalTrace("return: t.consecutiveFailures >= MaxConsecutiveFailures")
 	observe.GlobalTrace("return: t.consecutiveFailures >= MaxConsecutiveFailures")
 	observe.GlobalTrace("return: t.consecutiveFailures >= MaxConsecutiveFailures")
 	return t.consecutiveFailures >= MaxConsecutiveFailures

@@ -42,12 +42,14 @@ func (d *askDialog) Update(msg tea.Msg) tea.Cmd {
 		observe.GlobalTrace("if: !d.active")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
@@ -80,6 +82,7 @@ func (d *askDialog) Update(msg tea.Msg) tea.Cmd {
 	}
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -91,12 +94,14 @@ func (d *askDialog) View() string {
 		observe.GlobalTrace("if: !d.active")
 		observe.GlobalTrace("return: \"\"")
 		observe.GlobalTrace("return: \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString(askQuestionStyle.Render("? " + d.question))
 	b.WriteString("\n")
 	b.WriteString(askInputStyle.Render("> " + d.answer.String() + "█"))
+	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
 	return b.String()

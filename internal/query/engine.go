@@ -82,6 +82,7 @@ func NewEngine(
 	}
 	observe.GlobalTrace("return: e")
 	observe.GlobalTrace("return: e")
+	observe.GlobalTrace("return: e")
 	return e
 }
 

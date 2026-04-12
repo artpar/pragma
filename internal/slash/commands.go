@@ -52,6 +52,7 @@ func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) 
 		observe.TraceCtx(ctx, "slash", "handleCompact", "if: deps.Compactor == nil")
 		observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{DisplayText: \"Compaction is not available.\"}, nil")
 		observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{DisplayText: \"Compaction is not available.\"}, nil")
+		observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{DisplayText: \"Compaction is not available.\"}, nil")
 		return Result{DisplayText: "Compaction is not available."}, nil
 	}
 
@@ -63,6 +64,7 @@ func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) 
 		observe.TraceCtx(ctx, "slash", "handleCompact", "if: err != nil")
 		observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{}, fmt.Errorf(\"compaction failed: %w\", err)")
 		observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{}, fmt.Errorf(\"compaction failed: %w\", err)")
+		observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{}, fmt.Errorf(\"compaction failed: %w\", err)")
 		return Result{}, fmt.Errorf("compaction failed: %w", err)
 	}
 
@@ -70,6 +72,7 @@ func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) 
 		s.Conversation.Messages = result.ReplacementMessages
 		s.Conversation.UpdatedAt = time.Now()
 	})
+	observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{\n\tDisplayText: fmt.Sprintf(\"Compacted: %d → %d tokens (%d messages r...")
 	observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{\n\tDisplayText: fmt.Sprintf(\"Compacted: %d → %d tokens (%d messages r...")
 	observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{\n\tDisplayText: fmt.Sprintf(\"Compacted: %d → %d tokens (%d messages r...")
 
@@ -90,6 +93,7 @@ func handleClear(_ context.Context, _ string, deps Deps) (Result, error) {
 	})
 	observe.GlobalTrace("return: Result{\n\tClearConversation:\ttrue,\n\tDisplayText:\t\t\"Conversation cleared.\",\n}, nil")
 	observe.GlobalTrace("return: Result{\n\tClearConversation:\ttrue,\n\tDisplayText:\t\t\"Conversation cleared.\",\n}, nil")
+	observe.GlobalTrace("return: Result{\n\tClearConversation:\ttrue,\n\tDisplayText:\t\t\"Conversation cleared.\",\n}, nil")
 
 	return Result{
 		ClearConversation: true,
@@ -105,6 +109,7 @@ func handleCost(_ context.Context, _ string, deps Deps) (Result, error) {
 
 	if len(entries) == 0 {
 		observe.GlobalTrace("if: len(entries) == 0")
+		observe.GlobalTrace("return: Result{DisplayText: \"No API calls yet. Session cost: $0.0000\"}, nil")
 		observe.GlobalTrace("return: Result{DisplayText: \"No API calls yet. Session cost: $0.0000\"}, nil")
 		observe.GlobalTrace("return: Result{DisplayText: \"No API calls yet. Session cost: $0.0000\"}, nil")
 		return Result{DisplayText: "No API calls yet. Session cost: $0.0000"}, nil
@@ -148,6 +153,7 @@ func handleCost(_ context.Context, _ string, deps Deps) (Result, error) {
 	}
 	observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
 	observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
+	observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
 
 	return Result{DisplayText: b.String()}, nil
 }
@@ -170,6 +176,7 @@ func handleHelp(_ context.Context, _ string, deps Deps) (Result, error) {
 	}
 	observe.GlobalTrace("return: Result{DisplayText: strings.TrimSpace(b.String())}, nil")
 	observe.GlobalTrace("return: Result{DisplayText: strings.TrimSpace(b.String())}, nil")
+	observe.GlobalTrace("return: Result{DisplayText: strings.TrimSpace(b.String())}, nil")
 	return Result{DisplayText: strings.TrimSpace(b.String())}, nil
 }
 
@@ -180,6 +187,7 @@ func handleExit(_ context.Context, _ string, deps Deps) (Result, error) {
 		observe.GlobalTrace("if: deps.SessionSave != nil")
 		deps.SessionSave()
 	}
+	observe.GlobalTrace("return: Result{Quit: true}, nil")
 	observe.GlobalTrace("return: Result{Quit: true}, nil")
 	observe.GlobalTrace("return: Result{Quit: true}, nil")
 	return Result{Quit: true}, nil

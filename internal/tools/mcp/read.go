@@ -49,11 +49,13 @@ func (t *ReadTool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"ReadMcpResourceTool\"")
 	observe.GlobalTrace("return: \"ReadMcpResourceTool\"")
+	observe.GlobalTrace("return: \"ReadMcpResourceTool\"")
 	return "ReadMcpResourceTool"
 }
 func (t *ReadTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: readInputSchema")
 	observe.GlobalTrace("return: readInputSchema")
 	observe.GlobalTrace("return: readInputSchema")
 	return readInputSchema
@@ -63,6 +65,7 @@ func (t *ReadTool) Flags() tool.ToolFlags {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
 
@@ -70,6 +73,7 @@ func (t *ReadTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Reads a specific resource from an MCP server...\"")
+	observe.GlobalTrace("return: readMcpDescription")
 	observe.GlobalTrace("return: readMcpDescription")
 	return readMcpDescription
 }
@@ -93,8 +97,10 @@ func (t *ReadTool) CheckPerm(ctx context.Context, input json.RawMessage, checker
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "if: err == nil && in.Server != \"\"")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "return: checker.Check(ctx, \"ReadMcpResourceTool\", in.Server+\":\"+in.URI)")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "return: checker.Check(ctx, \"ReadMcpResourceTool\", in.Server+\":\"+in.URI)")
+		observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "return: checker.Check(ctx, \"ReadMcpResourceTool\", in.Server+\":\"+in.URI)")
 		return checker.Check(ctx, "ReadMcpResourceTool", in.Server+":"+in.URI)
 	}
+	observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "return: checker.Check(ctx, \"ReadMcpResourceTool\", \"\")")
 	observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "return: checker.Check(ctx, \"ReadMcpResourceTool\", \"\")")
 	observe.TraceCtx(ctx, "toolmcp", "ReadTool.CheckPerm", "return: checker.Check(ctx, \"ReadMcpResourceTool\", \"\")")
 	return checker.Check(ctx, "ReadMcpResourceTool", "")
@@ -108,16 +114,19 @@ func (t *ReadTool) Invoke(ctx context.Context, input json.RawMessage, snap tool.
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Server == "" {
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "if: in.Server == \"\"")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"server is required\")")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"server is required\")")
+		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"server is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("server is required")
 	}
 	if in.URI == "" {
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "if: in.URI == \"\"")
+		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"uri is required\")")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"uri is required\")")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"uri is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("uri is required")
@@ -134,11 +143,13 @@ func (t *ReadTool) Invoke(ctx context.Context, input json.RawMessage, snap tool.
 		}
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Server %q not found. Available server...")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Server %q not found. Available server...")
+		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Server %q not found. Available server...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Server %q not found. Available servers: %s", in.Server, strings.Join(available, ", "))}, nil
 	}
 
 	if !client.Connected() {
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "if: !client.Connected()")
+		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Server %q is not connected.\", in.Serv...")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Server %q is not connected.\", in.Serv...")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Server %q is not connected.\", in.Serv...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Server %q is not connected.", in.Server)}, nil
@@ -147,6 +158,7 @@ func (t *ReadTool) Invoke(ctx context.Context, input json.RawMessage, snap tool.
 	contents, err := client.ReadResource(ctx, in.URI)
 	if err != nil {
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Error reading resource: %v\", err)}, nil")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Error reading resource: %v\", err)}, nil")
 		observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Error reading resource: %v\", err)}, nil")
 		return tool.InvokeResult{Content: fmt.Sprintf("Error reading resource: %v", err)}, nil
@@ -199,6 +211,7 @@ func (t *ReadTool) Invoke(ctx context.Context, input json.RawMessage, snap tool.
 	data, _ := json.Marshal(result)
 	observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
+	observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
@@ -215,6 +228,7 @@ func (t *ReadTool) persistBinary(snap tool.StateSnapshot, data []byte, mimeType 
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"create cache dir: %w\", err)")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"create cache dir: %w\", err)")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"create cache dir: %w\", err)")
 		return "", fmt.Errorf("create cache dir: %w", err)
 	}
 
@@ -228,8 +242,10 @@ func (t *ReadTool) persistBinary(snap tool.StateSnapshot, data []byte, mimeType 
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"write file: %w\", err)")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"write file: %w\", err)")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"write file: %w\", err)")
 		return "", fmt.Errorf("write file: %w", err)
 	}
+	observe.GlobalTrace("return: path, nil")
 	observe.GlobalTrace("return: path, nil")
 	observe.GlobalTrace("return: path, nil")
 

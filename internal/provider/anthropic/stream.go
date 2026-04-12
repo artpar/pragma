@@ -81,6 +81,7 @@ func (p *Provider) startStream(
 	}()
 	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "return: ch")
 	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "return: ch")
+	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "return: ch")
 
 	return ch
 }

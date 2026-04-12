@@ -21,6 +21,7 @@ func NewRegistry(bus *observe.EventBus) *Registry {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
 	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
+	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
 	return &Registry{
 		tools: make(map[string]Descriptor),
 		bus:   bus,
@@ -38,9 +39,11 @@ func (r *Registry) Register(desc Descriptor) error {
 		observe.GlobalTrace("if: exists")
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
+		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
 		return fmt.Errorf("%w: %q", model.ErrToolAlreadyRegistered, name)
 	}
 	r.tools[name] = desc
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -64,6 +67,7 @@ func (r *Registry) Get(name string) (Descriptor, bool) {
 	desc, ok := r.tools[name]
 	observe.GlobalTrace("return: desc, ok")
 	observe.GlobalTrace("return: desc, ok")
+	observe.GlobalTrace("return: desc, ok")
 	return desc, ok
 }
 
@@ -78,6 +82,7 @@ func (r *Registry) List() []Descriptor {
 		observe.GlobalTrace("range r.tools")
 		out = append(out, desc)
 	}
+	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	return out
@@ -98,6 +103,7 @@ func (r *Registry) ToolDefs() []model.ToolDef {
 			InputSchema: desc.InputSchema(),
 		})
 	}
+	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	return out
@@ -124,6 +130,7 @@ func (r *Registry) Scoped(names []string) *Registry {
 			scoped.tools[name] = desc
 		}
 	}
+	observe.GlobalTrace("return: scoped")
 	observe.GlobalTrace("return: scoped")
 	observe.GlobalTrace("return: scoped")
 	return scoped

@@ -77,12 +77,14 @@ func (t *Tool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"NotebookEdit\"")
 	observe.GlobalTrace("return: \"NotebookEdit\"")
+	observe.GlobalTrace("return: \"NotebookEdit\"")
 	return "NotebookEdit"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Replaces the contents of a specific cell in a Jupyter notebook...\"")
+	observe.GlobalTrace("return: notebookEditDescription")
 	observe.GlobalTrace("return: notebookEditDescription")
 	return notebookEditDescription
 }
@@ -100,11 +102,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
@@ -120,8 +124,10 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "if: err != nil || in.NotebookPath == \"\"")
 		observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"NotebookEdit\", \"\")")
 		observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"NotebookEdit\", \"\")")
+		observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"NotebookEdit\", \"\")")
 		return checker.Check(ctx, "NotebookEdit", "")
 	}
+	observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"NotebookEdit\", in.NotebookPath)")
 	observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"NotebookEdit\", in.NotebookPath)")
 	observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"NotebookEdit\", in.NotebookPath)")
 	return checker.Check(ctx, "NotebookEdit", in.NotebookPath)
@@ -135,6 +141,7 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 
@@ -142,10 +149,12 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 		observe.GlobalTrace("if: in.NotebookPath == \"\"")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"notebook_path is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"notebook_path is required\")")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"notebook_path is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("notebook_path is required")
 	}
 	if !strings.HasSuffix(strings.ToLower(in.NotebookPath), ".ipynb") {
 		observe.GlobalTrace("if: !strings.HasSuffix(strings.ToLower(in.NotebookPath), \".ipynb\")")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"file must be a .ipynb notebook\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"file must be a .ipynb notebook\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"file must be a .ipynb notebook\")")
 		return tool.InvokeResult{}, fmt.Errorf("file must be a .ipynb notebook")
@@ -169,12 +178,14 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"read notebook: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"read notebook: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"read notebook: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read notebook: %w", err)
 	}
 
 	var nb notebookContent
 	if err := json.Unmarshal(data, &nb); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"parse notebook: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"parse notebook: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"parse notebook: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("parse notebook: %w", err)
@@ -204,6 +215,7 @@ func (t *Tool) doReplace(nb *notebookContent, nbPath string, in NotebookEditInpu
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
+		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
 
@@ -220,8 +232,10 @@ func (t *Tool) doReplace(nb *notebookContent, nbPath string, in NotebookEditInpu
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
+		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
+	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Updated cell %s in %s\", cellIDStr(c...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Updated cell %s in %s\", cellIDStr(c...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Updated cell %s in %s\", cellIDStr(c...")
 
@@ -257,6 +271,7 @@ func (t *Tool) doInsert(nb *notebookContent, nbPath string, in NotebookEditInput
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: tool.InvokeResult{}, err")
 			observe.GlobalTrace("return: tool.InvokeResult{}, err")
+			observe.GlobalTrace("return: tool.InvokeResult{}, err")
 			return tool.InvokeResult{}, err
 		}
 		insertIdx = idx + 1
@@ -270,8 +285,10 @@ func (t *Tool) doInsert(nb *notebookContent, nbPath string, in NotebookEditInput
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
+		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
+	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Inserted %s cell at index %d in %s\"...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Inserted %s cell at index %d in %s\"...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Inserted %s cell at index %d in %s\"...")
 
@@ -288,6 +305,7 @@ func (t *Tool) doDelete(nb *notebookContent, nbPath string, in NotebookEditInput
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
+		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
 
@@ -298,8 +316,10 @@ func (t *Tool) doDelete(nb *notebookContent, nbPath string, in NotebookEditInput
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
+		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
+	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Deleted cell %s from %s\", cellID, n...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Deleted cell %s from %s\", cellID, n...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Deleted cell %s from %s\", cellID, n...")
 
@@ -318,8 +338,10 @@ func findCell(nb *notebookContent, cellID string) (int, error) {
 			observe.GlobalTrace("if: len(nb.Cells) == 0")
 			observe.GlobalTrace("return: 0, fmt.Errorf(\"notebook has no cells\")")
 			observe.GlobalTrace("return: 0, fmt.Errorf(\"notebook has no cells\")")
+			observe.GlobalTrace("return: 0, fmt.Errorf(\"notebook has no cells\")")
 			return 0, fmt.Errorf("notebook has no cells")
 		}
+		observe.GlobalTrace("return: 0, nil")
 		observe.GlobalTrace("return: 0, nil")
 		observe.GlobalTrace("return: 0, nil")
 		return 0, nil
@@ -329,6 +351,7 @@ func findCell(nb *notebookContent, cellID string) (int, error) {
 		observe.GlobalTrace("range nb.Cells")
 		if cell.ID == cellID {
 			observe.GlobalTrace("if: cell.ID == cellID")
+			observe.GlobalTrace("return: i, nil")
 			observe.GlobalTrace("return: i, nil")
 			observe.GlobalTrace("return: i, nil")
 			return i, nil
@@ -342,12 +365,15 @@ func findCell(nb *notebookContent, cellID string) (int, error) {
 			observe.GlobalTrace("if: idx < 0 || idx >= len(nb.Cells)")
 			observe.GlobalTrace("return: 0, fmt.Errorf(\"cell index %d out of range (0-%d)\", idx, len(nb.Cells)-1)")
 			observe.GlobalTrace("return: 0, fmt.Errorf(\"cell index %d out of range (0-%d)\", idx, len(nb.Cells)-1)")
+			observe.GlobalTrace("return: 0, fmt.Errorf(\"cell index %d out of range (0-%d)\", idx, len(nb.Cells)-1)")
 			return 0, fmt.Errorf("cell index %d out of range (0-%d)", idx, len(nb.Cells)-1)
 		}
 		observe.GlobalTrace("return: idx, nil")
 		observe.GlobalTrace("return: idx, nil")
+		observe.GlobalTrace("return: idx, nil")
 		return idx, nil
 	}
+	observe.GlobalTrace("return: 0, fmt.Errorf(\"cell %q not found\", cellID)")
 	observe.GlobalTrace("return: 0, fmt.Errorf(\"cell %q not found\", cellID)")
 	observe.GlobalTrace("return: 0, fmt.Errorf(\"cell %q not found\", cellID)")
 
@@ -367,6 +393,7 @@ func marshalSource(s string) json.RawMessage {
 	data, _ := json.Marshal(lines)
 	observe.GlobalTrace("return: data")
 	observe.GlobalTrace("return: data")
+	observe.GlobalTrace("return: data")
 	return data
 }
 
@@ -377,8 +404,10 @@ func cellIDStr(cell *notebookCell, idx int) string {
 		observe.GlobalTrace("if: cell.ID != \"\"")
 		observe.GlobalTrace("return: cell.ID")
 		observe.GlobalTrace("return: cell.ID")
+		observe.GlobalTrace("return: cell.ID")
 		return cell.ID
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"#%d\", idx)")
 	observe.GlobalTrace("return: fmt.Sprintf(\"#%d\", idx)")
 	observe.GlobalTrace("return: fmt.Sprintf(\"#%d\", idx)")
 	return fmt.Sprintf("#%d", idx)
@@ -392,10 +421,12 @@ func writeNotebook(path string, nb *notebookContent) error {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"marshal notebook: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"marshal notebook: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"marshal notebook: %w\", err)")
 		return fmt.Errorf("marshal notebook: %w", err)
 	}
 
 	data = append(data, '\n')
+	observe.GlobalTrace("return: os.WriteFile(path, data, 0644)")
 	observe.GlobalTrace("return: os.WriteFile(path, data, 0644)")
 	observe.GlobalTrace("return: os.WriteFile(path, data, 0644)")
 	return os.WriteFile(path, data, 0644)

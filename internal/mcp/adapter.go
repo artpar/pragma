@@ -27,6 +27,7 @@ func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tBuildToolName(...")
 	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tBuildToolName(...")
+	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tBuildToolName(...")
 	return &MCPToolAdapter{
 		client:   client,
 		toolInfo: info,
@@ -38,6 +39,7 @@ func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
 func (a *MCPToolAdapter) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: a.fullName")
 	observe.GlobalTrace("return: a.fullName")
 	observe.GlobalTrace("return: a.fullName")
 	return a.fullName
@@ -52,8 +54,10 @@ func (a *MCPToolAdapter) Description() string {
 		observe.GlobalTrace("if: len(d) > maxDescriptionLen")
 		observe.GlobalTrace("return: d[:maxDescriptionLen]")
 		observe.GlobalTrace("return: d[:maxDescriptionLen]")
+		observe.GlobalTrace("return: d[:maxDescriptionLen]")
 		return d[:maxDescriptionLen]
 	}
+	observe.GlobalTrace("return: d")
 	observe.GlobalTrace("return: d")
 	observe.GlobalTrace("return: d")
 	return d
@@ -67,8 +71,10 @@ func (a *MCPToolAdapter) InputSchema() json.RawMessage {
 		observe.GlobalTrace("if: len(a.toolInfo.InputSchema) == 0")
 		observe.GlobalTrace("return: json.RawMessage(`{\"type\":\"object\"}`)")
 		observe.GlobalTrace("return: json.RawMessage(`{\"type\":\"object\"}`)")
+		observe.GlobalTrace("return: json.RawMessage(`{\"type\":\"object\"}`)")
 		return json.RawMessage(`{"type":"object"}`)
 	}
+	observe.GlobalTrace("return: a.toolInfo.InputSchema")
 	observe.GlobalTrace("return: a.toolInfo.InputSchema")
 	observe.GlobalTrace("return: a.toolInfo.InputSchema")
 	return a.toolInfo.InputSchema
@@ -88,11 +94,13 @@ func (a *MCPToolAdapter) Invoke(ctx context.Context, input json.RawMessage, _ to
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: reconnErr != nil")
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"reconnect failed for %s: %w\", a.fullName, re...")
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"reconnect failed for %s: %w\", a.fullName, re...")
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"reconnect failed for %s: %w\", a.fullName, re...")
 				return tool.InvokeResult{}, fmt.Errorf("reconnect failed for %s: %w", a.fullName, reconnErr)
 			}
 			result, err = a.client.CallTool(ctx, a.toolInfo.Name, input)
 			if err != nil {
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: err != nil")
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 				return tool.InvokeResult{}, err
@@ -101,9 +109,11 @@ func (a *MCPToolAdapter) Invoke(ctx context.Context, input json.RawMessage, _ to
 			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "else: errors.Is(err, ErrServerNotConnected)")
 			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
+			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 			return tool.InvokeResult{}, err
 		}
 	}
+	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 
@@ -118,6 +128,7 @@ func (a *MCPToolAdapter) CheckPerm(ctx context.Context, input json.RawMessage, c
 	content := string(input)
 	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.CheckPerm", "return: checker.Check(ctx, a.fullName, content)")
 	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.CheckPerm", "return: checker.Check(ctx, a.fullName, content)")
+	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.CheckPerm", "return: checker.Check(ctx, a.fullName, content)")
 	return checker.Check(ctx, a.fullName, content)
 }
 
@@ -125,6 +136,7 @@ func (a *MCPToolAdapter) CheckPerm(ctx context.Context, input json.RawMessage, c
 func (a *MCPToolAdapter) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{\n\tReadOnly:\ta.toolInfo.ReadOnly,\n\tConcurrent:\ta.toolInfo.ReadO...")
 	observe.GlobalTrace("return: tool.ToolFlags{\n\tReadOnly:\ta.toolInfo.ReadOnly,\n\tConcurrent:\ta.toolInfo.ReadO...")
 	observe.GlobalTrace("return: tool.ToolFlags{\n\tReadOnly:\ta.toolInfo.ReadOnly,\n\tConcurrent:\ta.toolInfo.ReadO...")
 	return tool.ToolFlags{

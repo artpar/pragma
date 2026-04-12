@@ -50,6 +50,7 @@ func ExecCommand(ctx context.Context, cmd Command, input []byte, workDir string,
 			observe.TraceCtx(ctx, "hook", "ExecCommand", "if: cmdCtx.Err() == context.DeadlineExceeded")
 			result.Err = fmt.Errorf("hook timed out after %ds", timeout)
 			observe.TraceCtx(ctx, "hook", "ExecCommand", "return: result")
+			observe.TraceCtx(ctx, "hook", "ExecCommand", "return: result")
 			return result
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -58,6 +59,7 @@ func ExecCommand(ctx context.Context, cmd Command, input []byte, workDir string,
 		} else {
 			observe.TraceCtx(ctx, "hook", "ExecCommand", "else: ok")
 			result.Err = fmt.Errorf("hook execution failed: %w", err)
+			observe.TraceCtx(ctx, "hook", "ExecCommand", "return: result")
 			observe.TraceCtx(ctx, "hook", "ExecCommand", "return: result")
 			return result
 		}
@@ -73,6 +75,7 @@ func ExecCommand(ctx context.Context, cmd Command, input []byte, workDir string,
 		}
 
 	}
+	observe.TraceCtx(ctx, "hook", "ExecCommand", "return: result")
 	observe.TraceCtx(ctx, "hook", "ExecCommand", "return: result")
 
 	return result
@@ -93,6 +96,7 @@ func buildEnv(vars map[string]string) []string {
 		observe.GlobalTrace("range vars")
 		env = append(env, k+"="+v)
 	}
+	observe.GlobalTrace("return: env")
 	observe.GlobalTrace("return: env")
 	return env
 }

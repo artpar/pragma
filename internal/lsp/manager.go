@@ -33,6 +33,7 @@ func NewManager(bus *observe.EventBus) *Manager {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Manager{...}")
 	observe.GlobalTrace("return: &Manager{\n\tservers:\tmake(map[string]*Server),\n\textensionMap:\tmake(map[string]...")
+	observe.GlobalTrace("return: &Manager{\n\tservers:\tmake(map[string]*Server),\n\textensionMap:\tmake(map[string]...")
 	return &Manager{
 		servers:      make(map[string]*Server),
 		extensionMap: make(map[string]string),
@@ -97,6 +98,7 @@ func (m *Manager) ServerForFile(filePath string) (*Server, string, bool) {
 		m.mu.RUnlock()
 		observe.GlobalTrace("return: nil, \"\", false")
 		observe.GlobalTrace("return: nil, \"\", false")
+		observe.GlobalTrace("return: nil, \"\", false")
 		return nil, "", false
 	}
 	server := m.servers[name]
@@ -107,6 +109,7 @@ func (m *Manager) ServerForFile(filePath string) (*Server, string, bool) {
 		observe.GlobalTrace("if: server != nil")
 		langID = server.config.ExtensionToLanguage[ext]
 	}
+	observe.GlobalTrace("return: server, langID, server != nil")
 	observe.GlobalTrace("return: server, langID, server != nil")
 	observe.GlobalTrace("return: server, langID, server != nil")
 
@@ -123,11 +126,13 @@ func (m *Manager) SendRequest(ctx context.Context, filePath, method string, para
 		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "if: !ok")
 		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: nil, fmt.Errorf(\"%w: %s\", ErrNoServerForFile, filepath.Ext(filePath))")
 		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: nil, fmt.Errorf(\"%w: %s\", ErrNoServerForFile, filepath.Ext(filePath))")
+		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: nil, fmt.Errorf(\"%w: %s\", ErrNoServerForFile, filepath.Ext(filePath))")
 		return nil, fmt.Errorf("%w: %s", ErrNoServerForFile, filepath.Ext(filePath))
 	}
 
 	if err := m.ensureServerWithDiagnostics(ctx, server); err != nil {
 		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "if: err != nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: nil, err")
 		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: nil, err")
 		observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: nil, err")
 		return nil, err
@@ -153,6 +158,7 @@ func (m *Manager) SendRequest(ctx context.Context, filePath, method string, para
 	})
 	observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: result, err")
 	observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: result, err")
+	observe.TraceCtx(ctx, "lsp", "Manager.SendRequest", "return: result, err")
 
 	return result, err
 }
@@ -167,6 +173,7 @@ func (m *Manager) OpenFile(ctx context.Context, filePath, content string) error 
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "if: !ok")
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: nil")
 		return nil
 	}
 
@@ -178,6 +185,7 @@ func (m *Manager) OpenFile(ctx context.Context, filePath, content string) error 
 		m.mu.Unlock()
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: nil")
 		return nil
 	}
 	m.openedFiles[uri] = server.Name()
@@ -187,8 +195,10 @@ func (m *Manager) OpenFile(ctx context.Context, filePath, content string) error 
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "if: err != nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: err")
 		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: err")
+		observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: err")
 		return err
 	}
+	observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: server.SendNotification(\"textDocument/didOpen\", map[string]any{\n\t\"textDocumen...")
 	observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: server.SendNotification(\"textDocument/didOpen\", map[string]any{\n\t\"textDocumen...")
 	observe.TraceCtx(ctx, "lsp", "Manager.OpenFile", "return: server.SendNotification(\"textDocument/didOpen\", map[string]any{\n\t\"textDocumen...")
 
@@ -217,6 +227,7 @@ func (m *Manager) ChangeFile(ctx context.Context, filePath, content string) erro
 		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "if: !isOpen")
 		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: m.OpenFile(ctx, filePath, content)")
 		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: m.OpenFile(ctx, filePath, content)")
+		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: m.OpenFile(ctx, filePath, content)")
 		return m.OpenFile(ctx, filePath, content)
 	}
 
@@ -228,8 +239,10 @@ func (m *Manager) ChangeFile(ctx context.Context, filePath, content string) erro
 		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "if: server == nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: nil")
 		return nil
 	}
+	observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: server.SendNotification(\"textDocument/didChange\", map[string]any{\n\t\"textDocum...")
 	observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: server.SendNotification(\"textDocument/didChange\", map[string]any{\n\t\"textDocum...")
 	observe.TraceCtx(ctx, "lsp", "Manager.ChangeFile", "return: server.SendNotification(\"textDocument/didChange\", map[string]any{\n\t\"textDocum...")
 
@@ -258,6 +271,7 @@ func (m *Manager) SaveFile(ctx context.Context, filePath string) error {
 		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "if: !isOpen")
 		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: nil")
 		return nil
 	}
 
@@ -269,8 +283,10 @@ func (m *Manager) SaveFile(ctx context.Context, filePath string) error {
 		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "if: server == nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: nil")
 		return nil
 	}
+	observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: server.SendNotification(\"textDocument/didSave\", map[string]any{\n\t\"textDocumen...")
 	observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: server.SendNotification(\"textDocument/didSave\", map[string]any{\n\t\"textDocumen...")
 	observe.TraceCtx(ctx, "lsp", "Manager.SaveFile", "return: server.SendNotification(\"textDocument/didSave\", map[string]any{\n\t\"textDocumen...")
 
@@ -299,6 +315,7 @@ func (m *Manager) CloseFile(ctx context.Context, filePath string) error {
 		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "if: !isOpen")
 		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: nil")
 		return nil
 	}
 
@@ -310,8 +327,10 @@ func (m *Manager) CloseFile(ctx context.Context, filePath string) error {
 		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "if: server == nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: nil")
 		return nil
 	}
+	observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: server.SendNotification(\"textDocument/didClose\", map[string]any{\n\t\"textDocume...")
 	observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: server.SendNotification(\"textDocument/didClose\", map[string]any{\n\t\"textDocume...")
 	observe.TraceCtx(ctx, "lsp", "Manager.CloseFile", "return: server.SendNotification(\"textDocument/didClose\", map[string]any{\n\t\"textDocume...")
 
@@ -333,6 +352,7 @@ func (m *Manager) IsConnected() bool {
 		observe.GlobalTrace("if: len(m.servers) == 0")
 		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 
@@ -343,9 +363,11 @@ func (m *Manager) IsConnected() bool {
 			observe.GlobalTrace("if: state != StateError")
 			observe.GlobalTrace("return: true")
 			observe.GlobalTrace("return: true")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	observe.GlobalTrace("return: false")
 	observe.GlobalTrace("return: false")
 	return false
@@ -359,6 +381,7 @@ func (m *Manager) ServerCount() int {
 	defer m.mu.RUnlock()
 	observe.GlobalTrace("return: len(m.servers)")
 	observe.GlobalTrace("return: len(m.servers)")
+	observe.GlobalTrace("return: len(m.servers)")
 	return len(m.servers)
 }
 
@@ -366,6 +389,7 @@ func (m *Manager) nextVersion(uri string) int64 {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	v, _ := m.fileVersion.LoadOrStore(uri, &atomic.Int64{})
+	observe.GlobalTrace("return: v.(*atomic.Int64).Add(1)")
 	observe.GlobalTrace("return: v.(*atomic.Int64).Add(1)")
 	return v.(*atomic.Int64).Add(1)
 }
@@ -377,6 +401,7 @@ func (m *Manager) ensureServerWithDiagnostics(ctx context.Context, server *Serve
 	wasRunning := server.State() == StateRunning
 	if err := server.EnsureStarted(ctx, m.workDir); err != nil {
 		observe.TraceCtx(ctx, "lsp", "Manager.ensureServerWithDiagnostics", "if: err != nil")
+		observe.TraceCtx(ctx, "lsp", "Manager.ensureServerWithDiagnostics", "return: err")
 		observe.TraceCtx(ctx, "lsp", "Manager.ensureServerWithDiagnostics", "return: err")
 		return err
 	}
@@ -397,6 +422,7 @@ func (m *Manager) ensureServerWithDiagnostics(ctx context.Context, server *Serve
 		})
 	}
 	observe.TraceCtx(ctx, "lsp", "Manager.ensureServerWithDiagnostics", "return: nil")
+	observe.TraceCtx(ctx, "lsp", "Manager.ensureServerWithDiagnostics", "return: nil")
 	return nil
 }
 
@@ -407,8 +433,10 @@ func errString(err error) string {
 		observe.GlobalTrace("if: err == nil")
 		observe.GlobalTrace("return: \"\"")
 		observe.GlobalTrace("return: \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: err.Error()")
 	observe.GlobalTrace("return: err.Error()")
 	observe.GlobalTrace("return: err.Error()")
 	return err.Error()

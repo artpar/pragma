@@ -23,6 +23,7 @@ func renderMessage(msg model.Message) string {
 		if msg.Flags.IsInternal {
 			observe.GlobalTrace("return: \"\"")
 			observe.GlobalTrace("return: \"\"")
+			observe.GlobalTrace("return: \"\"")
 			return ""
 		}
 		b.WriteString(userLabelStyle.Render("You"))
@@ -43,6 +44,7 @@ func renderMessage(msg model.Message) string {
 		}
 	}
 	b.WriteString("\n")
+	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
 	return b.String()
@@ -111,8 +113,10 @@ func renderToolCall(tc model.ToolCallPart) string {
 		observe.GlobalTrace("if: inputPreview != \"\"")
 		observe.GlobalTrace("return: label + \" \" + toolResultStyle.Render(inputPreview)")
 		observe.GlobalTrace("return: label + \" \" + toolResultStyle.Render(inputPreview)")
+		observe.GlobalTrace("return: label + \" \" + toolResultStyle.Render(inputPreview)")
 		return label + " " + toolResultStyle.Render(inputPreview)
 	}
+	observe.GlobalTrace("return: label")
 	observe.GlobalTrace("return: label")
 	observe.GlobalTrace("return: label")
 	return label
@@ -137,6 +141,7 @@ func renderToolResult(tr model.ToolResultPart) string {
 	content = strings.ReplaceAll(content, "\n", " ")
 	observe.GlobalTrace("return: toolResultStyle.Render(fmt.Sprintf(\"[%s] %s\", prefix, content))")
 	observe.GlobalTrace("return: toolResultStyle.Render(fmt.Sprintf(\"[%s] %s\", prefix, content))")
+	observe.GlobalTrace("return: toolResultStyle.Render(fmt.Sprintf(\"[%s] %s\", prefix, content))")
 
 	return toolResultStyle.Render(fmt.Sprintf("[%s] %s", prefix, content))
 }
@@ -149,6 +154,7 @@ func renderThinking(tp model.ThinkingPart) string {
 		observe.GlobalTrace("if: tp.Redacted")
 		observe.GlobalTrace("return: thinkingStyle.Render(\"[thinking redacted]\")")
 		observe.GlobalTrace("return: thinkingStyle.Render(\"[thinking redacted]\")")
+		observe.GlobalTrace("return: thinkingStyle.Render(\"[thinking redacted]\")")
 		return thinkingStyle.Render("[thinking redacted]")
 	}
 	text := tp.Text
@@ -156,6 +162,7 @@ func renderThinking(tp model.ThinkingPart) string {
 		observe.GlobalTrace("if: len(text) > 500")
 		text = text[:497] + "..."
 	}
+	observe.GlobalTrace("return: thinkingStyle.Render(text)")
 	observe.GlobalTrace("return: thinkingStyle.Render(text)")
 	observe.GlobalTrace("return: thinkingStyle.Render(text)")
 	return thinkingStyle.Render(text)
@@ -174,6 +181,7 @@ func renderConversation(msgs []model.Message) string {
 			b.WriteString(rendered)
 		}
 	}
+	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
 	return b.String()

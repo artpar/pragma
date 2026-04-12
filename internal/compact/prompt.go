@@ -142,6 +142,7 @@ func CompactPrompt(customInstructions string) string {
 	b.WriteString(noToolsTrailer)
 	observe.GlobalTrace("return: b.String()")
 	observe.GlobalTrace("return: b.String()")
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 
@@ -165,6 +166,7 @@ func FormatCompactSummary(raw string) string {
 	result = multipleBlankLines.ReplaceAllString(result, "\n\n")
 	observe.GlobalTrace("return: strings.TrimSpace(result)")
 	observe.GlobalTrace("return: strings.TrimSpace(result)")
+	observe.GlobalTrace("return: strings.TrimSpace(result)")
 
 	return strings.TrimSpace(result)
 }
@@ -183,8 +185,10 @@ func CompactUserMessage(summary string, suppressFollowUp bool) string {
 		observe.GlobalTrace("if: suppressFollowUp")
 		observe.GlobalTrace("return: base + \"\\nContinue the conversation from where it left off without asking the...")
 		observe.GlobalTrace("return: base + \"\\nContinue the conversation from where it left off without asking the...")
+		observe.GlobalTrace("return: base + \"\\nContinue the conversation from where it left off without asking the...")
 		return base + "\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
 	}
+	observe.GlobalTrace("return: base")
 	observe.GlobalTrace("return: base")
 	observe.GlobalTrace("return: base")
 

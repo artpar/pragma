@@ -49,6 +49,7 @@ func NewClient(name string, cfg ServerConfig, bus *observe.EventBus) *Client {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Client{\n\tname:\tname,\n\tconfig:\tcfg,\n\tbus:\tbus,\n}")
 	observe.GlobalTrace("return: &Client{\n\tname:\tname,\n\tconfig:\tcfg,\n\tbus:\tbus,\n}")
+	observe.GlobalTrace("return: &Client{\n\tname:\tname,\n\tconfig:\tcfg,\n\tbus:\tbus,\n}")
 	return &Client{
 		name:   name,
 		config: cfg,
@@ -62,6 +63,7 @@ func (c *Client) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: c.name")
 	observe.GlobalTrace("return: c.name")
+	observe.GlobalTrace("return: c.name")
 	return c.name
 }
 
@@ -71,6 +73,7 @@ func (c *Client) Connected() bool {
 	defer observe.GlobalTrace("exit")
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	observe.GlobalTrace("return: c.connected")
 	observe.GlobalTrace("return: c.connected")
 	observe.GlobalTrace("return: c.connected")
 	return c.connected
@@ -108,6 +111,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		})
 		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"create transport for %q: %w\", c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"create transport for %q: %w\", c.name, err)")
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"create transport for %q: %w\", c.name, err)")
 		return fmt.Errorf("create transport for %q: %w", c.name, err)
 	}
 
@@ -122,6 +126,7 @@ func (c *Client) Connect(ctx context.Context) error {
 				ErrorType:    "transport_start",
 				ErrorMessage: err.Error(),
 			})
+			observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"start transport for %q: %w\", c.name, err)")
 			observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"start transport for %q: %w\", c.name, err)")
 			observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"start transport for %q: %w\", c.name, err)")
 			return fmt.Errorf("start transport for %q: %w", c.name, err)
@@ -149,6 +154,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		})
 		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"initialize %q: %w\", c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"initialize %q: %w\", c.name, err)")
+		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"initialize %q: %w\", c.name, err)")
 		return fmt.Errorf("initialize %q: %w", c.name, err)
 	}
 
@@ -169,6 +175,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		ToolCount:   toolCount,
 		DurationMs:  time.Since(start).Milliseconds(),
 	})
+	observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: nil")
 	observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: nil")
 	observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: nil")
 
@@ -216,6 +223,7 @@ func (c *Client) buildEnv() []string {
 		observe.GlobalTrace("if: len(c.config.Env) == 0")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
@@ -252,6 +260,7 @@ func (c *Client) buildEnv() []string {
 	}
 	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
+	observe.GlobalTrace("return: result")
 
 	return result
 }
@@ -264,6 +273,7 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolInfo, error) {
 	defer c.mu.Unlock()
 	observe.TraceCtx(ctx, "mcp", "Client.ListTools", "return: c.listToolsLocked(ctx)")
 	observe.TraceCtx(ctx, "mcp", "Client.ListTools", "return: c.listToolsLocked(ctx)")
+	observe.TraceCtx(ctx, "mcp", "Client.ListTools", "return: c.listToolsLocked(ctx)")
 	return c.listToolsLocked(ctx)
 }
 
@@ -274,11 +284,13 @@ func (c *Client) listToolsLocked(ctx context.Context) ([]ToolInfo, error) {
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: !c.connected || c.mcpCli == nil")
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return nil, fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
 	}
 
 	if c.tools != nil {
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: c.tools != nil")
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: c.tools, nil")
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: c.tools, nil")
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: c.tools, nil")
 		return c.tools, nil
@@ -288,6 +300,7 @@ func (c *Client) listToolsLocked(ctx context.Context) ([]ToolInfo, error) {
 	if err != nil {
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "if: err != nil")
 		c.tools = nil
+		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"list tools from %q: %w\", c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"list tools from %q: %w\", c.name, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: nil, fmt.Errorf(\"list tools from %q: %w\", c.name, err)")
 		return nil, fmt.Errorf("list tools from %q: %w", c.name, err)
@@ -328,6 +341,7 @@ func (c *Client) listToolsLocked(ctx context.Context) ([]ToolInfo, error) {
 	c.tools = tools
 	observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: tools, nil")
 	observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: tools, nil")
+	observe.TraceCtx(ctx, "mcp", "Client.listToolsLocked", "return: tools, nil")
 	return tools, nil
 }
 
@@ -339,6 +353,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 	if !c.connected || c.mcpCli == nil {
 		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: !c.connected || c.mcpCli == nil")
 		c.mu.Unlock()
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s\", ErrServerNotConnected, c.name)")
 		return "", fmt.Errorf("%w: %s", ErrServerNotConnected, c.name)
@@ -370,6 +385,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: err != nil")
 			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"parse tool arguments: %w\", err)")
 			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"parse tool arguments: %w\", err)")
+			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"parse tool arguments: %w\", err)")
 			return "", fmt.Errorf("parse tool arguments: %w", err)
 		}
 	}
@@ -386,9 +402,11 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "if: callCtx.Err() != nil && ctx.Err() == nil")
 			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s after %s\", ErrToolCallTimeout, c.name, toolName, ti...")
 			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s after %s\", ErrToolCallTimeout, c.name, toolName, ti...")
+			observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s after %s\", ErrToolCallTimeout, c.name, toolName, ti...")
 
 			return "", fmt.Errorf("%w: %s/%s after %s", ErrToolCallTimeout, c.name, toolName, timeout)
 		}
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %v\", ErrToolCallFailed, c.name, toolName, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %v\", ErrToolCallFailed, c.name, toolName, err)")
 		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %v\", ErrToolCallFailed, c.name, toolName, err)")
 		return "", fmt.Errorf("%w: %s/%s: %v", ErrToolCallFailed, c.name, toolName, err)
@@ -407,6 +425,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 		})
 		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %s\", ErrToolCallFailed, c.name, toolName, output)")
 		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %s\", ErrToolCallFailed, c.name, toolName, output)")
+		observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: \"\", fmt.Errorf(\"%w: %s/%s: %s\", ErrToolCallFailed, c.name, toolName, output)")
 		return "", fmt.Errorf("%w: %s/%s: %s", ErrToolCallFailed, c.name, toolName, output)
 	}
 
@@ -417,6 +436,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args json.RawMes
 		DurationMs:      time.Since(start).Milliseconds(),
 		OutputSizeBytes: len(output),
 	})
+	observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: output, nil")
 	observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: output, nil")
 	observe.TraceCtx(ctx, "mcp", "Client.CallTool", "return: output, nil")
 
@@ -432,6 +452,7 @@ func (c *Client) Disconnect() error {
 
 	if !c.connected || c.mcpCli == nil {
 		observe.GlobalTrace("if: !c.connected || c.mcpCli == nil")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
@@ -451,6 +472,7 @@ func (c *Client) Disconnect() error {
 	})
 	observe.GlobalTrace("return: err")
 	observe.GlobalTrace("return: err")
+	observe.GlobalTrace("return: err")
 
 	return err
 }
@@ -460,6 +482,7 @@ func (c *Client) Reconnect(ctx context.Context) error {
 	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "enter")
 	defer observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "exit")
 	_ = c.Disconnect()
+	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "return: c.Connect(ctx)")
 	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "return: c.Connect(ctx)")
 	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "return: c.Connect(ctx)")
 	return c.Connect(ctx)
@@ -476,12 +499,14 @@ func toolCallTimeout(bus *observe.EventBus) time.Duration {
 			observe.GlobalTrace("if: err == nil")
 			observe.GlobalTrace("return: ms")
 			observe.GlobalTrace("return: ms")
+			observe.GlobalTrace("return: ms")
 			return ms
 		}
 		// Try parsing as milliseconds (common in TS world)
 		var ms int64
 		if _, err := fmt.Sscanf(v, "%d", &ms); err == nil && ms > 0 {
 			observe.GlobalTrace("if: err == nil && ms > 0")
+			observe.GlobalTrace("return: time.Duration(ms) * time.Millisecond")
 			observe.GlobalTrace("return: time.Duration(ms) * time.Millisecond")
 			observe.GlobalTrace("return: time.Duration(ms) * time.Millisecond")
 			return time.Duration(ms) * time.Millisecond
@@ -498,6 +523,7 @@ func toolCallTimeout(bus *observe.EventBus) time.Duration {
 			})
 		}
 	}
+	observe.GlobalTrace("return: defaultToolCallTimeout")
 	observe.GlobalTrace("return: defaultToolCallTimeout")
 	observe.GlobalTrace("return: defaultToolCallTimeout")
 	return defaultToolCallTimeout

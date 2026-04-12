@@ -24,6 +24,7 @@ func filterGitIgnored(ctx context.Context, cwd string, uris []string) []string {
 		observe.TraceCtx(ctx, "toollsp", "filterGitIgnored", "if: len(uris) == 0")
 		observe.TraceCtx(ctx, "toollsp", "filterGitIgnored", "return: uris")
 		observe.TraceCtx(ctx, "toollsp", "filterGitIgnored", "return: uris")
+		observe.TraceCtx(ctx, "toollsp", "filterGitIgnored", "return: uris")
 		return uris
 	}
 
@@ -82,6 +83,7 @@ func filterGitIgnored(ctx context.Context, cwd string, uris []string) []string {
 			kept = append(kept, uri)
 		}
 	}
+	observe.TraceCtx(ctx, "toollsp", "filterGitIgnored", "return: kept")
 	observe.TraceCtx(ctx, "toollsp", "filterGitIgnored", "return: kept")
 	observe.TraceCtx(ctx, "toollsp", "filterGitIgnored", "return: kept")
 	return kept

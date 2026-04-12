@@ -189,10 +189,12 @@ func eventLevel(kind string) Level {
 		"SubAgentCompleted", "ToolBatchStarted", "ToolBatchCompleted",
 		"ToolPermissionChecked", "ToolPermissionPrompted",
 		"PermissionRuleMatched", "SlashCommandExecuted",
-		"AgentMDLoaded", "SystemPromptBuilt":
+		"AgentMDLoaded", "SystemPromptBuilt",
+		"BriefMessageSent", "McpOAuthCompleted":
 		return LevelInfo
 	case "APIRetryScheduled", "CompactionStarted", "CompactionCompleted",
-		"MCPHealthCheck", "PermissionEscalated", "AgentMDNotFound":
+		"MCPHealthCheck", "PermissionEscalated", "AgentMDNotFound",
+		"McpOAuthStarted":
 		return LevelWarn
 	case "APIRequestFailed", "ToolExecutionFailed", "CompactionFailed",
 		"MCPServerFailed", "MCPServerDisconnected", "SubAgentFailed",
@@ -223,7 +225,7 @@ func eventTopic(kind string) string {
 		return "command"
 	case "MCPServerConnecting", "MCPServerConnected", "MCPServerDisconnected",
 		"MCPServerFailed", "MCPToolCallStarted", "MCPToolCallCompleted",
-		"MCPHealthCheck":
+		"MCPHealthCheck", "McpOAuthStarted", "McpOAuthCompleted":
 		return "mcp"
 	case "SessionStarted", "SessionSaved", "SessionEnded":
 		return "session"
@@ -235,6 +237,8 @@ func eventTopic(kind string) string {
 		return "error"
 	case "AgentMDLoaded", "AgentMDNotFound", "SystemPromptBuilt":
 		return "sysprompt"
+	case "BriefMessageSent":
+		return "brief"
 	case "FlowTrace":
 		return "trace"
 	default:

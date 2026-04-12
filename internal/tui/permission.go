@@ -35,6 +35,7 @@ func newPermissionDialog() permissionDialog {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: permissionDialog{}")
 	observe.GlobalTrace("return: permissionDialog{}")
+	observe.GlobalTrace("return: permissionDialog{}")
 	return permissionDialog{}
 }
 
@@ -56,12 +57,14 @@ func (d *permissionDialog) Update(msg tea.Msg) tea.Cmd {
 		observe.GlobalTrace("if: !d.active")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
@@ -87,6 +90,7 @@ func (d *permissionDialog) Update(msg tea.Msg) tea.Cmd {
 		observe.GlobalTrace("case: \"esc\"")
 		return d.deny()
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -124,6 +128,7 @@ func (d *permissionDialog) confirm() tea.Cmd {
 	resp := PermResponseMsg{Decision: decision, Rule: rule}
 	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
+	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	return func() tea.Msg {
 		req.Response <- resp
 		return resp
@@ -141,6 +146,7 @@ func (d *permissionDialog) deny() tea.Cmd {
 	resp := PermResponseMsg{Decision: permission.DecisionDeny}
 	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
+	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	return func() tea.Msg {
 		req.Response <- resp
 		return resp
@@ -153,6 +159,7 @@ func (d permissionDialog) View() string {
 	defer observe.GlobalTrace("exit")
 	if !d.active || d.request == nil {
 		observe.GlobalTrace("if: !d.active || d.request == nil")
+		observe.GlobalTrace("return: \"\"")
 		observe.GlobalTrace("return: \"\"")
 		observe.GlobalTrace("return: \"\"")
 		return ""
@@ -182,6 +189,7 @@ func (d permissionDialog) View() string {
 	}
 	observe.GlobalTrace("return: permDialogBorderStyle.Render(b.String())")
 	observe.GlobalTrace("return: permDialogBorderStyle.Render(b.String())")
+	observe.GlobalTrace("return: permDialogBorderStyle.Render(b.String())")
 
 	return permDialogBorderStyle.Render(b.String())
 }
@@ -196,8 +204,10 @@ func truncateStr(s string, maxLen int) string {
 		observe.GlobalTrace("if: len(runes) <= maxLen")
 		observe.GlobalTrace("return: s")
 		observe.GlobalTrace("return: s")
+		observe.GlobalTrace("return: s")
 		return s
 	}
+	observe.GlobalTrace("return: string(runes[:maxLen-3]) + \"...\"")
 	observe.GlobalTrace("return: string(runes[:maxLen-3]) + \"...\"")
 	observe.GlobalTrace("return: string(runes[:maxLen-3]) + \"...\"")
 	return string(runes[:maxLen-3]) + "..."

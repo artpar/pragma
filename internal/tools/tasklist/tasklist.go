@@ -35,12 +35,14 @@ func (t *Tool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"TaskList\"")
 	observe.GlobalTrace("return: \"TaskList\"")
+	observe.GlobalTrace("return: \"TaskList\"")
 	return "TaskList"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"List all tasks, optionally filtered by status. Returns a summary...\"")
+	observe.GlobalTrace("return: taskListDescription")
 	observe.GlobalTrace("return: taskListDescription")
 	return taskListDescription
 }
@@ -60,11 +62,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
@@ -73,6 +77,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "tasklist", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "tasklist", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "tasklist", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskList\", \"\")")
 	observe.TraceCtx(ctx, "tasklist", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskList\", \"\")")
 	observe.TraceCtx(ctx, "tasklist", "Tool.CheckPerm", "return: checker.Check(ctx, \"TaskList\", \"\")")
 	return checker.Check(ctx, "TaskList", "")
@@ -84,6 +89,7 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	var in TaskListInput
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
@@ -102,8 +108,10 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"marshal tasks: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"marshal tasks: %w\", err)")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"marshal tasks: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("marshal tasks: %w", err)
 	}
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil

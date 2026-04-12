@@ -21,6 +21,7 @@ func NormalizeName(name string) string {
 	n = multiUnderscoreRe.ReplaceAllString(n, "_")
 	observe.GlobalTrace("return: n")
 	observe.GlobalTrace("return: n")
+	observe.GlobalTrace("return: n")
 	return n
 }
 
@@ -28,6 +29,7 @@ func NormalizeName(name string) string {
 func BuildToolName(serverName, toolName string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: mcpPrefix + NormalizeName(serverName) + \"__\" + NormalizeName(toolName)")
 	observe.GlobalTrace("return: mcpPrefix + NormalizeName(serverName) + \"__\" + NormalizeName(toolName)")
 	observe.GlobalTrace("return: mcpPrefix + NormalizeName(serverName) + \"__\" + NormalizeName(toolName)")
 	return mcpPrefix + NormalizeName(serverName) + "__" + NormalizeName(toolName)
@@ -42,6 +44,7 @@ func ParseToolName(fullName string) (serverName, toolName string, ok bool) {
 		observe.GlobalTrace("if: !strings.HasPrefix(fullName, mcpPrefix)")
 		observe.GlobalTrace("return: \"\", \"\", false")
 		observe.GlobalTrace("return: \"\", \"\", false")
+		observe.GlobalTrace("return: \"\", \"\", false")
 		return "", "", false
 	}
 	rest := fullName[len(mcpPrefix):]
@@ -50,8 +53,10 @@ func ParseToolName(fullName string) (serverName, toolName string, ok bool) {
 		observe.GlobalTrace("if: idx < 0 || idx == 0")
 		observe.GlobalTrace("return: \"\", \"\", false")
 		observe.GlobalTrace("return: \"\", \"\", false")
+		observe.GlobalTrace("return: \"\", \"\", false")
 		return "", "", false
 	}
+	observe.GlobalTrace("return: rest[:idx], rest[idx+2:], true")
 	observe.GlobalTrace("return: rest[:idx], rest[idx+2:], true")
 	observe.GlobalTrace("return: rest[:idx], rest[idx+2:], true")
 	return rest[:idx], rest[idx+2:], true
@@ -61,6 +66,7 @@ func ParseToolName(fullName string) (serverName, toolName string, ok bool) {
 func IsMCPTool(name string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.HasPrefix(name, mcpPrefix)")
 	observe.GlobalTrace("return: strings.HasPrefix(name, mcpPrefix)")
 	observe.GlobalTrace("return: strings.HasPrefix(name, mcpPrefix)")
 	return strings.HasPrefix(name, mcpPrefix)

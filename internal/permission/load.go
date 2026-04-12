@@ -26,6 +26,7 @@ func RulesFromConfigEntries(entries []config.PermissionWithSource) []Rule {
 	}
 	observe.GlobalTrace("return: rules")
 	observe.GlobalTrace("return: rules")
+	observe.GlobalTrace("return: rules")
 	return rules
 }
 
@@ -35,6 +36,7 @@ func ParseRuleString(ruleStr string, decision Decision, source RuleSource) Rule 
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	toolName, content := splitRuleString(ruleStr)
+	observe.GlobalTrace("return: Rule{\n\tToolName:\ttoolName,\n\tContent:\tcontent,\n\tDecision:\tdecision,\n\tSource:\t\t...")
 	observe.GlobalTrace("return: Rule{\n\tToolName:\ttoolName,\n\tContent:\tcontent,\n\tDecision:\tdecision,\n\tSource:\t\t...")
 	observe.GlobalTrace("return: Rule{\n\tToolName:\ttoolName,\n\tContent:\tcontent,\n\tDecision:\tdecision,\n\tSource:\t\t...")
 	return Rule{
@@ -55,6 +57,7 @@ func splitRuleString(s string) (string, string) {
 		observe.GlobalTrace("if: idx < 0")
 		observe.GlobalTrace("return: s, \"\"")
 		observe.GlobalTrace("return: s, \"\"")
+		observe.GlobalTrace("return: s, \"\"")
 		return s, ""
 	}
 	toolName := s[:idx]
@@ -70,8 +73,10 @@ func splitRuleString(s string) (string, string) {
 		content = strings.ReplaceAll(content, "\x00", `\`)
 		observe.GlobalTrace("return: toolName, content")
 		observe.GlobalTrace("return: toolName, content")
+		observe.GlobalTrace("return: toolName, content")
 		return toolName, content
 	}
+	observe.GlobalTrace("return: toolName, \"\"")
 	observe.GlobalTrace("return: toolName, \"\"")
 	observe.GlobalTrace("return: toolName, \"\"")
 

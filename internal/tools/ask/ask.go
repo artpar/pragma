@@ -35,12 +35,14 @@ func (t *Tool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"AskUserQuestion\"")
 	observe.GlobalTrace("return: \"AskUserQuestion\"")
+	observe.GlobalTrace("return: \"AskUserQuestion\"")
 	return "AskUserQuestion"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Asks the user a question to gather information, clarify ambiguity...\"")
+	observe.GlobalTrace("return: askDescription")
 	observe.GlobalTrace("return: askDescription")
 	return askDescription
 }
@@ -63,11 +65,13 @@ func (t *Tool) InputSchema() json.RawMessage {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: false}
@@ -76,6 +80,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "return: checker.Check(ctx, \"AskUserQuestion\", \"\")")
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "return: checker.Check(ctx, \"AskUserQuestion\", \"\")")
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "return: checker.Check(ctx, \"AskUserQuestion\", \"\")")
 	return checker.Check(ctx, "AskUserQuestion", "")
@@ -89,10 +94,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Question == "" {
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: in.Question == \"\"")
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"question is required\")")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"question is required\")")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"question is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("question is required")
@@ -103,8 +110,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"ask user: %w\", err)")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"ask user: %w\", err)")
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"ask user: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("ask user: %w", err)
 	}
+	observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{Content: answer}, nil")
 	observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{Content: answer}, nil")
 	observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{Content: answer}, nil")
 

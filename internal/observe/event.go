@@ -325,6 +325,24 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	case "BriefMessageSent":
+		var e BriefMessageSent
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "McpOAuthStarted":
+		var e McpOAuthStarted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "McpOAuthCompleted":
+		var e McpOAuthCompleted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	case "FlowTrace":
 		var e FlowTrace
 		if err := json.Unmarshal(data, &e); err != nil {

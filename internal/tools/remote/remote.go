@@ -52,11 +52,13 @@ func (t *Tool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"RemoteTrigger\"")
 	observe.GlobalTrace("return: \"RemoteTrigger\"")
+	observe.GlobalTrace("return: \"RemoteTrigger\"")
 	return "RemoteTrigger"
 }
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
@@ -66,12 +68,14 @@ func (t *Tool) Flags() tool.ToolFlags {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: true}
 }
 
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: `Manages scheduled remote agents (triggers). Actions: list (all triggers), ge...")
 	observe.GlobalTrace("return: `Manages scheduled remote agents (triggers). Actions: list (all triggers), ge...")
 	observe.GlobalTrace("return: `Manages scheduled remote agents (triggers). Actions: list (all triggers), ge...")
 	return `Manages scheduled remote agents (triggers). Actions: list (all triggers), get (one trigger), create (new trigger), update (modify trigger), run (execute trigger now).`
@@ -85,6 +89,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "if: err != nil")
 		observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", \"\")")
 		observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", \"\")")
+		observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", \"\")")
 		return checker.Check(ctx, "RemoteTrigger", "")
 	}
 	content := "RemoteTrigger " + in.Action
@@ -92,6 +97,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "if: in.TriggerID != \"\"")
 		content += " " + in.TriggerID
 	}
+	observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", content)")
 	observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", content)")
 	observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", content)")
 	return checker.Check(ctx, "RemoteTrigger", content)
@@ -105,11 +111,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 
 	if in.Action == "" {
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: in.Action == \"\"")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"action is required\")")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"action is required\")")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"action is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("action is required")
@@ -129,6 +137,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		if in.TriggerID == "" {
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for get\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for get\")")
+			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for get\")")
 			return tool.InvokeResult{}, fmt.Errorf("trigger_id required for get")
 		}
 		method = http.MethodGet
@@ -137,6 +146,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	case "create":
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "case: \"create\"")
 		if len(in.Body) == 0 {
+			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for create\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for create\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for create\")")
 			return tool.InvokeResult{}, fmt.Errorf("body required for create")
@@ -150,9 +160,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		if in.TriggerID == "" {
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for update\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for update\")")
+			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for update\")")
 			return tool.InvokeResult{}, fmt.Errorf("trigger_id required for update")
 		}
 		if len(in.Body) == 0 {
+			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for update\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for update\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for update\")")
 			return tool.InvokeResult{}, fmt.Errorf("body required for update")
@@ -164,6 +176,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	case "run":
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "case: \"run\"")
 		if in.TriggerID == "" {
+			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for run\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for run\")")
 			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for run\")")
 			return tool.InvokeResult{}, fmt.Errorf("trigger_id required for run")
@@ -181,11 +194,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get auth token: %w\", err)")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get auth token: %w\", err)")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get auth token: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("get auth token: %w", err)
 	}
 	orgUUID, err := t.OrgUUID()
 	if err != nil {
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get org UUID: %w\", err)")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get org UUID: %w\", err)")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get org UUID: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("get org UUID: %w", err)
@@ -194,6 +209,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	req, err := http.NewRequestWithContext(ctx, method, t.BaseURL+urlPath, body)
 	if err != nil {
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create request: %w\", err)")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create request: %w\", err)")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create request: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("create request: %w", err)
@@ -210,6 +226,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"request failed: %w\", err)")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"request failed: %w\", err)")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"request failed: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -218,9 +235,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	if err != nil {
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read response body: %w\", err)")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read response body: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read response body: %w", err)
 	}
 	content := fmt.Sprintf("HTTP %d\n%s", resp.StatusCode, string(respBody))
+	observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 	observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 	observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 

@@ -60,8 +60,10 @@ func EffectiveWindow(wc WindowConfig) int {
 		observe.GlobalTrace("if: ew < 0")
 		observe.GlobalTrace("return: 0")
 		observe.GlobalTrace("return: 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
+	observe.GlobalTrace("return: ew")
 	observe.GlobalTrace("return: ew")
 	observe.GlobalTrace("return: ew")
 	return ew
@@ -76,8 +78,10 @@ func AutoCompactThreshold(wc WindowConfig) int {
 		observe.GlobalTrace("if: threshold < 0")
 		observe.GlobalTrace("return: 0")
 		observe.GlobalTrace("return: 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
+	observe.GlobalTrace("return: threshold")
 	observe.GlobalTrace("return: threshold")
 	observe.GlobalTrace("return: threshold")
 	return threshold
@@ -92,8 +96,10 @@ func WarningThreshold(wc WindowConfig) int {
 		observe.GlobalTrace("if: threshold < 0")
 		observe.GlobalTrace("return: 0")
 		observe.GlobalTrace("return: 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
+	observe.GlobalTrace("return: threshold")
 	observe.GlobalTrace("return: threshold")
 	observe.GlobalTrace("return: threshold")
 	return threshold
@@ -113,6 +119,7 @@ func CalculateThresholdState(tokenCount int, wc WindowConfig) ThresholdState {
 			pct = 100
 		}
 	}
+	observe.GlobalTrace("return: ThresholdState{\n\tTokenCount:\t\t\ttokenCount,\n\tEffectiveWindow:\t\tew,\n\tIsAboveWar...")
 	observe.GlobalTrace("return: ThresholdState{\n\tTokenCount:\t\t\ttokenCount,\n\tEffectiveWindow:\t\tew,\n\tIsAboveWar...")
 	observe.GlobalTrace("return: ThresholdState{\n\tTokenCount:\t\t\ttokenCount,\n\tEffectiveWindow:\t\tew,\n\tIsAboveWar...")
 	return ThresholdState{

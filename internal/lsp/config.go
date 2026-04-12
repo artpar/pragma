@@ -29,14 +29,17 @@ func (sc ServerConfig) validate() error {
 		observe.GlobalTrace("if: sc.Command == \"\"")
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: server requires command\", ErrInvalidConfig)")
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: server requires command\", ErrInvalidConfig)")
+		observe.GlobalTrace("return: fmt.Errorf(\"%w: server requires command\", ErrInvalidConfig)")
 		return fmt.Errorf("%w: server requires command", ErrInvalidConfig)
 	}
 	if len(sc.ExtensionToLanguage) == 0 {
 		observe.GlobalTrace("if: len(sc.ExtensionToLanguage) == 0")
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: server requires extensionToLanguage\", ErrInvalidConfig)")
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: server requires extensionToLanguage\", ErrInvalidConfig)")
+		observe.GlobalTrace("return: fmt.Errorf(\"%w: server requires extensionToLanguage\", ErrInvalidConfig)")
 		return fmt.Errorf("%w: server requires extensionToLanguage", ErrInvalidConfig)
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -49,8 +52,10 @@ func (sc ServerConfig) maxRestartsOrDefault() int {
 		observe.GlobalTrace("if: sc.MaxRestarts > 0")
 		observe.GlobalTrace("return: sc.MaxRestarts")
 		observe.GlobalTrace("return: sc.MaxRestarts")
+		observe.GlobalTrace("return: sc.MaxRestarts")
 		return sc.MaxRestarts
 	}
+	observe.GlobalTrace("return: 3")
 	observe.GlobalTrace("return: 3")
 	observe.GlobalTrace("return: 3")
 	return 3
@@ -63,8 +68,10 @@ func (sc ServerConfig) startupTimeoutMsOrDefault() int {
 		observe.GlobalTrace("if: sc.StartupTimeoutMs > 0")
 		observe.GlobalTrace("return: sc.StartupTimeoutMs")
 		observe.GlobalTrace("return: sc.StartupTimeoutMs")
+		observe.GlobalTrace("return: sc.StartupTimeoutMs")
 		return sc.StartupTimeoutMs
 	}
+	observe.GlobalTrace("return: 30000")
 	observe.GlobalTrace("return: 30000")
 	observe.GlobalTrace("return: 30000")
 	return 30000
@@ -83,6 +90,7 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 	globalPath, err := config.GlobalLSPConfigPath()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve global lsp config path: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve global lsp config path: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve global lsp config path: %w\", err)")
 		return nil, fmt.Errorf("resolve global lsp config path: %w", err)
@@ -133,6 +141,7 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 	}
 	observe.GlobalTrace("return: merged, nil")
 	observe.GlobalTrace("return: merged, nil")
+	observe.GlobalTrace("return: merged, nil")
 
 	return merged, nil
 }
@@ -145,12 +154,14 @@ func loadSingleLSPConfig(path string) (map[string]ServerConfig, error) {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
 		observe.GlobalTrace("return: nil, err")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 
 	var cfg LSPConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse %s: %w\", path, err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse %s: %w\", path, err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse %s: %w\", path, err)")
 		return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -160,8 +171,10 @@ func loadSingleLSPConfig(path string) (map[string]ServerConfig, error) {
 		observe.GlobalTrace("if: cfg.LSPServers == nil")
 		observe.GlobalTrace("return: nil, nil")
 		observe.GlobalTrace("return: nil, nil")
+		observe.GlobalTrace("return: nil, nil")
 		return nil, nil
 	}
+	observe.GlobalTrace("return: cfg.LSPServers, nil")
 	observe.GlobalTrace("return: cfg.LSPServers, nil")
 	observe.GlobalTrace("return: cfg.LSPServers, nil")
 

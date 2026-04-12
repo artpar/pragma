@@ -37,6 +37,7 @@ func WithMaxRetries(n int) Option {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
 	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
+	observe.GlobalTrace("return: func(p *Provider) { p.maxRetries = n }")
 	return func(p *Provider) { p.maxRetries = n }
 }
 
@@ -46,6 +47,7 @@ func WithBaseURL(url string) Option {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
 	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
+	observe.GlobalTrace("return: func(p *Provider) { p.baseURL = url }")
 	return func(p *Provider) { p.baseURL = url }
 }
 
@@ -53,6 +55,7 @@ func WithBaseURL(url string) Option {
 func WithIdleTimeout(d time.Duration) Option {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
 	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
 	observe.GlobalTrace("return: func(p *Provider) { p.idleTimeout = d }")
 	return func(p *Provider) { p.idleTimeout = d }
@@ -83,6 +86,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
 	p.client = sdk.NewClient(clientOpts...)
 	observe.GlobalTrace("return: p")
 	observe.GlobalTrace("return: p")
+	observe.GlobalTrace("return: p")
 	return p
 }
 
@@ -90,6 +94,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) *Provider {
 func (p *Provider) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"anthropic\"")
 	observe.GlobalTrace("return: \"anthropic\"")
 	observe.GlobalTrace("return: \"anthropic\"")
 	return "anthropic"
@@ -110,6 +115,7 @@ func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	}
 	observe.GlobalTrace("return: false")
 	observe.GlobalTrace("return: false")
+	observe.GlobalTrace("return: false")
 	return false
 }
 
@@ -122,8 +128,10 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: info.Pricing, true")
 		observe.GlobalTrace("return: info.Pricing, true")
+		observe.GlobalTrace("return: info.Pricing, true")
 		return info.Pricing, true
 	}
+	observe.GlobalTrace("return: model.Pricing{}, false")
 	observe.GlobalTrace("return: model.Pricing{}, false")
 	observe.GlobalTrace("return: model.Pricing{}, false")
 	return model.Pricing{}, false
@@ -146,6 +154,7 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 				observe.GlobalTrace("if: err == nil")
 				observe.GlobalTrace("return: n * 1_000_000, true")
 				observe.GlobalTrace("return: n * 1_000_000, true")
+				observe.GlobalTrace("return: n * 1_000_000, true")
 				return n * 1_000_000, true
 			}
 		}
@@ -161,8 +170,10 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 		}
 		observe.GlobalTrace("return: cw, true")
 		observe.GlobalTrace("return: cw, true")
+		observe.GlobalTrace("return: cw, true")
 		return cw, true
 	}
+	observe.GlobalTrace("return: 200_000, false")
 	observe.GlobalTrace("return: 200_000, false")
 	observe.GlobalTrace("return: 200_000, false")
 	return 200_000, false
@@ -177,6 +188,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	wireParams, err := buildWireParams(params, mapper)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, fmt.Errorf(\"building wire params: %w\", err)")
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, fmt.Errorf(\"building wire params: %w\", err)")
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, fmt.Errorf(\"building wire params: %w\", err)")
 		return model.Response{}, fmt.Errorf("building wire params: %w", err)
@@ -205,6 +217,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "if: err != nil")
 		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, err")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: model.Response{}, err")
 		return model.Response{}, err
 	}
 
@@ -216,6 +229,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		DurationMs:  time.Since(start).Milliseconds(),
 		Model:       resp.Model,
 	})
+	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: resp, nil")
 	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: resp, nil")
 	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: resp, nil")
 	return resp, nil
@@ -230,6 +244,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	wireParams, err := buildWireParams(params, mapper)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: nil, fmt.Errorf(\"building wire params: %w\", err)")
 		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: nil, fmt.Errorf(\"building wire params: %w\", err)")
 		observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: nil, fmt.Errorf(\"building wire params: %w\", err)")
 		return nil, fmt.Errorf("building wire params: %w", err)
@@ -251,12 +266,16 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	ch := p.startStream(ctx, stream, mapper, p.bus, traceID, spanID)
 	observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: ch, nil")
 	observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: ch, nil")
+	observe.TraceCtx(ctx, "anthropic", "Provider.Stream", "return: ch, nil")
 	return ch, nil
 }
 
 // anthropicClassify wraps classifyError to match the shared.ClassifyFn signature.
 func anthropicClassify(err error) shared.ErrorClassification {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	c := classifyError(err)
+	observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\tc.wrapped,\n\tRetryable:\tc.retryable,\n\tEr...")
 	return shared.ErrorClassification{
 		Wrapped:    c.wrapped,
 		Retryable:  c.retryable,

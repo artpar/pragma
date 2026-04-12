@@ -471,6 +471,46 @@ type PermissionPersisted struct {
 
 func (PermissionPersisted) eventSealed() {}
 
+// --- Brief/SendUserMessage Events ---
+
+// BriefAttachment describes a file attached to a BriefMessageSent event.
+type BriefAttachment struct {
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	IsImage bool   `json:"is_image"`
+}
+
+// BriefMessageSent records when the LLM sends a message to the user via SendUserMessage.
+type BriefMessageSent struct {
+	EventHeader
+	Message     string            `json:"message"`
+	Attachments []BriefAttachment `json:"attachments,omitempty"`
+	Status      string            `json:"status"` // "normal" or "proactive"
+}
+
+func (BriefMessageSent) eventSealed() {}
+
+// --- MCP OAuth Events ---
+
+// McpOAuthStarted records the start of an OAuth flow for an MCP server.
+type McpOAuthStarted struct {
+	EventHeader
+	ServerName string `json:"server_name"`
+	AuthURL    string `json:"auth_url"`
+}
+
+func (McpOAuthStarted) eventSealed() {}
+
+// McpOAuthCompleted records the completion of an OAuth flow for an MCP server.
+type McpOAuthCompleted struct {
+	EventHeader
+	ServerName string `json:"server_name"`
+	Success    bool   `json:"success"`
+	Error      string `json:"error,omitempty"`
+}
+
+func (McpOAuthCompleted) eventSealed() {}
+
 // --- Flow Trace Events ---
 
 // FlowTrace captures a decision point, branch, or loop iteration in the code.

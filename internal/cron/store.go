@@ -26,6 +26,7 @@ func NewStore(path string) *Store {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Store{path: path}")
 	observe.GlobalTrace("return: &Store{path: path}")
+	observe.GlobalTrace("return: &Store{path: path}")
 	return &Store{path: path}
 }
 
@@ -44,8 +45,10 @@ func (s *Store) Load() ([]Job, error) {
 			observe.GlobalTrace("if: errors.Is(err, os.ErrNotExist)")
 			observe.GlobalTrace("return: nil, nil")
 			observe.GlobalTrace("return: nil, nil")
+			observe.GlobalTrace("return: nil, nil")
 			return nil, nil
 		}
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron store load: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron store load: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron store load: %w\", err)")
 		return nil, fmt.Errorf("cron store load: %w", err)
@@ -56,8 +59,10 @@ func (s *Store) Load() ([]Job, error) {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron store unmarshal: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron store unmarshal: %w\", err)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"cron store unmarshal: %w\", err)")
 		return nil, fmt.Errorf("cron store unmarshal: %w", err)
 	}
+	observe.GlobalTrace("return: d.Tasks, nil")
 	observe.GlobalTrace("return: d.Tasks, nil")
 	observe.GlobalTrace("return: d.Tasks, nil")
 	return d.Tasks, nil
@@ -81,12 +86,14 @@ func (s *Store) Save(jobs []Job) error {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store marshal: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store marshal: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"cron store marshal: %w\", err)")
 		return fmt.Errorf("cron store marshal: %w", err)
 	}
 
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"cron store mkdir: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store mkdir: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store mkdir: %w\", err)")
 		return fmt.Errorf("cron store mkdir: %w", err)
@@ -97,6 +104,7 @@ func (s *Store) Save(jobs []Job) error {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store write tmp: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store write tmp: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"cron store write tmp: %w\", err)")
 		return fmt.Errorf("cron store write tmp: %w", err)
 	}
 	if err := os.Rename(tmp, s.path); err != nil {
@@ -104,8 +112,10 @@ func (s *Store) Save(jobs []Job) error {
 		os.Remove(tmp)
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store rename: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"cron store rename: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"cron store rename: %w\", err)")
 		return fmt.Errorf("cron store rename: %w", err)
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil

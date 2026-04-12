@@ -38,6 +38,7 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 	}()
 	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
 	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
+	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
 	return ch
 }
 
@@ -270,6 +271,7 @@ func (e *Engine) consumeStream(
 			observe.GlobalTrace("if: chunk.Error != nil")
 			observe.GlobalTrace("return: model.Response{}, chunk.Error")
 			observe.GlobalTrace("return: model.Response{}, chunk.Error")
+			observe.GlobalTrace("return: model.Response{}, chunk.Error")
 			return model.Response{}, chunk.Error
 		}
 
@@ -305,6 +307,7 @@ func (e *Engine) consumeStream(
 				observe.GlobalTrace("if: exists")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
+				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
 				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
 			}
 			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name}
@@ -316,6 +319,7 @@ func (e *Engine) consumeStream(
 			acc, ok := toolCalls[chunk.ToolCallInputDelta.ToolCallID]
 			if !ok {
 				observe.GlobalTrace("if: !ok")
+				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				return model.Response{}, fmt.Errorf("input delta for unknown tool call %q", chunk.ToolCallInputDelta.ToolCallID)
@@ -331,6 +335,7 @@ func (e *Engine) consumeStream(
 
 	if done == nil {
 		observe.GlobalTrace("if: done == nil")
+		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done: %w\", model.ErrStream...")
 		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done: %w\", model.ErrStream...")
 		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done: %w\", model.ErrStream...")
 		return model.Response{}, fmt.Errorf("stream ended without Done: %w", model.ErrStreamClosed)
@@ -372,6 +377,7 @@ func (e *Engine) consumeStream(
 	}
 	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
 	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
+	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
 
 	return model.Response{
 		Model:      done.Model,
@@ -397,6 +403,7 @@ func (e *Engine) filterReadOnlyTools(tools []model.ToolDef) []model.ToolDef {
 	}
 	observe.GlobalTrace("return: filtered")
 	observe.GlobalTrace("return: filtered")
+	observe.GlobalTrace("return: filtered")
 	return filtered
 }
 
@@ -412,6 +419,7 @@ func extractToolCalls(parts []model.ContentPart) []model.ToolCallPart {
 			calls = append(calls, tc)
 		}
 	}
+	observe.GlobalTrace("return: calls")
 	observe.GlobalTrace("return: calls")
 	observe.GlobalTrace("return: calls")
 	return calls

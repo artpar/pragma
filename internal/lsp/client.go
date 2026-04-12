@@ -39,6 +39,7 @@ func NewClient(name, command string, args []string, env map[string]string, workD
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Client{\n\tname:\t\tname,\n\tcommand:\tcommand,\n\targs:\t\targs,\n\tenv:\t\tenv,\n\tworkDir:...")
 	observe.GlobalTrace("return: &Client{\n\tname:\t\tname,\n\tcommand:\tcommand,\n\targs:\t\targs,\n\tenv:\t\tenv,\n\tworkDir:...")
+	observe.GlobalTrace("return: &Client{\n\tname:\t\tname,\n\tcommand:\tcommand,\n\targs:\t\targs,\n\tenv:\t\tenv,\n\tworkDir:...")
 	return &Client{
 		name:     name,
 		command:  command,
@@ -63,6 +64,7 @@ func (c *Client) Start(ctx context.Context) error {
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "if: c.cmd != nil")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"client already started\")")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"client already started\")")
+		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"client already started\")")
 		return fmt.Errorf("client already started")
 	}
 
@@ -82,11 +84,13 @@ func (c *Client) Start(ctx context.Context) error {
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "if: err != nil")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stdin pipe: %w\", err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stdin pipe: %w\", err)")
+		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stdin pipe: %w\", err)")
 		return fmt.Errorf("create stdin pipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "if: err != nil")
+		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stdout pipe: %w\", err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stdout pipe: %w\", err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stdout pipe: %w\", err)")
 		return fmt.Errorf("create stdout pipe: %w", err)
@@ -97,11 +101,13 @@ func (c *Client) Start(ctx context.Context) error {
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "if: err != nil")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stderr pipe: %w\", err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stderr pipe: %w\", err)")
+		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"create stderr pipe: %w\", err)")
 		return fmt.Errorf("create stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "if: err != nil")
+		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"start %s: %w\", c.command, err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"start %s: %w\", c.command, err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Start", "return: fmt.Errorf(\"start %s: %w\", c.command, err)")
 		return fmt.Errorf("start %s: %w", c.command, err)
@@ -160,6 +166,7 @@ func (c *Client) Start(ctx context.Context) error {
 	}()
 	observe.TraceCtx(ctx, "lsp", "Client.Start", "return: nil")
 	observe.TraceCtx(ctx, "lsp", "Client.Start", "return: nil")
+	observe.TraceCtx(ctx, "lsp", "Client.Start", "return: nil")
 
 	return nil
 }
@@ -174,6 +181,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 		c.mu.Unlock()
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: nil")
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: nil")
+		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: nil")
 		return nil
 	}
 	codec := c.codec
@@ -184,6 +192,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 
 	if codec == nil {
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "if: codec == nil")
+		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: ErrNotInitialized")
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: ErrNotInitialized")
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: ErrNotInitialized")
 		return ErrNotInitialized
@@ -258,11 +267,13 @@ func (c *Client) Initialize(ctx context.Context) error {
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "if: err != nil")
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: fmt.Errorf(\"initialize: %w\", err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: fmt.Errorf(\"initialize: %w\", err)")
+		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: fmt.Errorf(\"initialize: %w\", err)")
 		return fmt.Errorf("initialize: %w", err)
 	}
 
 	if err := codec.Notify("initialized", struct{}{}); err != nil {
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "if: err != nil")
+		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: fmt.Errorf(\"initialized notification: %w\", err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: fmt.Errorf(\"initialized notification: %w\", err)")
 		observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: fmt.Errorf(\"initialized notification: %w\", err)")
 		return fmt.Errorf("initialized notification: %w", err)
@@ -278,6 +289,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 	c.mu.Lock()
 	c.initialized = true
 	c.mu.Unlock()
+	observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: nil")
 	observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: nil")
 	observe.TraceCtx(ctx, "lsp", "Client.Initialize", "return: nil")
 
@@ -297,8 +309,10 @@ func (c *Client) SendRequest(ctx context.Context, method string, params any) (js
 		observe.TraceCtx(ctx, "lsp", "Client.SendRequest", "if: codec == nil || !initialized")
 		observe.TraceCtx(ctx, "lsp", "Client.SendRequest", "return: nil, ErrNotInitialized")
 		observe.TraceCtx(ctx, "lsp", "Client.SendRequest", "return: nil, ErrNotInitialized")
+		observe.TraceCtx(ctx, "lsp", "Client.SendRequest", "return: nil, ErrNotInitialized")
 		return nil, ErrNotInitialized
 	}
+	observe.TraceCtx(ctx, "lsp", "Client.SendRequest", "return: codec.Call(ctx, method, params)")
 	observe.TraceCtx(ctx, "lsp", "Client.SendRequest", "return: codec.Call(ctx, method, params)")
 	observe.TraceCtx(ctx, "lsp", "Client.SendRequest", "return: codec.Call(ctx, method, params)")
 	return codec.Call(ctx, method, params)
@@ -316,8 +330,10 @@ func (c *Client) SendNotification(method string, params any) error {
 		observe.GlobalTrace("if: codec == nil")
 		observe.GlobalTrace("return: ErrNotInitialized")
 		observe.GlobalTrace("return: ErrNotInitialized")
+		observe.GlobalTrace("return: ErrNotInitialized")
 		return ErrNotInitialized
 	}
+	observe.GlobalTrace("return: codec.Notify(method, params)")
 	observe.GlobalTrace("return: codec.Notify(method, params)")
 	observe.GlobalTrace("return: codec.Notify(method, params)")
 	return codec.Notify(method, params)
@@ -346,6 +362,7 @@ func (c *Client) Stop() error {
 		c.mu.Unlock()
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	c.stopping = true
@@ -356,6 +373,7 @@ func (c *Client) Stop() error {
 
 	if cmd == nil {
 		observe.GlobalTrace("if: cmd == nil")
+		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
@@ -383,6 +401,7 @@ func (c *Client) Stop() error {
 	}
 	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
+	observe.GlobalTrace("return: nil")
 
 	return nil
 }
@@ -395,6 +414,7 @@ func (c *Client) IsRunning() bool {
 	defer c.mu.Unlock()
 	if c.cmd == nil || c.stopping {
 		observe.GlobalTrace("if: c.cmd == nil || c.stopping")
+		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
 		return false
@@ -415,6 +435,7 @@ func (c *Client) ExitCh() <-chan struct{} {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: c.exitCh")
 	observe.GlobalTrace("return: c.exitCh")
+	observe.GlobalTrace("return: c.exitCh")
 	return c.exitCh
 }
 
@@ -426,6 +447,7 @@ func PathToURI(path string) string {
 		Scheme: "file",
 		Path:   filepath.ToSlash(path),
 	}
+	observe.GlobalTrace("return: u.String()")
 	observe.GlobalTrace("return: u.String()")
 	observe.GlobalTrace("return: u.String()")
 	return u.String()
@@ -440,14 +462,17 @@ func URIToPath(uri string) string {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: uri")
 		observe.GlobalTrace("return: uri")
+		observe.GlobalTrace("return: uri")
 		return uri
 	}
 	if u.Scheme != "file" {
 		observe.GlobalTrace("if: u.Scheme != \"file\"")
 		observe.GlobalTrace("return: uri")
 		observe.GlobalTrace("return: uri")
+		observe.GlobalTrace("return: uri")
 		return uri
 	}
+	observe.GlobalTrace("return: filepath.FromSlash(u.Path)")
 	observe.GlobalTrace("return: filepath.FromSlash(u.Path)")
 	observe.GlobalTrace("return: filepath.FromSlash(u.Path)")
 	return filepath.FromSlash(u.Path)

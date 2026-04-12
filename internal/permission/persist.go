@@ -23,6 +23,7 @@ func PersistRule(workDir string, rule Rule) error {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"read settings.local.json: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"read settings.local.json: %w\", err)")
 		return fmt.Errorf("read settings.local.json: %w", err)
 	}
 
@@ -34,6 +35,7 @@ func PersistRule(workDir string, rule Rule) error {
 		if p.Behavior == behavior && p.Rule == ruleStr {
 			observe.GlobalTrace("if: p.Behavior == behavior && p.Rule == ruleStr")
 			observe.GlobalTrace("return: nil")
+			observe.GlobalTrace("return: nil")
 			return nil
 		}
 	}
@@ -42,6 +44,7 @@ func PersistRule(workDir string, rule Rule) error {
 		Behavior: behavior,
 		Rule:     ruleStr,
 	})
+	observe.GlobalTrace("return: writeLocalSettings(path, existing)")
 	observe.GlobalTrace("return: writeLocalSettings(path, existing)")
 
 	return writeLocalSettings(path, existing)
@@ -58,6 +61,7 @@ func LoadPersistedRules(workDir string) ([]Rule, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 
@@ -73,6 +77,7 @@ func LoadPersistedRules(workDir string) ([]Rule, error) {
 		rules = append(rules, rule)
 	}
 	observe.GlobalTrace("return: rules, nil")
+	observe.GlobalTrace("return: rules, nil")
 	return rules, nil
 }
 
@@ -84,8 +89,10 @@ func RuleToString(rule Rule) string {
 	if rule.Content == "" {
 		observe.GlobalTrace("if: rule.Content == \"\"")
 		observe.GlobalTrace("return: rule.ToolName")
+		observe.GlobalTrace("return: rule.ToolName")
 		return rule.ToolName
 	}
+	observe.GlobalTrace("return: rule.ToolName + \"(\" + rule.Content + \")\"")
 	observe.GlobalTrace("return: rule.ToolName + \"(\" + rule.Content + \")\"")
 	return rule.ToolName + "(" + rule.Content + ")"
 }
@@ -100,8 +107,10 @@ func readLocalSettings(path string) (config.Config, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			observe.GlobalTrace("if: errors.Is(err, os.ErrNotExist)")
 			observe.GlobalTrace("return: config.Config{}, nil")
+			observe.GlobalTrace("return: config.Config{}, nil")
 			return config.Config{}, nil
 		}
+		observe.GlobalTrace("return: config.Config{}, err")
 		observe.GlobalTrace("return: config.Config{}, err")
 		return config.Config{}, err
 	}
@@ -110,8 +119,10 @@ func readLocalSettings(path string) (config.Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: config.Config{}, fmt.Errorf(\"parse %s: %w\", path, err)")
+		observe.GlobalTrace("return: config.Config{}, fmt.Errorf(\"parse %s: %w\", path, err)")
 		return config.Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
+	observe.GlobalTrace("return: cfg, nil")
 	observe.GlobalTrace("return: cfg, nil")
 	return cfg, nil
 }
@@ -124,12 +135,14 @@ func writeLocalSettings(path string, cfg config.Config) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"create settings directory: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"create settings directory: %w\", err)")
 		return fmt.Errorf("create settings directory: %w", err)
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"marshal settings: %w\", err)")
 		observe.GlobalTrace("return: fmt.Errorf(\"marshal settings: %w\", err)")
 		return fmt.Errorf("marshal settings: %w", err)
 	}
@@ -139,6 +152,7 @@ func writeLocalSettings(path string, cfg config.Config) error {
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"write temp settings: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"write temp settings: %w\", err)")
 		return fmt.Errorf("write temp settings: %w", err)
 	}
 
@@ -146,8 +160,10 @@ func writeLocalSettings(path string, cfg config.Config) error {
 		observe.GlobalTrace("if: err != nil")
 		os.Remove(tmpPath)
 		observe.GlobalTrace("return: fmt.Errorf(\"rename settings: %w\", err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"rename settings: %w\", err)")
 		return fmt.Errorf("rename settings: %w", err)
 	}
+	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 
 	return nil

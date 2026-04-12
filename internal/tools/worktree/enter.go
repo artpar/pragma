@@ -43,11 +43,13 @@ func (t *EnterTool) Name() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"EnterWorktree\"")
 	observe.GlobalTrace("return: \"EnterWorktree\"")
+	observe.GlobalTrace("return: \"EnterWorktree\"")
 	return "EnterWorktree"
 }
 func (t *EnterTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: enterDescription")
 	observe.GlobalTrace("return: enterDescription")
 	observe.GlobalTrace("return: enterDescription")
 	return enterDescription
@@ -82,11 +84,13 @@ func (t *EnterTool) InputSchema() json.RawMessage {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: enterSchema")
 	observe.GlobalTrace("return: enterSchema")
+	observe.GlobalTrace("return: enterSchema")
 	return enterSchema
 }
 func (t *EnterTool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
@@ -102,8 +106,10 @@ func (t *EnterTool) CheckPerm(ctx context.Context, input json.RawMessage, checke
 		observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "if: err != nil || in.Slug == \"\"")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", \"\")")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", \"\")")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", \"\")")
 		return checker.Check(ctx, "EnterWorktree", "")
 	}
+	observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", in.Slug)")
 	observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", in.Slug)")
 	observe.TraceCtx(ctx, "worktree", "EnterTool.CheckPerm", "return: checker.Check(ctx, \"EnterWorktree\", in.Slug)")
 	return checker.Check(ctx, "EnterWorktree", in.Slug)
@@ -115,6 +121,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 	var in enterInput
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
@@ -130,6 +137,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid slug: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid slug: %w\", err)")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid slug: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid slug: %w", err)
 	}
 
@@ -139,6 +147,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create worktree parent dir: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create worktree parent dir: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create worktree parent dir: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("create worktree parent dir: %w", err)
@@ -152,6 +161,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git worktree add: %s: %w\", strings.TrimSpace...")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git worktree add: %s: %w\", strings.TrimSpace...")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git worktree add: %s: %w\", strings.TrimSpace...")
 		return tool.InvokeResult{}, fmt.Errorf("git worktree add: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 
@@ -159,6 +169,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 	revOut, err := revCmd.Output()
 	if err != nil {
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git rev-parse HEAD: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git rev-parse HEAD: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"git rev-parse HEAD: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("git rev-parse HEAD: %w", err)
@@ -175,8 +186,10 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"marshal result: %w\", err)")
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"marshal result: %w\", err)")
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"marshal result: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("marshal result: %w", err)
 	}
+	observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
