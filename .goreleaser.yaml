@@ -1,0 +1,99 @@
+version: 2
+
+before:
+  hooks:
+    - go test ./...
+    - go test ./internal/archtest/ -v
+    - mkdir -p completions
+    - go run ./cmd/gogent/ completion bash > completions/gogent.bash
+    - go run ./cmd/gogent/ completion zsh > completions/gogent.zsh
+    - go run ./cmd/gogent/ completion fish > completions/gogent.fish
+
+builds:
+  - id: gogent
+    main: ./cmd/gogent/
+    binary: gogent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/artpar/gogent/internal/buildinfo.Version={{.Version}}
+      - -X github.com/artpar/gogent/internal/buildinfo.Commit={{.ShortCommit}}
+      - -X github.com/artpar/gogent/internal/buildinfo.Date={{.Date}}
+      - -X github.com/artpar/gogent/internal/buildinfo.GoVersion={{.Env.GOVERSION}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - completions/*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: artpar
+    name: gogent
+  draft: false
+  prerelease: auto
+
+nfpms:
+  - id: packages
+    package_name: gogent
+    homepage: https://github.com/artpar/gogent
+    maintainer: artpar
+    description: AI coding assistant CLI powered by LLMs
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: ./completions/gogent.bash
+        dst: /usr/share/bash-completion/completions/gogent
+      - src: ./completions/gogent.zsh
+        dst: /usr/share/zsh/vendor-completions/_gogent
+      - src: ./completions/gogent.fish
+        dst: /usr/share/fish/vendor_completions.d/gogent.fish
+
+brews:
+  - repository:
+      owner: artpar
+      name: homebrew-tap
+    directory: Formula
+    homepage: https://github.com/artpar/gogent
+    description: AI coding assistant CLI powered by LLMs
+    install: |
+      bin.install "gogent"
+      bash_completion.install "completions/gogent.bash" => "gogent"
+      zsh_completion.install "completions/gogent.zsh" => "_gogent"
+      fish_completion.install "completions/gogent.fish"
+    test: |
+      system "#{bin}/gogent", "version"
+
+scoops:
+  - repository:
+      owner: artpar
+      name: scoop-bucket
+    homepage: https://github.com/artpar/gogent
+    description: AI coding assistant CLI powered by LLMs

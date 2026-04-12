@@ -13,12 +13,9 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/artpar/gogent/internal/buildinfo"
 	"github.com/artpar/gogent/internal/observe"
 )
-
-// Version is the gogent version reported to MCP servers during initialization.
-// Override at build time via -ldflags "-X github.com/artpar/gogent/internal/mcp.Version=x.y.z".
-var Version = "0.1.0"
 
 const (
 	defaultConnectTimeout  = 30 * time.Second
@@ -131,7 +128,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
 			ClientInfo: mcp.Implementation{
 				Name:    "gogent",
-				Version: Version,
+				Version: buildinfo.Version,
 			},
 			Capabilities: mcp.ClientCapabilities{},
 		},

@@ -1,11 +1,27 @@
 BINARY := bin/gogent
 
-.PHONY: build test archtest smoke ci clean
+VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+DATE      ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+GOVERSION ?= $(shell go version | awk '{print $$3}')
+LDFLAGS   := -X github.com/artpar/gogent/internal/buildinfo.Version=$(VERSION) \
+             -X github.com/artpar/gogent/internal/buildinfo.Commit=$(COMMIT) \
+             -X github.com/artpar/gogent/internal/buildinfo.Date=$(DATE) \
+             -X github.com/artpar/gogent/internal/buildinfo.GoVersion=$(GOVERSION)
+
+.PHONY: build test archtest smoke ci clean completions
 
 # Build the binary
 build:
 	@mkdir -p bin
-	go build -o $(BINARY) ./cmd/gogent/
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/gogent/
+
+# Generate shell completion scripts
+completions: build
+	@mkdir -p completions
+	./$(BINARY) completion bash > completions/gogent.bash
+	./$(BINARY) completion zsh > completions/gogent.zsh
+	./$(BINARY) completion fish > completions/gogent.fish
 
 # Run all unit tests
 test:
@@ -40,4 +56,4 @@ ci: test archtest smoke e2e
 	@echo "=== All CI checks passed ==="
 
 clean:
-	rm -rf bin/
+	rm -rf bin/ completions/

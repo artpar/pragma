@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+      - name: Unit tests
+        run: go test ./...
+      - name: Architecture tests
+        run: go test ./internal/archtest/ -v
+      - name: Cross-compile
+        run: |
+          for os in linux darwin windows; do
+            for arch in amd64 arm64; do
+              echo "Building $os/$arch..."
+              CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -o /dev/null ./cmd/gogent/
+            done
+          done
+      - name: Smoke test
+        run: make smoke
+      - name: E2E tests
+        run: make e2e

@@ -8,9 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/artpar/gogent/internal/observe"
@@ -75,10 +73,7 @@ func (c *Client) Start(ctx context.Context) error {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 
-	if runtime.GOOS != "windows" {
-		observe.TraceCtx(ctx, "lsp", "Client.Start", "if: runtime.GOOS != \"windows\"")
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	}
+	setProcAttr(cmd)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

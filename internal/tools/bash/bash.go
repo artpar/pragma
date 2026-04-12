@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/artpar/gogent/internal/observe"
@@ -125,10 +124,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", in.Command)
 	cmd.Dir = state.WorkDir()
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
+	setProcAttr(cmd)
 
 	// Capture combined stdout+stderr (merged fd, like TS)
 	var combined bytes.Buffer
