@@ -90,9 +90,12 @@ func usageFromWire(u wireUsage) model.TokenUsage {
 		InputTokens:  u.PromptTokens,
 		OutputTokens: u.CompletionTokens,
 	}
-	if u.PromptTokensDetails != nil {
-		observe.GlobalTrace("if: u.PromptTokensDetails != nil")
+	if u.PromptTokensDetails != nil && u.PromptTokensDetails.CachedTokens > 0 {
+		observe.GlobalTrace("if: u.PromptTokensDetails != nil && CachedTokens > 0")
 		usage.CacheReadInputTokens = u.PromptTokensDetails.CachedTokens
+		// Groq's prompt_tokens includes cached tokens. Subtract to avoid
+		// double-counting: cost = (non_cached * input_rate) + (cached * cache_rate).
+		usage.InputTokens -= usage.CacheReadInputTokens
 	}
 	observe.GlobalTrace("return: usage")
 	return usage

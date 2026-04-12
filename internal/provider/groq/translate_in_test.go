@@ -181,8 +181,9 @@ func TestUsageFromWire_WithCache(t *testing.T) {
 		PromptTokensDetails: &wireTokenDetail{CachedTokens: 80},
 	}
 	usage := usageFromWire(u)
-	if usage.InputTokens != 100 {
-		t.Errorf("input=%d, want 100", usage.InputTokens)
+	// InputTokens should exclude cached: 100 - 80 = 20
+	if usage.InputTokens != 20 {
+		t.Errorf("input=%d, want 20 (prompt_tokens minus cached)", usage.InputTokens)
 	}
 	if usage.OutputTokens != 50 {
 		t.Errorf("output=%d, want 50", usage.OutputTokens)
