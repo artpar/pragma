@@ -60,9 +60,36 @@ func (t *Tool) Name() string {
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Update the session task checklist. Replaces the full list.\"")
-	return "Update the session task checklist. Replaces the full list."
+	observe.GlobalTrace("return: todoDescription")
+	return todoDescription
 }
+
+const todoDescription = `Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user. It also helps the user understand the progress of the task and overall progress of their requests.
+
+## When to Use This Tool
+
+1. Complex multi-step tasks — when a task requires 3 or more distinct steps or actions
+2. Non-trivial tasks — tasks that require careful planning or multiple operations
+3. User explicitly requests a todo list
+4. User provides multiple tasks — numbered or comma-separated list
+5. After receiving new instructions — immediately capture requirements as todos
+6. When you start working on a task — mark it as in_progress BEFORE beginning work. Only have one todo as in_progress at a time
+7. After completing a task — mark it as completed and add any new follow-up tasks discovered during implementation
+
+## When NOT to Use This Tool
+
+1. There is only a single, straightforward task
+2. The task is trivial and tracking provides no organizational benefit
+3. The task can be completed in fewer than 3 trivial steps
+4. The task is purely conversational or informational
+
+NOTE: do not use this tool if there is only one trivial task. Just do the task directly.
+
+## Important
+
+- Each call REPLACES the entire todo list — always include all items (completed and pending)
+- Statuses: "pending", "in_progress", "completed"
+- When all items are marked "completed", the list is automatically cleared`
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

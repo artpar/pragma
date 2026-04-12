@@ -11,7 +11,7 @@ func RegisterFlags(cmd *cobra.Command) {
 	defer observe.GlobalTrace("exit")
 	cmd.Flags().StringP("prompt", "p", "", "prompt to send (non-interactive mode)")
 	cmd.Flags().String("model", "", "model name")
-	cmd.Flags().String("provider", "", "provider name (anthropic, groq)")
+	cmd.Flags().String("provider", "", "provider name (anthropic, openai, google, groq)")
 	cmd.Flags().String("api-key", "", "API key")
 	cmd.Flags().String("system-prompt", "", "system prompt")
 	cmd.Flags().Int("max-tokens", 0, "max output tokens")

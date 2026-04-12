@@ -55,9 +55,24 @@ func (t *CreateTool) Name() string {
 func (t *CreateTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Schedule a prompt to run on a cron schedule.\"")
-	return "Schedule a prompt to run on a cron schedule."
+	observe.GlobalTrace("return: createDescription")
+	return createDescription
 }
+
+const createDescription = `Schedule a prompt to run automatically on a cron schedule.
+
+## Parameters
+
+- cron: A standard 5-field cron expression (minute hour day-of-month month day-of-week). Examples: "*/5 * * * *" (every 5 min), "0 9 * * 1-5" (9 AM weekdays), "0 */2 * * *" (every 2 hours)
+- prompt: The prompt to execute when the schedule fires
+- recurring: Whether the job repeats after firing (default true). Set to false for one-shot schedules.
+- durable: Whether the job persists across session restarts (default false)
+
+## When to Use
+
+- The user asks to run something on a schedule or interval
+- The user wants periodic checks, polling, or recurring automation
+- Use CronList to see existing jobs, CronDelete to remove them`
 func (t *CreateTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

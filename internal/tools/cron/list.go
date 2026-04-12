@@ -29,8 +29,8 @@ func (t *ListTool) Name() string {
 func (t *ListTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"List all scheduled cron jobs.\"")
-	return "List all scheduled cron jobs."
+	observe.GlobalTrace("return: \"List all scheduled cron jobs...\"")
+	return "List all scheduled cron jobs. Returns each job's ID, cron expression, prompt, next fire time, and whether it is recurring or durable. Use this to check what is currently scheduled before creating or deleting jobs."
 }
 func (t *ListTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")

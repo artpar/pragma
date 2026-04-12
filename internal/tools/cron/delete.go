@@ -40,8 +40,8 @@ func (t *DeleteTool) Name() string {
 func (t *DeleteTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Delete a scheduled cron job by ID.\"")
-	return "Delete a scheduled cron job by ID."
+	observe.GlobalTrace("return: \"Delete a scheduled cron job by ID...\"")
+	return "Delete a scheduled cron job by ID. Use CronList first to find the job ID. The job is stopped immediately and will not fire again."
 }
 func (t *DeleteTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")

@@ -53,9 +53,31 @@ func (t *ExitTool) Name() string {
 func (t *ExitTool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"Exit and optionally remove a git worktree.\"")
-	return "Exit and optionally remove a git worktree."
+	observe.GlobalTrace("return: exitDescription")
+	return exitDescription
 }
+
+const exitDescription = `Exit a worktree session created by EnterWorktree and return the session to the original working directory.
+
+## Scope
+
+This tool ONLY operates on worktrees created by EnterWorktree in this session. It will NOT touch:
+- Worktrees you created manually with ` + "`git worktree add`" + `
+- Worktrees from a previous session (even if created by EnterWorktree then)
+- The directory you're in if EnterWorktree was never called
+
+If called outside an EnterWorktree session, the tool is a no-op: it reports that no worktree session is active and takes no action.
+
+## When to Use
+
+- The user explicitly asks to "exit the worktree", "leave the worktree", "go back", or otherwise end the worktree session
+- Do NOT call this proactively — only when the user asks
+
+## Behavior
+
+- If the worktree has no changes (no uncommitted files, no new commits), it is automatically removed
+- If the worktree has changes, it is kept and the diff stat is returned so the user can decide what to do
+- Restores the session's working directory to where it was before EnterWorktree`
 func (t *ExitTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

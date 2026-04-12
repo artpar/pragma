@@ -230,13 +230,24 @@ func systemToWire(sys model.SystemPrompt) []sdk.TextBlockParam {
 		return nil
 	}
 	out := make([]sdk.TextBlockParam, len(sys.Blocks))
+	// Find the last cacheable block index. Anthropic allows max 4 cache_control
+	// breakpoints total (system + tools + messages). We use 1 for system (the last
+	// cacheable block), 1 for tools, 1 for messages = 3 total. Caching is prefix-
+	// based, so marking only the last cacheable block caches all blocks before it.
+	lastCacheable := -1
+	for i, block := range sys.Blocks {
+		observe.GlobalTrace("range sys.Blocks")
+		if block.Cacheable {
+			lastCacheable = i
+		}
+	}
 	for i, block := range sys.Blocks {
 		observe.GlobalTrace("range sys.Blocks")
 		out[i] = sdk.TextBlockParam{
 			Text: block.Text,
 		}
-		if block.Cacheable {
-			observe.GlobalTrace("if: block.Cacheable")
+		if i == lastCacheable {
+			observe.GlobalTrace("if: i == lastCacheable")
 			out[i].CacheControl = sdk.NewCacheControlEphemeralParam()
 		}
 	}
