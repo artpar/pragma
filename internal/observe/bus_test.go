@@ -133,9 +133,10 @@ func TestEventBusConcurrentEmit(t *testing.T) {
 	}
 }
 
-func TestEventBusBackpressureBlocks(t *testing.T) {
-	// Buffer size 1 — second Emit should block until first is consumed
-	bus := NewEventBus(1)
+func TestEventBusNeverDrops(t *testing.T) {
+	// Ring buffer is fixed size — verify no events are dropped even
+	// when emitting faster than dispatch can consume.
+	bus := NewEventBus(0) // bufferSize ignored, ring is 65536
 	sub := &collectingSub{}
 	bus.Subscribe(sub)
 
@@ -143,9 +144,38 @@ func TestEventBusBackpressureBlocks(t *testing.T) {
 	bus.Emit(testEvent("ConversationStarted"))
 	bus.Drain()
 
-	// Both events must arrive — no drops
 	if sub.count() != 2 {
-		t.Errorf("got %d events, want 2 (backpressure must not drop)", sub.count())
+		t.Errorf("got %d events, want 2 (must never drop)", sub.count())
+	}
+}
+
+func TestEventBusHighVolume(t *testing.T) {
+	// 10 goroutines × 1,000 events = 10,000 total — stress test the MPSC ring.
+	bus := NewEventBus(0)
+
+	var received atomic.Int64
+	bus.Subscribe(subscriberFunc(func(_ Event) {
+		received.Add(1)
+	}))
+
+	var wg sync.WaitGroup
+	goroutines := 10
+	perGoroutine := 1000
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			for range perGoroutine {
+				bus.Emit(testEvent("ConversationStarted"))
+			}
+		}()
+	}
+	wg.Wait()
+	bus.Drain()
+
+	want := int64(goroutines * perGoroutine)
+	if got := received.Load(); got != want {
+		t.Errorf("received %d events, want %d (zero drops required)", got, want)
 	}
 }
 
