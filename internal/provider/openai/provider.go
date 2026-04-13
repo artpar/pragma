@@ -198,7 +198,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						if id == "" && len(toolCallIDs) > 0 {
 							observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: id == \"\" && len(toolCallIDs) > 0")
 							id = toolCallIDs[len(toolCallIDs)-1]
-						observe.TraceCtx(ctx, "openai", "Provider.Stream", "warn: tool call input delta has no ID, falling back to last tool call")
+							observe.TraceCtx(ctx, "openai", "Provider.Stream", "warn: tool call input delta has no ID, falling back to last tool call")
 						}
 						ch <- provider.StreamChunk{
 							ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: id, JSONDelta: tc.Function.Arguments},

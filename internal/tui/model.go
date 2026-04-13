@@ -147,8 +147,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.ask.active {
 		observe.GlobalTrace("if: m.ask.active")
-		observe.GlobalTrace("return: m, nil")
-		return m, nil
+		cmd := m.ask.Update(msg)
+		observe.GlobalTrace("return: m, cmd")
+		return m, cmd
 	}
 	if m.perm.active {
 		observe.GlobalTrace("if: m.perm.active")

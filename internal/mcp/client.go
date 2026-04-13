@@ -437,7 +437,9 @@ func (c *Client) Disconnect() error {
 func (c *Client) Reconnect(ctx context.Context) error {
 	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "enter")
 	defer observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "exit")
-	_ = c.Disconnect()
+	if err := c.Disconnect(); err != nil {
+		observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "warn: Disconnect failed: "+err.Error())
+	}
 	observe.TraceCtx(ctx, "mcp", "Client.Reconnect", "return: c.Connect(ctx)")
 	return c.Connect(ctx)
 }

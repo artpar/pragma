@@ -187,7 +187,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	mode := permission.PermissionMode(permMode)
 	if mode == "" {
 		observe.GlobalTrace("if: mode == \"\"")
-		mode = permission.ModeBypassPermissions
+		mode = permission.ModeDefault
 	}
 	// Validate permission mode
 	switch mode {
