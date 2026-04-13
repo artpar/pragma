@@ -133,6 +133,7 @@ func RunBackground(cmd *cobra.Command) error {
 		return fmt.Errorf("start background process: %w", err)
 	}
 
+	childPid := proc.Pid // capture before Release() resets it
 	_ = proc.Release()
 	devNull.Close()
 	logFile.Close()
@@ -150,8 +151,8 @@ func RunBackground(cmd *cobra.Command) error {
 		providerName, _ := cmd.Flags().GetString("provider")
 
 		_ = reg.Register(background.ProcessInfo{
-			PID:       proc.Pid,
-			PGID:      proc.Pid,
+			PID:       childPid,
+			PGID:      childPid,
 			SessionID: "",
 			CWD:       cwd,
 			StartedAt: time.Now(),
@@ -163,7 +164,7 @@ func RunBackground(cmd *cobra.Command) error {
 		})
 	}
 
-	fmt.Printf("Background session started (PID %d)\n", proc.Pid)
+	fmt.Printf("Background session started (PID %d)\n", childPid)
 	fmt.Printf("  Logs: %s\n", logPath)
 	fmt.Printf("  Use 'gogent sessions' to manage.\n")
 	observe.GlobalTrace("return: nil")
@@ -367,12 +368,17 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	events := engine.Run(ctx, prompt)
 
+	hasStructuredOutput := schemaFlag != ""
+	var structuredJSON json.RawMessage
+
 	for ev := range events {
 		observe.GlobalTrace("range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
 			observe.GlobalTrace("typecase: query.TextEvent")
-			fmt.Print(e.Text)
+			if !hasStructuredOutput {
+				fmt.Print(e.Text)
+			}
 		case query.ThinkingEvent:
 			observe.GlobalTrace("typecase: query.ThinkingEvent")
 			if d.Cfg.Verbose {
@@ -380,6 +386,10 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			}
 		case query.ToolCallEvent:
 			observe.GlobalTrace("typecase: query.ToolCallEvent")
+			// Capture StructuredOutput tool input as the final output
+			if hasStructuredOutput && e.Call.Name == "StructuredOutput" {
+				structuredJSON = e.Call.Input
+			}
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
 			}
@@ -395,12 +405,21 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			}
 		case query.TurnCompleteEvent:
 			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
-			fmt.Println()
+			if !hasStructuredOutput {
+				fmt.Println()
+			}
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
 			SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
 			return e.Err
 		}
+	}
+
+	// Output structured JSON if --output-schema was used
+	if hasStructuredOutput && structuredJSON != nil {
+		fmt.Println(string(structuredJSON))
+	} else if hasStructuredOutput {
+		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}
 
 	SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
