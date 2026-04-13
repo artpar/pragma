@@ -45,12 +45,15 @@ internal/
     anthropic/        ← Anthropic adapter (translates model ↔ Anthropic wire)
     openai/           ← OpenAI adapter (translates model ↔ OpenAI wire)
     google/           ← Google adapter (translates model ↔ Google wire)
+    groq/             ← Groq adapter (OpenAI-compatible, ultra-fast inference)
+    shared/           ← Cross-provider utilities: EstimateTokens, WithRetry, ClassifyByStatusCodes
+    anyllm/           ← Bridge layer: gogent model types ↔ any-llm-go types (OpenAI/Groq)
 
   tool/               ← Tool system (Descriptor interface, Registry, Orchestrator, Asker)
-  tools/              ← Tool implementations (31 tools — see list below)
+  tools/              ← Tool implementations (36 tools — see list below)
   query/              ← Agentic loop (stream → tool execute → continue), plan mode filtering
   permission/         ← Permission system (rule-based checker, content matching, dangerous paths)
-  app/                ← AppState (TodoItem, PlanMode) + StateStore (references model/)
+  app/                ← AppState (TodoItem, PlanMode, TeamContext) + StateStore (references model/)
   tui/                ← Bubbletea TUI (permission dialog, ask dialog, streaming display)
   config/             ← Settings + merge + path resolution (~/.gogent/)
   sysprompt/          ← System prompt builder (AGENT.md loading, env detection, skill listing)
@@ -61,6 +64,7 @@ internal/
   compact/            ← Context window management, compaction service, auto-compaction
   slash/              ← Slash command framework + built-in commands
   cli/                ← Cobra CLI wiring (deps, tools, run modes, flags)
+  team/               ← Multi-agent swarm team management (TeamFile, slug generation, atomic writes)
   util/               ← Pure utilities
 ```
 
@@ -293,6 +297,71 @@ type Agent struct {
 
 Agents are definitions loaded from `.pragma/agents/`. At runtime, spawning an agent = fork conversation + create Engine with agent's config. The `Provider` field allows sub-agents to use a different LLM entirely.
 
+### 3.10 TeamFile + TeamMember (ADR-036)
+
+`internal/team/team.go`
+
+```
+type TeamFile struct {
+    Name          string       `json:"name"`
+    Description   string       `json:"description,omitempty"`
+    CreatedAt     int64        `json:"createdAt"`
+    LeadAgentID   string       `json:"leadAgentId"`
+    LeadSessionID string       `json:"leadSessionId,omitempty"`
+    Members       []TeamMember `json:"members"`
+}
+
+type TeamMember struct {
+    AgentID       string   `json:"agentId"`
+    Name          string   `json:"name"`
+    AgentType     string   `json:"agentType,omitempty"`
+    Model         string   `json:"model,omitempty"`
+    JoinedAt      int64    `json:"joinedAt"`
+    CWD           string   `json:"cwd"`
+    WorktreePath  string   `json:"worktreePath,omitempty"`
+    IsActive      *bool    `json:"isActive,omitempty"`
+    Subscriptions []string `json:"subscriptions"`
+}
+```
+
+On-disk at `~/.gogent/teams/{sanitized}/config.json`. Atomic writes (temp + rename). Tasks at `~/.gogent/tasks/{sanitized}/`.
+
+Key functions: `SanitizeName()`, `FormatAgentID()`, `GenerateWordSlug()`, `WriteTeamFile()`, `ReadTeamFile()`, `CleanupTeamDirectories()`, `TeamExists()`.
+
+### 3.11 TeamContext (in app/)
+
+`internal/app/state.go`
+
+```
+type TeamContext struct {
+    TeamName     string `json:"team_name"`
+    TeamFilePath string `json:"team_file_path"`
+    LeadAgentID  string `json:"lead_agent_id"`
+}
+```
+
+Stored as `AppState.TeamContext *TeamContext`. Tracks active team leadership state. Nil when not leading a team. Defined in `app/` (not `team/`) to avoid import cycles.
+
+### 3.12 Registry.SetHidden (ADR-037)
+
+`internal/tool/registry.go`
+
+```
+func (r *Registry) SetHidden(names map[string]bool)
+```
+
+Marks tools as excluded from `ToolDefs()` and `List()` but still available via `Get()`. Used by REPL mode to hide primitive tools (Read, Write, Edit, Glob, Grep, Bash, NotebookEdit, Agent) from the LLM while keeping them callable internally by the REPL tool.
+
+### 3.13 New Tools (ADR-034 through ADR-037)
+
+| # | Tool | Package | Flags | Description |
+|---|---|---|---|---|
+| 32 | PowerShell | `tools/powershell/` | destructive | Cross-platform pwsh/powershell.exe, UTF-8 fix, destructive cmdlet detection |
+| 33 | StructuredOutput | `tools/synthetic/` | readOnly, concurrent | JSON Schema validation for `--output-schema` mode (non-interactive only) |
+| 34 | TeamCreate | `tools/teamcreate/` | | Multi-agent swarm team creation, atomic file writes, feature-gated |
+| 35 | TeamDelete | `tools/teamdelete/` | | Team cleanup with active member check, worktree removal |
+| 36 | REPL | `tools/repl/` | destructive | Wraps 8 primitive tools, sequential execution, registry-level hiding |
+
 ---
 
 ## Part 4: Provider Interface (The Translation Boundary)
@@ -426,7 +495,8 @@ For Google (no explicit IDs): synthesize wire ID from `{name}_{index}`.
 │ WorkDir           │    │ Implementations:         │
 │                   │    │ ├─ anthropic.Provider    │
 │ Fork() → new Conv │    │ ├─ openai.Provider      │
-│ Append(msg)       │    │ └─ google.Provider      │
+│ Append(msg)       │    │ ├─ google.Provider      │
+│                   │    │ └─ groq.Provider        │
 │ APIMessages()     │    └─────────────────────────┘
 └───────┬───────────┘
         │ contains
@@ -447,11 +517,13 @@ For Google (no explicit IDs): synthesize wire ID from `{name}_{index}`.
 │   tool.Registry  │     │   tool.Descriptor        │
 │                  │     │                          │
 │ tools: map[name] ├────►│ Name, InputSchema        │
-│                  │     │ Invoke(ctx, json, snap)  │
-│ ToolDefs() →     │     │ CheckPerm(ctx, json, chk)│
-│  []model.ToolDef │     │ Flags: readonly,         │
-└──────────────────┘     │   concurrent, destructive│
-                         └──────────────────────────┘
+│ hidden: map[name]│     │ Invoke(ctx, json, snap)  │
+│                  │     │ CheckPerm(ctx, json, chk)│
+│ ToolDefs() →     │     │ Flags: readonly,         │
+│  []model.ToolDef │     │   concurrent, destructive│
+│ SetHidden(names) │     └──────────────────────────┘
+│  (REPL mode)     │
+└──────────────────┘
 
 ┌──────────────────────────────────────────────────┐
 │              tool.Orchestrator                     │
@@ -823,6 +895,30 @@ All events embed `EventHeader` and implement the sealed interface.
 | `SubAgentSpawned` | `AgentID, AgentName, Model, Provider, ParentAgentID` | Sub-agent created |
 | `SubAgentCompleted` | `AgentID, DurationMs, TurnCount, Usage` | Sub-agent done |
 | `SubAgentFailed` | `AgentID, ErrorType, ErrorMessage` | Sub-agent error |
+
+**Team Events (ADR-036):**
+
+| Event | Key Fields | When |
+|---|---|---|
+| `TeamCreated` | `TeamName, LeadAgentID, MemberCount` | Team created |
+| `TeamDeleted` | `TeamName` | Team cleaned up |
+
+**Hook Events (ADR-029):**
+
+| Event | Key Fields | When |
+|---|---|---|
+| `HookExecuted` | `HookEvent, Command, ExitCode, Outcome, HasJSON` | Hook command completed |
+| `HookBlocked` | `HookEvent, Command, Message` | Hook blocked a tool call (exit 2) |
+| `PermissionPersisted` | `ToolName, Content, Decision` | Permission rule saved to settings |
+
+**Communication Events:**
+
+| Event | Key Fields | When |
+|---|---|---|
+| `BriefMessageSent` | `Message, Attachments, Status` | SendUserMessage tool invoked |
+| `McpOAuthStarted` | `ServerName, AuthURL` | OAuth flow initiated |
+| `McpOAuthCompleted` | `ServerName, Success, Error` | OAuth flow completed/failed |
+| `SlashCommandExecuted` | `CommandName, Args, DurationMs, Success` | Slash command run |
 
 **Error Events:**
 
@@ -1730,6 +1826,30 @@ All events embed `EventHeader` and implement the sealed interface.
 | `SubAgentSpawned` | `AgentID, AgentName, Model, Provider, ParentAgentID` | Sub-agent created |
 | `SubAgentCompleted` | `AgentID, DurationMs, TurnCount, Usage` | Sub-agent done |
 | `SubAgentFailed` | `AgentID, ErrorType, ErrorMessage` | Sub-agent error |
+
+**Team Events (ADR-036):**
+
+| Event | Key Fields | When |
+|---|---|---|
+| `TeamCreated` | `TeamName, LeadAgentID, MemberCount` | Team created |
+| `TeamDeleted` | `TeamName` | Team cleaned up |
+
+**Hook Events (ADR-029):**
+
+| Event | Key Fields | When |
+|---|---|---|
+| `HookExecuted` | `HookEvent, Command, ExitCode, Outcome, HasJSON` | Hook command completed |
+| `HookBlocked` | `HookEvent, Command, Message` | Hook blocked a tool call (exit 2) |
+| `PermissionPersisted` | `ToolName, Content, Decision` | Permission rule saved to settings |
+
+**Communication Events:**
+
+| Event | Key Fields | When |
+|---|---|---|
+| `BriefMessageSent` | `Message, Attachments, Status` | SendUserMessage tool invoked |
+| `McpOAuthStarted` | `ServerName, AuthURL` | OAuth flow initiated |
+| `McpOAuthCompleted` | `ServerName, Success, Error` | OAuth flow completed/failed |
+| `SlashCommandExecuted` | `CommandName, Args, DurationMs, Success` | Slash command run |
 
 **Error Events:**
 

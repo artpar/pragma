@@ -18,16 +18,18 @@ import (
 // testProvider is a real provider.Provider implementation backed by predetermined chunks.
 // Each call to Stream() returns the next set of chunks in the turns slice.
 type testProvider struct {
-	turns   [][]provider.StreamChunk
-	mu      sync.Mutex
-	callIdx int
-	pricing model.Pricing
+	turns      [][]provider.StreamChunk
+	mu         sync.Mutex
+	callIdx    int
+	pricing    model.Pricing
+	lastParams provider.RequestParams // captured from most recent Stream call
 }
 
 func (tp *testProvider) Name() string { return "test" }
 
-func (tp *testProvider) Stream(_ context.Context, _ provider.RequestParams) (<-chan provider.StreamChunk, error) {
+func (tp *testProvider) Stream(_ context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
 	tp.mu.Lock()
+	tp.lastParams = params
 	idx := tp.callIdx
 	tp.callIdx++
 	tp.mu.Unlock()
@@ -419,5 +421,141 @@ func TestRun_CostTracking(t *testing.T) {
 	}
 	if entries[0].Provider != "test" {
 		t.Errorf("provider = %q, want %q", entries[0].Provider, "test")
+	}
+}
+
+func TestRun_PauseTurnExceedsTurns(t *testing.T) {
+	// Provider that always returns StopPauseTurn — should be stopped by maxTurns.
+	maxTurns := 5
+	turns := make([][]provider.StreamChunk, maxTurns+10)
+	for i := range turns {
+		turns[i] = textChunks("chunk", model.StopPauseTurn)
+	}
+
+	prov := &testProvider{turns: turns}
+
+	bus := observe.NewEventBus(256)
+	registry := tool.NewRegistry(bus)
+	checker := &allowAllChecker{}
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          "/tmp/test",
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	ct := model.NewCostTracker()
+
+	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+		MaxTurns:  maxTurns,
+	})
+	events := drain(engine.Run(context.Background(), "pause forever"))
+
+	var gotError bool
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			gotError = true
+			if e.Err == nil {
+				t.Fatal("ErrorEvent has nil Err")
+			}
+			t.Logf("got expected error: %v", e.Err)
+		}
+	}
+	if !gotError {
+		t.Fatal("expected ErrorEvent for maxTurns exceeded, but loop completed without error")
+	}
+
+	// Verify provider was called at most maxTurns times (not maxTurns+10)
+	prov.mu.Lock()
+	calls := prov.callIdx
+	prov.mu.Unlock()
+	if calls > maxTurns {
+		t.Errorf("provider called %d times, want at most %d (maxTurns)", calls, maxTurns)
+	}
+}
+
+func TestRun_ModelFromAppState(t *testing.T) {
+	// Verify that when AppState.Model is set, the engine uses it instead of config.Model
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			textChunks("hello", model.StopEndTurn),
+		},
+	}
+
+	bus := observe.NewEventBus(256)
+	registry := tool.NewRegistry(bus)
+	checker := &allowAllChecker{}
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
+
+	conv := model.NewConversation(model.SystemPrompt{}, "config-model", "test", "/tmp/test")
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          "/tmp/test",
+		Model:        "override-model", // AppState override
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	ct := model.NewCostTracker()
+
+	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
+		Model:     "config-model",
+		MaxTokens: 4096,
+	})
+
+	drain(engine.Run(context.Background(), "Hi"))
+
+	prov.mu.Lock()
+	gotModel := prov.lastParams.Model
+	prov.mu.Unlock()
+
+	if gotModel != "override-model" {
+		t.Errorf("provider received model %q, want %q (from AppState)", gotModel, "override-model")
+	}
+}
+
+func TestRun_ModelFallsBackToConfig(t *testing.T) {
+	// When AppState.Model is empty, engine should use config.Model
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			textChunks("hello", model.StopEndTurn),
+		},
+	}
+
+	bus := observe.NewEventBus(256)
+	registry := tool.NewRegistry(bus)
+	checker := &allowAllChecker{}
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
+
+	conv := model.NewConversation(model.SystemPrompt{}, "config-model", "test", "/tmp/test")
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          "/tmp/test",
+		Model:        "", // Empty — should fall back
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	ct := model.NewCostTracker()
+
+	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
+		Model:     "config-model",
+		MaxTokens: 4096,
+	})
+
+	drain(engine.Run(context.Background(), "Hi"))
+
+	prov.mu.Lock()
+	gotModel := prov.lastParams.Model
+	prov.mu.Unlock()
+
+	if gotModel != "config-model" {
+		t.Errorf("provider received model %q, want %q (from config fallback)", gotModel, "config-model")
 	}
 }

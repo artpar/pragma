@@ -37,8 +37,6 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 		e.runLoop(ctx, userMessage, ch)
 	}()
 	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
-	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
-	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
 	return ch
 }
 
@@ -82,6 +80,12 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 		snap := e.store.Snapshot()
 
+		// Resolve model: AppState override > engine config default
+		resolvedModel := e.config.Model
+		if snap.Model != "" {
+			resolvedModel = snap.Model
+		}
+
 		tools := e.registry.ToolDefs()
 		if snap.PlanMode {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: snap.PlanMode")
@@ -89,7 +93,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 
 		params := provider.RequestParams{
-			Model:       e.config.Model,
+			Model:       resolvedModel,
 			MaxTokens:   e.config.MaxTokens,
 			Messages:    snap.Conversation.APIMessages(),
 			System:      snap.Conversation.System,
@@ -122,7 +126,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			s.Conversation.Append(assistantMsg)
 		})
 
-		pricing, known := e.provider.Pricing(e.config.Model)
+		pricing, known := e.provider.Pricing(resolvedModel)
 		if !known {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: !known")
 			e.bus.Emit(observe.ErrorOccurred{
@@ -130,10 +134,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Severity:     "warn",
 				Component:    "query",
 				ErrorType:    "unknown_model_pricing",
-				ErrorMessage: fmt.Sprintf("no pricing data for model %q, costs will be zero", e.config.Model),
+				ErrorMessage: fmt.Sprintf("no pricing data for model %q, costs will be zero", resolvedModel),
 			})
 		}
-		e.costTracker.Record(e.config.Model, e.provider.Name(), response.Usage, pricing)
+		e.costTracker.Record(resolvedModel, e.provider.Name(), response.Usage, pricing)
 
 		if e.compactor != nil && e.autoTracker != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.compactor != nil && e.autoTracker != nil")
@@ -183,13 +187,14 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Severity:     "warn",
 				Component:    "query",
 				ErrorType:    "response_truncated",
-				ErrorMessage: fmt.Sprintf("model %q hit max_tokens limit — response was truncated", e.config.Model),
+				ErrorMessage: fmt.Sprintf("model %q hit max_tokens limit — response was truncated", resolvedModel),
 			})
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
 
 		case model.StopPauseTurn:
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopPauseTurn — not counting as turn")
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopPauseTurn")
+			turnCount++
 
 			contMsg := model.Message{
 				ID:        model.NewUUID(),
@@ -270,8 +275,6 @@ func (e *Engine) consumeStream(
 		if chunk.Error != nil {
 			observe.GlobalTrace("if: chunk.Error != nil")
 			observe.GlobalTrace("return: model.Response{}, chunk.Error")
-			observe.GlobalTrace("return: model.Response{}, chunk.Error")
-			observe.GlobalTrace("return: model.Response{}, chunk.Error")
 			return model.Response{}, chunk.Error
 		}
 
@@ -306,8 +309,6 @@ func (e *Engine) consumeStream(
 			if _, exists := toolCalls[tc.ID]; exists {
 				observe.GlobalTrace("if: exists")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
 				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
 			}
 			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name}
@@ -319,8 +320,6 @@ func (e *Engine) consumeStream(
 			acc, ok := toolCalls[chunk.ToolCallInputDelta.ToolCallID]
 			if !ok {
 				observe.GlobalTrace("if: !ok")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				return model.Response{}, fmt.Errorf("input delta for unknown tool call %q", chunk.ToolCallInputDelta.ToolCallID)
 			}
@@ -335,8 +334,6 @@ func (e *Engine) consumeStream(
 
 	if done == nil {
 		observe.GlobalTrace("if: done == nil")
-		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done: %w\", model.ErrStream...")
-		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done: %w\", model.ErrStream...")
 		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done: %w\", model.ErrStream...")
 		return model.Response{}, fmt.Errorf("stream ended without Done: %w", model.ErrStreamClosed)
 	}
@@ -376,8 +373,6 @@ func (e *Engine) consumeStream(
 		})
 	}
 	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
-	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
-	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
 
 	return model.Response{
 		Model:      done.Model,
@@ -402,8 +397,6 @@ func (e *Engine) filterReadOnlyTools(tools []model.ToolDef) []model.ToolDef {
 		}
 	}
 	observe.GlobalTrace("return: filtered")
-	observe.GlobalTrace("return: filtered")
-	observe.GlobalTrace("return: filtered")
 	return filtered
 }
 
@@ -419,8 +412,6 @@ func extractToolCalls(parts []model.ContentPart) []model.ToolCallPart {
 			calls = append(calls, tc)
 		}
 	}
-	observe.GlobalTrace("return: calls")
-	observe.GlobalTrace("return: calls")
 	observe.GlobalTrace("return: calls")
 	return calls
 }
