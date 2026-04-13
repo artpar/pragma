@@ -37,9 +37,20 @@ type Deps struct {
 	SessionSave func()
 	ModelName   string
 	Provider    string
+	Cwd         string // working directory for shell execution
 	// Commands is set internally by Registry.Execute — not for external callers.
 	Commands []Command
 }
+
+// CommandType distinguishes how a command is executed.
+type CommandType int
+
+const (
+	// TypeLocal commands need no engine — they produce a result directly (cost, model, doctor).
+	TypeLocal CommandType = iota
+	// TypePrompt commands inject a prompt into the engine for LLM processing (commit, review, init).
+	TypePrompt
+)
 
 // Command describes a registered slash command.
 type Command struct {
@@ -47,6 +58,12 @@ type Command struct {
 	Aliases     []string
 	Description string
 	Handle      Handler
+
+	// CLI metadata — zero-value CLIUse means "no CLI subcommand" (REPL-only).
+	Type         CommandType // TypeLocal or TypePrompt
+	CLIUse       string      // Cobra Use string (e.g., "commit", "review [pr-number]")
+	CLIShort     string      // Override Description for CLI help (optional)
+	AllowedTools []string    // Permission auto-approve list for prompt commands (nil = no special rules)
 }
 
 // Registry holds all registered slash commands.

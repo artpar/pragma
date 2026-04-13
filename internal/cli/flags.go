@@ -6,28 +6,35 @@ import (
 )
 
 // RegisterFlags adds all CLI flags to the root cobra command.
+// Persistent flags are inherited by subcommands (model, provider, etc.).
+// Local flags are root-only (prompt, resume, output-schema, etc.).
 func RegisterFlags(cmd *cobra.Command) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+
+	// Persistent flags — inherited by all subcommands
+	pf := cmd.PersistentFlags()
+	pf.String("model", "", "model name")
+	pf.String("provider", "", "provider name (anthropic, openai, google, groq)")
+	pf.String("api-key", "", "API key")
+	pf.Int("max-tokens", 0, "max output tokens")
+	pf.Float64("temperature", 0, "sampling temperature")
+	pf.Bool("thinking", false, "enable extended thinking")
+	pf.Int("thinking-budget", 0, "thinking token budget")
+	pf.Bool("verbose", false, "verbose logging to stderr")
+	pf.Bool("record", false, "record events to file")
+	pf.Int("max-turns", 0, "override default turn limit (0 = use default)")
+	pf.String("allowed-tools", "", "comma-separated list of allowed tool names")
+	pf.String("disallowed-tools", "", "comma-separated list of excluded tool names")
+	pf.String("permission-mode", "", "permission mode: default, acceptEdits, bypassPermissions, dontAsk")
+
+	// Local flags — root command only (interactive/non-interactive dispatch)
 	cmd.Flags().StringP("prompt", "p", "", "prompt to send (non-interactive mode)")
-	cmd.Flags().String("model", "", "model name")
-	cmd.Flags().String("provider", "", "provider name (anthropic, openai, google, groq)")
-	cmd.Flags().String("api-key", "", "API key")
 	cmd.Flags().String("system-prompt", "", "system prompt")
-	cmd.Flags().Int("max-tokens", 0, "max output tokens")
-	cmd.Flags().Float64("temperature", 0, "sampling temperature")
-	cmd.Flags().Bool("thinking", false, "enable extended thinking")
-	cmd.Flags().Int("thinking-budget", 0, "thinking token budget")
-	cmd.Flags().Bool("verbose", false, "verbose logging to stderr")
-	cmd.Flags().Bool("record", false, "record events to file")
+	cmd.Flags().String("append-system-prompt", "", "append to default system prompt")
 	cmd.Flags().String("resume", "", "resume session by ID")
 	cmd.Flags().BoolP("continue", "c", false, "resume most recent session in current directory")
 	cmd.Flags().Bool("list-sessions", false, "list saved sessions")
 	cmd.Flags().String("output-schema", "", "JSON Schema for structured output (file path or inline JSON, non-interactive only)")
-	cmd.Flags().String("append-system-prompt", "", "append to default system prompt")
-	cmd.Flags().Int("max-turns", 0, "override default turn limit (0 = use default)")
-	cmd.Flags().String("allowed-tools", "", "comma-separated list of allowed tool names")
-	cmd.Flags().String("disallowed-tools", "", "comma-separated list of excluded tool names")
-	cmd.Flags().String("permission-mode", "", "permission mode: default, acceptEdits, bypassPermissions, dontAsk")
 	cmd.MarkFlagsMutuallyExclusive("continue", "resume")
 }

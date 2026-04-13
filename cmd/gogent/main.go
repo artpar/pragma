@@ -10,6 +10,7 @@ import (
 
 	"github.com/artpar/gogent/internal/buildinfo"
 	"github.com/artpar/gogent/internal/cli"
+	"github.com/artpar/gogent/internal/slash"
 )
 
 func main() {
@@ -24,6 +25,11 @@ func main() {
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(completionCmd())
+
+	// Register CLI subcommands from slash command registry (commit, review, init, doctor, etc.)
+	slashCmds := slash.NewRegistry()
+	cli.RegisterSubcommands(root, slashCmds)
+
 	cli.RegisterFlags(root)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

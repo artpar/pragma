@@ -1,0 +1,233 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/artpar/gogent/internal/config"
+	"github.com/artpar/gogent/internal/hook"
+	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/gogent/internal/permission"
+	"github.com/artpar/gogent/internal/query"
+	"github.com/artpar/gogent/internal/slash"
+	"github.com/artpar/gogent/internal/tui"
+)
+
+// RegisterSubcommands creates Cobra subcommands from slash.Registry commands
+// that have CLIUse set. Prompt-type → RunPromptCommand, Local-type → RunLocalCommand.
+func RegisterSubcommands(root *cobra.Command, registry *slash.Registry) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	for _, cmd := range registry.Commands() {
+		if cmd.CLIUse == "" {
+			continue
+		}
+		slashCmd := cmd // capture for closure
+		short := slashCmd.CLIShort
+		if short == "" {
+			short = slashCmd.Description
+		}
+		cobraCmd := &cobra.Command{
+			Use:     slashCmd.CLIUse,
+			Short:   short,
+			Aliases: slashCmd.Aliases,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				joinedArgs := strings.Join(args, " ")
+				if slashCmd.Type == slash.TypePrompt {
+					return RunPromptCommand(cmd, slashCmd, joinedArgs)
+				}
+				return RunLocalCommand(cmd, slashCmd, joinedArgs)
+			},
+		}
+		root.AddCommand(cobraCmd)
+	}
+}
+
+// RunPromptCommand runs a prompt-type slash command non-interactively.
+// The handler produces an InjectPrompt, which is fed to the engine.
+// Hooks fire in all modes (fixes TS bugs #40506, #36071, #33343).
+func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	d, err := SetupDeps(cmd)
+	if err != nil {
+		return err
+	}
+	if d.Cleanup != nil {
+		defer d.Cleanup()
+	}
+
+	snap := d.Store.Snapshot()
+	d.Bus.Emit(observe.SessionStarted{
+		EventHeader: observe.NewEventHeader("SessionStarted", "", "", ""),
+		SessionID:   snap.Conversation.ID,
+	})
+
+	if d.HookMgr != nil {
+		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
+	}
+	defer func() {
+		if d.HookMgr != nil {
+			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
+		}
+	}()
+
+	// Inject AllowedTools as session permission rules so the command's
+	// git/bash operations are auto-approved without user interaction.
+	// Matches TS pattern: allowedTools → alwaysAllowRules.command
+	for _, spec := range slashCmd.AllowedTools {
+		rule := parseAllowedToolSpec(spec)
+		d.Checker.AddSessionRule(rule)
+	}
+
+	prompter := &permission.NonInteractivePrompter{}
+	asker := &tui.NonInteractiveAsker{}
+	engine, err := RegisterTools(d, prompter, asker)
+	if err != nil {
+		return err
+	}
+	applyToolFilters(cmd, d.Registry)
+
+	compDeps, _ := BuildCompactionDeps(d)
+	engine.SetCompaction(compDeps)
+
+	// Build slash deps and invoke the handler to get the prompt
+	slashDeps := slash.Deps{
+		Store:       d.Store,
+		CostTracker: d.CostTracker,
+		Bus:         d.Bus,
+		ModelName:   d.Cfg.Model,
+		Provider:    d.Cfg.Provider,
+		Cwd:         d.Cwd,
+	}
+
+	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
+	if err != nil {
+		return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
+	}
+
+	if result.InjectPrompt == "" {
+		if result.DisplayText != "" {
+			fmt.Println(result.DisplayText)
+		}
+		return nil
+	}
+
+	// Run the engine with the injected prompt
+	ctx := cmd.Context()
+	events := engine.Run(ctx, result.InjectPrompt)
+
+	for ev := range events {
+		switch e := ev.(type) {
+		case query.TextEvent:
+			fmt.Print(e.Text)
+		case query.ThinkingEvent:
+			if d.Cfg.Verbose {
+				fmt.Fprint(os.Stderr, e.Text)
+			}
+		case query.ToolCallEvent:
+			if d.Cfg.Verbose {
+				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
+			}
+		case query.ToolResultEvent:
+			if d.Cfg.Verbose {
+				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
+			}
+		case query.CompactionEvent:
+			if d.Cfg.Verbose {
+				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
+			}
+		case query.TurnCompleteEvent:
+			fmt.Println()
+		case query.ErrorEvent:
+			SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
+			return e.Err
+		}
+	}
+
+	SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
+
+	if d.Cfg.Verbose {
+		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", d.CostTracker.TotalUSD())
+	}
+	return nil
+}
+
+// RunLocalCommand runs a local-type slash command that needs no engine.
+// Tries full SetupDeps first; falls back to lightweight config-only deps
+// if provider/API key is unavailable (e.g., for 'doctor').
+func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	// Try full deps — some local commands need Store/CostTracker (e.g., cost, model)
+	d, fullErr := SetupDeps(cmd)
+	if fullErr == nil {
+		if d.Cleanup != nil {
+			defer d.Cleanup()
+		}
+		slashDeps := slash.Deps{
+			Store:       d.Store,
+			CostTracker: d.CostTracker,
+			Bus:         d.Bus,
+			ModelName:   d.Cfg.Model,
+			Provider:    d.Cfg.Provider,
+			Cwd:         d.Cwd,
+		}
+		result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
+		if err != nil {
+			return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
+		}
+		if result.DisplayText != "" {
+			fmt.Println(result.DisplayText)
+		}
+		return nil
+	}
+
+	// Fallback: lightweight deps for commands that don't need provider (e.g., doctor)
+	cwd, _ := os.Getwd()
+	cfg, _ := config.Load(cwd)
+	if m, _ := cmd.Flags().GetString("model"); m != "" {
+		cfg.Model = m
+	}
+	if p, _ := cmd.Flags().GetString("provider"); p != "" {
+		cfg.Provider = p
+	}
+
+	slashDeps := slash.Deps{
+		ModelName: cfg.Model,
+		Provider:  cfg.Provider,
+		Cwd:       cwd,
+	}
+
+	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
+	if err != nil {
+		return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
+	}
+	if result.DisplayText != "" {
+		fmt.Println(result.DisplayText)
+	}
+	return nil
+}
+
+// parseAllowedToolSpec parses a TS-style tool spec like "Bash(git add:*)"
+// into a permission Rule. Format: "ToolName(content)" or just "ToolName".
+func parseAllowedToolSpec(spec string) permission.Rule {
+	toolName := spec
+	content := ""
+	if idx := strings.Index(spec, "("); idx > 0 && strings.HasSuffix(spec, ")") {
+		toolName = spec[:idx]
+		content = spec[idx+1 : len(spec)-1]
+	}
+	return permission.Rule{
+		ToolName: toolName,
+		Content:  content,
+		Decision: permission.DecisionAllow,
+		Source:   permission.SourceSession,
+	}
+}

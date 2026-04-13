@@ -15,6 +15,8 @@ import (
 func registerBuiltins(r *Registry) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+
+	// REPL-only commands (no CLIUse → no Cobra subcommand)
 	r.Register(Command{
 		Name:        "compact",
 		Description: "Clear conversation history but keep a summary in context",
@@ -27,20 +29,10 @@ func registerBuiltins(r *Registry) {
 		Handle:      handleClear,
 	})
 	r.Register(Command{
-		Name:        "cost",
-		Description: "Show session cost and token usage",
-		Handle:      handleCost,
-	})
-	r.Register(Command{
 		Name:        "help",
 		Aliases:     []string{"?"},
 		Description: "Show available commands",
 		Handle:      handleHelp,
-	})
-	r.Register(Command{
-		Name:        "model",
-		Description: "Show or switch the active model",
-		Handle:      handleModel,
 	})
 	r.Register(Command{
 		Name:        "exit",
@@ -49,25 +41,75 @@ func registerBuiltins(r *Registry) {
 		Handle:      handleExit,
 	})
 	r.Register(Command{
+		Name:        "insights",
+		Description: "Show current session statistics",
+		Handle:      handleInsights,
+	})
+
+	// Local CLI commands (TypeLocal + CLIUse → no engine needed)
+	r.Register(Command{
+		Name:        "cost",
+		Description: "Show session cost and token usage",
+		Handle:      handleCost,
+		Type:        TypeLocal,
+		CLIUse:      "cost",
+	})
+	r.Register(Command{
+		Name:        "model",
+		Description: "Show or switch the active model",
+		Handle:      handleModel,
+		Type:        TypeLocal,
+		CLIUse:      "model [name]",
+	})
+	r.Register(Command{
+		Name:        "advisor",
+		Description: "Show or set the advisor model",
+		Handle:      handleAdvisor,
+		Type:        TypeLocal,
+		CLIUse:      "advisor [model]",
+	})
+	r.Register(Command{
+		Name:        "doctor",
+		Description: "Check environment and configuration health",
+		Handle:      handleDoctor,
+		Type:        TypeLocal,
+		CLIUse:      "doctor",
+	})
+
+	// Prompt CLI commands (TypePrompt + CLIUse → engine runs injected prompt)
+	r.Register(Command{
 		Name:        "review",
 		Description: "Review a pull request",
 		Handle:      handleReview,
+		Type:        TypePrompt,
+		CLIUse:      "review [pr-number]",
 	})
 	r.Register(Command{
 		Name:        "security-review",
 		Aliases:     []string{"secreview"},
 		Description: "Security review of pending branch changes",
 		Handle:      handleSecurityReview,
+		Type:        TypePrompt,
+		CLIUse:      "security-review",
 	})
 	r.Register(Command{
-		Name:        "advisor",
-		Description: "Show or set the advisor model",
-		Handle:      handleAdvisor,
+		Name:        "commit",
+		Description: "Create a git commit",
+		Handle:      handleCommit,
+		Type:        TypePrompt,
+		CLIUse:      "commit",
+		AllowedTools: []string{
+			"Bash(git add:*)",
+			"Bash(git status:*)",
+			"Bash(git commit:*)",
+		},
 	})
 	r.Register(Command{
-		Name:        "insights",
-		Description: "Show current session statistics",
-		Handle:      handleInsights,
+		Name:        "init",
+		Description: "Initialize AGENT.md with codebase documentation",
+		Handle:      handleInit,
+		Type:        TypePrompt,
+		CLIUse:      "init",
 	})
 }
 

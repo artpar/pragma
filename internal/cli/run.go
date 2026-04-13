@@ -109,6 +109,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		SessionSave: sessionSaveFn,
 		ModelName:   d.Cfg.Model,
 		Provider:    d.Cfg.Provider,
+		Cwd:         d.Cwd,
 	}
 
 	m := tui.New(tui.Config{
