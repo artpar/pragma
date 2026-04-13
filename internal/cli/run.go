@@ -21,6 +21,7 @@ import (
 	toolsynthetic "github.com/artpar/gogent/internal/tools/synthetic"
 	"github.com/artpar/gogent/internal/slash"
 	"github.com/artpar/gogent/internal/sysprompt"
+	"github.com/artpar/gogent/internal/tool"
 	"github.com/artpar/gogent/internal/tui"
 )
 
@@ -80,6 +81,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		observe.GlobalTrace("return: err")
 		return err
 	}
+	applyToolFilters(cmd, d.Registry)
 
 	compDeps, compactor := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
@@ -184,7 +186,6 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		observe.GlobalTrace("return: err")
 		return err
 	}
-
 	// Register StructuredOutput tool if --output-schema provided (non-interactive only)
 	schemaFlag, _ := cmd.Flags().GetString("output-schema")
 	if schemaFlag != "" {
@@ -200,6 +201,9 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("register StructuredOutput tool: %w", err)
 		}
 	}
+
+	// Apply tool filters AFTER all tools are registered (including StructuredOutput)
+	applyToolFilters(cmd, d.Registry)
 
 	compDeps, _ := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
@@ -381,6 +385,46 @@ func SaveSession(store *app.StateStore, costTracker *model.CostTracker, systemOv
 		GitRemote:      sysprompt.GitRemoteURL(cwd),
 	}
 	_ = sessionStore.Save(sess)
+}
+
+// applyToolFilters applies --allowed-tools and --disallowed-tools flags.
+// Uses Registry.Unregister — tools are physically removed, not just denied.
+// This is stronger than permission-layer filtering (can't be bypassed via Bash).
+func applyToolFilters(cmd *cobra.Command, registry *tool.Registry) {
+	allowedStr, _ := cmd.Flags().GetString("allowed-tools")
+	if allowedStr != "" {
+		allowed := parseToolList(allowedStr)
+		allowedSet := make(map[string]bool, len(allowed))
+		for _, name := range allowed {
+			allowedSet[name] = true
+		}
+		for _, desc := range registry.List() {
+			if !allowedSet[desc.Name()] {
+				registry.Unregister(desc.Name())
+			}
+		}
+	}
+
+	disallowedStr, _ := cmd.Flags().GetString("disallowed-tools")
+	if disallowedStr != "" {
+		disallowed := parseToolList(disallowedStr)
+		for _, name := range disallowed {
+			registry.Unregister(name)
+		}
+	}
+}
+
+// parseToolList splits a comma-separated tool list, trimming whitespace.
+func parseToolList(s string) []string {
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 // loadOutputSchema reads a JSON schema from a flag value — inline JSON or file path.

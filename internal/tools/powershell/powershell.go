@@ -120,7 +120,30 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if err := json.Unmarshal(input, &in); err != nil || in.Command == "" {
 		return checker.Check(ctx, "PowerShell", "")
 	}
+
+	// Auto-allow read-only cmdlets without requiring permission rules.
+	// Matches Bash tool pattern where safe commands (ls, cat) are auto-allowed.
+	cmdlet := extractCmdlet(in.Command)
+	if cmdlet != "" && readOnlyCmdlets[strings.ToLower(cmdlet)] {
+		return permission.CheckResult{Decision: permission.DecisionAllow, Reason: "read-only cmdlet"}
+	}
+
 	return checker.Check(ctx, "PowerShell", in.Command)
+}
+
+// extractCmdlet returns the first cmdlet name from a PowerShell command.
+// Splits on whitespace, pipe, and semicolon to isolate the cmdlet.
+func extractCmdlet(command string) string {
+	cmd := strings.TrimSpace(command)
+	if cmd == "" {
+		return ""
+	}
+	for i, r := range cmd {
+		if r == ' ' || r == '\t' || r == '|' || r == ';' {
+			return cmd[:i]
+		}
+	}
+	return cmd
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {

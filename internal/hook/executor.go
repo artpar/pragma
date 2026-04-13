@@ -32,6 +32,7 @@ func ExecCommand(ctx context.Context, cmd Command, input []byte, workDir string,
 	shellCmd.Dir = workDir
 	shellCmd.Stdin = bytes.NewReader(input)
 	shellCmd.Env = buildEnv(envVars)
+	setProcAttr(shellCmd)
 
 	var stdout, stderr bytes.Buffer
 	shellCmd.Stdout = &stdout

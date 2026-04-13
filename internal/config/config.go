@@ -23,6 +23,7 @@ type Config struct {
 	Temperature    *float64        `json:"temperature,omitempty"`
 	Thinking       *ThinkingConfig `json:"thinking,omitempty"`
 	SystemPrompt   string          `json:"system_prompt,omitempty"`
+	MaxTurns       int             `json:"max_turns,omitempty"`
 	Verbose        bool            `json:"verbose,omitempty"`
 	Record         bool            `json:"record,omitempty"`
 	Permissions    []RawPermission `json:"permissions,omitempty"`
@@ -142,6 +143,9 @@ func merge(base, overlay Config) Config {
 	}
 	if overlay.MaxTokens != 0 {
 		result.MaxTokens = overlay.MaxTokens
+	}
+	if overlay.MaxTurns != 0 {
+		result.MaxTurns = overlay.MaxTurns
 	}
 	if overlay.Temperature != nil {
 		result.Temperature = overlay.Temperature

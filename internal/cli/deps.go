@@ -180,10 +180,21 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	permEntries, permMode, _ := config.LoadPermissions(cwd)
 	rules := permission.RulesFromConfigEntries(permEntries)
+	// CLI --permission-mode overrides config file
+	if cfg.PermissionMode != "" {
+		permMode = cfg.PermissionMode
+	}
 	mode := permission.PermissionMode(permMode)
 	if mode == "" {
 		observe.GlobalTrace("if: mode == \"\"")
 		mode = permission.ModeBypassPermissions
+	}
+	// Validate permission mode
+	switch mode {
+	case permission.ModeDefault, permission.ModeAcceptEdits, permission.ModeBypassPermissions, permission.ModeDontAsk:
+		// valid
+	default:
+		return nil, fmt.Errorf("invalid permission mode %q: must be one of default, acceptEdits, bypassPermissions, dontAsk", mode)
 	}
 	checker := permission.NewRuleChecker(rules, mode, cwd, bus)
 
@@ -201,10 +212,38 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		builder := sysprompt.New(cwd, cfg.Model, bus)
 		sysPrompt = builder.Build()
 	}
+	// --append-system-prompt: append to (not replace) the system prompt
+	appendPrompt, _ := cmd.Flags().GetString("append-system-prompt")
+	if appendPrompt != "" {
+		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
+	}
 
 	// Conversation (new or resumed)
 	var conv model.Conversation
 	resumeID, _ := cmd.Flags().GetString("resume")
+
+	// --continue: resolve to most recent session ID for this directory
+	continueFlag, _ := cmd.Flags().GetBool("continue")
+	if continueFlag && resumeID == "" {
+		sessionStore, storeErr := session.NewStore()
+		if storeErr != nil {
+			return nil, fmt.Errorf("open session store: %w", storeErr)
+		}
+		summaries, listErr := sessionStore.List()
+		if listErr != nil {
+			return nil, fmt.Errorf("list sessions: %w", listErr)
+		}
+		for _, s := range summaries {
+			if s.WorkDir == cwd {
+				resumeID = s.ID
+				break
+			}
+		}
+		if resumeID == "" {
+			return nil, fmt.Errorf("no sessions found for current directory")
+		}
+	}
+
 	if resumeID != "" {
 		observe.GlobalTrace("if: resumeID != \"\"")
 		if !session.IsValidSessionID(resumeID) {
@@ -269,6 +308,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	engineCfg := query.EngineConfig{
 		Model:       cfg.Model,
 		MaxTokens:   cfg.MaxTokens,
+		MaxTurns:    cfg.MaxTurns,
 		Temperature: cfg.Temperature,
 	}
 	if cfg.Thinking != nil && cfg.Thinking.Enabled {
@@ -397,6 +437,12 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("record") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"record\")")
 		cfg.Record, _ = cmd.Flags().GetBool("record")
+	}
+	if cmd.Flags().Changed("max-turns") {
+		cfg.MaxTurns, _ = cmd.Flags().GetInt("max-turns")
+	}
+	if cmd.Flags().Changed("permission-mode") {
+		cfg.PermissionMode, _ = cmd.Flags().GetString("permission-mode")
 	}
 }
 

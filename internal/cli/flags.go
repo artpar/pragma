@@ -21,6 +21,13 @@ func RegisterFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("verbose", false, "verbose logging to stderr")
 	cmd.Flags().Bool("record", false, "record events to file")
 	cmd.Flags().String("resume", "", "resume session by ID")
+	cmd.Flags().BoolP("continue", "c", false, "resume most recent session in current directory")
 	cmd.Flags().Bool("list-sessions", false, "list saved sessions")
 	cmd.Flags().String("output-schema", "", "JSON Schema for structured output (file path or inline JSON, non-interactive only)")
+	cmd.Flags().String("append-system-prompt", "", "append to default system prompt")
+	cmd.Flags().Int("max-turns", 0, "override default turn limit (0 = use default)")
+	cmd.Flags().String("allowed-tools", "", "comma-separated list of allowed tool names")
+	cmd.Flags().String("disallowed-tools", "", "comma-separated list of excluded tool names")
+	cmd.Flags().String("permission-mode", "", "permission mode: default, acceptEdits, bypassPermissions, dontAsk")
+	cmd.MarkFlagsMutuallyExclusive("continue", "resume")
 }

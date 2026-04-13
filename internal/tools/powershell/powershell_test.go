@@ -73,6 +73,14 @@ func TestTimeoutClamping(t *testing.T) {
 	}
 }
 
+// denyAllChecker denies every tool — used to verify read-only bypass.
+type denyAllChecker struct{}
+
+func (denyAllChecker) Check(_ context.Context, _ string, _ string) permission.CheckResult {
+	return permission.CheckResult{Decision: permission.DecisionDeny}
+}
+func (denyAllChecker) AddSessionRule(_ permission.Rule) {}
+
 func TestCheckPerm(t *testing.T) {
 	tl := &Tool{}
 	checker := allowAllChecker{}
@@ -92,6 +100,78 @@ func TestCheckPerm(t *testing.T) {
 			result := tl.CheckPerm(context.Background(), json.RawMessage(tt.input), checker)
 			if result.Decision != permission.DecisionAllow {
 				t.Errorf("Decision = %v, want Allow", result.Decision)
+			}
+		})
+	}
+}
+
+func TestCheckPermReadOnlyCmdlets(t *testing.T) {
+	tl := &Tool{}
+	// Use deny checker — read-only cmdlets should bypass it and still allow
+	checker := denyAllChecker{}
+
+	tests := []struct {
+		name       string
+		command    string
+		wantAllow  bool
+		wantReason string
+	}{
+		{"Get-ChildItem", "Get-ChildItem", true, "read-only cmdlet"},
+		{"Get-Content with args", "Get-Content foo.txt", true, "read-only cmdlet"},
+		{"Get-Process", "Get-Process", true, "read-only cmdlet"},
+		{"pipeline first cmdlet", "Get-Content foo.txt | Select-String bar", true, "read-only cmdlet"},
+		{"leading whitespace", "  Get-ChildItem", true, "read-only cmdlet"},
+		{"case insensitive", "get-childitem", true, "read-only cmdlet"},
+		{"alias gci", "gci", true, "read-only cmdlet"},
+		{"alias dir", "dir", true, "read-only cmdlet"},
+		{"alias cat", "cat", true, "read-only cmdlet"},
+		{"alias ls", "ls", true, "read-only cmdlet"},
+		{"Remove-Item denied", "Remove-Item foo", false, ""},
+		{"Set-Content denied", "Set-Content foo bar", false, ""},
+		{"unknown cmdlet denied", "Invoke-CustomThing", false, ""},
+		{"empty denied", "", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input, _ := json.Marshal(map[string]string{"command": tt.command})
+			result := tl.CheckPerm(context.Background(), json.RawMessage(input), checker)
+			if tt.wantAllow {
+				if result.Decision != permission.DecisionAllow {
+					t.Errorf("Decision = %v, want Allow for %q", result.Decision, tt.command)
+				}
+				if result.Reason != tt.wantReason {
+					t.Errorf("Reason = %q, want %q", result.Reason, tt.wantReason)
+				}
+			} else {
+				if result.Decision != permission.DecisionDeny {
+					t.Errorf("Decision = %v, want Deny for %q", result.Decision, tt.command)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractCmdlet(t *testing.T) {
+	tests := []struct {
+		command string
+		want    string
+	}{
+		{"Get-ChildItem", "Get-ChildItem"},
+		{"Get-Content foo.txt", "Get-Content"},
+		{"Get-Content\tfoo.txt", "Get-Content"},
+		{"Get-Content|Format-Table", "Get-Content"},
+		{"Get-Content;Get-Process", "Get-Content"},
+		{"  Get-Process  ", "Get-Process"},
+		{"", ""},
+		{"   ", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			got := extractCmdlet(tt.command)
+			if got != tt.want {
+				t.Errorf("extractCmdlet(%q) = %q, want %q", tt.command, got, tt.want)
 			}
 		})
 	}
