@@ -4,13 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/gogent/internal/app"
+	"github.com/artpar/gogent/internal/background"
 	"github.com/artpar/gogent/internal/compact"
+	"github.com/artpar/gogent/internal/config"
 	"github.com/artpar/gogent/internal/hook"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
@@ -25,26 +30,129 @@ import (
 	"github.com/artpar/gogent/internal/tui"
 )
 
-// RunDispatcher routes to interactive TUI, non-interactive mode, or list-sessions.
+// RunDispatcher routes to interactive TUI, non-interactive mode, background, or list-sessions.
 func RunDispatcher(cmd *cobra.Command, args []string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+
+	if bgFlag, _ := cmd.Flags().GetBool("bg"); bgFlag {
+		return RunBackground(cmd)
+	}
+
 	listSessions, _ := cmd.Flags().GetBool("list-sessions")
 	if listSessions {
 		observe.GlobalTrace("if: listSessions")
-		observe.GlobalTrace("return: RunListSessions()")
 		return RunListSessions()
 	}
 
 	prompt, _ := cmd.Flags().GetString("prompt")
 	if prompt != "" {
 		observe.GlobalTrace("if: prompt != \"\"")
-		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
 		return RunNonInteractive(cmd, args)
 	}
-	observe.GlobalTrace("return: RunInteractive(cmd)")
 
 	return RunInteractive(cmd)
+}
+
+// RunBackground spawns a detached child process to run the session in the background.
+// The child process runs RunNonInteractive with --bg stripped from args.
+// Uses Setsid to create a new process group for clean orphan cleanup.
+func RunBackground(cmd *cobra.Command) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	prompt, _ := cmd.Flags().GetString("prompt")
+	if prompt == "" {
+		return fmt.Errorf("background mode requires --prompt flag")
+	}
+
+	// Resolve log path
+	gogentHome, err := config.GogentHome()
+	if err != nil {
+		return fmt.Errorf("resolve gogent home: %w", err)
+	}
+	logsDir := filepath.Join(gogentHome, "logs")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		return fmt.Errorf("create logs directory: %w", err)
+	}
+	logFileName := fmt.Sprintf("bg-%s.log", time.Now().Format("2006-01-02T15-04-05"))
+	logPath := filepath.Join(logsDir, logFileName)
+
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		return fmt.Errorf("create log file: %w", err)
+	}
+
+	// Build args: filter out --bg from os.Args
+	var childArgs []string
+	for _, arg := range os.Args {
+		if arg == "--bg" || strings.HasPrefix(arg, "--bg=") {
+			continue
+		}
+		childArgs = append(childArgs, arg)
+	}
+
+	// Build environment: signal to child that it's a background session
+	env := append(os.Environ(),
+		"GOGENT_BG_SESSION=1",
+		"GOGENT_BG_SESSION_LOG="+logPath,
+	)
+
+	// Open /dev/null for stdin — background process must not read from terminal
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		logFile.Close()
+		return fmt.Errorf("open %s: %w", os.DevNull, err)
+	}
+
+	// Spawn detached child with its own process group (Setsid).
+	// This ensures Kill(-pgid) cleans up the child and all its MCP servers.
+	proc, err := os.StartProcess(childArgs[0], childArgs, &os.ProcAttr{
+		Dir:   "",
+		Env:   env,
+		Files: []*os.File{devNull, logFile, logFile}, // stdin→/dev/null, stdout→log, stderr→log
+		Sys:   &syscall.SysProcAttr{Setsid: true},
+	})
+	if err != nil {
+		devNull.Close()
+		logFile.Close()
+		return fmt.Errorf("start background process: %w", err)
+	}
+
+	// Don't wait for child — release immediately
+	_ = proc.Release()
+	devNull.Close()
+	logFile.Close()
+
+	// Register PID in background registry
+	reg, regErr := background.NewRegistry()
+	if regErr == nil {
+		promptDisplay := prompt
+		if len(promptDisplay) > 200 {
+			promptDisplay = promptDisplay[:200]
+		}
+		cwd, _ := os.Getwd()
+		modelName, _ := cmd.Flags().GetString("model")
+		providerName, _ := cmd.Flags().GetString("provider")
+
+		_ = reg.Register(background.ProcessInfo{
+			PID:       proc.Pid,
+			PGID:      proc.Pid, // Setsid makes PID == PGID
+			SessionID: "", // Will be set by child when it creates the conversation
+			CWD:       cwd,
+			StartedAt: time.Now(),
+			Status:    background.StatusStarting,
+			LogPath:   logPath,
+			Model:     modelName,
+			Provider:  providerName,
+			Prompt:    promptDisplay,
+		})
+	}
+
+	fmt.Printf("Background session started (PID %d)\n", proc.Pid)
+	fmt.Printf("  Logs: %s\n", logPath)
+	fmt.Printf("  Use 'gogent sessions' to manage.\n")
+	return nil
 }
 
 // RunInteractive launches the bubbletea TUI for multi-turn conversation.
@@ -159,6 +267,15 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	if d.Cleanup != nil {
 		observe.GlobalTrace("if: d.Cleanup != nil")
 		defer d.Cleanup()
+	}
+
+	// Background child: register PID and track status via EventBus
+	if os.Getenv("GOGENT_BG_SESSION") == "1" {
+		if reg, regErr := background.NewRegistry(); regErr == nil {
+			defer reg.Unregister(os.Getpid())
+			sub := background.NewStatusSubscriber(reg)
+			d.Bus.Subscribe(sub)
+		}
 	}
 
 	snap := d.Store.Snapshot()
@@ -445,4 +562,36 @@ func loadOutputSchema(flag string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("schema file %q does not contain valid JSON", trimmed)
 	}
 	return json.RawMessage(data), nil
+}
+
+// ConsumeEngineEvents reads all events from an engine run and prints output.
+// Used by replay and other non-interactive consumers.
+func ConsumeEngineEvents(events <-chan query.LoopEvent, verbose bool) error {
+	for ev := range events {
+		switch e := ev.(type) {
+		case query.TextEvent:
+			fmt.Print(e.Text)
+		case query.ThinkingEvent:
+			if verbose {
+				fmt.Fprint(os.Stderr, e.Text)
+			}
+		case query.ToolCallEvent:
+			if verbose {
+				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
+			}
+		case query.ToolResultEvent:
+			if verbose {
+				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
+			}
+		case query.CompactionEvent:
+			if verbose {
+				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
+			}
+		case query.TurnCompleteEvent:
+			fmt.Println()
+		case query.ErrorEvent:
+			return e.Err
+		}
+	}
+	return nil
 }

@@ -25,6 +25,8 @@ func main() {
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(completionCmd())
+	root.AddCommand(sessionsCmd())
+	root.AddCommand(replayCmd())
 
 	// Register CLI subcommands from slash command registry (commit, review, init, doctor, etc.)
 	slashCmds := slash.NewRegistry()

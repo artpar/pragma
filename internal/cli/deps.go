@@ -32,23 +32,24 @@ import (
 
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
-	Cfg         config.Config
-	Bus         *observe.EventBus
-	Prov        provider.Provider
-	Checker     permission.Checker
-	Store       *app.StateStore
-	Registry    *tool.Registry
-	CostTracker *model.CostTracker
-	EngineCfg   query.EngineConfig
-	TaskReg     *task.Registry
-	McpManager  *mcp.Manager
-	LspManager  *lsp.Manager
-	CronSched   *cron.Scheduler
-	HookMgr     *hook.Manager
-	Metrics     *observe.Metrics
-	Auditor     *observe.Auditor
-	Cwd         string
-	Cleanup     func()
+	Cfg          config.Config
+	Bus          *observe.EventBus
+	Prov         provider.Provider
+	Checker      permission.Checker
+	Store        *app.StateStore
+	Registry     *tool.Registry
+	CostTracker  *model.CostTracker
+	EngineCfg    query.EngineConfig
+	TaskReg      *task.Registry
+	McpManager   *mcp.Manager
+	LspManager   *lsp.Manager
+	CronSched    *cron.Scheduler
+	HookMgr      *hook.Manager
+	Metrics      *observe.Metrics
+	Auditor      *observe.Auditor
+	TokenMonitor *observe.TokenMonitor
+	Cwd          string
+	Cleanup      func()
 }
 
 // SetupDeps creates all shared dependencies from CLI flags and config.
@@ -158,6 +159,8 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	bus.Subscribe(metrics)
 	auditor := observe.NewAuditor()
 	bus.Subscribe(auditor)
+	tokenMon := observe.NewTokenMonitor(bus, 200_000)
+	bus.Subscribe(tokenMon)
 
 	if cfg.Record {
 		observe.GlobalTrace("if: cfg.Record")
@@ -176,6 +179,11 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
 		return nil, err
+	}
+
+	// Update token monitor with actual context window for this model
+	if cw, ok := prov.ContextWindow(cfg.Model); ok {
+		tokenMon.SetBudget(cw)
 	}
 
 	permEntries, permMode, _ := config.LoadPermissions(cwd)
@@ -357,6 +365,11 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 	}
 
+	// MCP health watchdog: periodic status checks (30s interval).
+	// Reports only, never kills healthy servers (avoids TS bug #40207).
+	watchdog := observe.NewMCPWatchdog(mcpManager.ServerStatus, bus, 30*time.Second)
+	go watchdog.Start(cmd.Context())
+
 	compositeCleanup := func() {
 		lspManager.Shutdown()
 		mcpManager.DisconnectAll()
@@ -368,23 +381,24 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tProv:\t\tprov,\n\tChecker:\tchecker,\n\tStore:\t\tstor...")
 
 	return &Deps{
-		Cfg:         cfg,
-		Bus:         bus,
-		Prov:        prov,
-		Checker:     checker,
-		Store:       store,
-		Registry:    registry,
-		CostTracker: costTracker,
-		EngineCfg:   engineCfg,
-		TaskReg:     taskReg,
-		McpManager:  mcpManager,
-		LspManager:  lspManager,
-		CronSched:   cronSched,
-		HookMgr:     hookMgr,
-		Metrics:     metrics,
-		Auditor:     auditor,
-		Cwd:         cwd,
-		Cleanup:     compositeCleanup,
+		Cfg:          cfg,
+		Bus:          bus,
+		Prov:         prov,
+		Checker:      checker,
+		Store:        store,
+		Registry:     registry,
+		CostTracker:  costTracker,
+		EngineCfg:    engineCfg,
+		TaskReg:      taskReg,
+		McpManager:   mcpManager,
+		LspManager:   lspManager,
+		CronSched:    cronSched,
+		HookMgr:      hookMgr,
+		Metrics:      metrics,
+		Auditor:      auditor,
+		TokenMonitor: tokenMon,
+		Cwd:          cwd,
+		Cleanup:      compositeCleanup,
 	}, nil
 }
 

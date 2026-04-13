@@ -28,6 +28,8 @@ func RegisterFlags(cmd *cobra.Command) {
 	pf.String("disallowed-tools", "", "comma-separated list of excluded tool names")
 	pf.String("permission-mode", "", "permission mode: default, acceptEdits, bypassPermissions, dontAsk")
 
+	pf.Bool("bg", false, "run session in background (requires --prompt)")
+
 	// Local flags — root command only (interactive/non-interactive dispatch)
 	cmd.Flags().StringP("prompt", "p", "", "prompt to send (non-interactive mode)")
 	cmd.Flags().String("system-prompt", "", "system prompt")

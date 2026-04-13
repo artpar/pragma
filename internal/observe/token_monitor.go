@@ -1,0 +1,92 @@
+package observe
+
+import (
+	"fmt"
+	"sync"
+)
+
+// TokenMonitor tracks cumulative token usage and emits warnings at threshold
+// percentages of the context window budget. Uses actual model context window
+// size (not hardcoded) to avoid GitHub bugs #34332 and #39467.
+type TokenMonitor struct {
+	bus      *EventBus
+	budget   int // actual context window tokens for this model
+	mu       sync.Mutex
+	cumInput int
+	cumOut   int
+	warned50 bool
+	warned80 bool
+	warned95 bool
+}
+
+// NewTokenMonitor creates a monitor with a default budget.
+// Call SetBudget after the provider resolves the actual context window.
+func NewTokenMonitor(bus *EventBus, defaultBudget int) *TokenMonitor {
+	return &TokenMonitor{bus: bus, budget: defaultBudget}
+}
+
+// SetBudget updates the context window budget (e.g., after provider.ContextWindow returns).
+func (m *TokenMonitor) SetBudget(tokens int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.budget = tokens
+}
+
+// Usage returns cumulative input and output token counts.
+func (m *TokenMonitor) Usage() (input, output int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cumInput, m.cumOut
+}
+
+// HandleEvent implements Subscriber. Tracks APIRequestCompleted events.
+func (m *TokenMonitor) HandleEvent(event Event) {
+	completed, ok := event.(APIRequestCompleted)
+	if !ok {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.cumInput += completed.Usage.InputTokens
+	m.cumOut += completed.Usage.OutputTokens
+
+	total := m.cumInput + m.cumOut
+	if m.budget <= 0 {
+		return
+	}
+
+	pct := float64(total) / float64(m.budget) * 100
+
+	// Check thresholds in ascending order — each fires independently so
+	// a jump from 40% to 97% emits all three warnings, not just 95%.
+	if pct >= 50 && !m.warned50 {
+		m.warned50 = true
+		m.emitWarning("info",
+			fmt.Sprintf("Token usage at 50%% of context window (%d/%d tokens).", total, m.budget))
+	}
+	if pct >= 80 && !m.warned80 {
+		m.warned80 = true
+		m.emitWarning("warning",
+			fmt.Sprintf("Token usage at 80%% of context window (%d/%d tokens).", total, m.budget))
+	}
+	if pct >= 95 && !m.warned95 {
+		m.warned95 = true
+		m.emitWarning("error",
+			fmt.Sprintf("Token usage at 95%% of context window (%d/%d tokens). Consider running /compact to free space.", total, m.budget))
+	}
+}
+
+func (m *TokenMonitor) emitWarning(severity, message string) {
+	if m.bus == nil {
+		return
+	}
+	m.bus.Emit(ErrorOccurred{
+		EventHeader:  NewEventHeader("ErrorOccurred", "", "", ""),
+		Severity:     severity,
+		Component:    "token_monitor",
+		ErrorType:    "token_threshold",
+		ErrorMessage: message,
+	})
+}
