@@ -22,7 +22,6 @@ func NewManager(workDir, sessionID string, bus *observe.EventBus) *Manager {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Manager{\n\thooks:\t\tLoadHooks(workDir),\n\tworkDir:\tworkDir,\n\tsessionID:\tsession...")
-	observe.GlobalTrace("return: &Manager{\n\thooks:\t\tLoadHooks(workDir),\n\tworkDir:\tworkDir,\n\tsessionID:\tsession...")
 	return &Manager{
 		hooks:     LoadHooks(workDir),
 		workDir:   workDir,
@@ -57,7 +56,6 @@ func (m *Manager) HasHooks(event Event) bool {
 	defer m.mu.RUnlock()
 	entries := m.hooks[event]
 	observe.GlobalTrace("return: len(entries) > 0")
-	observe.GlobalTrace("return: len(entries) > 0")
 	return len(entries) > 0
 }
 
@@ -78,7 +76,6 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 	if len(entries) == 0 {
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: len(entries) == 0")
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
-		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
 		return AggregatedResult{}
 	}
 
@@ -93,14 +90,12 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 	if len(commands) == 0 {
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: len(commands) == 0")
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
-		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
 		return AggregatedResult{}
 	}
 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: err != nil")
-		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
 		return AggregatedResult{}
 	}
@@ -158,7 +153,6 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 
 		}
 	}
-	observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: agg")
 	observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: agg")
 
 	return agg

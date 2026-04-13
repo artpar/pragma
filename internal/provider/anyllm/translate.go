@@ -316,6 +316,9 @@ func StopReasonFromAnyLLM(fr string) model.StopReason {
 }
 
 // UsageFromAnyLLM converts any-llm-go Usage to gogent TokenUsage.
+// Note: CacheCreationInputTokens and CacheReadInputTokens are NOT mapped
+// because any-llm-go v0.9.0's Usage struct doesn't expose cache fields.
+// This means cache efficiency is invisible for OpenAI/Groq providers.
 func UsageFromAnyLLM(u *providers.Usage) model.TokenUsage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

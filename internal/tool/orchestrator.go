@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -35,7 +36,6 @@ func NewOrchestrator(registry *Registry, checker permission.Checker, prompter pe
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Orchestrator{...}")
-	observe.GlobalTrace("return: &Orchestrator{\n\tregistry:\tregistry,\n\tchecker:\tchecker,\n\tprompter:\tprompter,\n\t...")
 	observe.GlobalTrace("return: &Orchestrator{\n\tregistry:\tregistry,\n\tchecker:\tchecker,\n\tprompter:\tprompter,\n\t...")
 	return &Orchestrator{
 		registry: registry,
@@ -136,6 +136,24 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range concurrent")
 			ic := ic
 			g.Go(func() error {
+				defer func() {
+					if r := recover(); r != nil {
+						singles[ic.index] = singleResult{
+							part: model.ToolResultPart{
+								ToolCallID: ic.call.ID,
+								Content:    fmt.Sprintf("tool %q panicked: %v", ic.call.Name, r),
+								IsError:    true,
+							},
+						}
+						o.bus.Emit(observe.ToolExecutionFailed{
+							EventHeader:  observe.NewEventHeader("ToolExecutionFailed", traceID, batchSpan, ""),
+							ToolCallID:   ic.call.ID,
+							ToolName:     ic.call.Name,
+							ErrorType:    "panic",
+							ErrorMessage: fmt.Sprintf("%v", r),
+						})
+					}
+				}()
 				singles[ic.index] = o.executeSingle(gctx, ic.call, state, traceID, batchSpan, true)
 				return gctx.Err()
 			})
@@ -153,7 +171,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		concurrentDuration = time.Since(concStart)
 	}
 
-	if len(serial) > 0 {
+	if len(serial) > 0 && ctx.Err() == nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(serial) > 0")
 		serStart := time.Now()
 		for _, ic := range serial {
@@ -161,6 +179,17 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
 		}
 		serialDuration = time.Since(serStart)
+	} else if len(serial) > 0 {
+		// Context was cancelled — fill in cancellation results for skipped serial tools.
+		for _, ic := range serial {
+			singles[ic.index] = singleResult{
+				part: model.ToolResultPart{
+					ToolCallID: ic.call.ID,
+					Content:    "cancelled: " + ctx.Err().Error(),
+					IsError:    true,
+				},
+			}
+		}
 	}
 
 	o.bus.Emit(observe.ToolBatchCompleted{
@@ -178,8 +207,6 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		out.Results[i] = s.part
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
-	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
-	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
 	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
 	return out
 }
@@ -211,7 +238,6 @@ func (o *Orchestrator) executeSingle(
 				ToolName:    call.Name,
 				WasExecuted: false,
 			})
-			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
@@ -253,8 +279,6 @@ func (o *Orchestrator) executeSingle(
 			ToolName:    call.Name,
 			WasExecuted: false,
 		})
-		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
-		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
@@ -316,8 +340,6 @@ func (o *Orchestrator) executeSingle(
 				WasExecuted: false,
 			})
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
-			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
-			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
 					ToolCallID: call.ID,
@@ -330,8 +352,6 @@ func (o *Orchestrator) executeSingle(
 
 	if ctx.Err() != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: ctx.Err() != nil")
-		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
-		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
@@ -363,8 +383,6 @@ func (o *Orchestrator) executeSingle(
 			ErrorMessage: err.Error(),
 		})
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
-		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
-		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
 				ToolCallID: call.ID,
@@ -391,7 +409,6 @@ func (o *Orchestrator) executeSingle(
 			Response:  invokeResult.Content,
 		})
 	}
-	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 
 	return singleResult{

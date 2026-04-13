@@ -36,8 +36,6 @@ func NewService(prov provider.Provider, bus *observe.EventBus, ct *model.CostTra
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Service{\n\tprovider:\tprov,\n\tbus:\t\tbus,\n\tcostTracker:\tct,\n\tmodel:\t\tmodelName,\n}")
-	observe.GlobalTrace("return: &Service{\n\tprovider:\tprov,\n\tbus:\t\tbus,\n\tcostTracker:\tct,\n\tmodel:\t\tmodelName,\n}")
-	observe.GlobalTrace("return: &Service{\n\tprovider:\tprov,\n\tbus:\t\tbus,\n\tcostTracker:\tct,\n\tmodel:\t\tmodelName,\n}")
 	return &Service{
 		provider:    prov,
 		bus:         bus,
@@ -62,8 +60,6 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 	defer observe.TraceCtx(ctx, "compact", "Service.Compact", "exit")
 	if len(messages) < minMessagesToCompact {
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: len(messages) < minMessagesToCompact")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrTooFewMessages")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrTooFewMessages")
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrTooFewMessages")
 		return CompactResult{}, ErrTooFewMessages
 	}
@@ -106,8 +102,6 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: err != nil")
 		s.emitFailed("api_error", err.Error())
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, fmt.Errorf(\"compaction API call: %w\", err)")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, fmt.Errorf(\"compaction API call: %w\", err)")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, fmt.Errorf(\"compaction API call: %w\", err)")
 		return CompactResult{}, fmt.Errorf("compaction API call: %w", err)
 	}
 
@@ -121,8 +115,6 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: summaryText == \"\"")
 		s.emitFailed("empty_summary", "model returned no text content")
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrEmptySummary")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrEmptySummary")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrEmptySummary")
 		return CompactResult{}, ErrEmptySummary
 	}
 
@@ -130,8 +122,6 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 	if formatted == "" {
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: formatted == \"\"")
 		s.emitFailed("empty_summary", "formatted summary is empty after stripping analysis")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrEmptySummary")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrEmptySummary")
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrEmptySummary")
 		return CompactResult{}, ErrEmptySummary
 	}
@@ -154,8 +144,6 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: postTokens >= preTokens")
 		s.emitFailed("compaction_grew", fmt.Sprintf("post=%d >= pre=%d tokens", postTokens, preTokens))
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrCompactionGrew")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrCompactionGrew")
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, ErrCompactionGrew")
 		return CompactResult{}, ErrCompactionGrew
 	}
 
@@ -166,8 +154,6 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 		SummarizedCount: len(messages),
 		DurationMs:      durationMs,
 	})
-	observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{\n\tSummary:\t\tformatted,\n\tReplacementMessages:\treplacements,\n\tPre...")
-	observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{\n\tSummary:\t\tformatted,\n\tReplacementMessages:\treplacements,\n\tPre...")
 	observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{\n\tSummary:\t\tformatted,\n\tReplacementMessages:\treplacements,\n\tPre...")
 
 	return CompactResult{
@@ -202,8 +188,6 @@ func extractText(parts []model.ContentPart) string {
 		}
 	}
 	observe.GlobalTrace("return: string(b)")
-	observe.GlobalTrace("return: string(b)")
-	observe.GlobalTrace("return: string(b)")
 	return string(b)
 }
 
@@ -221,8 +205,6 @@ func stripEmptyTextParts(parts []model.ContentPart) []model.ContentPart {
 		}
 		result = append(result, part)
 	}
-	observe.GlobalTrace("return: result")
-	observe.GlobalTrace("return: result")
 	observe.GlobalTrace("return: result")
 	return result
 }

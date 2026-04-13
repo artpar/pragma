@@ -283,6 +283,51 @@ func TestOrchestratorEmitsEvents(t *testing.T) {
 	}
 }
 
+// panicTool is a tool that panics during Invoke.
+type panicTool struct {
+	echoTool
+}
+
+func (t *panicTool) Invoke(_ context.Context, _ json.RawMessage, _ StateSnapshot) (InvokeResult, error) {
+	panic("unexpected nil pointer")
+}
+
+func TestOrchestratorPanicRecovery(t *testing.T) {
+	// One panicking tool and one normal tool, both concurrent.
+	panicker := &panicTool{echoTool: *newEchoTool("PanicTool", true)}
+	normal := newEchoTool("SafeTool", true)
+
+	orch, bus, _ := setupOrchestrator(t, allowAllChecker{}, panicker, normal)
+	defer bus.Drain()
+
+	calls := []model.ToolCallPart{
+		{ID: "tc-1", Name: "PanicTool", Input: json.RawMessage(`{}`)},
+		{ID: "tc-2", Name: "SafeTool", Input: json.RawMessage(`"hello"`)},
+	}
+
+	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
+
+	if len(results.Results) != 2 {
+		t.Fatalf("results: got %d, want 2", len(results.Results))
+	}
+
+	// Panicking tool should return an error result, not crash the batch.
+	if !results.Results[0].IsError {
+		t.Error("expected error result for panicking tool")
+	}
+	if results.Results[0].Content == "" {
+		t.Error("expected non-empty error content for panicking tool")
+	}
+
+	// Normal tool should still succeed.
+	if results.Results[1].IsError {
+		t.Errorf("SafeTool got error: %s", results.Results[1].Content)
+	}
+	if results.Results[1].Content != `"hello"` {
+		t.Errorf("SafeTool content: got %q, want %q", results.Results[1].Content, `"hello"`)
+	}
+}
+
 func TestOrchestratorResultOrder(t *testing.T) {
 	orch, bus, _ := setupOrchestrator(t, allowAllChecker{},
 		newEchoTool("A", true),

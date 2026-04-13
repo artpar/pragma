@@ -38,7 +38,6 @@ func WithRetry(ctx context.Context, bus *observe.EventBus, maxRetries int, trace
 		if err == nil {
 			observe.TraceCtx(ctx, "shared", "WithRetry", "if: err == nil")
 			observe.TraceCtx(ctx, "shared", "WithRetry", "return: nil")
-			observe.TraceCtx(ctx, "shared", "WithRetry", "return: nil")
 			return nil
 		}
 
@@ -53,7 +52,6 @@ func WithRetry(ctx context.Context, bus *observe.EventBus, maxRetries int, trace
 				Retryable:    false,
 				Attempt:      attempt + 1,
 			})
-			observe.TraceCtx(ctx, "shared", "WithRetry", "return: classified.Wrapped")
 			observe.TraceCtx(ctx, "shared", "WithRetry", "return: classified.Wrapped")
 			return classified.Wrapped
 		}
@@ -70,7 +68,6 @@ func WithRetry(ctx context.Context, bus *observe.EventBus, maxRetries int, trace
 					Retryable:    false,
 					Attempt:      attempt + 1,
 				})
-				observe.TraceCtx(ctx, "shared", "WithRetry", "return: classified.Wrapped")
 				observe.TraceCtx(ctx, "shared", "WithRetry", "return: classified.Wrapped")
 				return classified.Wrapped
 			}
@@ -114,7 +111,6 @@ func WithRetry(ctx context.Context, bus *observe.EventBus, maxRetries int, trace
 		}
 	}
 	observe.TraceCtx(ctx, "shared", "WithRetry", "return: fmt.Errorf(\"exhausted %d retries\", maxRetries)")
-	observe.TraceCtx(ctx, "shared", "WithRetry", "return: fmt.Errorf(\"exhausted %d retries\", maxRetries)")
 	return fmt.Errorf("exhausted %d retries", maxRetries)
 }
 
@@ -123,7 +119,6 @@ func WithRetry(ctx context.Context, bus *observe.EventBus, maxRetries int, trace
 func ClassifyByStatusCodes(codes []string) ClassifyFn {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: func(err error) ErrorClassification {\n\tmsg := err.Error()\n\tfor _, s := range ...")
 	observe.GlobalTrace("return: func(err error) ErrorClassification {\n\tmsg := err.Error()\n\tfor _, s := range ...")
 	return func(err error) ErrorClassification {
 		msg := err.Error()

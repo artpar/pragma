@@ -32,12 +32,8 @@ func (sc ServerConfig) effectiveType() string {
 	if sc.Type == "" {
 		observe.GlobalTrace("if: sc.Type == \"\"")
 		observe.GlobalTrace("return: \"stdio\"")
-		observe.GlobalTrace("return: \"stdio\"")
-		observe.GlobalTrace("return: \"stdio\"")
 		return "stdio"
 	}
-	observe.GlobalTrace("return: sc.Type")
-	observe.GlobalTrace("return: sc.Type")
 	observe.GlobalTrace("return: sc.Type")
 	return sc.Type
 }
@@ -51,15 +47,11 @@ func (sc ServerConfig) validate() error {
 		observe.GlobalTrace("case: \"stdio\"")
 		if sc.Command == "" {
 			observe.GlobalTrace("return: fmt.Errorf(\"%w: stdio server requires command\", ErrInvalidConfig)")
-			observe.GlobalTrace("return: fmt.Errorf(\"%w: stdio server requires command\", ErrInvalidConfig)")
-			observe.GlobalTrace("return: fmt.Errorf(\"%w: stdio server requires command\", ErrInvalidConfig)")
 			return fmt.Errorf("%w: stdio server requires command", ErrInvalidConfig)
 		}
 	case "sse", "http":
 		observe.GlobalTrace("case: \"sse\", \"http\"")
 		if sc.URL == "" {
-			observe.GlobalTrace("return: fmt.Errorf(\"%w: %s server requires url\", ErrInvalidConfig, sc.effectiveType())")
-			observe.GlobalTrace("return: fmt.Errorf(\"%w: %s server requires url\", ErrInvalidConfig, sc.effectiveType())")
 			observe.GlobalTrace("return: fmt.Errorf(\"%w: %s server requires url\", ErrInvalidConfig, sc.effectiveType())")
 			return fmt.Errorf("%w: %s server requires url", ErrInvalidConfig, sc.effectiveType())
 		}
@@ -67,8 +59,6 @@ func (sc ServerConfig) validate() error {
 		observe.GlobalTrace("default")
 		return fmt.Errorf("%w: unknown transport type %q", ErrInvalidConfig, sc.Type)
 	}
-	observe.GlobalTrace("return: nil")
-	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -87,8 +77,6 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 	globalPath, err := config.GlobalMCPConfigPath()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve global mcp config path: %w\", err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve global mcp config path: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve global mcp config path: %w\", err)")
 		return nil, fmt.Errorf("resolve global mcp config path: %w", err)
 	}
@@ -137,8 +125,6 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 		}
 	}
 	observe.GlobalTrace("return: merged, nil")
-	observe.GlobalTrace("return: merged, nil")
-	observe.GlobalTrace("return: merged, nil")
 
 	return merged, nil
 }
@@ -151,8 +137,6 @@ func loadSingleConfig(path string) (map[string]ServerConfig, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
-		observe.GlobalTrace("return: nil, err")
-		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 
@@ -160,20 +144,14 @@ func loadSingleConfig(path string) (map[string]ServerConfig, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse %s: %w\", path, err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse %s: %w\", path, err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse %s: %w\", path, err)")
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
 	if cfg.MCPServers == nil {
 		observe.GlobalTrace("if: cfg.MCPServers == nil")
 		observe.GlobalTrace("return: nil, nil")
-		observe.GlobalTrace("return: nil, nil")
-		observe.GlobalTrace("return: nil, nil")
 		return nil, nil
 	}
-	observe.GlobalTrace("return: cfg.MCPServers, nil")
-	observe.GlobalTrace("return: cfg.MCPServers, nil")
 	observe.GlobalTrace("return: cfg.MCPServers, nil")
 
 	return cfg.MCPServers, nil

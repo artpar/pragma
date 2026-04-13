@@ -21,8 +21,6 @@ func NewInteractiveAsker() *InteractiveAsker {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &InteractiveAsker{}")
-	observe.GlobalTrace("return: &InteractiveAsker{}")
-	observe.GlobalTrace("return: &InteractiveAsker{}")
 	return &InteractiveAsker{}
 }
 
@@ -42,8 +40,6 @@ func (a *InteractiveAsker) Ask(ctx context.Context, question string) (string, er
 
 	if a.program == nil {
 		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "if: a.program == nil")
-		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
-		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
 		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
 		return "", errors.New("AskUserQuestion requires interactive mode")
 	}
@@ -71,8 +67,6 @@ type NonInteractiveAsker struct{}
 func (a *NonInteractiveAsker) Ask(_ context.Context, _ string) (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
-	observe.GlobalTrace("return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
 	observe.GlobalTrace("return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
 	return "", errors.New("AskUserQuestion requires interactive mode")
 }

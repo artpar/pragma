@@ -23,8 +23,6 @@ func NewRegistry(bus *observe.EventBus) *Registry {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Registry{\n\ttasks:\tmake(map[string]*Task),\n\tbus:\tbus,\n}")
-	observe.GlobalTrace("return: &Registry{\n\ttasks:\tmake(map[string]*Task),\n\tbus:\tbus,\n}")
-	observe.GlobalTrace("return: &Registry{\n\ttasks:\tmake(map[string]*Task),\n\tbus:\tbus,\n}")
 	return &Registry{
 		tasks: make(map[string]*Task),
 		bus:   bus,
@@ -50,8 +48,6 @@ func (r *Registry) Create(subject, description string) Task {
 	r.tasks[id] = t
 	r.mu.Unlock()
 	observe.GlobalTrace("return: t.snapshot()")
-	observe.GlobalTrace("return: t.snapshot()")
-	observe.GlobalTrace("return: t.snapshot()")
 
 	return t.snapshot()
 }
@@ -66,12 +62,8 @@ func (r *Registry) Get(id string) (Task, bool) {
 	t, ok := r.tasks[id]
 	if !ok {
 		observe.GlobalTrace("return: Task{}, false")
-		observe.GlobalTrace("return: Task{}, false")
-		observe.GlobalTrace("return: Task{}, false")
 		return Task{}, false
 	}
-	observe.GlobalTrace("return: t.snapshot(), true")
-	observe.GlobalTrace("return: t.snapshot(), true")
 	observe.GlobalTrace("return: t.snapshot(), true")
 	return t.snapshot(), true
 }
@@ -98,8 +90,6 @@ func (r *Registry) List(status *TaskStatus) []Task {
 		return result[i].CreatedAt.Before(result[j].CreatedAt)
 	})
 	observe.GlobalTrace("return: result")
-	observe.GlobalTrace("return: result")
-	observe.GlobalTrace("return: result")
 
 	return result
 }
@@ -115,14 +105,10 @@ func (r *Registry) Update(id string, fn func(*Task)) error {
 	if !ok {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
 		return fmt.Errorf("task %q not found", id)
 	}
 	fn(t)
 	t.UpdatedAt = time.Now()
-	observe.GlobalTrace("return: nil")
-	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -138,13 +124,9 @@ func (r *Registry) GetByName(name string) (Task, bool) {
 		if t.AgentName == name {
 			observe.GlobalTrace("if: t.AgentName == name")
 			observe.GlobalTrace("return: t.snapshot(), true")
-			observe.GlobalTrace("return: t.snapshot(), true")
-			observe.GlobalTrace("return: t.snapshot(), true")
 			return t.snapshot(), true
 		}
 	}
-	observe.GlobalTrace("return: Task{}, false")
-	observe.GlobalTrace("return: Task{}, false")
 	observe.GlobalTrace("return: Task{}, false")
 	return Task{}, false
 }
@@ -160,14 +142,10 @@ func (r *Registry) Cancel(id string) error {
 	if !ok {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
 		return fmt.Errorf("task %q not found", id)
 	}
 	if t.Status != TaskRunning && t.Status != TaskPending {
 		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot cancel\", id, t.Status)")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot cancel\", id, t.Status)")
 		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot cancel\", id, t.Status)")
 		return fmt.Errorf("task %q is %s, cannot cancel", id, t.Status)
 	}
@@ -177,8 +155,6 @@ func (r *Registry) Cancel(id string) error {
 	}
 	t.Status = TaskCancelled
 	t.UpdatedAt = time.Now()
-	observe.GlobalTrace("return: nil")
-	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }

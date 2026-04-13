@@ -22,21 +22,15 @@ func validateSlug(slug string) error {
 	if slug == "" {
 		observe.GlobalTrace("if: slug == \"\"")
 		observe.GlobalTrace("return: fmt.Errorf(\"slug is empty\")")
-		observe.GlobalTrace("return: fmt.Errorf(\"slug is empty\")")
-		observe.GlobalTrace("return: fmt.Errorf(\"slug is empty\")")
 		return fmt.Errorf("slug is empty")
 	}
 	if len(slug) > maxSlugLen {
 		observe.GlobalTrace("if: len(slug) > maxSlugLen")
 		observe.GlobalTrace("return: fmt.Errorf(\"slug exceeds %d characters\", maxSlugLen)")
-		observe.GlobalTrace("return: fmt.Errorf(\"slug exceeds %d characters\", maxSlugLen)")
-		observe.GlobalTrace("return: fmt.Errorf(\"slug exceeds %d characters\", maxSlugLen)")
 		return fmt.Errorf("slug exceeds %d characters", maxSlugLen)
 	}
 	if strings.HasPrefix(slug, "/") {
 		observe.GlobalTrace("if: strings.HasPrefix(slug, \"/\")")
-		observe.GlobalTrace("return: fmt.Errorf(\"slug must not be an absolute path\")")
-		observe.GlobalTrace("return: fmt.Errorf(\"slug must not be an absolute path\")")
 		observe.GlobalTrace("return: fmt.Errorf(\"slug must not be an absolute path\")")
 		return fmt.Errorf("slug must not be an absolute path")
 	}
@@ -46,27 +40,19 @@ func validateSlug(slug string) error {
 		if seg == "" {
 			observe.GlobalTrace("if: seg == \"\"")
 			observe.GlobalTrace("return: fmt.Errorf(\"slug contains empty segment\")")
-			observe.GlobalTrace("return: fmt.Errorf(\"slug contains empty segment\")")
-			observe.GlobalTrace("return: fmt.Errorf(\"slug contains empty segment\")")
 			return fmt.Errorf("slug contains empty segment")
 		}
 		if seg == ".." {
 			observe.GlobalTrace("if: seg == \"..\"")
-			observe.GlobalTrace("return: fmt.Errorf(\"slug contains '..' traversal\")")
-			observe.GlobalTrace("return: fmt.Errorf(\"slug contains '..' traversal\")")
 			observe.GlobalTrace("return: fmt.Errorf(\"slug contains '..' traversal\")")
 			return fmt.Errorf("slug contains '..' traversal")
 		}
 		if !validSegment.MatchString(seg) {
 			observe.GlobalTrace("if: !validSegment.MatchString(seg)")
 			observe.GlobalTrace("return: fmt.Errorf(\"slug segment %q contains invalid characters (allowed: a-zA-Z0-9._...")
-			observe.GlobalTrace("return: fmt.Errorf(\"slug segment %q contains invalid characters (allowed: a-zA-Z0-9._...")
-			observe.GlobalTrace("return: fmt.Errorf(\"slug segment %q contains invalid characters (allowed: a-zA-Z0-9._...")
 			return fmt.Errorf("slug segment %q contains invalid characters (allowed: a-zA-Z0-9._-)", seg)
 		}
 	}
-	observe.GlobalTrace("return: nil")
-	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -76,8 +62,6 @@ func validateSlug(slug string) error {
 func FlattenSlug(slug string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: strings.ReplaceAll(slug, \"/\", \"+\")")
-	observe.GlobalTrace("return: strings.ReplaceAll(slug, \"/\", \"+\")")
 	observe.GlobalTrace("return: strings.ReplaceAll(slug, \"/\", \"+\")")
 	return strings.ReplaceAll(slug, "/", "+")
 }
@@ -93,14 +77,10 @@ func HasChanges(worktreePath, headCommit string) (bool, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: false, fmt.Errorf(\"git status: %w\", err)")
-		observe.GlobalTrace("return: false, fmt.Errorf(\"git status: %w\", err)")
-		observe.GlobalTrace("return: false, fmt.Errorf(\"git status: %w\", err)")
 		return false, fmt.Errorf("git status: %w", err)
 	}
 	if len(strings.TrimSpace(string(statusOut))) > 0 {
 		observe.GlobalTrace("if: len(strings.TrimSpace(string(statusOut))) > 0")
-		observe.GlobalTrace("return: true, nil")
-		observe.GlobalTrace("return: true, nil")
 		observe.GlobalTrace("return: true, nil")
 		return true, nil
 	}
@@ -110,13 +90,9 @@ func HasChanges(worktreePath, headCommit string) (bool, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: false, fmt.Errorf(\"git rev-list: %w\", err)")
-		observe.GlobalTrace("return: false, fmt.Errorf(\"git rev-list: %w\", err)")
-		observe.GlobalTrace("return: false, fmt.Errorf(\"git rev-list: %w\", err)")
 		return false, fmt.Errorf("git rev-list: %w", err)
 	}
 	count := strings.TrimSpace(string(revOut))
-	observe.GlobalTrace("return: count != \"0\", nil")
-	observe.GlobalTrace("return: count != \"0\", nil")
 	observe.GlobalTrace("return: count != \"0\", nil")
 	return count != "0", nil
 }

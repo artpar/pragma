@@ -40,11 +40,11 @@ func EstimateTokens(params provider.RequestParams) int {
 				total += 1000
 			case model.DocumentPart:
 				observe.GlobalTrace("typecase: model.DocumentPart")
-				total += len(p.Data) / 4
+				// Flat estimate for binary documents (PDFs). Binary byte count / 4 is meaningless.
+				total += 5000
 			}
 		}
 	}
-	observe.GlobalTrace("return: total")
 	observe.GlobalTrace("return: total")
 	return total
 }

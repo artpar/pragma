@@ -27,7 +27,6 @@ func LoadHooks(workDir string) map[Event][]Entry {
 	loadFromFile(config.ProjectSettingsPath(workDir), result)
 	loadFromFile(config.LocalSettingsPath(workDir), result)
 	observe.GlobalTrace("return: result")
-	observe.GlobalTrace("return: result")
 
 	return result
 }
@@ -58,18 +57,15 @@ func readSettingsHooks(path string) (map[string][]Entry, error) {
 	if err != nil || data == nil {
 		observe.GlobalTrace("if: err != nil || data == nil")
 		observe.GlobalTrace("return: nil, err")
-		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
-		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 	if raw.Hooks == nil {
 		observe.GlobalTrace("if: raw.Hooks == nil")
-		observe.GlobalTrace("return: nil, nil")
 		observe.GlobalTrace("return: nil, nil")
 		return nil, nil
 	}
@@ -85,7 +81,6 @@ func readSettingsHooks(path string) (map[string][]Entry, error) {
 		result[event] = entries
 	}
 	observe.GlobalTrace("return: result, nil")
-	observe.GlobalTrace("return: result, nil")
 	return result, nil
 }
 
@@ -99,14 +94,11 @@ func readJSONFile(path string) ([]byte, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			observe.GlobalTrace("if: errors.Is(err, os.ErrNotExist)")
 			observe.GlobalTrace("return: nil, nil")
-			observe.GlobalTrace("return: nil, nil")
 			return nil, nil
 		}
 		observe.GlobalTrace("return: nil, err")
-		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
-	observe.GlobalTrace("return: data, nil")
 	observe.GlobalTrace("return: data, nil")
 	return data, nil
 }
@@ -125,7 +117,6 @@ func MatchCommands(entries []Entry, value string) []Command {
 		}
 	}
 	observe.GlobalTrace("return: result")
-	observe.GlobalTrace("return: result")
 	return result
 }
 
@@ -140,12 +131,10 @@ func matchesPattern(pattern, value string) bool {
 	if pattern == "" {
 		observe.GlobalTrace("if: pattern == \"\"")
 		observe.GlobalTrace("return: true")
-		observe.GlobalTrace("return: true")
 		return true
 	}
 	if pattern == value {
 		observe.GlobalTrace("if: pattern == value")
-		observe.GlobalTrace("return: true")
 		observe.GlobalTrace("return: true")
 		return true
 	}
@@ -157,11 +146,9 @@ func matchesPattern(pattern, value string) bool {
 			if strings.TrimSpace(p) == value {
 				observe.GlobalTrace("if: strings.TrimSpace(p) == value")
 				observe.GlobalTrace("return: true")
-				observe.GlobalTrace("return: true")
 				return true
 			}
 		}
-		observe.GlobalTrace("return: false")
 		observe.GlobalTrace("return: false")
 		return false
 	}
@@ -172,14 +159,11 @@ func matchesPattern(pattern, value string) bool {
 		if err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: false")
-			observe.GlobalTrace("return: false")
 			return false
 		}
 		observe.GlobalTrace("return: re.MatchString(value)")
-		observe.GlobalTrace("return: re.MatchString(value)")
 		return re.MatchString(value)
 	}
-	observe.GlobalTrace("return: false")
 	observe.GlobalTrace("return: false")
 	return false
 }

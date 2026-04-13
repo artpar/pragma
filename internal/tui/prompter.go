@@ -30,8 +30,6 @@ func NewInteractivePrompter() *InteractivePrompter {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &InteractivePrompter{}")
-	observe.GlobalTrace("return: &InteractivePrompter{}")
-	observe.GlobalTrace("return: &InteractivePrompter{}")
 	return &InteractivePrompter{}
 }
 
@@ -53,8 +51,6 @@ func (p *InteractivePrompter) Prompt(ctx context.Context, toolName, content, rea
 
 	if p.program == nil {
 		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "if: p.program == nil")
-		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "return: permission.DecisionDeny, nil")
-		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "return: permission.DecisionDeny, nil")
 		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "return: permission.DecisionDeny, nil")
 		return permission.DecisionDeny, nil
 	}

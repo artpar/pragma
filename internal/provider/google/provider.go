@@ -177,6 +177,19 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 				observe.TraceCtx(ctx, "google", "Provider.Stream", "range resp.Candidates")
 				if cand.Content == nil {
 					observe.TraceCtx(ctx, "google", "Provider.Stream", "if: cand.Content == nil")
+					if p.bus != nil {
+						reason := ""
+						if cand.FinishReason != "" {
+							reason = string(cand.FinishReason)
+						}
+						p.bus.Emit(observe.ErrorOccurred{
+							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+							Severity:     "warn",
+							Component:    "google",
+							ErrorType:    "nil_candidate_content",
+							ErrorMessage: "candidate has nil Content, finish_reason=" + reason,
+						})
+					}
 					continue
 				}
 				for _, part := range cand.Content.Parts {

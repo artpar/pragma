@@ -39,8 +39,6 @@ func SerializeForCompaction(msgs []model.Message) string {
 		b.WriteString("\n")
 	}
 	observe.GlobalTrace("return: strings.TrimSpace(b.String())")
-	observe.GlobalTrace("return: strings.TrimSpace(b.String())")
-	observe.GlobalTrace("return: strings.TrimSpace(b.String())")
 
 	return strings.TrimSpace(b.String())
 }
@@ -51,8 +49,6 @@ func roleLabel(msg model.Message) string {
 	if msg.Flags.IsCompactSummary {
 		observe.GlobalTrace("if: msg.Flags.IsCompactSummary")
 		observe.GlobalTrace("return: \"[Previous Compaction Summary]\"")
-		observe.GlobalTrace("return: \"[Previous Compaction Summary]\"")
-		observe.GlobalTrace("return: \"[Previous Compaction Summary]\"")
 		return "[Previous Compaction Summary]"
 	}
 	switch msg.Role {
@@ -61,8 +57,6 @@ func roleLabel(msg model.Message) string {
 		for _, part := range msg.Content {
 			if _, ok := part.(model.ToolResultPart); ok {
 				observe.GlobalTrace("if: ok")
-				observe.GlobalTrace("return: \"[User - Tool Results]\"")
-				observe.GlobalTrace("return: \"[User - Tool Results]\"")
 				observe.GlobalTrace("return: \"[User - Tool Results]\"")
 				return "[User - Tool Results]"
 			}
@@ -121,12 +115,8 @@ func truncateInput(input json.RawMessage) string {
 	if len(s) <= maxInputPreview {
 		observe.GlobalTrace("if: len(s) <= maxInputPreview")
 		observe.GlobalTrace("return: s")
-		observe.GlobalTrace("return: s")
-		observe.GlobalTrace("return: s")
 		return s
 	}
-	observe.GlobalTrace("return: s[:maxInputPreview] + \"...\"")
-	observe.GlobalTrace("return: s[:maxInputPreview] + \"...\"")
 	observe.GlobalTrace("return: s[:maxInputPreview] + \"...\"")
 	return s[:maxInputPreview] + "..."
 }

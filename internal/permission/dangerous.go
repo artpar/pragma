@@ -49,8 +49,6 @@ func IsDangerousPath(absPath, workDir string) bool {
 		if strings.EqualFold(baseName, df) {
 			observe.GlobalTrace("if: strings.EqualFold(baseName, df)")
 			observe.GlobalTrace("return: true")
-			observe.GlobalTrace("return: true")
-			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
@@ -59,8 +57,6 @@ func IsDangerousPath(absPath, workDir string) bool {
 		observe.GlobalTrace("range DangerousFilePatterns")
 		if matched, _ := filepath.Match(pat, baseName); matched {
 			observe.GlobalTrace("if: matched")
-			observe.GlobalTrace("return: true")
-			observe.GlobalTrace("return: true")
 			observe.GlobalTrace("return: true")
 			return true
 		}
@@ -82,14 +78,10 @@ func IsDangerousPath(absPath, workDir string) bool {
 			if strings.EqualFold(part, dd) {
 				observe.GlobalTrace("if: strings.EqualFold(part, dd)")
 				observe.GlobalTrace("return: true")
-				observe.GlobalTrace("return: true")
-				observe.GlobalTrace("return: true")
 				return true
 			}
 		}
 	}
-	observe.GlobalTrace("return: false")
-	observe.GlobalTrace("return: false")
 	observe.GlobalTrace("return: false")
 
 	return false
@@ -101,8 +93,6 @@ func IsDangerousPath(absPath, workDir string) bool {
 func isFilePath(content string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: strings.HasPrefix(content, \"/\") || strings.HasPrefix(content, \"~\")")
-	observe.GlobalTrace("return: strings.HasPrefix(content, \"/\") || strings.HasPrefix(content, \"~\")")
 	observe.GlobalTrace("return: strings.HasPrefix(content, \"/\") || strings.HasPrefix(content, \"~\")")
 	return strings.HasPrefix(content, "/") || strings.HasPrefix(content, "~")
 }
@@ -178,7 +168,6 @@ func resolvePathsForCheck(content, workDir string) []string {
 		addPath(resolved)
 	}
 	observe.GlobalTrace("return: paths")
-	observe.GlobalTrace("return: paths")
 
 	return paths
 }
@@ -213,7 +202,6 @@ func resolveDeepestExistingAncestor(absPath string) string {
 				if err != nil {
 					observe.GlobalTrace("if: err != nil")
 					observe.GlobalTrace("return: \"\"")
-					observe.GlobalTrace("return: \"\"")
 					return ""
 				}
 				if !filepath.IsAbs(target) {
@@ -223,20 +211,16 @@ func resolveDeepestExistingAncestor(absPath string) string {
 				if len(segments) > 0 {
 					observe.GlobalTrace("if: len(segments) > 0")
 					observe.GlobalTrace("return: filepath.Join(append([]string{target}, segments...)...)")
-					observe.GlobalTrace("return: filepath.Join(append([]string{target}, segments...)...)")
 					return filepath.Join(append([]string{target}, segments...)...)
 				}
-				observe.GlobalTrace("return: target")
 				observe.GlobalTrace("return: target")
 				return target
 			}
 			if len(segments) > 0 {
 				observe.GlobalTrace("if: len(segments) > 0")
 				observe.GlobalTrace("return: filepath.Join(append([]string{resolved}, segments...)...)")
-				observe.GlobalTrace("return: filepath.Join(append([]string{resolved}, segments...)...)")
 				return filepath.Join(append([]string{resolved}, segments...)...)
 			}
-			observe.GlobalTrace("return: resolved")
 			observe.GlobalTrace("return: resolved")
 			return resolved
 		}
@@ -247,18 +231,14 @@ func resolveDeepestExistingAncestor(absPath string) string {
 			if len(segments) > 0 {
 				observe.GlobalTrace("if: len(segments) > 0")
 				observe.GlobalTrace("return: filepath.Join(append([]string{resolved}, segments...)...)")
-				observe.GlobalTrace("return: filepath.Join(append([]string{resolved}, segments...)...)")
 				return filepath.Join(append([]string{resolved}, segments...)...)
 			}
-			observe.GlobalTrace("return: resolved")
 			observe.GlobalTrace("return: resolved")
 			return resolved
 		}
 		observe.GlobalTrace("return: \"\"")
-		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
-	observe.GlobalTrace("return: \"\"")
 	observe.GlobalTrace("return: \"\"")
 	return ""
 }

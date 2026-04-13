@@ -71,15 +71,12 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"WebFetch\"")
-	observe.GlobalTrace("return: \"WebFetch\"")
-	observe.GlobalTrace("return: \"WebFetch\"")
 	return "WebFetch"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Fetches content from a specified URL and processes it using an AI model...\"")
-	observe.GlobalTrace("return: webFetchDescription")
 	observe.GlobalTrace("return: webFetchDescription")
 	return webFetchDescription
 }
@@ -105,15 +102,11 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
@@ -127,20 +120,14 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "if: err != nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"\")")
-		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"\")")
-		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"\")")
 		return checker.Check(ctx, "WebFetch", "")
 	}
 	u, err := url.Parse(in.URL)
 	if err != nil || u.Hostname() == "" {
 		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "if: err != nil || u.Hostname() == \"\"")
 		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"\")")
-		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"\")")
-		observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"\")")
 		return checker.Check(ctx, "WebFetch", "")
 	}
-	observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"domain:\"+u.Hostname())")
-	observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"domain:\"+u.Hostname())")
 	observe.TraceCtx(ctx, "webfetch", "Tool.CheckPerm", "return: checker.Check(ctx, \"WebFetch\", \"domain:\"+u.Hostname())")
 	return checker.Check(ctx, "WebFetch", "domain:"+u.Hostname())
 }
@@ -152,21 +139,15 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.URL == "" {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: in.URL == \"\"")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"url is required\")")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"url is required\")")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"url is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("url is required")
 	}
 	if in.Prompt == "" {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: in.Prompt == \"\"")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("prompt is required")
 	}
@@ -175,21 +156,15 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	if err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to parse URL: %v\", err)}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to parse URL: %v\", err)}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to parse URL: %v\", err)}, nil")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to parse URL: %v", err)}, nil
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: u.Scheme != \"http\" && u.Scheme != \"https\"")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"URL must use http or https scheme\"}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"URL must use http or https scheme\"}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"URL must use http or https scheme\"}, nil")
 		return tool.InvokeResult{Content: "URL must use http or https scheme"}, nil
 	}
 	if u.User != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: u.User != nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"URL must not contain credentials\"}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"URL must not contain credentials\"}, nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"URL must not contain credentials\"}, nil")
 		return tool.InvokeResult{Content: "URL must not contain credentials"}, nil
 	}
@@ -203,8 +178,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	pinnedAddr, err := resolveAndCheckSSRF(u.Hostname())
 	if err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: err.Error()}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: err.Error()}, nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: err.Error()}, nil")
 		return tool.InvokeResult{Content: err.Error()}, nil
 	}
@@ -221,8 +194,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		if err != nil {
 			observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
 			observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to process content: %v\", err)}...")
-			observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to process content: %v\", err)}...")
-			observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to process content: %v\", err)}...")
 			return tool.InvokeResult{Content: fmt.Sprintf("Failed to process content: %v", err)}, nil
 		}
 		fr := fetchResult{
@@ -234,8 +205,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 			DurationMs: time.Since(start).Milliseconds(),
 		}
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: marshalResult(fr), nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: marshalResult(fr), nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: marshalResult(fr), nil")
 		return marshalResult(fr), nil
 	}
 
@@ -246,8 +215,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	if err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to create request: %v\", err)},...")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to create request: %v\", err)},...")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to create request: %v\", err)},...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to create request: %v", err)}, nil
 	}
 	req.Header.Set("User-Agent", "gogent/1.0 (AI coding assistant)")
@@ -257,8 +224,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	if err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to fetch URL: %v\", err)}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to fetch URL: %v\", err)}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to fetch URL: %v\", err)}, nil")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to fetch URL: %v", err)}, nil
 	}
 	defer resp.Body.Close()
@@ -266,8 +231,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
 	if err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to read response: %v\", err)}, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to read response: %v\", err)}, nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to read response: %v\", err)}, nil")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to read response: %v", err)}, nil
 	}
@@ -304,8 +267,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	if err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to process content: %v\", err)}...")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to process content: %v\", err)}...")
-		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to process content: %v\", err)}...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to process content: %v", err)}, nil
 	}
 
@@ -317,8 +278,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		Result:     result,
 		DurationMs: time.Since(start).Milliseconds(),
 	}
-	observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: marshalResult(fr), nil")
-	observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: marshalResult(fr), nil")
 	observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: marshalResult(fr), nil")
 	return marshalResult(fr), nil
 }
@@ -333,12 +292,8 @@ func (t *Tool) summarize(ctx context.Context, content, userPrompt string) (strin
 		if len(content) > 2000 {
 			observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "if: len(content) > 2000")
 			observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: content[:2000] + \"\\n[truncated]\", nil")
-			observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: content[:2000] + \"\\n[truncated]\", nil")
-			observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: content[:2000] + \"\\n[truncated]\", nil")
 			return content[:2000] + "\n[truncated]", nil
 		}
-		observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: content, nil")
-		observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: content, nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: content, nil")
 		return content, nil
 	}
@@ -366,8 +321,6 @@ func (t *Tool) summarize(ctx context.Context, content, userPrompt string) (strin
 	if err != nil {
 		observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "if: err != nil")
 		observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: \"\", fmt.Errorf(\"secondary model call: %w\", err)")
-		observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: \"\", fmt.Errorf(\"secondary model call: %w\", err)")
-		observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: \"\", fmt.Errorf(\"secondary model call: %w\", err)")
 		return "", fmt.Errorf("secondary model call: %w", err)
 	}
 
@@ -381,8 +334,6 @@ func (t *Tool) summarize(ctx context.Context, content, userPrompt string) (strin
 		}
 	}
 	observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: result.String(), nil")
-	observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: result.String(), nil")
-	observe.TraceCtx(ctx, "webfetch", "Tool.summarize", "return: result.String(), nil")
 	return result.String(), nil
 }
 
@@ -393,12 +344,8 @@ func marshalResult(fr fetchResult) tool.InvokeResult {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Fetch completed but failed to marshal...")
-		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Fetch completed but failed to marshal...")
-		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Fetch completed but failed to marshal...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Fetch completed but failed to marshal result: %v", err)}
 	}
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}")
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}")
 	return tool.InvokeResult{Content: string(data)}
 }
@@ -411,8 +358,6 @@ func resolveAndCheckSSRF(hostname string) (string, error) {
 	ips, err := net.LookupHost(hostname)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: \"\", fmt.Errorf(\"DNS resolution failed for %s: %v\", hostname, err)")
-		observe.GlobalTrace("return: \"\", fmt.Errorf(\"DNS resolution failed for %s: %v\", hostname, err)")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"DNS resolution failed for %s: %v\", hostname, err)")
 		return "", fmt.Errorf("DNS resolution failed for %s: %v", hostname, err)
 	}
@@ -427,8 +372,6 @@ func resolveAndCheckSSRF(hostname string) (string, error) {
 		if isPrivateIP(ip) {
 			observe.GlobalTrace("if: isPrivateIP(ip)")
 			observe.GlobalTrace("return: \"\", fmt.Errorf(\"URL resolves to private/reserved IP address (%s) — request ...")
-			observe.GlobalTrace("return: \"\", fmt.Errorf(\"URL resolves to private/reserved IP address (%s) — request ...")
-			observe.GlobalTrace("return: \"\", fmt.Errorf(\"URL resolves to private/reserved IP address (%s) — request ...")
 			return "", fmt.Errorf("URL resolves to private/reserved IP address (%s) — request blocked for security", ipStr)
 		}
 		if firstValid == "" {
@@ -439,12 +382,8 @@ func resolveAndCheckSSRF(hostname string) (string, error) {
 	if firstValid == "" {
 		observe.GlobalTrace("if: firstValid == \"\"")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"DNS resolution returned no usable addresses for %s\", hostname)")
-		observe.GlobalTrace("return: \"\", fmt.Errorf(\"DNS resolution returned no usable addresses for %s\", hostname)")
-		observe.GlobalTrace("return: \"\", fmt.Errorf(\"DNS resolution returned no usable addresses for %s\", hostname)")
 		return "", fmt.Errorf("DNS resolution returned no usable addresses for %s", hostname)
 	}
-	observe.GlobalTrace("return: firstValid, nil")
-	observe.GlobalTrace("return: firstValid, nil")
 	observe.GlobalTrace("return: firstValid, nil")
 	return firstValid, nil
 }
@@ -479,8 +418,6 @@ func pinnedHTTPClient(hostname, pinnedIP string) *http.Client {
 		IdleConnTimeout:       30 * time.Second,
 	}
 	observe.GlobalTrace("return: &http.Client{\n\tTransport:\ttransport,\n\tCheckRedirect: func(req *http.Request, ...")
-	observe.GlobalTrace("return: &http.Client{\n\tTransport:\ttransport,\n\tCheckRedirect: func(req *http.Request, ...")
-	observe.GlobalTrace("return: &http.Client{\n\tTransport:\ttransport,\n\tCheckRedirect: func(req *http.Request, ...")
 
 	return &http.Client{
 		Transport: transport,
@@ -509,14 +446,10 @@ func isPrivateIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 		observe.GlobalTrace("if: ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLoca...")
 		observe.GlobalTrace("return: true")
-		observe.GlobalTrace("return: true")
-		observe.GlobalTrace("return: true")
 		return true
 	}
 
 	metadataIP := net.ParseIP("169.254.169.254")
-	observe.GlobalTrace("return: ip.Equal(metadataIP)")
-	observe.GlobalTrace("return: ip.Equal(metadataIP)")
 	observe.GlobalTrace("return: ip.Equal(metadataIP)")
 	return ip.Equal(metadataIP)
 }

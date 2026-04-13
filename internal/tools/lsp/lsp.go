@@ -60,15 +60,11 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"LSP\"")
-	observe.GlobalTrace("return: \"LSP\"")
-	observe.GlobalTrace("return: \"LSP\"")
 	return "LSP"
 }
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
 	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
@@ -76,16 +72,12 @@ func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
 
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: `Provides code intelligence via Language Server Protocol. Operations: goToDef...")
-	observe.GlobalTrace("return: `Provides code intelligence via Language Server Protocol. Operations: goToDef...")
 	observe.GlobalTrace("return: `Provides code intelligence via Language Server Protocol. Operations: goToDef...")
 	return `Provides code intelligence via Language Server Protocol. Operations: goToDefinition, findReferences, hover, documentSymbol, workspaceSymbol, goToImplementation, prepareCallHierarchy, incomingCalls, outgoingCalls. Requires LSP servers configured in .gogent/lsp.json.`
 }
@@ -97,12 +89,8 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "toollsp", "Tool.CheckPerm", "if: err != nil")
 		observe.TraceCtx(ctx, "toollsp", "Tool.CheckPerm", "return: checker.Check(ctx, \"LSP\", \"\")")
-		observe.TraceCtx(ctx, "toollsp", "Tool.CheckPerm", "return: checker.Check(ctx, \"LSP\", \"\")")
-		observe.TraceCtx(ctx, "toollsp", "Tool.CheckPerm", "return: checker.Check(ctx, \"LSP\", \"\")")
 		return checker.Check(ctx, "LSP", "")
 	}
-	observe.TraceCtx(ctx, "toollsp", "Tool.CheckPerm", "return: checker.Check(ctx, \"LSP\", in.FilePath)")
-	observe.TraceCtx(ctx, "toollsp", "Tool.CheckPerm", "return: checker.Check(ctx, \"LSP\", in.FilePath)")
 	observe.TraceCtx(ctx, "toollsp", "Tool.CheckPerm", "return: checker.Check(ctx, \"LSP\", in.FilePath)")
 	return checker.Check(ctx, "LSP", in.FilePath)
 }
@@ -114,22 +102,16 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 
 	if in.Operation == "" {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: in.Operation == \"\"")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"operation is required\")")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"operation is required\")")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"operation is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("operation is required")
 	}
 	if in.FilePath == "" {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: in.FilePath == \"\"")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
@@ -144,21 +126,15 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err != nil {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file not found: %s\", absPath)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file not found: %s\", absPath)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file not found: %s\", absPath)")
 		return tool.InvokeResult{}, fmt.Errorf("file not found: %s", absPath)
 	}
 	if info.IsDir() {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: info.IsDir()")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path is a directory: %s\", absPath)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path is a directory: %s\", absPath)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path is a directory: %s\", absPath)")
 		return tool.InvokeResult{}, fmt.Errorf("path is a directory: %s", absPath)
 	}
 	if info.Size() > maxFileSizeBytes {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: info.Size() > maxFileSizeBytes")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file too large (%d bytes, max %d)\", info.Siz...")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file too large (%d bytes, max %d)\", info.Siz...")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file too large (%d bytes, max %d)\", info.Siz...")
 		return tool.InvokeResult{}, fmt.Errorf("file too large (%d bytes, max %d)", info.Size(), maxFileSizeBytes)
 	}
@@ -169,14 +145,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		if in.Line < 1 {
 			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: in.Line < 1")
 			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"line must be >= 1 (got %d)\", in.Line)")
-			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"line must be >= 1 (got %d)\", in.Line)")
-			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"line must be >= 1 (got %d)\", in.Line)")
 			return tool.InvokeResult{}, fmt.Errorf("line must be >= 1 (got %d)", in.Line)
 		}
 		if in.Character < 1 {
 			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: in.Character < 1")
-			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"character must be >= 1 (got %d)\", in.Character)")
-			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"character must be >= 1 (got %d)\", in.Character)")
 			observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"character must be >= 1 (got %d)\", in.Character)")
 			return tool.InvokeResult{}, fmt.Errorf("character must be >= 1 (got %d)", in.Character)
 		}
@@ -186,14 +158,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err != nil {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", err)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", err)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read file: %w", err)
 	}
 	if err := t.Manager.OpenFile(ctx, absPath, string(content)); err != nil {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"open file in LSP: %w\", err)")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"open file in LSP: %w\", err)")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"open file in LSP: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("open file in LSP: %w", err)
 	}
@@ -294,8 +262,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err != nil {
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"LSP error: %v\", err)}, nil")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"LSP error: %v\", err)}, nil")
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"LSP error: %v\", err)}, nil")
 		return tool.InvokeResult{Content: fmt.Sprintf("LSP error: %v", err)}, nil
 	}
 
@@ -314,8 +280,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 	data, _ := json.Marshal(output)
 	observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
-	observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
-	observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
@@ -327,8 +291,6 @@ func (t *Tool) twoStepCallHierarchy(ctx context.Context, absPath, fileURI string
 	if err != nil {
 		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "if: err != nil")
 		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: nil, err")
-		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: nil, err")
-		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: nil, err")
 		return nil, err
 	}
 
@@ -336,16 +298,12 @@ func (t *Tool) twoStepCallHierarchy(ctx context.Context, absPath, fileURI string
 	if err := json.Unmarshal(prepResult, &items); err != nil || len(items) == 0 {
 		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "if: err != nil || len(items) == 0")
 		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: nil, nil")
-		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: nil, nil")
-		observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: nil, nil")
 		return nil, nil
 	}
 
 	result, err := t.Manager.SendRequest(ctx, absPath, method, map[string]any{
 		"item": items[0],
 	})
-	observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: result, err")
-	observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: result, err")
 	observe.TraceCtx(ctx, "toollsp", "Tool.twoStepCallHierarchy", "return: result, err")
 	return result, err
 }
@@ -368,7 +326,6 @@ func filterLocationResults(ctx context.Context, cwd string, raw json.RawMessage)
 		if len(kept) == len(uris) {
 			observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "if: len(kept) == len(uris)")
 			observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: raw")
-			observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: raw")
 			return raw
 		}
 		keptSet := make(map[string]bool, len(kept))
@@ -386,7 +343,6 @@ func filterLocationResults(ctx context.Context, cwd string, raw json.RawMessage)
 		}
 		out, _ := json.Marshal(filtered)
 		observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: out")
-		observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: out")
 		return out
 	}
 
@@ -402,7 +358,6 @@ func filterLocationResults(ctx context.Context, cwd string, raw json.RawMessage)
 		kept := filterGitIgnored(ctx, cwd, uris)
 		if len(kept) == len(uris) {
 			observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "if: len(kept) == len(uris)")
-			observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: raw")
 			observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: raw")
 			return raw
 		}
@@ -421,10 +376,8 @@ func filterLocationResults(ctx context.Context, cwd string, raw json.RawMessage)
 		}
 		out, _ := json.Marshal(filtered)
 		observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: out")
-		observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: out")
 		return out
 	}
-	observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: raw")
 	observe.TraceCtx(ctx, "toollsp", "filterLocationResults", "return: raw")
 
 	return raw
@@ -433,8 +386,6 @@ func filterLocationResults(ctx context.Context, cwd string, raw json.RawMessage)
 func positionParams(fileURI string, line, char int) map[string]any {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: map[string]any{\n\t\"textDocument\":\tmap[string]string{\"uri\": fileURI},\n\t\"positio...")
-	observe.GlobalTrace("return: map[string]any{\n\t\"textDocument\":\tmap[string]string{\"uri\": fileURI},\n\t\"positio...")
 	observe.GlobalTrace("return: map[string]any{\n\t\"textDocument\":\tmap[string]string{\"uri\": fileURI},\n\t\"positio...")
 	return map[string]any{
 		"textDocument": map[string]string{"uri": fileURI},

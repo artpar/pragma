@@ -55,15 +55,11 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"TodoWrite\"")
-	observe.GlobalTrace("return: \"TodoWrite\"")
-	observe.GlobalTrace("return: \"TodoWrite\"")
 	return "TodoWrite"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: todoDescription")
-	observe.GlobalTrace("return: todoDescription")
 	observe.GlobalTrace("return: todoDescription")
 	return todoDescription
 }
@@ -99,15 +95,11 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
@@ -115,8 +107,6 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "exit")
-	observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "return: checker.Check(ctx, \"TodoWrite\", \"\")")
-	observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "return: checker.Check(ctx, \"TodoWrite\", \"\")")
 	observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "return: checker.Check(ctx, \"TodoWrite\", \"\")")
 	return checker.Check(ctx, "TodoWrite", "")
 }
@@ -127,8 +117,6 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	var in todoInput
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
@@ -144,8 +132,6 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		}
 		if item.Content == "" {
 			observe.GlobalTrace("if: item.Content == \"\"")
-			observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"empty content for todo %d\", i)")
-			observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"empty content for todo %d\", i)")
 			observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"empty content for todo %d\", i)")
 			return tool.InvokeResult{}, fmt.Errorf("empty content for todo %d", i)
 		}
@@ -193,8 +179,6 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		NewTodos: newTodos,
 		Count:    len(newTodos),
 	})
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(out)}, nil")
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(out)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(out)}, nil")
 	return tool.InvokeResult{Content: string(out)}, nil
 }

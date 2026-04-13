@@ -373,8 +373,11 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 			inst.totalPoints++
 			if len(s.Results) > 0 {
 				retStr := inst.exprListString(s.Results)
-				if !isTraceCall(stmt) {
-					traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, "return: "+retStr)
+				msg := "return: " + retStr
+				// Idempotency: skip if the previous statement is already a trace with this message.
+				alreadyInstrumented := len(newList) > 0 && isTraceCallWithMsg(newList[len(newList)-1], msg)
+				if !alreadyInstrumented {
+					traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, msg)
 					newList = append(newList, traceStmt)
 					inst.instrPoints++
 					modified = true
@@ -574,6 +577,40 @@ func isTraceCall(stmt ast.Stmt) bool {
 		return false
 	}
 	return sel.Sel.Name == "TraceCtx" || sel.Sel.Name == "GlobalTrace" || sel.Sel.Name == "Trace"
+}
+
+// isTraceCallWithMsg checks if a statement is a trace call whose last argument matches msg.
+// Used for idempotency: avoids inserting duplicate traces before return statements.
+func isTraceCallWithMsg(stmt ast.Stmt, msg string) bool {
+	exprStmt, ok := stmt.(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	call, ok := exprStmt.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok || ident.Name != "observe" {
+		return false
+	}
+	if sel.Sel.Name != "TraceCtx" && sel.Sel.Name != "GlobalTrace" {
+		return false
+	}
+	if len(call.Args) == 0 {
+		return false
+	}
+	lastArg := call.Args[len(call.Args)-1]
+	lit, ok := lastArg.(*ast.BasicLit)
+	if !ok {
+		return false
+	}
+	// lit.Value includes quotes, e.g., `"return: foo"`
+	return lit.Value == fmt.Sprintf("%q", msg)
 }
 
 // funcHasContext checks if the first parameter is context.Context AND is named

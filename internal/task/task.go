@@ -46,6 +46,5 @@ func (t *Task) snapshot() Task {
 		copy(cp.PendingMessages, t.PendingMessages)
 	}
 	observe.GlobalTrace("return: cp")
-	observe.GlobalTrace("return: cp")
 	return cp
 }

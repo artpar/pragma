@@ -75,8 +75,6 @@ func NewCodec(in io.Reader, out io.Writer) *Codec {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Codec{\n\tin:\t\t\tbufio.NewReaderSize(in, 64*1024),\n\tout:\t\t\tout,\n\tnotifyHandlers...")
-	observe.GlobalTrace("return: &Codec{\n\tin:\t\t\tbufio.NewReaderSize(in, 64*1024),\n\tout:\t\t\tout,\n\tnotifyHandlers...")
-	observe.GlobalTrace("return: &Codec{\n\tin:\t\t\tbufio.NewReaderSize(in, 64*1024),\n\tout:\t\t\tout,\n\tnotifyHandlers...")
 	return &Codec{
 		in:              bufio.NewReaderSize(in, 64*1024),
 		out:             out,
@@ -113,8 +111,6 @@ func (c *Codec) Call(ctx context.Context, method string, params any) (json.RawMe
 	if c.closed.Load() {
 		observe.TraceCtx(ctx, "lsp", "Codec.Call", "if: c.closed.Load()")
 		observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, ErrConnectionClosed")
-		observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, ErrConnectionClosed")
-		observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, ErrConnectionClosed")
 		return nil, ErrConnectionClosed
 	}
 
@@ -133,8 +129,6 @@ func (c *Codec) Call(ctx context.Context, method string, params any) (json.RawMe
 	if err := c.writeMessage(req); err != nil {
 		observe.TraceCtx(ctx, "lsp", "Codec.Call", "if: err != nil")
 		observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, fmt.Errorf(\"write request: %w\", err)")
-		observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, fmt.Errorf(\"write request: %w\", err)")
-		observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, fmt.Errorf(\"write request: %w\", err)")
 		return nil, fmt.Errorf("write request: %w", err)
 	}
 
@@ -143,13 +137,9 @@ func (c *Codec) Call(ctx context.Context, method string, params any) (json.RawMe
 		observe.TraceCtx(ctx, "lsp", "Codec.Call", "select: resp := <-ch")
 		if resp == nil {
 			observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, ErrConnectionClosed")
-			observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, ErrConnectionClosed")
-			observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, ErrConnectionClosed")
 			return nil, ErrConnectionClosed
 		}
 		if resp.Error != nil {
-			observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, resp.Error")
-			observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, resp.Error")
 			observe.TraceCtx(ctx, "lsp", "Codec.Call", "return: nil, resp.Error")
 			return nil, resp.Error
 		}
@@ -170,8 +160,6 @@ func (c *Codec) Notify(method string, params any) error {
 	if c.closed.Load() {
 		observe.GlobalTrace("if: c.closed.Load()")
 		observe.GlobalTrace("return: ErrConnectionClosed")
-		observe.GlobalTrace("return: ErrConnectionClosed")
-		observe.GlobalTrace("return: ErrConnectionClosed")
 		return ErrConnectionClosed
 	}
 	req := rpcRequest{
@@ -179,8 +167,6 @@ func (c *Codec) Notify(method string, params any) error {
 		Method:  method,
 		Params:  params,
 	}
-	observe.GlobalTrace("return: c.writeMessage(req)")
-	observe.GlobalTrace("return: c.writeMessage(req)")
 	observe.GlobalTrace("return: c.writeMessage(req)")
 	return c.writeMessage(req)
 }
@@ -344,8 +330,6 @@ func (c *Codec) writeMessage(msg any) error {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"marshal message: %w\", err)")
-		observe.GlobalTrace("return: fmt.Errorf(\"marshal message: %w\", err)")
-		observe.GlobalTrace("return: fmt.Errorf(\"marshal message: %w\", err)")
 		return fmt.Errorf("marshal message: %w", err)
 	}
 
@@ -356,19 +340,13 @@ func (c *Codec) writeMessage(msg any) error {
 	if _, err := io.WriteString(c.out, header); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"write header: %w\", err)")
-		observe.GlobalTrace("return: fmt.Errorf(\"write header: %w\", err)")
-		observe.GlobalTrace("return: fmt.Errorf(\"write header: %w\", err)")
 		return fmt.Errorf("write header: %w", err)
 	}
 	if _, err := c.out.Write(body); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"write body: %w\", err)")
-		observe.GlobalTrace("return: fmt.Errorf(\"write body: %w\", err)")
-		observe.GlobalTrace("return: fmt.Errorf(\"write body: %w\", err)")
 		return fmt.Errorf("write body: %w", err)
 	}
-	observe.GlobalTrace("return: nil")
-	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -383,8 +361,6 @@ func (c *Codec) readMessage() (*rpcMessage, error) {
 		line, err := c.in.ReadString('\n')
 		if err != nil {
 			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: nil, err")
-			observe.GlobalTrace("return: nil, err")
 			observe.GlobalTrace("return: nil, err")
 			return nil, err
 		}
@@ -402,8 +378,6 @@ func (c *Codec) readMessage() (*rpcMessage, error) {
 			if err != nil {
 				observe.GlobalTrace("if: err != nil")
 				observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid Content-Length %q: %w\", val, err)")
-				observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid Content-Length %q: %w\", val, err)")
-				observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid Content-Length %q: %w\", val, err)")
 				return nil, fmt.Errorf("invalid Content-Length %q: %w", val, err)
 			}
 			contentLength = n
@@ -414,16 +388,12 @@ func (c *Codec) readMessage() (*rpcMessage, error) {
 	if contentLength < 0 {
 		observe.GlobalTrace("if: contentLength < 0")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"missing Content-Length header\")")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"missing Content-Length header\")")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"missing Content-Length header\")")
 		return nil, fmt.Errorf("missing Content-Length header")
 	}
 
 	body := make([]byte, contentLength)
 	if _, err := io.ReadFull(c.in, body); err != nil {
 		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"read body: %w\", err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"read body: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"read body: %w\", err)")
 		return nil, fmt.Errorf("read body: %w", err)
 	}
@@ -432,12 +402,8 @@ func (c *Codec) readMessage() (*rpcMessage, error) {
 	if err := json.Unmarshal(body, &msg); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"unmarshal message: %w\", err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"unmarshal message: %w\", err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"unmarshal message: %w\", err)")
 		return nil, fmt.Errorf("unmarshal message: %w", err)
 	}
-	observe.GlobalTrace("return: &msg, nil")
-	observe.GlobalTrace("return: &msg, nil")
 	observe.GlobalTrace("return: &msg, nil")
 	return &msg, nil
 }

@@ -113,8 +113,6 @@ func LoadAgentMD(workDir string, bus *observe.EventBus) []AgentMDSource {
 		}
 	}
 	observe.GlobalTrace("return: sources")
-	observe.GlobalTrace("return: sources")
-	observe.GlobalTrace("return: sources")
 	return sources
 }
 
@@ -127,8 +125,6 @@ func stripFrontmatter(content string) string {
 	if !strings.HasPrefix(content, "---") {
 		observe.GlobalTrace("if: !strings.HasPrefix(content, \"---\")")
 		observe.GlobalTrace("return: content")
-		observe.GlobalTrace("return: content")
-		observe.GlobalTrace("return: content")
 		return content
 	}
 
@@ -136,8 +132,6 @@ func stripFrontmatter(content string) string {
 	idx := strings.Index(rest, "\n---")
 	if idx < 0 {
 		observe.GlobalTrace("if: idx < 0")
-		observe.GlobalTrace("return: content")
-		observe.GlobalTrace("return: content")
 		observe.GlobalTrace("return: content")
 
 		return content
@@ -149,8 +143,6 @@ func stripFrontmatter(content string) string {
 		after = after[1:]
 	}
 	observe.GlobalTrace("return: after")
-	observe.GlobalTrace("return: after")
-	observe.GlobalTrace("return: after")
 	return after
 }
 
@@ -161,8 +153,6 @@ func agentMDBlock(sources []AgentMDSource) model.SystemBlock {
 	defer observe.GlobalTrace("exit")
 	if len(sources) == 0 {
 		observe.GlobalTrace("if: len(sources) == 0")
-		observe.GlobalTrace("return: model.SystemBlock{}")
-		observe.GlobalTrace("return: model.SystemBlock{}")
 		observe.GlobalTrace("return: model.SystemBlock{}")
 		return model.SystemBlock{}
 	}
@@ -181,8 +171,6 @@ func agentMDBlock(sources []AgentMDSource) model.SystemBlock {
 		b.WriteString(src.Content)
 		b.WriteString("\n")
 	}
-	observe.GlobalTrace("return: model.SystemBlock{Text: b.String(), Cacheable: false}")
-	observe.GlobalTrace("return: model.SystemBlock{Text: b.String(), Cacheable: false}")
 	observe.GlobalTrace("return: model.SystemBlock{Text: b.String(), Cacheable: false}")
 
 	return model.SystemBlock{Text: b.String(), Cacheable: false}

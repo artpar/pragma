@@ -16,8 +16,6 @@ func GitRoot(dir string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: gitCommand(dir, \"rev-parse\", \"--show-toplevel\")")
-	observe.GlobalTrace("return: gitCommand(dir, \"rev-parse\", \"--show-toplevel\")")
-	observe.GlobalTrace("return: gitCommand(dir, \"rev-parse\", \"--show-toplevel\")")
 	return gitCommand(dir, "rev-parse", "--show-toplevel")
 }
 
@@ -25,8 +23,6 @@ func GitRoot(dir string) string {
 func GitBranch(dir string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: gitCommand(dir, \"rev-parse\", \"--abbrev-ref\", \"HEAD\")")
-	observe.GlobalTrace("return: gitCommand(dir, \"rev-parse\", \"--abbrev-ref\", \"HEAD\")")
 	observe.GlobalTrace("return: gitCommand(dir, \"rev-parse\", \"--abbrev-ref\", \"HEAD\")")
 	return gitCommand(dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
@@ -36,8 +32,6 @@ func GitBranch(dir string) string {
 func GitRemoteURL(dir string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: gitCommand(dir, \"remote\", \"get-url\", \"origin\")")
-	observe.GlobalTrace("return: gitCommand(dir, \"remote\", \"get-url\", \"origin\")")
 	observe.GlobalTrace("return: gitCommand(dir, \"remote\", \"get-url\", \"origin\")")
 	return gitCommand(dir, "remote", "get-url", "origin")
 }
@@ -56,12 +50,8 @@ func gitCommand(dir string, args ...string) string {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\"")
-		observe.GlobalTrace("return: \"\"")
-		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
-	observe.GlobalTrace("return: strings.TrimSpace(string(out))")
-	observe.GlobalTrace("return: strings.TrimSpace(string(out))")
 	observe.GlobalTrace("return: strings.TrimSpace(string(out))")
 	return strings.TrimSpace(string(out))
 }

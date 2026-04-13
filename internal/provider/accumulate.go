@@ -40,8 +40,6 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 		if chunk.Error != nil {
 			observe.GlobalTrace("if: chunk.Error != nil")
 			observe.GlobalTrace("return: model.Response{}, chunk.Error")
-			observe.GlobalTrace("return: model.Response{}, chunk.Error")
-			observe.GlobalTrace("return: model.Response{}, chunk.Error")
 			return model.Response{}, chunk.Error
 		}
 		if chunk.TextDelta != "" {
@@ -69,8 +67,6 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 			if _, exists := toolCalls[tc.ID]; exists {
 				observe.GlobalTrace("if: exists")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
 				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
 			}
 			acc := &toolAccumulator{
@@ -85,8 +81,6 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 			acc, ok := toolCalls[chunk.ToolCallInputDelta.ToolCallID]
 			if !ok {
 				observe.GlobalTrace("if: !ok")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
-				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				return model.Response{}, fmt.Errorf("input delta for unknown tool call %q", chunk.ToolCallInputDelta.ToolCallID)
 			}
@@ -103,8 +97,6 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 
 	if !gotDone {
 		observe.GlobalTrace("if: !gotDone")
-		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done chunk: %w\", model.Err...")
-		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done chunk: %w\", model.Err...")
 		observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"stream ended without Done chunk: %w\", model.Err...")
 		return model.Response{}, fmt.Errorf("stream ended without Done chunk: %w", model.ErrStreamClosed)
 	}
@@ -133,9 +125,11 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 		if len(raw) > 0 && !json.Valid(raw) {
 			observe.GlobalTrace("if: len(raw) > 0 && !json.Valid(raw)")
 			observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"invalid tool input JSON for %q\", acc.name)")
-			observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"invalid tool input JSON for %q\", acc.name)")
-			observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"invalid tool input JSON for %q\", acc.name)")
-			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
+			snippet := string(raw)
+			if len(snippet) > 200 {
+				snippet = snippet[:200] + "..."
+			}
+			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q (id=%s): %s", acc.name, acc.id, snippet)
 		}
 		parts = append(parts, model.ToolCallPart{
 			ID:    acc.id,
@@ -143,8 +137,6 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 			Input: raw,
 		})
 	}
-	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tresponseModel,\n\tContent:\tparts,\n\tStopReason:\tstopRea...")
-	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tresponseModel,\n\tContent:\tparts,\n\tStopReason:\tstopRea...")
 	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tresponseModel,\n\tContent:\tparts,\n\tStopReason:\tstopRea...")
 
 	return model.Response{

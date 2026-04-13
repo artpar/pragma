@@ -99,15 +99,12 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Read\"")
-	observe.GlobalTrace("return: \"Read\"")
-	observe.GlobalTrace("return: \"Read\"")
 	return "Read"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Reads a file from the local filesystem. You can access any file directly...\"")
-	observe.GlobalTrace("return: readDescription")
 	observe.GlobalTrace("return: readDescription")
 	return readDescription
 }
@@ -132,15 +129,11 @@ func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
@@ -154,12 +147,8 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if err := json.Unmarshal(input, &in); err != nil || in.FilePath == "" {
 		observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "if: err != nil || in.FilePath == \"\"")
 		observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: checker.Check(ctx, \"Read\", \"\")")
-		observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: checker.Check(ctx, \"Read\", \"\")")
-		observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: checker.Check(ctx, \"Read\", \"\")")
 		return checker.Check(ctx, "Read", "")
 	}
-	observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: checker.Check(ctx, \"Read\", in.FilePath)")
-	observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: checker.Check(ctx, \"Read\", in.FilePath)")
 	observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: checker.Check(ctx, \"Read\", in.FilePath)")
 	return checker.Check(ctx, "Read", in.FilePath)
 }
@@ -171,12 +160,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.FilePath == "" {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: in.FilePath == \"\"")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
@@ -190,7 +177,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if blockedDevicePaths[filePath] {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: blockedDevicePaths[filePath]")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"cannot read '%s': this device file would blo...")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"cannot read '%s': this device file would blo...")
 		return tool.InvokeResult{}, fmt.Errorf("cannot read '%s': this device file would block or produce infinite output", in.FilePath)
 	}
 	if strings.HasPrefix(filePath, "/proc/") {
@@ -199,7 +185,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "range []string{\"/fd/0\", \"/fd/1\", \"/fd/2\"}")
 			if strings.HasSuffix(filePath, suffix) {
 				observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: strings.HasSuffix(filePath, suffix)")
-				observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"cannot read '%s': this device file would blo...")
 				observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"cannot read '%s': this device file would blo...")
 				return tool.InvokeResult{}, fmt.Errorf("cannot read '%s': this device file would block or produce infinite output", in.FilePath)
 			}
@@ -212,7 +197,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		if binaryExtensions[ext] {
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: binaryExtensions[ext]")
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"this tool cannot read binary files. The file...")
-			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"this tool cannot read binary files. The file...")
 			return tool.InvokeResult{}, fmt.Errorf("this tool cannot read binary files. The file appears to be a binary %s file", ext)
 		}
 	}
@@ -223,22 +207,18 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		if os.IsNotExist(err) {
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: os.IsNotExist(err)")
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file not found: %s. Make sure the path is co...")
-			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file not found: %s. Make sure the path is co...")
 			return tool.InvokeResult{}, fmt.Errorf("file not found: %s. Make sure the path is correct and the file exists.", in.FilePath)
 		}
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"stat error: %w\", err)")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"stat error: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("stat error: %w", err)
 	}
 	if info.IsDir() {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: info.IsDir()")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path is a directory, not a file: %s. Use the...")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"path is a directory, not a file: %s. Use the...")
 		return tool.InvokeResult{}, fmt.Errorf("path is a directory, not a file: %s. Use the Bash tool with ls or the Glob tool to list directory contents.", in.FilePath)
 	}
 	if info.Size() > maxFileSize {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: info.Size() > maxFileSize")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file is too large (%d bytes). Use offset and...")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file is too large (%d bytes). Use offset and...")
 		return tool.InvokeResult{}, fmt.Errorf("file is too large (%d bytes). Use offset and limit to read specific portions", info.Size())
 	}
@@ -246,13 +226,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if mimeType, isImage := imageExtensions[ext]; isImage {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: isImage")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: readImage(filePath, mimeType, info.Size())")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: readImage(filePath, mimeType, info.Size())")
 		return readImage(filePath, mimeType, info.Size())
 	}
 
 	if ext == ".pdf" {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: ext == \".pdf\"")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: readPDF(ctx, filePath, in.FilePath, info.Size(), in.Pages)")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: readPDF(ctx, filePath, in.FilePath, info.Size(), in.Pages)")
 		return readPDF(ctx, filePath, in.FilePath, info.Size(), in.Pages)
 	}
@@ -261,10 +239,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err != nil {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, err")
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
-	observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	return tool.InvokeResult{Content: result}, nil
 }
@@ -276,10 +252,8 @@ func readImage(filePath, mimeType string, size int64) (tool.InvokeResult, error)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"read image: %w\", err)")
-		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"read image: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read image: %w", err)
 	}
-	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"Image file: %s (%d bytes)\", filepat...")
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"Image file: %s (%d bytes)\", filepat...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("Image file: %s (%d bytes)", filepath.Base(filePath), size),
@@ -299,7 +273,6 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"read file: %w\", err)")
-		observe.GlobalTrace("return: \"\", fmt.Errorf(\"read file: %w\", err)")
 		return "", fmt.Errorf("read file: %w", err)
 	}
 
@@ -318,7 +291,6 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 	if totalLines == 0 {
 		observe.GlobalTrace("if: totalLines == 0")
 		observe.GlobalTrace("return: \"<system-reminder>Warning: the file exists but the contents are empty.</syste...")
-		observe.GlobalTrace("return: \"<system-reminder>Warning: the file exists but the contents are empty.</syste...")
 		return "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>", nil
 	}
 
@@ -328,7 +300,6 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 		if *offset < 1 {
 			observe.GlobalTrace("if: *offset < 1")
 			observe.GlobalTrace("return: \"\", fmt.Errorf(\"offset must be >= 1 (1-indexed), got %d\", *offset)")
-			observe.GlobalTrace("return: \"\", fmt.Errorf(\"offset must be >= 1 (1-indexed), got %d\", *offset)")
 			return "", fmt.Errorf("offset must be >= 1 (1-indexed), got %d", *offset)
 		}
 		startLine = *offset
@@ -336,7 +307,6 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 
 	if startLine > totalLines {
 		observe.GlobalTrace("if: startLine > totalLines")
-		observe.GlobalTrace("return: fmt.Sprintf(\"<system-reminder>Warning: the file exists but is shorter than th...")
 		observe.GlobalTrace("return: fmt.Sprintf(\"<system-reminder>Warning: the file exists but is shorter than th...")
 		return fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", startLine, totalLines), nil
 	}
@@ -369,7 +339,6 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 		observe.GlobalTrace("if: numLines < totalLines")
 		result += fmt.Sprintf("\n(%d lines total, showing lines %d-%d)", totalLines, startLine, endLine)
 	}
-	observe.GlobalTrace("return: result, nil")
 	observe.GlobalTrace("return: result, nil")
 
 	return result, nil

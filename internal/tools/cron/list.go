@@ -24,8 +24,6 @@ func (t *ListTool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"CronList\"")
-	observe.GlobalTrace("return: \"CronList\"")
-	observe.GlobalTrace("return: \"CronList\"")
 	return "CronList"
 }
 func (t *ListTool) Description() string {
@@ -33,14 +31,11 @@ func (t *ListTool) Description() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"List all scheduled cron jobs...\"")
 	observe.GlobalTrace("return: \"List all scheduled cron jobs. Returns each job's ID, cron expression, prompt...")
-	observe.GlobalTrace("return: \"List all scheduled cron jobs. Returns each job's ID, cron expression, prompt...")
 	return "List all scheduled cron jobs. Returns each job's ID, cron expression, prompt, next fire time, and whether it is recurring or durable. Use this to check what is currently scheduled before creating or deleting jobs."
 }
 func (t *ListTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: listSchema")
-	observe.GlobalTrace("return: listSchema")
 	observe.GlobalTrace("return: listSchema")
 	return listSchema
 }
@@ -48,16 +43,12 @@ func (t *ListTool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
 
 func (t *ListTool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "cron", "ListTool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "cron", "ListTool.CheckPerm", "exit")
-	observe.TraceCtx(ctx, "cron", "ListTool.CheckPerm", "return: checker.Check(ctx, \"CronList\", \"\")")
-	observe.TraceCtx(ctx, "cron", "ListTool.CheckPerm", "return: checker.Check(ctx, \"CronList\", \"\")")
 	observe.TraceCtx(ctx, "cron", "ListTool.CheckPerm", "return: checker.Check(ctx, \"CronList\", \"\")")
 	return checker.Check(ctx, "CronList", "")
 }
@@ -93,8 +84,6 @@ func (t *ListTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSnap
 		Jobs []jobEntry `json:"jobs"`
 	}{Jobs: entries}
 	data, _ := json.Marshal(result)
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }

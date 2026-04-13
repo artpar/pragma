@@ -43,23 +43,17 @@ func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"ToolSearch\"")
-	observe.GlobalTrace("return: \"ToolSearch\"")
-	observe.GlobalTrace("return: \"ToolSearch\"")
 	return "ToolSearch"
 }
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
-	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }
@@ -68,7 +62,6 @@ func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: \"Fetches full schema definitions for deferred tools so they can be called...\"")
-	observe.GlobalTrace("return: toolSearchDescription")
 	observe.GlobalTrace("return: toolSearchDescription")
 	return toolSearchDescription
 }
@@ -88,8 +81,6 @@ func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permiss
 	observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "exit")
 	observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "return: checker.Check(ctx, \"ToolSearch\", \"\")")
-	observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "return: checker.Check(ctx, \"ToolSearch\", \"\")")
-	observe.TraceCtx(ctx, "toolsearch", "Tool.CheckPerm", "return: checker.Check(ctx, \"ToolSearch\", \"\")")
 	return checker.Check(ctx, "ToolSearch", "")
 }
 
@@ -100,14 +91,10 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	if err := json.Unmarshal(input, &in); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Query == "" {
 		observe.GlobalTrace("if: in.Query == \"\"")
-		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"query is required\")")
-		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"query is required\")")
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"query is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("query is required")
 	}
@@ -146,15 +133,11 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 			}
 		}
 		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
-		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
-		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
 		return t.formatResult(matches, in.Query, len(allTools))
 	}
 
 	if _, ok := t.Registry.Get(in.Query); ok {
 		observe.GlobalTrace("if: ok")
-		observe.GlobalTrace("return: t.formatResult([]string{in.Query}, in.Query, len(allTools))")
-		observe.GlobalTrace("return: t.formatResult([]string{in.Query}, in.Query, len(allTools))")
 		observe.GlobalTrace("return: t.formatResult([]string{in.Query}, in.Query, len(allTools))")
 		return t.formatResult([]string{in.Query}, in.Query, len(allTools))
 	}
@@ -174,8 +157,6 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 			observe.GlobalTrace("if: len(matches) > in.MaxResults")
 			matches = matches[:in.MaxResults]
 		}
-		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
-		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
 		observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
 		return t.formatResult(matches, in.Query, len(allTools))
 	}
@@ -252,8 +233,6 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		matches = append(matches, r.name)
 	}
 	observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
-	observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
-	observe.GlobalTrace("return: t.formatResult(matches, in.Query, len(allTools))")
 
 	return t.formatResult(matches, in.Query, len(allTools))
 }
@@ -275,8 +254,6 @@ func (t *Tool) formatResult(matches []string, query string, totalTools int) (too
 		result.Matches = []string{}
 	}
 	data, _ := json.Marshal(result)
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
-	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
@@ -302,8 +279,6 @@ func parseToolName(name string) []string {
 			}
 		}
 		observe.GlobalTrace("return: parts")
-		observe.GlobalTrace("return: parts")
-		observe.GlobalTrace("return: parts")
 		return parts
 	}
 
@@ -323,8 +298,6 @@ func parseToolName(name string) []string {
 		observe.GlobalTrace("if: current.Len() > 0")
 		parts = append(parts, strings.ToLower(current.String()))
 	}
-	observe.GlobalTrace("return: parts")
-	observe.GlobalTrace("return: parts")
 	observe.GlobalTrace("return: parts")
 	return parts
 }
@@ -364,8 +337,6 @@ func scoreTerm(term string, parts []string, nameLower, desc string) int {
 		observe.GlobalTrace("if: strings.Contains(desc, term)")
 		score += 2
 	}
-	observe.GlobalTrace("return: score")
-	observe.GlobalTrace("return: score")
 	observe.GlobalTrace("return: score")
 
 	return score

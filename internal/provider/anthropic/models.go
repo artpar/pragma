@@ -117,8 +117,6 @@ func LookupModel(modelID string) (ModelInfo, bool) {
 	if info, ok := registry[modelID]; ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: info, true")
-		observe.GlobalTrace("return: info, true")
-		observe.GlobalTrace("return: info, true")
 		return info, true
 	}
 
@@ -126,8 +124,6 @@ func LookupModel(modelID string) (ModelInfo, bool) {
 		observe.GlobalTrace("if: ok")
 		if info, ok := registry[resolved]; ok {
 			observe.GlobalTrace("if: ok")
-			observe.GlobalTrace("return: info, true")
-			observe.GlobalTrace("return: info, true")
 			observe.GlobalTrace("return: info, true")
 			return info, true
 		}
@@ -146,12 +142,8 @@ func LookupModel(modelID string) (ModelInfo, bool) {
 		observe.GlobalTrace("if: len(candidates) > 0")
 		sort.Strings(candidates)
 		observe.GlobalTrace("return: registry[candidates[0]], true")
-		observe.GlobalTrace("return: registry[candidates[0]], true")
-		observe.GlobalTrace("return: registry[candidates[0]], true")
 		return registry[candidates[0]], true
 	}
-	observe.GlobalTrace("return: ModelInfo{}, false")
-	observe.GlobalTrace("return: ModelInfo{}, false")
 	observe.GlobalTrace("return: ModelInfo{}, false")
 	return ModelInfo{}, false
 }

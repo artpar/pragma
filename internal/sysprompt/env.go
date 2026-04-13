@@ -48,8 +48,6 @@ func DetectEnv(workDir, modelID string) EnvInfo {
 		info.GitBranch = GitBranch(workDir)
 	}
 	observe.GlobalTrace("return: info")
-	observe.GlobalTrace("return: info")
-	observe.GlobalTrace("return: info")
 
 	return info
 }
@@ -95,8 +93,6 @@ func envBlock(info EnvInfo) model.SystemBlock {
 
 	fmt.Fprintf(&b, "Date: %s\n", info.Date)
 	observe.GlobalTrace("return: model.SystemBlock{Text: b.String(), Cacheable: false}")
-	observe.GlobalTrace("return: model.SystemBlock{Text: b.String(), Cacheable: false}")
-	observe.GlobalTrace("return: model.SystemBlock{Text: b.String(), Cacheable: false}")
 
 	return model.SystemBlock{Text: b.String(), Cacheable: false}
 }
@@ -113,12 +109,8 @@ func osVersion() string {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\"")
-		observe.GlobalTrace("return: \"\"")
-		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
-	observe.GlobalTrace("return: strings.TrimSpace(string(out))")
-	observe.GlobalTrace("return: strings.TrimSpace(string(out))")
 	observe.GlobalTrace("return: strings.TrimSpace(string(out))")
 	return strings.TrimSpace(string(out))
 }

@@ -81,8 +81,6 @@ func NewEngine(
 		e.windowConfig = compDeps[0].WindowConfig
 	}
 	observe.GlobalTrace("return: e")
-	observe.GlobalTrace("return: e")
-	observe.GlobalTrace("return: e")
 	return e
 }
 

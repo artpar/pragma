@@ -25,8 +25,6 @@ func newInputComponent() inputComponent {
 	ta.ShowLineNumbers = false
 	ta.Focus()
 	observe.GlobalTrace("return: inputComponent{\n\ttextarea:\tta,\n\tactive:\t\ttrue,\n}")
-	observe.GlobalTrace("return: inputComponent{\n\ttextarea:\tta,\n\tactive:\t\ttrue,\n}")
-	observe.GlobalTrace("return: inputComponent{\n\ttextarea:\tta,\n\tactive:\t\ttrue,\n}")
 
 	return inputComponent{
 		textarea: ta,
@@ -40,8 +38,6 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 	defer observe.GlobalTrace("exit")
 	if !c.active {
 		observe.GlobalTrace("if: !c.active")
-		observe.GlobalTrace("return: nil")
-		observe.GlobalTrace("return: nil")
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
@@ -57,13 +53,9 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 				if text == "" {
 					observe.GlobalTrace("if: text == \"\"")
 					observe.GlobalTrace("return: nil")
-					observe.GlobalTrace("return: nil")
-					observe.GlobalTrace("return: nil")
 					return nil
 				}
 				c.textarea.Reset()
-				observe.GlobalTrace("return: func() tea.Msg {\n\treturn InputSubmittedMsg{Text: text}\n}")
-				observe.GlobalTrace("return: func() tea.Msg {\n\treturn InputSubmittedMsg{Text: text}\n}")
 				observe.GlobalTrace("return: func() tea.Msg {\n\treturn InputSubmittedMsg{Text: text}\n}")
 				return func() tea.Msg {
 					return InputSubmittedMsg{Text: text}
@@ -76,8 +68,6 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	c.textarea, cmd = c.textarea.Update(msg)
 	observe.GlobalTrace("return: cmd")
-	observe.GlobalTrace("return: cmd")
-	observe.GlobalTrace("return: cmd")
 	return cmd
 }
 
@@ -88,12 +78,8 @@ func (c inputComponent) View() string {
 	if !c.active {
 		observe.GlobalTrace("if: !c.active")
 		observe.GlobalTrace("return: inputPromptStyle.Render(\"> \") + thinkingStyle.Render(\"waiting...\")")
-		observe.GlobalTrace("return: inputPromptStyle.Render(\"> \") + thinkingStyle.Render(\"waiting...\")")
-		observe.GlobalTrace("return: inputPromptStyle.Render(\"> \") + thinkingStyle.Render(\"waiting...\")")
 		return inputPromptStyle.Render("> ") + thinkingStyle.Render("waiting...")
 	}
-	observe.GlobalTrace("return: c.textarea.View()")
-	observe.GlobalTrace("return: c.textarea.View()")
 	observe.GlobalTrace("return: c.textarea.View()")
 	return c.textarea.View()
 }

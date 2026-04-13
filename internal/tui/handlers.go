@@ -28,7 +28,6 @@ func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 	slashCmds := m.slashCmds
 	slashDeps := m.slashDeps
 	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(m.ctx, name, trimmedArg...")
-	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(m.ctx, name, trimmedArg...")
 	return m, func() tea.Msg {
 		result, err := slashCmds.Execute(m.ctx, name, trimmedArgs, slashDeps)
 		return SlashResultMsg{Result: result, Err: err}
@@ -47,7 +46,6 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 		if msg.Result.Quit {
 			observe.GlobalTrace("if: msg.Result.Quit")
 			observe.GlobalTrace("return: m.quit()")
-			observe.GlobalTrace("return: m.quit()")
 			return m.quit()
 		}
 		if msg.Result.ClearConversation {
@@ -62,7 +60,6 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 	m.viewport.SetContent(m.outputBuf.String())
 	m.viewport.GotoBottom()
 	observe.GlobalTrace("return: m, nil")
-	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
@@ -72,7 +69,6 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	defer observe.GlobalTrace("exit")
 	if msg.Event == nil {
 		observe.GlobalTrace("if: msg.Event == nil")
-		observe.GlobalTrace("return: m.finishTurn(), nil")
 		observe.GlobalTrace("return: m.finishTurn(), nil")
 		return m.finishTurn(), nil
 	}
@@ -137,7 +133,6 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		return m.finishTurn(), nil
 	}
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
-	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
 }
@@ -148,7 +143,6 @@ func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
 	defer observe.GlobalTrace("exit")
 	m.ask.Show(&msg)
 	m.toolbar.SetStatus("waiting for answer...")
-	observe.GlobalTrace("return: m, nil")
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
@@ -161,12 +155,10 @@ func (m Model) handlePermRequest(msg PermRequestMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: m.perm.active — queuing permission request")
 		m.permQueue = append(m.permQueue, msg)
 		observe.GlobalTrace("return: m, nil")
-		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
 	m.perm.Show(&msg)
 	m.toolbar.SetStatus("waiting for permission...")
-	observe.GlobalTrace("return: m, nil")
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
@@ -182,7 +174,6 @@ func (m Model) handlePermResponse(_ PermResponseMsg) (tea.Model, tea.Cmd) {
 		m.permQueue = m.permQueue[1:]
 		m.perm.Show(&next)
 		observe.GlobalTrace("return: m, nil")
-		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
 	if m.streaming {
@@ -192,7 +183,6 @@ func (m Model) handlePermResponse(_ PermResponseMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("else: m.streaming")
 		m.toolbar.SetStatus("ready")
 	}
-	observe.GlobalTrace("return: m, nil")
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }

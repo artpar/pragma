@@ -25,8 +25,6 @@ func newURLCache(maxSize int64, ttl time.Duration) *urlCache {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &urlCache{\n\tentries:\tmake(map[string]*cacheEntry),\n\tmaxSize:\tmaxSize,\n\tttl:\t\t...")
-	observe.GlobalTrace("return: &urlCache{\n\tentries:\tmake(map[string]*cacheEntry),\n\tmaxSize:\tmaxSize,\n\tttl:\t\t...")
-	observe.GlobalTrace("return: &urlCache{\n\tentries:\tmake(map[string]*cacheEntry),\n\tmaxSize:\tmaxSize,\n\tttl:\t\t...")
 	return &urlCache{
 		entries: make(map[string]*cacheEntry),
 		maxSize: maxSize,
@@ -45,8 +43,6 @@ func (c *urlCache) Get(url string) (string, bool) {
 	if !ok {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: \"\", false")
-		observe.GlobalTrace("return: \"\", false")
-		observe.GlobalTrace("return: \"\", false")
 		return "", false
 	}
 	if time.Now().After(entry.expiresAt) {
@@ -54,12 +50,8 @@ func (c *urlCache) Get(url string) (string, bool) {
 		c.size -= entry.size
 		delete(c.entries, url)
 		observe.GlobalTrace("return: \"\", false")
-		observe.GlobalTrace("return: \"\", false")
-		observe.GlobalTrace("return: \"\", false")
 		return "", false
 	}
-	observe.GlobalTrace("return: entry.content, true")
-	observe.GlobalTrace("return: entry.content, true")
 	observe.GlobalTrace("return: entry.content, true")
 	return entry.content, true
 }

@@ -80,8 +80,6 @@ func (p *Provider) startStream(
 		p.consumeStream(streamCtx, stream, mapper, ch, state, bus, traceID, spanID, idleCh)
 	}()
 	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "return: ch")
-	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "return: ch")
-	observe.TraceCtx(ctx, "anthropic", "Provider.startStream", "return: ch")
 
 	return ch
 }
