@@ -10,17 +10,16 @@ import (
 
 // Registry holds all registered tools and provides lookup.
 type Registry struct {
-	tools map[string]Descriptor
-	mu    sync.RWMutex
-	bus   *observe.EventBus
+	tools  map[string]Descriptor
+	hidden map[string]bool // tools hidden from ToolDefs/List but still available via Get
+	mu     sync.RWMutex
+	bus    *observe.EventBus
 }
 
 // NewRegistry creates a Registry.
 func NewRegistry(bus *observe.EventBus) *Registry {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
-	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
 	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
 	return &Registry{
 		tools: make(map[string]Descriptor),
@@ -38,13 +37,9 @@ func (r *Registry) Register(desc Descriptor) error {
 	if _, exists := r.tools[name]; exists {
 		observe.GlobalTrace("if: exists")
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
-		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
-		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
 		return fmt.Errorf("%w: %q", model.ErrToolAlreadyRegistered, name)
 	}
 	r.tools[name] = desc
-	observe.GlobalTrace("return: nil")
-	observe.GlobalTrace("return: nil")
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -66,12 +61,19 @@ func (r *Registry) Get(name string) (Descriptor, bool) {
 	defer r.mu.RUnlock()
 	desc, ok := r.tools[name]
 	observe.GlobalTrace("return: desc, ok")
-	observe.GlobalTrace("return: desc, ok")
-	observe.GlobalTrace("return: desc, ok")
 	return desc, ok
 }
 
-// List returns all registered tools.
+// SetHidden marks tool names as hidden from ToolDefs() and List() but still
+// available via Get(). Used by REPL mode to hide primitive tools from the LLM
+// while keeping them callable by the REPL tool.
+func (r *Registry) SetHidden(names map[string]bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hidden = names
+}
+
+// List returns all registered tools (excluding hidden ones).
 func (r *Registry) List() []Descriptor {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -80,15 +82,17 @@ func (r *Registry) List() []Descriptor {
 	out := make([]Descriptor, 0, len(r.tools))
 	for _, desc := range r.tools {
 		observe.GlobalTrace("range r.tools")
+		if r.hidden[desc.Name()] {
+			continue
+		}
 		out = append(out, desc)
 	}
-	observe.GlobalTrace("return: out")
-	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	return out
 }
 
 // ToolDefs returns model.ToolDef for each registered tool (for LLM requests).
+// Hidden tools (set via SetHidden) are excluded from the list.
 func (r *Registry) ToolDefs() []model.ToolDef {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -97,14 +101,15 @@ func (r *Registry) ToolDefs() []model.ToolDef {
 	out := make([]model.ToolDef, 0, len(r.tools))
 	for _, desc := range r.tools {
 		observe.GlobalTrace("range r.tools")
+		if r.hidden[desc.Name()] {
+			continue
+		}
 		out = append(out, model.ToolDef{
 			Name:        desc.Name(),
 			Description: desc.Description(),
 			InputSchema: desc.InputSchema(),
 		})
 	}
-	observe.GlobalTrace("return: out")
-	observe.GlobalTrace("return: out")
 	observe.GlobalTrace("return: out")
 	return out
 }
@@ -130,8 +135,6 @@ func (r *Registry) Scoped(names []string) *Registry {
 			scoped.tools[name] = desc
 		}
 	}
-	observe.GlobalTrace("return: scoped")
-	observe.GlobalTrace("return: scoped")
 	observe.GlobalTrace("return: scoped")
 	return scoped
 }

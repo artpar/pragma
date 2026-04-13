@@ -22,4 +22,5 @@ func RegisterFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("record", false, "record events to file")
 	cmd.Flags().String("resume", "", "resume session by ID")
 	cmd.Flags().Bool("list-sessions", false, "list saved sessions")
+	cmd.Flags().String("output-schema", "", "JSON Schema for structured output (file path or inline JSON, non-interactive only)")
 }

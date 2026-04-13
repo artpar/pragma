@@ -511,6 +511,26 @@ type McpOAuthCompleted struct {
 
 func (McpOAuthCompleted) eventSealed() {}
 
+// --- Team Events ---
+
+// TeamCreated records when a new multi-agent swarm team is created.
+type TeamCreated struct {
+	EventHeader
+	TeamName    string `json:"team_name"`
+	LeadAgentID string `json:"lead_agent_id"`
+	MemberCount int    `json:"member_count"`
+}
+
+func (TeamCreated) eventSealed() {}
+
+// TeamDeleted records when a team is cleaned up and disbanded.
+type TeamDeleted struct {
+	EventHeader
+	TeamName string `json:"team_name"`
+}
+
+func (TeamDeleted) eventSealed() {}
+
 // --- Flow Trace Events ---
 
 // FlowTrace captures a decision point, branch, or loop iteration in the code.

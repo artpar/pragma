@@ -42,6 +42,10 @@ import (
 	tooltoolsearch "github.com/artpar/gogent/internal/tools/toolsearch"
 	toolwebfetch "github.com/artpar/gogent/internal/tools/webfetch"
 	toolwebsearch "github.com/artpar/gogent/internal/tools/websearch"
+	toolpowershell "github.com/artpar/gogent/internal/tools/powershell"
+	toolrepl "github.com/artpar/gogent/internal/tools/repl"
+	toolteamcreate "github.com/artpar/gogent/internal/tools/teamcreate"
+	toolteamdelete "github.com/artpar/gogent/internal/tools/teamdelete"
 	toolworktree "github.com/artpar/gogent/internal/tools/worktree"
 )
 
@@ -80,8 +84,6 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		if err := d.Registry.Register(td); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
-			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
-			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
 			return nil, fmt.Errorf("register tool %s: %w", td.Name(), err)
 		}
 	}
@@ -90,15 +92,11 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	if err := d.Registry.Register(agentTool); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
 		return nil, fmt.Errorf("register agent tool: %w", err)
 	}
 	askTool := &toolask.Tool{Asker: asker}
 	if err := d.Registry.Register(askTool); err != nil {
 		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
 		return nil, fmt.Errorf("register ask tool: %w", err)
 	}
@@ -116,6 +114,15 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		return nil, fmt.Errorf("register skill tool: %w", err)
 	}
 
+	// REPL mode: wraps 8 primitive tools into single REPL tool (env-gated)
+	if os.Getenv("GOGENT_REPL") == "1" {
+		replTool := &toolrepl.Tool{Registry: d.Registry, Bus: d.Bus}
+		if err := d.Registry.Register(replTool); err != nil {
+			return nil, fmt.Errorf("register REPL tool: %w", err)
+		}
+		d.Registry.SetHidden(toolrepl.PrimitiveToolNames)
+	}
+
 	orchestrator := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
 	if d.HookMgr != nil {
 		observe.GlobalTrace("if: d.HookMgr != nil")
@@ -130,8 +137,6 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		observe.GlobalTrace("if: d.HookMgr != nil")
 		engine.SetHookManager(d.HookMgr)
 	}
-	observe.GlobalTrace("return: engine, nil")
-	observe.GlobalTrace("return: engine, nil")
 	observe.GlobalTrace("return: engine, nil")
 	return engine, nil
 }
@@ -174,6 +179,15 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolwebsearch.Tool{},
 		&toolbrief.Tool{Bus: d.Bus},
 		&toolconfig.Tool{Store: d.Store, WorkDir: d.Cwd},
+		&toolpowershell.Tool{},
+	}
+
+	// Team tools (feature-gated via GOGENT_FEATURE_AGENT_TEAMS)
+	if os.Getenv("GOGENT_FEATURE_AGENT_TEAMS") == "1" {
+		tools = append(tools,
+			&toolteamcreate.Tool{Store: d.Store, Bus: d.Bus},
+			&toolteamdelete.Tool{Store: d.Store, Bus: d.Bus},
+		)
 	}
 
 	if os.Getenv("GOGENT_FEATURE_REMOTE_TRIGGERS") == "1" {
@@ -197,7 +211,6 @@ func BaseTools(d *Deps) []tool.Descriptor {
 			},
 		})
 	}
-	observe.GlobalTrace("return: tools")
 	observe.GlobalTrace("return: tools")
 
 	return tools

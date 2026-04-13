@@ -8,6 +8,14 @@ type TodoItem struct {
 	Status  string `json:"status"` // "pending", "in_progress", "completed"
 }
 
+// TeamContext tracks the current team leadership state.
+// Defined in app/ (not team/) to avoid import cycle.
+type TeamContext struct {
+	TeamName     string `json:"team_name"`
+	TeamFilePath string `json:"team_file_path"`
+	LeadAgentID  string `json:"lead_agent_id"`
+}
+
 // AppState is the full application state.
 // Satisfies tool.StateSnapshot via WorkDir() method.
 type AppState struct {
@@ -21,6 +29,7 @@ type AppState struct {
 	Todos        []TodoItem         `json:"todos,omitempty"`
 	PlanMode     bool               `json:"plan_mode,omitempty"`
 	PlanFile     string             `json:"plan_file,omitempty"`
+	TeamContext  *TeamContext        `json:"team_context,omitempty"`
 }
 
 // WorkDir returns the current working directory.
