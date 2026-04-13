@@ -22,6 +22,7 @@ type Result struct {
 	DisplayText       string // text to show in the TUI viewport
 	ClearConversation bool   // true for /clear — TUI should reset display
 	Quit              bool   // true for /exit — TUI should exit
+	InjectPrompt      string // if set, TUI feeds this as a user message to the engine
 }
 
 // Handler is the function signature for a slash command handler.

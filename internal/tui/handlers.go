@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -55,6 +56,10 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 		if msg.Result.DisplayText != "" {
 			observe.GlobalTrace("if: msg.Result.DisplayText != \"\"")
 			m.outputBuf.WriteString(msg.Result.DisplayText + "\n\n")
+		}
+		if msg.Result.InjectPrompt != "" {
+			observe.GlobalTrace("if: msg.Result.InjectPrompt != \"\"")
+			return m.startEngineFromPrompt(msg.Result.InjectPrompt)
 		}
 	}
 	m.viewport.SetContent(m.outputBuf.String())
@@ -145,6 +150,32 @@ func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
 	m.toolbar.SetStatus("waiting for answer...")
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
+}
+
+// startEngineFromPrompt submits a prompt to the engine as a user message.
+// Used by slash commands with InjectPrompt to trigger a full engine turn.
+func (m Model) startEngineFromPrompt(prompt string) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	m.viewport.SetContent(m.outputBuf.String())
+	m.viewport.GotoBottom()
+
+	m.streaming = true
+	m.interruptCount = 0
+	m.input.SetActive(false)
+	m.toolbar.SetStatus("streaming...")
+	m.toolbar.IncrementTurn()
+
+	m.cancel()
+	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
+	m.eventCh = m.engine.Run(m.ctx, prompt)
+
+	m.outputBuf.WriteString(assistantLabelStyle.Render("Assistant"))
+	m.outputBuf.WriteString("\n")
+	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
+
+	return m, waitForEvent(m.eventCh)
 }
 
 // handlePermRequest shows the permission dialog, or queues if one is already visible.

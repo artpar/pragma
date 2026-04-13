@@ -48,6 +48,27 @@ func registerBuiltins(r *Registry) {
 		Description: "Save session and exit",
 		Handle:      handleExit,
 	})
+	r.Register(Command{
+		Name:        "review",
+		Description: "Review a pull request",
+		Handle:      handleReview,
+	})
+	r.Register(Command{
+		Name:        "security-review",
+		Aliases:     []string{"secreview"},
+		Description: "Security review of pending branch changes",
+		Handle:      handleSecurityReview,
+	})
+	r.Register(Command{
+		Name:        "advisor",
+		Description: "Show or set the advisor model",
+		Handle:      handleAdvisor,
+	})
+	r.Register(Command{
+		Name:        "insights",
+		Description: "Show current session statistics",
+		Handle:      handleInsights,
+	})
 }
 
 func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) {
