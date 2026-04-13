@@ -95,15 +95,44 @@ func RunBackground(cmd *cobra.Command) error {
 		return fmt.Errorf("create log file: %w", err)
 	}
 
-	// Build args: filter out --bg from os.Args
-	var childArgs []string
-	for _, arg := range os.Args {
-		observe.GlobalTrace("range os.Args")
-		if arg == "--bg" || strings.HasPrefix(arg, "--bg=") {
-			observe.GlobalTrace("if: arg == \"--bg\" || strings.HasPrefix(arg, \"--bg=\")")
-			continue
+	// Build child args from parsed flags (not raw os.Args) to preserve
+	// multi-word values. Using --key=value format keeps each as a single arg.
+	childArgs := []string{os.Args[0]}
+	addStringFlag := func(name string) {
+		if v, _ := cmd.Flags().GetString(name); v != "" {
+			childArgs = append(childArgs, "--"+name+"="+v)
 		}
-		childArgs = append(childArgs, arg)
+	}
+	addIntFlag := func(name string) {
+		if cmd.Flags().Changed(name) {
+			v, _ := cmd.Flags().GetInt(name)
+			childArgs = append(childArgs, fmt.Sprintf("--%s=%d", name, v))
+		}
+	}
+	addBoolFlag := func(name string) {
+		if v, _ := cmd.Flags().GetBool(name); v {
+			childArgs = append(childArgs, "--"+name)
+		}
+	}
+	addStringFlag("prompt")
+	addStringFlag("provider")
+	addStringFlag("model")
+	addStringFlag("api-key")
+	addStringFlag("system-prompt")
+	addStringFlag("append-system-prompt")
+	addStringFlag("allowed-tools")
+	addStringFlag("disallowed-tools")
+	addStringFlag("permission-mode")
+	addStringFlag("output-schema")
+	addIntFlag("max-tokens")
+	addIntFlag("max-turns")
+	addIntFlag("thinking-budget")
+	addBoolFlag("thinking")
+	addBoolFlag("verbose")
+	addBoolFlag("record")
+	if cmd.Flags().Changed("temperature") {
+		v, _ := cmd.Flags().GetFloat64("temperature")
+		childArgs = append(childArgs, fmt.Sprintf("--temperature=%g", v))
 	}
 
 	env := append(os.Environ(),
@@ -371,13 +400,23 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	hasStructuredOutput := schemaFlag != ""
 	var structuredJSON json.RawMessage
 
+	// In background mode, write output to the log file directly rather than
+	// relying on fd inheritance (which has buffering issues on macOS).
+	out := os.Stdout
+	if bgLog := os.Getenv("GOGENT_BG_SESSION_LOG"); bgLog != "" {
+		if f, err := os.OpenFile(bgLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644); err == nil {
+			out = f
+			defer f.Close()
+		}
+	}
+
 	for ev := range events {
 		observe.GlobalTrace("range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
 			observe.GlobalTrace("typecase: query.TextEvent")
 			if !hasStructuredOutput {
-				fmt.Print(e.Text)
+				fmt.Fprint(out, e.Text)
 			}
 		case query.ThinkingEvent:
 			observe.GlobalTrace("typecase: query.ThinkingEvent")
@@ -386,7 +425,6 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			}
 		case query.ToolCallEvent:
 			observe.GlobalTrace("typecase: query.ToolCallEvent")
-			// Capture StructuredOutput tool input as the final output
 			if hasStructuredOutput && e.Call.Name == "StructuredOutput" {
 				structuredJSON = e.Call.Input
 			}
@@ -406,7 +444,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		case query.TurnCompleteEvent:
 			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 			if !hasStructuredOutput {
-				fmt.Println()
+				fmt.Fprintln(out)
 			}
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
@@ -415,9 +453,8 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Output structured JSON if --output-schema was used
 	if hasStructuredOutput && structuredJSON != nil {
-		fmt.Println(string(structuredJSON))
+		fmt.Fprintln(out, string(structuredJSON))
 	} else if hasStructuredOutput {
 		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}
