@@ -315,6 +315,12 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
+	// Non-interactive mode auto-allows all tool execution (no user to prompt).
+	// If the user explicitly set --permission-mode, respect that; otherwise bypass.
+	if !cmd.Flags().Changed("permission-mode") {
+		d.Checker = permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
+	}
+
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tui.NonInteractiveAsker{}
 	engine, err := RegisterTools(d, prompter, asker)
