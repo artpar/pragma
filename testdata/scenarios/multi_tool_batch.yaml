@@ -1,0 +1,51 @@
+name: "Multi-tool concurrent batch"
+turns:
+  - user: "List files and read README.md"
+    provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-001"
+            name: "ListFiles"
+            input: {"path": "."}
+        - type: tool_call
+          data:
+            id: "tc-002"
+            name: "ReadFile"
+            input: {"file_path": "README.md"}
+      usage:
+        input_tokens: 100
+        output_tokens: 40
+    tool_results:
+      - name: ListFiles
+        output: "file1.go\nfile2.go\nREADME.md"
+      - name: ReadFile
+        output: "# Project\nSome content"
+    expect_events:
+      - kind: ToolBatchStarted
+        fields:
+          total_count: "2"
+      - kind: ToolCallReceived
+        fields:
+          tool_name: ListFiles
+      - kind: ToolCallReceived
+        fields:
+          tool_name: ReadFile
+      - kind: ToolExecutionCompleted
+        fields:
+          tool_name: ListFiles
+      - kind: ToolExecutionCompleted
+        fields:
+          tool_name: ReadFile
+      - kind: ToolBatchCompleted
+
+  - provider_response:
+      stop_reason: end_turn
+      content:
+        - type: text
+          data:
+            text: "Here are the files and README content."
+      usage:
+        input_tokens: 200
+        output_tokens: 50

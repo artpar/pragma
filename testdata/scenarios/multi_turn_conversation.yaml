@@ -1,0 +1,46 @@
+name: "Multi-turn conversation builds correct message history"
+turns:
+  - user: "What files are in the project?"
+    provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-001"
+            name: "ListFiles"
+            input: {"path": "."}
+      usage:
+        input_tokens: 60
+        output_tokens: 20
+    tool_results:
+      - name: ListFiles
+        output: "main.go\nREADME.md\ngo.mod"
+    expect_events:
+      - kind: ToolCallReceived
+      - kind: ToolBatchStarted
+      - kind: ToolBatchCompleted
+
+  - provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-002"
+            name: "ReadFile"
+            input: {"file_path": "main.go"}
+      usage:
+        input_tokens: 120
+        output_tokens: 25
+    tool_results:
+      - name: ReadFile
+        output: "package main\n\nfunc main() {}"
+
+  - provider_response:
+      stop_reason: end_turn
+      content:
+        - type: text
+          data:
+            text: "The project has 3 files. main.go is a simple Go program."
+      usage:
+        input_tokens: 200
+        output_tokens: 40

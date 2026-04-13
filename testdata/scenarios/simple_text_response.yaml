@@ -1,0 +1,16 @@
+name: "Simple text response"
+turns:
+  - user: "Hello, how are you?"
+    provider_response:
+      stop_reason: end_turn
+      content:
+        - type: text
+          data:
+            text: "I'm doing well, thanks for asking!"
+      usage:
+        input_tokens: 50
+        output_tokens: 20
+    expect_no_events:
+      - ToolCallReceived
+      - ToolExecutionStarted
+      - ToolBatchStarted

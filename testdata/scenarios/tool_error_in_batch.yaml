@@ -1,0 +1,43 @@
+name: "Tool error in batch preserves real error"
+turns:
+  - user: "Run two commands"
+    provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-001"
+            name: "GoodTool"
+            input: {}
+        - type: tool_call
+          data:
+            id: "tc-002"
+            name: "BadTool"
+            input: {}
+      usage:
+        input_tokens: 80
+        output_tokens: 30
+    tool_results:
+      - name: GoodTool
+        output: "success result"
+    tool_errors:
+      - name: BadTool
+        error: "disk full: /dev/sda1"
+    expect_events:
+      - kind: ToolExecutionCompleted
+        fields:
+          tool_name: GoodTool
+      - kind: ToolExecutionFailed
+        fields:
+          tool_name: BadTool
+      - kind: ToolBatchCompleted
+
+  - provider_response:
+      stop_reason: end_turn
+      content:
+        - type: text
+          data:
+            text: "GoodTool succeeded but BadTool failed with disk full error."
+      usage:
+        input_tokens: 200
+        output_tokens: 40

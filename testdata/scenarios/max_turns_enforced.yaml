@@ -1,0 +1,53 @@
+name: "Max turns enforced — prevents runaway loops"
+max_turns: 3
+expect_error: true
+turns:
+  - user: "Keep calling tools forever"
+    provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-001"
+            name: "LoopTool"
+            input: {}
+      usage:
+        input_tokens: 50
+        output_tokens: 10
+    tool_results:
+      - name: LoopTool
+        output: "done, call me again"
+
+  - provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-002"
+            name: "LoopTool"
+            input: {}
+      usage:
+        input_tokens: 80
+        output_tokens: 10
+    tool_results:
+      - name: LoopTool
+        output: "done, call me again"
+
+  - provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-003"
+            name: "LoopTool"
+            input: {}
+      usage:
+        input_tokens: 110
+        output_tokens: 10
+    tool_results:
+      - name: LoopTool
+        output: "done, call me again"
+    # After 3 turns of tool_use, engine hits max turns and returns error.
+    # ToolBatchCompleted verifies all 3 batches ran before the limit kicked in.
+    expect_events:
+      - kind: ToolBatchCompleted

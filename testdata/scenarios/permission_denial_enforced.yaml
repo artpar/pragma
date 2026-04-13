@@ -1,0 +1,40 @@
+name: "Permission denial enforced — tool must NOT execute"
+deny_tools:
+  - DangerousTool
+turns:
+  - user: "Run the dangerous command"
+    provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-001"
+            name: "DangerousTool"
+            input: {"command": "rm -rf /"}
+      usage:
+        input_tokens: 80
+        output_tokens: 20
+    tool_results:
+      - name: DangerousTool
+        output: "should never see this"
+    expect_events:
+      - kind: ToolPermissionChecked
+        fields:
+          tool_name: DangerousTool
+          decision: deny
+      - kind: PermissionDenialEnforced
+        fields:
+          tool_name: DangerousTool
+          was_executed: "false"
+    expect_no_events:
+      - ToolExecutionStarted
+
+  - provider_response:
+      stop_reason: end_turn
+      content:
+        - type: text
+          data:
+            text: "I was unable to run that command due to permission restrictions."
+      usage:
+        input_tokens: 150
+        output_tokens: 30

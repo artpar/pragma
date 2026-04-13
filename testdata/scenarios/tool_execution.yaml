@@ -1,0 +1,43 @@
+name: "Single tool execution lifecycle"
+turns:
+  - user: "Read the file README.md"
+    provider_response:
+      stop_reason: tool_use
+      content:
+        - type: tool_call
+          data:
+            id: "tc-001"
+            name: "ReadFile"
+            input: {"file_path": "README.md"}
+      usage:
+        input_tokens: 80
+        output_tokens: 30
+    tool_results:
+      - name: ReadFile
+        output: "# Project\nSome content here"
+    expect_events:
+      - kind: ToolCallReceived
+        fields:
+          tool_name: ReadFile
+      - kind: ToolPermissionChecked
+        fields:
+          tool_name: ReadFile
+          decision: allow
+      - kind: ToolExecutionStarted
+        fields:
+          tool_name: ReadFile
+      - kind: ToolExecutionCompleted
+        fields:
+          tool_name: ReadFile
+      - kind: ToolBatchStarted
+      - kind: ToolBatchCompleted
+
+  - provider_response:
+      stop_reason: end_turn
+      content:
+        - type: text
+          data:
+            text: "Here is the content of README.md"
+      usage:
+        input_tokens: 150
+        output_tokens: 40

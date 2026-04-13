@@ -45,7 +45,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 
 	// Convert recorded response into stream chunks (content first, then Done).
 	// The engine expects TextDelta/ToolCallStart/ToolCallInputDelta before StreamDone.
-	chunks := responseToChunks(resp)
+	chunks := ResponseToChunks(resp)
 	ch := make(chan provider.StreamChunk, len(chunks))
 	for _, c := range chunks {
 		ch <- c
@@ -98,9 +98,9 @@ func (p *Provider) nextResponse() (model.Response, bool, error) {
 	return model.Response{}, false, fmt.Errorf("no recorded API response for turn %d; use --until-turn=%d --then-live to switch to live provider", p.turn, p.turn-1)
 }
 
-// responseToChunks converts a model.Response into StreamChunks that the engine
+// ResponseToChunks converts a model.Response into StreamChunks that the engine
 // loop can process. Each content part becomes one or more chunks, followed by Done.
-func responseToChunks(resp model.Response) []provider.StreamChunk {
+func ResponseToChunks(resp model.Response) []provider.StreamChunk {
 	var chunks []provider.StreamChunk
 
 	for _, part := range resp.Content {
