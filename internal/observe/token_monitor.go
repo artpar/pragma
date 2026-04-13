@@ -39,6 +39,13 @@ func (m *TokenMonitor) Usage() (input, output int) {
 	return m.cumInput, m.cumOut
 }
 
+// Budget returns the context window budget in tokens.
+func (m *TokenMonitor) Budget() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.budget
+}
+
 // HandleEvent implements Subscriber. Tracks APIRequestCompleted events.
 func (m *TokenMonitor) HandleEvent(event Event) {
 	completed, ok := event.(APIRequestCompleted)

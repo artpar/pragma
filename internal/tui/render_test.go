@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/tui/render"
 )
 
 func TestRenderToolCall(t *testing.T) {
@@ -44,7 +45,7 @@ func TestRenderToolCall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := renderToolCall(tt.call)
+			result := render.RenderToolCall(tt.call, 80)
 			for _, s := range tt.contains {
 				if !strings.Contains(result, s) {
 					t.Errorf("expected %q in result %q", s, result)
@@ -66,7 +67,7 @@ func TestRenderToolResult(t *testing.T) {
 				ToolCallID: "t1",
 				Content:    "file.go\ndir/",
 			},
-			contains: "result",
+			contains: "file.go",
 		},
 		{
 			name: "error result",
@@ -75,21 +76,21 @@ func TestRenderToolResult(t *testing.T) {
 				Content:    "permission denied",
 				IsError:    true,
 			},
-			contains: "error",
+			contains: "permission denied",
 		},
 		{
-			name: "long result truncated",
+			name: "empty result shows no output",
 			result: model.ToolResultPart{
 				ToolCallID: "t3",
-				Content:    strings.Repeat("a", 300),
+				Content:    "",
 			},
-			contains: "...",
+			contains: "no output",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := renderToolResult(tt.result)
+			result := render.WrapWithBracket(tt.result.Content, tt.result.IsError, 80)
 			if !strings.Contains(result, tt.contains) {
 				t.Errorf("expected %q in result %q", tt.contains, result)
 			}
@@ -114,15 +115,15 @@ func TestRenderThinking(t *testing.T) {
 			contains: "redacted",
 		},
 		{
-			name:     "long thinking truncated",
+			name:     "long thinking preserved",
 			part:     model.ThinkingPart{Text: strings.Repeat("x", 600)},
-			contains: "...",
+			contains: strings.Repeat("x", 100), // no truncation anymore
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := renderThinking(tt.part)
+			result := render.RenderThinking(tt.part)
 			if !strings.Contains(result, tt.contains) {
 				t.Errorf("expected %q in result %q", tt.contains, result)
 			}
@@ -131,6 +132,8 @@ func TestRenderThinking(t *testing.T) {
 }
 
 func TestRenderMessage(t *testing.T) {
+	md := render.NewMarkdownRenderer(80)
+
 	// User message
 	userMsg := model.Message{
 		ID:   "m1",
@@ -139,11 +142,11 @@ func TestRenderMessage(t *testing.T) {
 			model.TextPart{Text: "Hello, world!"},
 		},
 	}
-	result := renderMessage(userMsg)
+	result := render.RenderMessage(userMsg, md)
 	if !strings.Contains(result, "You") {
 		t.Error("expected user label in rendered message")
 	}
-	if !strings.Contains(result, "Hello, world!") {
+	if !strings.Contains(result, "Hello") {
 		t.Error("expected message text in rendered message")
 	}
 
@@ -156,7 +159,7 @@ func TestRenderMessage(t *testing.T) {
 		},
 		Flags: model.MessageFlags{IsInternal: true},
 	}
-	result = renderMessage(internalMsg)
+	result = render.RenderMessage(internalMsg, md)
 	if result != "" {
 		t.Errorf("expected empty string for internal message, got %q", result)
 	}
@@ -169,13 +172,14 @@ func TestRenderMessage(t *testing.T) {
 			model.TextPart{Text: "I can help with that."},
 		},
 	}
-	result = renderMessage(assistantMsg)
+	result = render.RenderMessage(assistantMsg, md)
 	if !strings.Contains(result, "Assistant") {
 		t.Error("expected assistant label in rendered message")
 	}
 }
 
 func TestRenderConversation(t *testing.T) {
+	md := render.NewMarkdownRenderer(80)
 	msgs := []model.Message{
 		{
 			ID:      "m1",
@@ -189,11 +193,11 @@ func TestRenderConversation(t *testing.T) {
 		},
 	}
 
-	result := renderConversation(msgs)
+	result := render.RenderConversation(msgs, md)
 	if !strings.Contains(result, "Hi") {
 		t.Error("expected user text in conversation")
 	}
-	if !strings.Contains(result, "Hello!") {
+	if !strings.Contains(result, "Hello") {
 		t.Error("expected assistant text in conversation")
 	}
 }

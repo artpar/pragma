@@ -23,10 +23,10 @@ import (
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/session"
 	"github.com/artpar/gogent/internal/skill"
-	toolsynthetic "github.com/artpar/gogent/internal/tools/synthetic"
 	"github.com/artpar/gogent/internal/slash"
 	"github.com/artpar/gogent/internal/sysprompt"
 	"github.com/artpar/gogent/internal/tool"
+	toolsynthetic "github.com/artpar/gogent/internal/tools/synthetic"
 	"github.com/artpar/gogent/internal/tui"
 )
 
@@ -36,20 +36,25 @@ func RunDispatcher(cmd *cobra.Command, args []string) error {
 	defer observe.GlobalTrace("exit")
 
 	if bgFlag, _ := cmd.Flags().GetBool("bg"); bgFlag {
+		observe.GlobalTrace("if: bgFlag")
+		observe.GlobalTrace("return: RunBackground(cmd)")
 		return RunBackground(cmd)
 	}
 
 	listSessions, _ := cmd.Flags().GetBool("list-sessions")
 	if listSessions {
 		observe.GlobalTrace("if: listSessions")
+		observe.GlobalTrace("return: RunListSessions()")
 		return RunListSessions()
 	}
 
 	prompt, _ := cmd.Flags().GetString("prompt")
 	if prompt != "" {
 		observe.GlobalTrace("if: prompt != \"\"")
+		observe.GlobalTrace("return: RunNonInteractive(cmd, args)")
 		return RunNonInteractive(cmd, args)
 	}
+	observe.GlobalTrace("return: RunInteractive(cmd)")
 
 	return RunInteractive(cmd)
 }
@@ -63,16 +68,21 @@ func RunBackground(cmd *cobra.Command) error {
 
 	prompt, _ := cmd.Flags().GetString("prompt")
 	if prompt == "" {
+		observe.GlobalTrace("if: prompt == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"background mode requires --prompt flag\")")
 		return fmt.Errorf("background mode requires --prompt flag")
 	}
 
-	// Resolve log path
 	gogentHome, err := config.GogentHome()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"resolve gogent home: %w\", err)")
 		return fmt.Errorf("resolve gogent home: %w", err)
 	}
 	logsDir := filepath.Join(gogentHome, "logs")
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"create logs directory: %w\", err)")
 		return fmt.Errorf("create logs directory: %w", err)
 	}
 	logFileName := fmt.Sprintf("bg-%s.log", time.Now().Format("2006-01-02T15-04-05"))
@@ -80,55 +90,59 @@ func RunBackground(cmd *cobra.Command) error {
 
 	logFile, err := os.Create(logPath)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"create log file: %w\", err)")
 		return fmt.Errorf("create log file: %w", err)
 	}
 
 	// Build args: filter out --bg from os.Args
 	var childArgs []string
 	for _, arg := range os.Args {
+		observe.GlobalTrace("range os.Args")
 		if arg == "--bg" || strings.HasPrefix(arg, "--bg=") {
+			observe.GlobalTrace("if: arg == \"--bg\" || strings.HasPrefix(arg, \"--bg=\")")
 			continue
 		}
 		childArgs = append(childArgs, arg)
 	}
 
-	// Build environment: signal to child that it's a background session
 	env := append(os.Environ(),
 		"GOGENT_BG_SESSION=1",
 		"GOGENT_BG_SESSION_LOG="+logPath,
 	)
 
-	// Open /dev/null for stdin — background process must not read from terminal
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		logFile.Close()
+		observe.GlobalTrace("return: fmt.Errorf(\"open %s: %w\", os.DevNull, err)")
 		return fmt.Errorf("open %s: %w", os.DevNull, err)
 	}
 
-	// Spawn detached child with its own process group (Setsid).
-	// This ensures Kill(-pgid) cleans up the child and all its MCP servers.
 	proc, err := os.StartProcess(childArgs[0], childArgs, &os.ProcAttr{
 		Dir:   "",
 		Env:   env,
-		Files: []*os.File{devNull, logFile, logFile}, // stdin→/dev/null, stdout→log, stderr→log
+		Files: []*os.File{devNull, logFile, logFile},
 		Sys:   &syscall.SysProcAttr{Setsid: true},
 	})
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		devNull.Close()
 		logFile.Close()
+		observe.GlobalTrace("return: fmt.Errorf(\"start background process: %w\", err)")
 		return fmt.Errorf("start background process: %w", err)
 	}
 
-	// Don't wait for child — release immediately
 	_ = proc.Release()
 	devNull.Close()
 	logFile.Close()
 
-	// Register PID in background registry
 	reg, regErr := background.NewRegistry()
 	if regErr == nil {
+		observe.GlobalTrace("if: regErr == nil")
 		promptDisplay := prompt
 		if len(promptDisplay) > 200 {
+			observe.GlobalTrace("if: len(promptDisplay) > 200")
 			promptDisplay = promptDisplay[:200]
 		}
 		cwd, _ := os.Getwd()
@@ -137,8 +151,8 @@ func RunBackground(cmd *cobra.Command) error {
 
 		_ = reg.Register(background.ProcessInfo{
 			PID:       proc.Pid,
-			PGID:      proc.Pid, // Setsid makes PID == PGID
-			SessionID: "", // Will be set by child when it creates the conversation
+			PGID:      proc.Pid,
+			SessionID: "",
 			CWD:       cwd,
 			StartedAt: time.Now(),
 			Status:    background.StatusStarting,
@@ -152,6 +166,7 @@ func RunBackground(cmd *cobra.Command) error {
 	fmt.Printf("Background session started (PID %d)\n", proc.Pid)
 	fmt.Printf("  Logs: %s\n", logPath)
 	fmt.Printf("  Use 'gogent sessions' to manage.\n")
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -198,10 +213,11 @@ func RunInteractive(cmd *cobra.Command) error {
 
 	slashCmds := slash.NewRegistry()
 
-	// Register discovered skills as slash commands
 	skillLoader := skill.NewLoader(d.Cwd)
 	if skills, err := skillLoader.LoadAll(); err == nil {
+		observe.GlobalTrace("if: err == nil")
 		for _, s := range skills {
+			observe.GlobalTrace("range skills")
 			slashCmds.Register(slash.Command{
 				Name:        s.Name,
 				Description: s.Description,
@@ -221,16 +237,18 @@ func RunInteractive(cmd *cobra.Command) error {
 	}
 
 	m := tui.New(tui.Config{
-		ParentCtx:   cmd.Context(),
-		Engine:      engine,
-		Store:       d.Store,
-		CostTracker: d.CostTracker,
-		ModelName:   d.Cfg.Model,
-		Provider:    d.Cfg.Provider,
-		SessionSave: sessionSaveFn,
-		SlashCmds:   slashCmds,
-		SlashDeps:   slashDeps,
-		HookMgr:     d.HookMgr,
+		ParentCtx:    cmd.Context(),
+		Engine:       engine,
+		Store:        d.Store,
+		CostTracker:  d.CostTracker,
+		ModelName:    d.Cfg.Model,
+		Provider:     d.Cfg.Provider,
+		SessionSave:  sessionSaveFn,
+		SlashCmds:    slashCmds,
+		SlashDeps:    slashDeps,
+		HookMgr:      d.HookMgr,
+		TokenMonitor: d.TokenMonitor,
+		Workspace:    d.Cwd,
 	})
 
 	program := tea.NewProgram(m, tea.WithAltScreen())
@@ -269,9 +287,10 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		defer d.Cleanup()
 	}
 
-	// Background child: register PID and track status via EventBus
 	if os.Getenv("GOGENT_BG_SESSION") == "1" {
+		observe.GlobalTrace("if: os.Getenv(\"GOGENT_BG_SESSION\") == \"1\"")
 		if reg, regErr := background.NewRegistry(); regErr == nil {
+			observe.GlobalTrace("if: regErr == nil")
 			defer reg.Unregister(os.Getpid())
 			sub := background.NewStatusSubscriber(reg)
 			d.Bus.Subscribe(sub)
@@ -304,23 +323,29 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		observe.GlobalTrace("return: err")
 		return err
 	}
-	// Register StructuredOutput tool if --output-schema provided (non-interactive only)
+
 	schemaFlag, _ := cmd.Flags().GetString("output-schema")
 	if schemaFlag != "" {
+		observe.GlobalTrace("if: schemaFlag != \"\"")
 		schemaJSON, err := loadOutputSchema(schemaFlag)
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"invalid output schema: %w\", err)")
 			return fmt.Errorf("invalid output schema: %w", err)
 		}
 		synTool, err := toolsynthetic.New(schemaJSON)
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"create StructuredOutput tool: %w\", err)")
 			return fmt.Errorf("create StructuredOutput tool: %w", err)
 		}
 		if err := d.Registry.Register(synTool); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"register StructuredOutput tool: %w\", err)")
 			return fmt.Errorf("register StructuredOutput tool: %w", err)
 		}
 	}
 
-	// Apply tool filters AFTER all tools are registered (including StructuredOutput)
 	applyToolFilters(cmd, d.Registry)
 
 	compDeps, _ := BuildCompactionDeps(d)
@@ -509,15 +534,21 @@ func SaveSession(store *app.StateStore, costTracker *model.CostTracker, systemOv
 // Uses Registry.Unregister — tools are physically removed, not just denied.
 // This is stronger than permission-layer filtering (can't be bypassed via Bash).
 func applyToolFilters(cmd *cobra.Command, registry *tool.Registry) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	allowedStr, _ := cmd.Flags().GetString("allowed-tools")
 	if allowedStr != "" {
+		observe.GlobalTrace("if: allowedStr != \"\"")
 		allowed := parseToolList(allowedStr)
 		allowedSet := make(map[string]bool, len(allowed))
 		for _, name := range allowed {
+			observe.GlobalTrace("range allowed")
 			allowedSet[name] = true
 		}
 		for _, desc := range registry.List() {
+			observe.GlobalTrace("range registry.List()")
 			if !allowedSet[desc.Name()] {
+				observe.GlobalTrace("if: !allowedSet[desc.Name()]")
 				registry.Unregister(desc.Name())
 			}
 		}
@@ -525,8 +556,10 @@ func applyToolFilters(cmd *cobra.Command, registry *tool.Registry) {
 
 	disallowedStr, _ := cmd.Flags().GetString("disallowed-tools")
 	if disallowedStr != "" {
+		observe.GlobalTrace("if: disallowedStr != \"\"")
 		disallowed := parseToolList(disallowedStr)
 		for _, name := range disallowed {
+			observe.GlobalTrace("range disallowed")
 			registry.Unregister(name)
 		}
 	}
@@ -534,64 +567,91 @@ func applyToolFilters(cmd *cobra.Command, registry *tool.Registry) {
 
 // parseToolList splits a comma-separated tool list, trimming whitespace.
 func parseToolList(s string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	parts := strings.Split(s, ",")
 	result := make([]string, 0, len(parts))
 	for _, p := range parts {
+		observe.GlobalTrace("range parts")
 		p = strings.TrimSpace(p)
 		if p != "" {
+			observe.GlobalTrace("if: p != \"\"")
 			result = append(result, p)
 		}
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }
 
 // loadOutputSchema reads a JSON schema from a flag value — inline JSON or file path.
 func loadOutputSchema(flag string) (json.RawMessage, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	trimmed := strings.TrimSpace(flag)
 	if strings.HasPrefix(trimmed, "{") {
+		observe.GlobalTrace("if: strings.HasPrefix(trimmed, \"{\")")
 		if !json.Valid([]byte(trimmed)) {
+			observe.GlobalTrace("if: !json.Valid([]byte(trimmed))")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"inline schema is not valid JSON\")")
 			return nil, fmt.Errorf("inline schema is not valid JSON")
 		}
+		observe.GlobalTrace("return: json.RawMessage(trimmed), nil")
 		return json.RawMessage(trimmed), nil
 	}
 	data, err := os.ReadFile(trimmed)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"read schema file %q: %w\", trimmed, err)")
 		return nil, fmt.Errorf("read schema file %q: %w", trimmed, err)
 	}
 	if !json.Valid(data) {
+		observe.GlobalTrace("if: !json.Valid(data)")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"schema file %q does not contain valid JSON\", trimmed)")
 		return nil, fmt.Errorf("schema file %q does not contain valid JSON", trimmed)
 	}
+	observe.GlobalTrace("return: json.RawMessage(data), nil")
 	return json.RawMessage(data), nil
 }
 
 // ConsumeEngineEvents reads all events from an engine run and prints output.
 // Used by replay and other non-interactive consumers.
 func ConsumeEngineEvents(events <-chan query.LoopEvent, verbose bool) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for ev := range events {
+		observe.GlobalTrace("range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
+			observe.GlobalTrace("typecase: query.TextEvent")
 			fmt.Print(e.Text)
 		case query.ThinkingEvent:
+			observe.GlobalTrace("typecase: query.ThinkingEvent")
 			if verbose {
 				fmt.Fprint(os.Stderr, e.Text)
 			}
 		case query.ToolCallEvent:
+			observe.GlobalTrace("typecase: query.ToolCallEvent")
 			if verbose {
 				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
 			}
 		case query.ToolResultEvent:
+			observe.GlobalTrace("typecase: query.ToolResultEvent")
 			if verbose {
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
 			}
 		case query.CompactionEvent:
+			observe.GlobalTrace("typecase: query.CompactionEvent")
 			if verbose {
 				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
 			}
 		case query.TurnCompleteEvent:
+			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 			fmt.Println()
 		case query.ErrorEvent:
+			observe.GlobalTrace("typecase: query.ErrorEvent")
 			return e.Err
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }

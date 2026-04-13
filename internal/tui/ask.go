@@ -10,10 +10,10 @@ import (
 
 var askQuestionStyle = lipgloss.NewStyle().
 	Bold(true).
-	Foreground(lipgloss.Color("12"))
+	Foreground(lipgloss.AdaptiveColor{Light: "24", Dark: "75"}) // blue
 
 var askInputStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("15"))
+	Foreground(lipgloss.AdaptiveColor{Light: "235", Dark: "252"}) // near-white/near-black
 
 // askDialog renders a question from a tool and captures the user's typed answer.
 // Zero value is valid (inactive).
