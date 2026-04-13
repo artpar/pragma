@@ -1,6 +1,10 @@
 package observe
 
-import "github.com/artpar/gogent/internal/model"
+import (
+	"time"
+
+	"github.com/artpar/gogent/internal/model"
+)
 
 // --- Conversation Events ---
 
@@ -556,3 +560,45 @@ func (bus *EventBus) Trace(component, function, msg string) {
 		Message:     msg,
 	})
 }
+
+// --- Lifecycle events (internal/lifecycle/) ---
+
+// LifecycleStepStarted is emitted before each superstep in a lifecycle graph.
+type LifecycleStepStarted struct {
+	EventHeader
+	Step  int      `json:"step"`
+	Nodes []string `json:"nodes"`
+}
+
+func (LifecycleStepStarted) eventSealed() {}
+
+// LifecycleNodeCompleted is emitted when a lifecycle node finishes.
+type LifecycleNodeCompleted struct {
+	EventHeader
+	Step     int           `json:"step"`
+	Node     string        `json:"node"`
+	Duration time.Duration `json:"duration"`
+	Error    string        `json:"error,omitempty"`
+}
+
+func (LifecycleNodeCompleted) eventSealed() {}
+
+// LifecycleTransition is emitted on each lifecycle edge traversal.
+type LifecycleTransition struct {
+	EventHeader
+	Step     int    `json:"step"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	RouteKey string `json:"route_key,omitempty"`
+}
+
+func (LifecycleTransition) eventSealed() {}
+
+// LifecycleCompleted is emitted when a lifecycle execution finishes.
+type LifecycleCompleted struct {
+	EventHeader
+	TotalSteps int    `json:"total_steps"`
+	Error      string `json:"error,omitempty"`
+}
+
+func (LifecycleCompleted) eventSealed() {}
