@@ -36,101 +36,114 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 		}
 	}
 
-	// 1. Provider configured
 	providerName := deps.Provider
 	if providerName == "" {
+		observe.GlobalTrace("if: providerName == \"\"")
 		providerName = deps.ModelName
 	}
 	check("Provider configured", providerName != "", "")
 
-	// 2. API key present (check env vars for common providers)
 	hasKey := false
 	for _, env := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"} {
+		observe.GlobalTrace("range []string{\"ANTHROPIC_API_KEY\", \"OPENAI_API_KEY\", \"GOOGLE_API_KEY\", \"GROQ_API_K...")
 		if os.Getenv(env) != "" {
+			observe.GlobalTrace("if: os.Getenv(env) != \"\"")
 			hasKey = true
 			break
 		}
 	}
 	check("API key found", hasKey, "set ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY")
 
-	// 3. Global config directory
 	home, homeErr := config.GogentHome()
 	if homeErr != nil {
+		observe.GlobalTrace("if: homeErr != nil")
 		check("Config directory (~/.gogent/)", false, homeErr.Error())
 	} else {
+		observe.GlobalTrace("else: homeErr != nil")
 		_, err := os.Stat(home)
 		check("Config directory (~/.gogent/)", err == nil, "run 'mkdir -p "+home+"'")
 	}
 
-	// 4. Global settings file
 	globalSettings, gsErr := config.GlobalSettingsPath()
 	if gsErr != nil {
+		observe.GlobalTrace("if: gsErr != nil")
 		check("Global settings", false, gsErr.Error())
 	} else {
+		observe.GlobalTrace("else: gsErr != nil")
 		_, err := os.Stat(globalSettings)
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
 			check("Global settings", false, "optional — "+globalSettings+" not found")
 		} else {
+			observe.GlobalTrace("else: err != nil")
 			check("Global settings", true, "")
 		}
 	}
 
-	// 5. Project AGENT.md
 	cwd := deps.Cwd
 	if cwd == "" {
+		observe.GlobalTrace("if: cwd == \"\"")
 		cwd, _ = os.Getwd()
 	}
 	agentMD := filepath.Join(cwd, "AGENT.md")
 	if _, err := os.Stat(agentMD); err != nil {
+		observe.GlobalTrace("if: err != nil")
 		check("AGENT.md", false, "run 'gogent init' to create")
 	} else {
+		observe.GlobalTrace("else: err != nil")
 		check("AGENT.md", true, "")
 	}
 
-	// 6. Git repo
 	gitDir := filepath.Join(cwd, ".git")
 	if _, err := os.Stat(gitDir); err == nil {
+		observe.GlobalTrace("if: err == nil")
 		check("Git repository", true, "")
 	} else {
+		observe.GlobalTrace("else: err == nil")
 		check("Git repository", false, "not in a git repo")
 	}
 
-	// 7. Project settings (merged — validates combined config, not per-file)
 	_, cfgErr := config.Load(cwd)
 	if cfgErr != nil {
+		observe.GlobalTrace("if: cfgErr != nil")
 		check("Config loads cleanly", false, cfgErr.Error())
 	} else {
+		observe.GlobalTrace("else: cfgErr != nil")
 		check("Config loads cleanly", true, "")
 	}
 
-	// 8. MCP config
 	mcpPath := filepath.Join(cwd, ".gogent", "mcp.json")
 	if _, err := os.Stat(mcpPath); err == nil {
+		observe.GlobalTrace("if: err == nil")
 		check("MCP config exists", true, "")
 	} else {
+		observe.GlobalTrace("else: err == nil")
 		check("MCP config", false, "no .gogent/mcp.json (optional)")
 	}
 
-	// 9. Hook config
 	hookPaths := []string{
 		filepath.Join(cwd, ".gogent", "settings.json"),
 		filepath.Join(cwd, ".gogent", "settings.local.json"),
 	}
 	hookFound := false
 	for _, hp := range hookPaths {
+		observe.GlobalTrace("range hookPaths")
 		if _, err := os.Stat(hp); err == nil {
+			observe.GlobalTrace("if: err == nil")
 			hookFound = true
 			break
 		}
 	}
 	if hookFound {
+		observe.GlobalTrace("if: hookFound")
 		check("Hook config", true, "")
 	} else {
+		observe.GlobalTrace("else: hookFound")
 		check("Hook config", false, "no .gogent/settings.json (optional)")
 	}
 
-	// Summary
 	fmt.Fprintf(&b, "\n%d passed, %d warnings, %d failures\n", passes, warnings, failures)
+	observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
 
 	return Result{DisplayText: b.String()}, nil
 }

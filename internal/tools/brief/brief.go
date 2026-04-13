@@ -198,13 +198,14 @@ func resolveAttachment(rawPath, workDir string) (attachmentInfo, error) {
 	}
 	p = filepath.Clean(p)
 
-	// Security: prevent path traversal outside working directory.
-	// Use workDir + separator to avoid prefix attacks (e.g., /tmp/project-evil matching /tmp/project).
 	wdPrefix := workDir
 	if !strings.HasSuffix(wdPrefix, string(filepath.Separator)) {
+		observe.GlobalTrace("if: !strings.HasSuffix(wdPrefix, string(filepath.Separator))")
 		wdPrefix += string(filepath.Separator)
 	}
 	if !strings.HasPrefix(p, wdPrefix) && p != workDir {
+		observe.GlobalTrace("if: !strings.HasPrefix(p, wdPrefix) && p != workDir")
+		observe.GlobalTrace("return: attachmentInfo{}, fmt.Errorf(\"path %q is outside working directory\", rawPath)")
 		return attachmentInfo{}, fmt.Errorf("path %q is outside working directory", rawPath)
 	}
 

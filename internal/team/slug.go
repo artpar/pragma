@@ -2,11 +2,9 @@ package team
 
 import (
 	"crypto/rand"
+	"github.com/artpar/gogent/internal/observe"
 	"math/big"
 )
-
-// Word lists adapted from the TS reference (words.ts).
-// Format: "adjective-verb-noun" for unique team names.
 
 var adjectives = []string{
 	"abstract", "agile", "ancient", "bold", "bright", "cached", "calm",
@@ -51,17 +49,25 @@ var nouns = []string{
 
 // GenerateWordSlug returns a random "adjective-verb-noun" slug using crypto/rand.
 func GenerateWordSlug() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	a := adjectives[cryptoRandInt(len(adjectives))]
 	v := verbs[cryptoRandInt(len(verbs))]
 	n := nouns[cryptoRandInt(len(nouns))]
+	observe.GlobalTrace("return: a + \"-\" + v + \"-\" + n")
 	return a + "-" + v + "-" + n
 }
 
 func cryptoRandInt(max int) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
 	if err != nil {
-		// Fallback: should never happen with crypto/rand
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: 0")
+
 		return 0
 	}
+	observe.GlobalTrace("return: int(n.Int64())")
 	return int(n.Int64())
 }

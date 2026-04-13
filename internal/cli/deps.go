@@ -181,15 +181,16 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		return nil, err
 	}
 
-	// Update token monitor with actual context window for this model
 	if cw, ok := prov.ContextWindow(cfg.Model); ok {
+		observe.GlobalTrace("if: ok")
 		tokenMon.SetBudget(cw)
 	}
 
 	permEntries, permMode, _ := config.LoadPermissions(cwd)
 	rules := permission.RulesFromConfigEntries(permEntries)
-	// CLI --permission-mode overrides config file
+
 	if cfg.PermissionMode != "" {
+		observe.GlobalTrace("if: cfg.PermissionMode != \"\"")
 		permMode = cfg.PermissionMode
 	}
 	mode := permission.PermissionMode(permMode)
@@ -197,11 +198,13 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: mode == \"\"")
 		mode = permission.ModeDefault
 	}
-	// Validate permission mode
+
 	switch mode {
 	case permission.ModeDefault, permission.ModeAcceptEdits, permission.ModeBypassPermissions, permission.ModeDontAsk:
-		// valid
+		observe.GlobalTrace("case: permission.ModeDefault, permission.ModeAcceptEdits, permission.ModeBypassPerm...")
+
 	default:
+		observe.GlobalTrace("default")
 		return nil, fmt.Errorf("invalid permission mode %q: must be one of default, acceptEdits, bypassPermissions, dontAsk", mode)
 	}
 	checker := permission.NewRuleChecker(rules, mode, cwd, bus)
@@ -220,9 +223,10 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		builder := sysprompt.New(cwd, cfg.Model, bus)
 		sysPrompt = builder.Build()
 	}
-	// --append-system-prompt: append to (not replace) the system prompt
+
 	appendPrompt, _ := cmd.Flags().GetString("append-system-prompt")
 	if appendPrompt != "" {
+		observe.GlobalTrace("if: appendPrompt != \"\"")
 		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
 	}
 
@@ -230,24 +234,32 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var conv model.Conversation
 	resumeID, _ := cmd.Flags().GetString("resume")
 
-	// --continue: resolve to most recent session ID for this directory
 	continueFlag, _ := cmd.Flags().GetBool("continue")
 	if continueFlag && resumeID == "" {
+		observe.GlobalTrace("if: continueFlag && resumeID == \"\"")
 		sessionStore, storeErr := session.NewStore()
 		if storeErr != nil {
+			observe.GlobalTrace("if: storeErr != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"open session store: %w\", storeErr)")
 			return nil, fmt.Errorf("open session store: %w", storeErr)
 		}
 		summaries, listErr := sessionStore.List()
 		if listErr != nil {
+			observe.GlobalTrace("if: listErr != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"list sessions: %w\", listErr)")
 			return nil, fmt.Errorf("list sessions: %w", listErr)
 		}
 		for _, s := range summaries {
+			observe.GlobalTrace("range summaries")
 			if s.WorkDir == cwd {
+				observe.GlobalTrace("if: s.WorkDir == cwd")
 				resumeID = s.ID
 				break
 			}
 		}
 		if resumeID == "" {
+			observe.GlobalTrace("if: resumeID == \"\"")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"no sessions found for current directory\")")
 			return nil, fmt.Errorf("no sessions found for current directory")
 		}
 	}
@@ -365,8 +377,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 	}
 
-	// MCP health watchdog: periodic status checks (30s interval).
-	// Reports only, never kills healthy servers (avoids TS bug #40207).
 	watchdog := observe.NewMCPWatchdog(mcpManager.ServerStatus, bus, 30*time.Second)
 	go watchdog.Start(cmd.Context())
 
@@ -453,9 +463,11 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 		cfg.Record, _ = cmd.Flags().GetBool("record")
 	}
 	if cmd.Flags().Changed("max-turns") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"max-turns\")")
 		cfg.MaxTurns, _ = cmd.Flags().GetInt("max-turns")
 	}
 	if cmd.Flags().Changed("permission-mode") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"permission-mode\")")
 		cfg.PermissionMode, _ = cmd.Flags().GetString("permission-mode")
 	}
 }

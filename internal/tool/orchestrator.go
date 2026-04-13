@@ -180,7 +180,8 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		}
 		serialDuration = time.Since(serStart)
 	} else if len(serial) > 0 {
-		// Context was cancelled — fill in cancellation results for skipped serial tools.
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "else-if: len(serial) > 0")
+
 		for _, ic := range serial {
 			singles[ic.index] = singleResult{
 				part: model.ToolResultPart{

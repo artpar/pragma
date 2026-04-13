@@ -68,6 +68,8 @@ func (r *Registry) Get(name string) (Descriptor, bool) {
 // available via Get(). Used by REPL mode to hide primitive tools from the LLM
 // while keeping them callable by the REPL tool.
 func (r *Registry) SetHidden(names map[string]bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.hidden = names
@@ -83,6 +85,7 @@ func (r *Registry) List() []Descriptor {
 	for _, desc := range r.tools {
 		observe.GlobalTrace("range r.tools")
 		if r.hidden[desc.Name()] {
+			observe.GlobalTrace("if: r.hidden[desc.Name()]")
 			continue
 		}
 		out = append(out, desc)
@@ -102,6 +105,7 @@ func (r *Registry) ToolDefs() []model.ToolDef {
 	for _, desc := range r.tools {
 		observe.GlobalTrace("range r.tools")
 		if r.hidden[desc.Name()] {
+			observe.GlobalTrace("if: r.hidden[desc.Name()]")
 			continue
 		}
 		out = append(out, model.ToolDef{

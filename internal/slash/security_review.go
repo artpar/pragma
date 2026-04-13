@@ -20,10 +20,12 @@ func detectGitBase() string {
 		observe.GlobalTrace("range: trying " + ref)
 		if err := exec.Command("git", "rev-parse", ref).Run(); err == nil {
 			observe.GlobalTrace("return: " + ref)
+			observe.GlobalTrace("return: ref")
 			return ref
 		}
 	}
 	observe.GlobalTrace("return: HEAD~1")
+	observe.GlobalTrace("return: \"HEAD~1\"")
 	return "HEAD~1"
 }
 
@@ -38,8 +40,10 @@ func execGit(ctx context.Context, args ...string) string {
 	out, err := exec.CommandContext(ctx, "git", args...).CombinedOutput()
 	if err != nil {
 		observe.TraceCtx(ctx, "slash", "execGit", "error: "+err.Error())
+		observe.TraceCtx(ctx, "slash", "execGit", "return: fmt.Sprintf(\"(error running git %s: %v)\", strings.Join(args, \" \"), err)")
 		return fmt.Sprintf("(error running git %s: %v)", strings.Join(args, " "), err)
 	}
+	observe.TraceCtx(ctx, "slash", "execGit", "return: string(out)")
 	return string(out)
 }
 

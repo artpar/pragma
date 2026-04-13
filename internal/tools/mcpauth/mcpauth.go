@@ -70,8 +70,9 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 	observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "enter")
 	defer observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "exit")
 
-	// Only SSE and HTTP transports support OAuth (stdio is local process, no auth needed)
 	if t.Transport != "" && t.Transport != "sse" && t.Transport != "http" {
+		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: t.Transport != \"\" && t.Transport != \"sse\" && t.Transport != \"http\"")
+		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Server %q uses %s transport which d...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("Server %q uses %s transport which does not support OAuth. Ask the user to authenticate manually.", t.ServerName, t.Transport),
 		}, nil

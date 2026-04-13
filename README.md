@@ -1,6 +1,6 @@
 # gogent
 
-Go port of the Pragma TypeScript CLI. LLM-generic — works with Anthropic, OpenAI, Google, or any provider.
+Agentic code. LLM-generic — works with Anthropic, OpenAI, Google, or any provider.
 
 ## Quick Start
 

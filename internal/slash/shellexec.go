@@ -26,7 +26,6 @@ func ExecShellInPrompt(ctx context.Context, text string, timeout time.Duration) 
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	// Block patterns first
 	text = blockPattern.ReplaceAllStringFunc(text, func(match string) string {
 		groups := blockPattern.FindStringSubmatch(match)
 		if len(groups) < 2 {
@@ -39,8 +38,9 @@ func ExecShellInPrompt(ctx context.Context, text string, timeout time.Duration) 
 		return execShellCommand(ctx, cmd, timeout)
 	})
 
-	// Inline patterns — fast-path: skip regex if no !` in text
 	if !strings.Contains(text, "!`") {
+		observe.TraceCtx(ctx, "slash", "ExecShellInPrompt", "if: !strings.Contains(text, \"!`\")")
+		observe.TraceCtx(ctx, "slash", "ExecShellInPrompt", "return: text")
 		return text
 	}
 
@@ -53,13 +53,14 @@ func ExecShellInPrompt(ctx context.Context, text string, timeout time.Duration) 
 		if cmd == "" {
 			return match
 		}
-		// Preserve leading whitespace from the match
+
 		prefix := ""
 		if len(match) > 0 && (match[0] == ' ' || match[0] == '\t' || match[0] == '\n') {
 			prefix = string(match[0])
 		}
 		return prefix + execShellCommand(ctx, cmd, timeout)
 	})
+	observe.TraceCtx(ctx, "slash", "ExecShellInPrompt", "return: text")
 
 	return text
 }
@@ -76,7 +77,9 @@ func execShellCommand(ctx context.Context, command string, timeout time.Duration
 	out, err := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
 	if err != nil {
 		observe.TraceCtx(ctx, "slash", "execShellCommand", "error: "+err.Error())
+		observe.TraceCtx(ctx, "slash", "execShellCommand", "return: fmt.Sprintf(\"(error running %s: %v)\", command, err)")
 		return fmt.Sprintf("(error running %s: %v)", command, err)
 	}
+	observe.TraceCtx(ctx, "slash", "execShellCommand", "return: strings.TrimRight(string(out), \"\\n\")")
 	return strings.TrimRight(string(out), "\n")
 }

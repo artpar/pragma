@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/artpar/gogent/internal/config"
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // pidFilePattern guards against reading non-PID files from the registry directory.
@@ -26,23 +27,34 @@ type Registry struct {
 
 // NewRegistry creates a Registry at ~/.gogent/active-sessions/.
 func NewRegistry() (*Registry, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	gogentHome, err := config.GogentHome()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve gogent home: %w\", err)")
 		return nil, fmt.Errorf("resolve gogent home: %w", err)
 	}
 	dir := filepath.Join(gogentHome, "active-sessions")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"create active-sessions directory: %w\", err)")
 		return nil, fmt.Errorf("create active-sessions directory: %w", err)
 	}
+	observe.GlobalTrace("return: &Registry{dir: dir}, nil")
 	return &Registry{dir: dir}, nil
 }
 
 // Register writes a PID file for the given process info.
 // Uses atomic write (temp file + rename) to prevent partial reads.
 func (r *Registry) Register(info ProcessInfo) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	info.UpdatedAt = time.Now()
 	data, err := json.Marshal(info)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"marshal process info: %w\", err)")
 		return fmt.Errorf("marshal process info: %w", err)
 	}
 
@@ -50,29 +62,42 @@ func (r *Registry) Register(info ProcessInfo) error {
 	tmpPath := path + ".tmp"
 
 	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"write temp PID file: %w\", err)")
 		return fmt.Errorf("write temp PID file: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
+		observe.GlobalTrace("if: err != nil")
 		os.Remove(tmpPath)
+		observe.GlobalTrace("return: fmt.Errorf(\"rename PID file: %w\", err)")
 		return fmt.Errorf("rename PID file: %w", err)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 // Unregister removes a PID file. Ignores ENOENT (already cleaned up).
 func (r *Registry) Unregister(pid int) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	err := os.Remove(r.pidPath(pid))
 	if err != nil && !os.IsNotExist(err) {
+		observe.GlobalTrace("if: err != nil && !os.IsNotExist(err)")
+		observe.GlobalTrace("return: fmt.Errorf(\"remove PID file for %d: %w\", pid, err)")
 		return fmt.Errorf("remove PID file for %d: %w", pid, err)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 // UpdateStatus updates the status and timestamp in a PID file.
 // Fire-and-forget: errors are silently ignored (TS pattern).
 func (r *Registry) UpdateStatus(pid int, status Status) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	info, err := r.Get(pid)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		return
 	}
 	info.Status = status
@@ -83,32 +108,43 @@ func (r *Registry) UpdateStatus(pid int, status Status) {
 // List returns all active background sessions.
 // Validates each PID is alive, removes stale entries, sorts by StartedAt descending.
 func (r *Registry) List() ([]ProcessInfo, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	entries, err := os.ReadDir(r.dir)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		if os.IsNotExist(err) {
+			observe.GlobalTrace("if: os.IsNotExist(err)")
+			observe.GlobalTrace("return: nil, nil")
 			return nil, nil
 		}
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"read active-sessions directory: %w\", err)")
 		return nil, fmt.Errorf("read active-sessions directory: %w", err)
 	}
 
 	var active []ProcessInfo
 	for _, entry := range entries {
+		observe.GlobalTrace("range entries")
 		if entry.IsDir() || !pidFilePattern.MatchString(entry.Name()) {
+			observe.GlobalTrace("if: entry.IsDir() || !pidFilePattern.MatchString(entry.Name())")
 			continue
 		}
 
 		data, err := os.ReadFile(filepath.Join(r.dir, entry.Name()))
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
 			continue
 		}
 
 		var info ProcessInfo
 		if err := json.Unmarshal(data, &info); err != nil {
+			observe.GlobalTrace("if: err != nil")
 			continue
 		}
 
 		if !isProcessAlive(info.PID) {
-			// Stale PID file — process is dead, clean up
+			observe.GlobalTrace("if: !isProcessAlive(info.PID)")
+
 			os.Remove(filepath.Join(r.dir, entry.Name()))
 			continue
 		}
@@ -119,20 +155,28 @@ func (r *Registry) List() ([]ProcessInfo, error) {
 	sort.Slice(active, func(i, j int) bool {
 		return active[i].StartedAt.After(active[j].StartedAt)
 	})
+	observe.GlobalTrace("return: active, nil")
 
 	return active, nil
 }
 
 // Get reads a single PID file.
 func (r *Registry) Get(pid int) (ProcessInfo, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	data, err := os.ReadFile(r.pidPath(pid))
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: ProcessInfo{}, fmt.Errorf(\"read PID file for %d: %w\", pid, err)")
 		return ProcessInfo{}, fmt.Errorf("read PID file for %d: %w", pid, err)
 	}
 	var info ProcessInfo
 	if err := json.Unmarshal(data, &info); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: ProcessInfo{}, fmt.Errorf(\"parse PID file for %d: %w\", pid, err)")
 		return ProcessInfo{}, fmt.Errorf("parse PID file for %d: %w", pid, err)
 	}
+	observe.GlobalTrace("return: info, nil")
 	return info, nil
 }
 
@@ -140,47 +184,63 @@ func (r *Registry) Get(pid int) (ProcessInfo, error) {
 // Sends SIGTERM to the process group, waits up to 5 seconds, then SIGKILL.
 // Addresses orphan process accumulation (GitHub #32964, #15945, #26658).
 func (r *Registry) Kill(pid int) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	info, err := r.Get(pid)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 
 	pgid := info.PGID
 	if pgid == 0 {
+		observe.GlobalTrace("if: pgid == 0")
 		pgid = pid
 	}
 
-	// Send SIGTERM to entire process group (negative PGID)
 	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil {
-		// Process might already be dead
+		observe.GlobalTrace("if: err != nil")
+
 		if err != syscall.ESRCH {
+			observe.GlobalTrace("if: err != syscall.ESRCH")
+			observe.GlobalTrace("return: fmt.Errorf(\"SIGTERM process group %d: %w\", pgid, err)")
 			return fmt.Errorf("SIGTERM process group %d: %w", pgid, err)
 		}
 		_ = r.Unregister(pid)
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
-	// Wait up to 5 seconds for graceful shutdown
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
+		observe.GlobalTrace("for: time.Now().Before(deadline)")
 		if !isProcessAlive(pid) {
+			observe.GlobalTrace("if: !isProcessAlive(pid)")
 			_ = r.Unregister(pid)
+			observe.GlobalTrace("return: nil")
 			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// Force kill if still alive
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	_ = r.Unregister(pid)
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func (r *Registry) pidPath(pid int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: filepath.Join(r.dir, strconv.Itoa(pid)+\".json\")")
 	return filepath.Join(r.dir, strconv.Itoa(pid)+".json")
 }
 
 // isProcessAlive checks if a process with the given PID exists.
 func isProcessAlive(pid int) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: syscall.Kill(pid, 0) == nil")
 	return syscall.Kill(pid, 0) == nil
 }

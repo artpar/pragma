@@ -30,8 +30,18 @@ type Tool struct {
 	Bus   *observe.EventBus
 }
 
-func (t *Tool) Name() string        { return "TeamDelete" }
-func (t *Tool) Description() string { return teamDeleteDescription }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"TeamDelete\"")
+	return "TeamDelete"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: teamDeleteDescription")
+	return teamDeleteDescription
+}
 
 const teamDeleteDescription = `Clean up team and task directories when swarm work is complete.
 
@@ -39,14 +49,23 @@ Removes team configuration, task directories, and any git worktrees created for 
 Will fail if active team members remain — use requestShutdown to gracefully terminate
 teammates before calling this tool.`
 
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "teamdelete", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "teamdelete", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "teamdelete", "Tool.CheckPerm", "return: checker.Check(ctx, \"TeamDelete\", \"\")")
 	return checker.Check(ctx, "TeamDelete", "")
 }
 
@@ -57,31 +76,39 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 	snap := t.Store.Snapshot()
 
 	if snap.TeamContext == nil {
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: snap.TeamContext == nil")
 		out := teamDeleteOutput{Success: true, Message: "No active team to clean up"}
 		data, _ := json.Marshal(out)
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 		return tool.InvokeResult{Content: string(data)}, nil
 	}
 
 	teamName := snap.TeamContext.TeamName
 
-	// Check for active members
 	tf, err := team.ReadTeamFile(teamName)
 	if err != nil {
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read team file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read team file: %w", err)
 	}
 
 	if tf != nil {
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: tf != nil")
 		var activeNames []string
 		for _, m := range tf.Members {
+			observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "range tf.Members")
 			if m.Name == team.TeamLeadName {
-				continue // skip lead
+				observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: m.Name == team.TeamLeadName")
+				continue
 			}
-			// IsActive == nil or *IsActive == true means active
+
 			if m.IsActive == nil || *m.IsActive {
+				observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: m.IsActive == nil || *m.IsActive")
 				activeNames = append(activeNames, m.Name)
 			}
 		}
 		if len(activeNames) > 0 {
+			observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: len(activeNames) > 0")
 			out := teamDeleteOutput{
 				Success:  false,
 				TeamName: teamName,
@@ -90,22 +117,23 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 					len(activeNames), strings.Join(activeNames, ", ")),
 			}
 			data, _ := json.Marshal(out)
+			observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 			return tool.InvokeResult{Content: string(data)}, nil
 		}
 	}
 
-	// Clean up directories and worktrees
 	if err := team.CleanupTeamDirectories(teamName, t.Bus); err != nil {
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"cleanup team: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("cleanup team: %w", err)
 	}
 
-	// Clear AppState
 	t.Store.Update(func(s *app.AppState) {
 		s.TeamContext = nil
 	})
 
-	// Emit event
 	if t.Bus != nil {
+		observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "if: t.Bus != nil")
 		t.Bus.Emit(observe.TeamDeleted{
 			EventHeader: observe.NewEventHeader("TeamDeleted", "", "", ""),
 			TeamName:    teamName,
@@ -118,5 +146,6 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 		TeamName: teamName,
 	}
 	data, _ := json.Marshal(out)
+	observe.TraceCtx(ctx, "teamdelete", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }

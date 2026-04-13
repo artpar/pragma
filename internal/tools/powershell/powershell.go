@@ -60,13 +60,15 @@ var (
 // detectPowerShell finds pwsh (cross-platform, PS Core 7+) or powershell.exe (Windows 5.1).
 // Result is cached after first call. Issue #45963: pwsh runs on macOS/Linux too.
 func detectPowerShell() (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	psOnce.Do(func() {
-		// Prefer pwsh (PowerShell Core 7+) on all platforms
+
 		if path, err := exec.LookPath("pwsh"); err == nil {
 			psExe = path
 			return
 		}
-		// Fallback to powershell.exe on Windows only
+
 		if runtime.GOOS == "windows" {
 			if path, err := exec.LookPath("powershell.exe"); err == nil {
 				psExe = path
@@ -75,14 +77,25 @@ func detectPowerShell() (string, error) {
 		}
 		psErr = fmt.Errorf("PowerShell not found on this system (install pwsh: https://aka.ms/powershell)")
 	})
+	observe.GlobalTrace("return: psExe, psErr")
 	return psExe, psErr
 }
 
 // Tool implements the PowerShell tool for command execution.
 type Tool struct{}
 
-func (t *Tool) Name() string        { return "PowerShell" }
-func (t *Tool) Description() string { return psDescription }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"PowerShell\"")
+	return "PowerShell"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: psDescription")
+	return psDescription
+}
 
 const psDescription = `Executes a PowerShell command and returns its output.
 
@@ -106,8 +119,16 @@ PowerShell Core (pwsh) is cross-platform and available on macOS, Linux, and Wind
  - Do NOT use Start-Sleep for delays >= 2 seconds. If you need to wait, explain why.
  - Do NOT use PowerShell equivalents of dedicated tools (e.g., Select-String instead of Grep)`
 
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true}
 }
 
@@ -118,15 +139,18 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		Command string `json:"command"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil || in.Command == "" {
+		observe.TraceCtx(ctx, "powershell", "Tool.CheckPerm", "if: err != nil || in.Command == \"\"")
+		observe.TraceCtx(ctx, "powershell", "Tool.CheckPerm", "return: checker.Check(ctx, \"PowerShell\", \"\")")
 		return checker.Check(ctx, "PowerShell", "")
 	}
 
-	// Auto-allow read-only cmdlets without requiring permission rules.
-	// Matches Bash tool pattern where safe commands (ls, cat) are auto-allowed.
 	cmdlet := extractCmdlet(in.Command)
 	if cmdlet != "" && readOnlyCmdlets[strings.ToLower(cmdlet)] {
+		observe.TraceCtx(ctx, "powershell", "Tool.CheckPerm", "if: cmdlet != \"\" && readOnlyCmdlets[strings.ToLower(cmdlet)]")
+		observe.TraceCtx(ctx, "powershell", "Tool.CheckPerm", "return: permission.CheckResult{Decision: permission.DecisionAllow, Reason: \"read-only...")
 		return permission.CheckResult{Decision: permission.DecisionAllow, Reason: "read-only cmdlet"}
 	}
+	observe.TraceCtx(ctx, "powershell", "Tool.CheckPerm", "return: checker.Check(ctx, \"PowerShell\", in.Command)")
 
 	return checker.Check(ctx, "PowerShell", in.Command)
 }
@@ -134,15 +158,23 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 // extractCmdlet returns the first cmdlet name from a PowerShell command.
 // Splits on whitespace, pipe, and semicolon to isolate the cmdlet.
 func extractCmdlet(command string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cmd := strings.TrimSpace(command)
 	if cmd == "" {
+		observe.GlobalTrace("if: cmd == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	for i, r := range cmd {
+		observe.GlobalTrace("range cmd")
 		if r == ' ' || r == '\t' || r == '|' || r == ';' {
+			observe.GlobalTrace("if: r == ' ' || r == '\\t' || r == '|' || r == ';'")
+			observe.GlobalTrace("return: cmd[:i]")
 			return cmd[:i]
 		}
 	}
+	observe.GlobalTrace("return: cmd")
 	return cmd
 }
 
@@ -152,25 +184,33 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	var in PowerShellInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Command == "" {
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: in.Command == \"\"")
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"command is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("command is required")
 	}
 
-	// Detect PowerShell executable (cached)
 	exe, err := detectPowerShell()
 	if err != nil {
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
 
 	timeoutMs := defaultTimeoutMs
 	if in.Timeout != nil {
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: in.Timeout != nil")
 		timeoutMs = *in.Timeout
 		if timeoutMs <= 0 {
+			observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: timeoutMs <= 0")
 			timeoutMs = defaultTimeoutMs
 		}
 		if timeoutMs > maxTimeoutMs {
+			observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: timeoutMs > maxTimeoutMs")
 			timeoutMs = maxTimeoutMs
 		}
 	}
@@ -179,7 +219,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Prepend UTF-8 encoding fix (#46486)
 	fullCmd := utf8Preamble + in.Command
 
 	cmd := exec.CommandContext(cmdCtx, exe, "-NoProfile", "-NonInteractive", "-Command", fullCmd)
@@ -197,25 +236,34 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	output = strings.TrimLeft(output, "\n")
 
 	if err != nil {
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: err != nil")
 		if cmdCtx.Err() == context.DeadlineExceeded {
+			observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: cmdCtx.Err() == context.DeadlineExceeded")
 			if output != "" {
+				observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: output != \"\"")
 				output += "\n"
 			}
 			output += fmt.Sprintf("Command timed out after %dms", timeoutMs)
+			observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 			return tool.InvokeResult{Content: output}, nil
 		}
 
 		if exitErr, ok := err.(*exec.ExitError); ok {
+			observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: ok")
 			exitCode := exitErr.ExitCode()
 			if output != "" {
+				observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "if: output != \"\"")
 				output += "\n"
 			}
 			output += fmt.Sprintf("Exit code %d", exitCode)
+			observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 			return tool.InvokeResult{Content: output}, nil
 		}
+		observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"execute command: %w\", err)")
 
 		return tool.InvokeResult{}, fmt.Errorf("execute command: %w", err)
 	}
+	observe.TraceCtx(ctx, "powershell", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 
 	return tool.InvokeResult{Content: output}, nil
 }

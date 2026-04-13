@@ -16,7 +16,6 @@ func registerBuiltins(r *Registry) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	// REPL-only commands (no CLIUse → no Cobra subcommand)
 	r.Register(Command{
 		Name:        "compact",
 		Description: "Clear conversation history but keep a summary in context",
@@ -46,7 +45,6 @@ func registerBuiltins(r *Registry) {
 		Handle:      handleInsights,
 	})
 
-	// Local CLI commands (TypeLocal + CLIUse → no engine needed)
 	r.Register(Command{
 		Name:        "cost",
 		Description: "Show session cost and token usage",
@@ -76,7 +74,6 @@ func registerBuiltins(r *Registry) {
 		CLIUse:      "doctor",
 	})
 
-	// Prompt CLI commands (TypePrompt + CLIUse → engine runs injected prompt)
 	r.Register(Command{
 		Name:        "review",
 		Description: "Review a pull request",
@@ -247,6 +244,7 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 			modelName = deps.ModelName
 		}
 		observe.GlobalTrace("return: Result{DisplayText: current model}, nil")
+		observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Current model: %s (provider: %s)\", modelName...")
 		return Result{DisplayText: fmt.Sprintf("Current model: %s (provider: %s)", modelName, deps.Provider)}, nil
 	}
 
@@ -254,6 +252,7 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		s.Model = args
 	})
 	observe.GlobalTrace("return: Result{DisplayText: model switched}, nil")
+	observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Model switched to: %s (takes effect on next ...")
 	return Result{DisplayText: fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)}, nil
 }
 

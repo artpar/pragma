@@ -25,12 +25,16 @@ func handleInsights(_ context.Context, _ string, deps Deps) (Result, error) {
 		observe.GlobalTrace("range msgs")
 		switch msg.Role {
 		case model.RoleUser:
+			observe.GlobalTrace("case: model.RoleUser")
 			userCount++
 		case model.RoleAssistant:
+			observe.GlobalTrace("case: model.RoleAssistant")
 			assistantCount++
 		}
 		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
 			if tc, ok := part.(model.ToolCallPart); ok {
+				observe.GlobalTrace("if: ok")
 				toolCalls[tc.Name]++
 			}
 		}
@@ -38,7 +42,6 @@ func handleInsights(_ context.Context, _ string, deps Deps) (Result, error) {
 
 	totalMsgs := userCount + assistantCount
 
-	// Cost and token aggregation
 	entries := deps.CostTracker.Snapshot()
 	totalCost := deps.CostTracker.TotalUSD()
 	var totalInput, totalOutput int
@@ -65,7 +68,6 @@ func handleInsights(_ context.Context, _ string, deps Deps) (Result, error) {
 		agg.output += e.Usage.OutputTokens
 	}
 
-	// Duration
 	duration := time.Since(snap.Conversation.CreatedAt)
 	durationStr := formatDuration(duration)
 
@@ -97,6 +99,7 @@ func handleInsights(_ context.Context, _ string, deps Deps) (Result, error) {
 	}
 
 	observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
+	observe.GlobalTrace("return: Result{DisplayText: strings.TrimSpace(b.String())}, nil")
 	return Result{DisplayText: strings.TrimSpace(b.String())}, nil
 }
 
@@ -106,31 +109,47 @@ type toolCallEntry struct {
 }
 
 func sortedToolCalls(m map[string]int) []toolCallEntry {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	entries := make([]toolCallEntry, 0, len(m))
 	for k, v := range m {
+		observe.GlobalTrace("range m")
 		entries = append(entries, toolCallEntry{k, v})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].count > entries[j].count
 	})
+	observe.GlobalTrace("return: entries")
 	return entries
 }
 
 func formatDuration(d time.Duration) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d < time.Minute {
+		observe.GlobalTrace("if: d < time.Minute")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%ds\", int(d.Seconds()))")
 		return fmt.Sprintf("%ds", int(d.Seconds()))
 	}
 	if d < time.Hour {
+		observe.GlobalTrace("if: d < time.Hour")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%dm\", int(d.Minutes()))")
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	}
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
+	observe.GlobalTrace("return: fmt.Sprintf(\"%dh %dm\", h, m)")
 	return fmt.Sprintf("%dh %dm", h, m)
 }
 
 func formatCount(n int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if n < 1000 {
+		observe.GlobalTrace("if: n < 1000")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%d\", n)")
 		return fmt.Sprintf("%d", n)
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"%d,%03d\", n/1000, n%1000)")
 	return fmt.Sprintf("%d,%03d", n/1000, n%1000)
 }

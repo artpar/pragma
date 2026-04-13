@@ -150,13 +150,14 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 	}
 	nbPath = filepath.Clean(nbPath)
 
-	// Security: prevent path traversal outside working directory.
-	// Use workDir + separator to avoid prefix attacks (e.g., /tmp/project-evil matching /tmp/project).
 	workDirPrefix := state.WorkDir()
 	if !strings.HasSuffix(workDirPrefix, string(filepath.Separator)) {
+		observe.GlobalTrace("if: !strings.HasSuffix(workDirPrefix, string(filepath.Separator))")
 		workDirPrefix += string(filepath.Separator)
 	}
 	if !strings.HasPrefix(nbPath, workDirPrefix) && nbPath != state.WorkDir() {
+		observe.GlobalTrace("if: !strings.HasPrefix(nbPath, workDirPrefix) && nbPath != state.WorkDir()")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"path %q is outside working directory\", in.No...")
 		return tool.InvokeResult{}, fmt.Errorf("path %q is outside working directory", in.NotebookPath)
 	}
 

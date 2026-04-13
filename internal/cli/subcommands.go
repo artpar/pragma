@@ -23,12 +23,15 @@ func RegisterSubcommands(root *cobra.Command, registry *slash.Registry) {
 	defer observe.GlobalTrace("exit")
 
 	for _, cmd := range registry.Commands() {
+		observe.GlobalTrace("range registry.Commands()")
 		if cmd.CLIUse == "" {
+			observe.GlobalTrace("if: cmd.CLIUse == \"\"")
 			continue
 		}
-		slashCmd := cmd // capture for closure
+		slashCmd := cmd
 		short := slashCmd.CLIShort
 		if short == "" {
+			observe.GlobalTrace("if: short == \"\"")
 			short = slashCmd.Description
 		}
 		cobraCmd := &cobra.Command{
@@ -56,9 +59,12 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 
 	d, err := SetupDeps(cmd)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	if d.Cleanup != nil {
+		observe.GlobalTrace("if: d.Cleanup != nil")
 		defer d.Cleanup()
 	}
 
@@ -69,18 +75,18 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	})
 
 	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
 		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
 	}
 	defer func() {
 		if d.HookMgr != nil {
+			observe.GlobalTrace("if: d.HookMgr != nil")
 			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
 		}
 	}()
 
-	// Inject AllowedTools as session permission rules so the command's
-	// git/bash operations are auto-approved without user interaction.
-	// Matches TS pattern: allowedTools → alwaysAllowRules.command
 	for _, spec := range slashCmd.AllowedTools {
+		observe.GlobalTrace("range slashCmd.AllowedTools")
 		rule := parseAllowedToolSpec(spec)
 		d.Checker.AddSessionRule(rule)
 	}
@@ -89,6 +95,8 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	asker := &tui.NonInteractiveAsker{}
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	applyToolFilters(cmd, d.Registry)
@@ -96,7 +104,6 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	compDeps, _ := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
 
-	// Build slash deps and invoke the handler to get the prompt
 	slashDeps := slash.Deps{
 		Store:       d.Store,
 		CostTracker: d.CostTracker,
@@ -108,43 +115,55 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 
 	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"command /%s: %w\", slashCmd.Name, err)")
 		return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
 	}
 
 	if result.InjectPrompt == "" {
+		observe.GlobalTrace("if: result.InjectPrompt == \"\"")
 		if result.DisplayText != "" {
+			observe.GlobalTrace("if: result.DisplayText != \"\"")
 			fmt.Println(result.DisplayText)
 		}
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
-	// Run the engine with the injected prompt
 	ctx := cmd.Context()
 	events := engine.Run(ctx, result.InjectPrompt)
 
 	for ev := range events {
+		observe.GlobalTrace("range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
+			observe.GlobalTrace("typecase: query.TextEvent")
 			fmt.Print(e.Text)
 		case query.ThinkingEvent:
+			observe.GlobalTrace("typecase: query.ThinkingEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprint(os.Stderr, e.Text)
 			}
 		case query.ToolCallEvent:
+			observe.GlobalTrace("typecase: query.ToolCallEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
 			}
 		case query.ToolResultEvent:
+			observe.GlobalTrace("typecase: query.ToolResultEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
 			}
 		case query.CompactionEvent:
+			observe.GlobalTrace("typecase: query.CompactionEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
 			}
 		case query.TurnCompleteEvent:
+			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 			fmt.Println()
 		case query.ErrorEvent:
+			observe.GlobalTrace("typecase: query.ErrorEvent")
 			SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
 			return e.Err
 		}
@@ -153,8 +172,10 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
 
 	if d.Cfg.Verbose {
+		observe.GlobalTrace("if: d.Cfg.Verbose")
 		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", d.CostTracker.TotalUSD())
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -165,10 +186,11 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	// Try full deps — some local commands need Store/CostTracker (e.g., cost, model)
 	d, fullErr := SetupDeps(cmd)
 	if fullErr == nil {
+		observe.GlobalTrace("if: fullErr == nil")
 		if d.Cleanup != nil {
+			observe.GlobalTrace("if: d.Cleanup != nil")
 			defer d.Cleanup()
 		}
 		slashDeps := slash.Deps{
@@ -181,21 +203,26 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 		}
 		result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"command /%s: %w\", slashCmd.Name, err)")
 			return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
 		}
 		if result.DisplayText != "" {
+			observe.GlobalTrace("if: result.DisplayText != \"\"")
 			fmt.Println(result.DisplayText)
 		}
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
-	// Fallback: lightweight deps for commands that don't need provider (e.g., doctor)
 	cwd, _ := os.Getwd()
 	cfg, _ := config.Load(cwd)
 	if m, _ := cmd.Flags().GetString("model"); m != "" {
+		observe.GlobalTrace("if: m != \"\"")
 		cfg.Model = m
 	}
 	if p, _ := cmd.Flags().GetString("provider"); p != "" {
+		observe.GlobalTrace("if: p != \"\"")
 		cfg.Provider = p
 	}
 
@@ -207,23 +234,31 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 
 	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"command /%s: %w\", slashCmd.Name, err)")
 		return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
 	}
 	if result.DisplayText != "" {
+		observe.GlobalTrace("if: result.DisplayText != \"\"")
 		fmt.Println(result.DisplayText)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 // parseAllowedToolSpec parses a TS-style tool spec like "Bash(git add:*)"
 // into a permission Rule. Format: "ToolName(content)" or just "ToolName".
 func parseAllowedToolSpec(spec string) permission.Rule {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	toolName := spec
 	content := ""
 	if idx := strings.Index(spec, "("); idx > 0 && strings.HasSuffix(spec, ")") {
+		observe.GlobalTrace("if: idx > 0 && strings.HasSuffix(spec, \")\")")
 		toolName = spec[:idx]
 		content = spec[idx+1 : len(spec)-1]
 	}
+	observe.GlobalTrace("return: permission.Rule{\n\tToolName:\ttoolName,\n\tContent:\tcontent,\n\tDecision:\tpermissio...")
 	return permission.Rule{
 		ToolName: toolName,
 		Content:  content,

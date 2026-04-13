@@ -174,12 +174,15 @@ func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content strin
 	var result strings.Builder
 	var firstErr error
 	for ev := range events {
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
+			observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "typecase: query.TextEvent")
 			if firstErr == nil {
 				result.WriteString(e.Text)
 			}
 		case query.ErrorEvent:
+			observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "typecase: query.ErrorEvent")
 			if firstErr == nil {
 				firstErr = e.Err
 				observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "error: "+e.Err.Error())
@@ -188,6 +191,8 @@ func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content strin
 	}
 
 	if firstErr != nil {
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: firstErr != nil")
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Skill %q failed: %v\", s.Name, first...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("Skill %q failed: %v", s.Name, firstErr),
 		}, nil
@@ -195,6 +200,7 @@ func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content strin
 
 	resultText := result.String()
 	if resultText == "" {
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: resultText == \"\"")
 		resultText = "(skill produced no output)"
 	}
 	observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Skill completed with result:\\n\\n%s\"...")

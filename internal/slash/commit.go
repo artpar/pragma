@@ -50,14 +50,15 @@ func handleCommit(ctx context.Context, _ string, deps Deps) (Result, error) {
 	observe.TraceCtx(ctx, "slash", "handleCommit", "enter")
 	defer observe.TraceCtx(ctx, "slash", "handleCommit", "exit")
 
-	// Build attribution line from model name (LLM-generic, matches TS Co-Authored-By pattern)
 	attribution := ""
 	modelName := deps.ModelName
 	if modelName != "" {
+		observe.TraceCtx(ctx, "slash", "handleCommit", "if: modelName != \"\"")
 		attribution = fmt.Sprintf("\n\nCo-Authored-By: %s <noreply@anthropic.com>", modelName)
 	}
 
 	promptWithAttribution := fmt.Sprintf(commitPromptTemplate, attribution)
 	prompt := ExecShellInPrompt(ctx, promptWithAttribution, 30*time.Second)
+	observe.TraceCtx(ctx, "slash", "handleCommit", "return: Result{InjectPrompt: prompt}, nil")
 	return Result{InjectPrompt: prompt}, nil
 }

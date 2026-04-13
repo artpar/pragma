@@ -32,5 +32,6 @@ This file provides guidance to gogent when working with code in this repository.
 func handleInit(_ context.Context, _ string, _ Deps) (Result, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: Result{InjectPrompt: initPrompt}, nil")
 	return Result{InjectPrompt: initPrompt}, nil
 }

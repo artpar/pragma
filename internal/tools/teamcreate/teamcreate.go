@@ -51,8 +51,18 @@ type Tool struct {
 	Bus   *observe.EventBus
 }
 
-func (t *Tool) Name() string        { return "TeamCreate" }
-func (t *Tool) Description() string { return teamCreateDescription }
+func (t *Tool) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"TeamCreate\"")
+	return "TeamCreate"
+}
+func (t *Tool) Description() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: teamCreateDescription")
+	return teamCreateDescription
+}
 
 const teamCreateDescription = `Create a multi-agent swarm team with a lead agent and associated task list.
 
@@ -74,8 +84,16 @@ that benefit from parallel work.
 - Team config stored at ~/.gogent/teams/{name}/config.json
 - Only one team per leader at a time`
 
-func (t *Tool) InputSchema() json.RawMessage { return inputSchema }
+func (t *Tool) InputSchema() json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
+	return inputSchema
+}
 func (t *Tool) Flags() tool.ToolFlags {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
@@ -86,8 +104,11 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		TeamName string `json:"team_name"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.CheckPerm", "if: err != nil")
+		observe.TraceCtx(ctx, "teamcreate", "Tool.CheckPerm", "return: checker.Check(ctx, \"TeamCreate\", \"\")")
 		return checker.Check(ctx, "TeamCreate", "")
 	}
+	observe.TraceCtx(ctx, "teamcreate", "Tool.CheckPerm", "return: checker.Check(ctx, \"TeamCreate\", in.TeamName)")
 	return checker.Check(ctx, "TeamCreate", in.TeamName)
 }
 
@@ -97,25 +118,30 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 
 	var in teamCreateInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.TeamName == "" {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: in.TeamName == \"\"")
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"team_name is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("team_name is required")
 	}
 
 	snap := t.Store.Snapshot()
 
-	// Only one team per leader
 	if snap.TeamContext != nil {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: snap.TeamContext != nil")
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\n\t\"already leading team %q — delete the cur...")
 		return tool.InvokeResult{}, fmt.Errorf(
 			"already leading team %q — delete the current team before creating a new one",
 			snap.TeamContext.TeamName)
 	}
 
-	// Resolve unique name
 	sanitized := team.SanitizeName(in.TeamName)
 	finalName := sanitized
 	if team.TeamExists(finalName) {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: team.TeamExists(finalName)")
 		finalName = team.GenerateWordSlug()
 		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke",
 			fmt.Sprintf("name conflict, generated slug: %s", finalName))
@@ -140,18 +166,19 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		}},
 	}
 
-	// Write team file (atomic: temp + rename)
 	if err := team.WriteTeamFile(finalName, &tf); err != nil {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write team file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("write team file: %w", err)
 	}
 
-	// Create tasks directory
 	tasksDir := team.TasksDir(finalName)
 	if err := os.MkdirAll(tasksDir, 0755); err != nil {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create tasks dir: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("create tasks dir: %w", err)
 	}
 
-	// Update AppState
 	teamFilePath := team.TeamFilePath(finalName)
 	t.Store.Update(func(s *app.AppState) {
 		s.TeamContext = &app.TeamContext{
@@ -161,8 +188,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		}
 	})
 
-	// Emit event
 	if t.Bus != nil {
+		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: t.Bus != nil")
 		t.Bus.Emit(observe.TeamCreated{
 			EventHeader: observe.NewEventHeader("TeamCreated", "", "", ""),
 			TeamName:    finalName,
@@ -177,5 +204,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		LeadAgentID:  leadAgentID,
 	}
 	data, _ := json.Marshal(out)
+	observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
