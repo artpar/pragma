@@ -76,10 +76,11 @@ func LLMNode(prov provider.Provider, bus *observe.EventBus, cfg LLMNodeConfig) l
 		}
 
 		return lifecycle.StateUpdate{
-			KeyMessages:  []model.Message{assistantMsg},
+			KeyMessages:   []model.Message{assistantMsg},
 			KeyStopReason: string(resp.StopReason),
-			KeyResponse:  resp,
-			KeyTurnCount: 1,
+			KeyResponse:   resp,
+			KeyTurnCount:  1,
+			KeyTotalUsage: resp.Usage,
 		}, nil
 	}
 }

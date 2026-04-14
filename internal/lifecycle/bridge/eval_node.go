@@ -100,6 +100,15 @@ func EvalNode(prov provider.Provider, bus *observe.EventBus, cfg EvalNodeConfig)
 			}
 		}
 
+		respText = stripMarkdownFences(respText)
+		respText = strings.TrimSpace(respText)
+		if idx := strings.Index(respText, "{"); idx > 0 {
+			respText = respText[idx:]
+		}
+		if idx := strings.LastIndex(respText, "}"); idx >= 0 {
+			respText = respText[:idx+1]
+		}
+
 		var evalResp evalResponse
 		if err := json.Unmarshal([]byte(respText), &evalResp); err != nil {
 			// If JSON parsing fails, treat as not passed
@@ -113,14 +122,16 @@ func EvalNode(prov provider.Provider, bus *observe.EventBus, cfg EvalNodeConfig)
 				})
 			}
 			return lifecycle.StateUpdate{
-				KeyPassed: false,
-				KeyScore:  0.0,
+				KeyPassed:     false,
+				KeyScore:      0.0,
+				KeyTotalUsage: resp.Usage,
 			}, nil
 		}
 
 		return lifecycle.StateUpdate{
-			KeyPassed: evalResp.Passed,
-			KeyScore:  evalResp.Score,
+			KeyPassed:     evalResp.Passed,
+			KeyScore:      evalResp.Score,
+			KeyTotalUsage: resp.Usage,
 		}, nil
 	}
 }

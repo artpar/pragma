@@ -48,31 +48,22 @@ var inputSchema = json.RawMessage(`{
 	}
 }`)
 
-const toolDescription = `Execute a task using a structured workflow instead of ad-hoc tool calling.
+const toolDescription = `Execute a task using a structured workflow. This is the primary way to perform any task that requires tool use.
 
 Describe the execution structure you want in natural language, and the system compiles it into an executable workflow graph. You do not need to know the graph format — just describe the steps, evaluation gates, and retry logic you need.
 
-Examples of structure descriptions:
+For simple tasks (file reads, searches, single edits), use pattern="react" — the standard tool-calling loop that gives every task lifecycle structure.
+
+For multi-phase tasks, describe the structure explicitly:
 - "try fixing the code, run the tests, if tests fail reflect on what went wrong and retry up to 3 times"
 - "plan the refactoring steps first, then execute each step with tools, then verify the result"
 - "analyze from a security perspective, then from a performance perspective, then merge the findings"
 - "attempt the task, evaluate if it succeeded, if not reflect and try a different approach"
 
-Use this tool when:
-- Your previous attempt at a task failed and you want structured retry with self-evaluation
-- The task has clear phases that should execute in a guaranteed order
-- You need evaluation gates between steps to verify progress
-- You want forced self-critique before retrying a failed approach
-
-Do NOT use for:
-- Simple tasks that need 1-3 tool calls — just do them directly
-- Research or exploration — use Agent instead
-- Your first attempt at any task — try direct tool calls first
-
 Built-in pattern shortcuts (use pattern instead of structure):
-- react: standard tool-calling loop
-- plan-execute: plan, execute, replan loop
-- reflexion: attempt, evaluate, reflect on failure, retry`
+- react: standard tool-calling loop — use this for straightforward tasks
+- plan-execute: plan, execute, replan loop — use for tasks needing upfront planning
+- reflexion: attempt, evaluate, reflect on failure, retry — use when self-correction matters`
 
 // Tool implements the LifecycleRun tool for executing structured workflows.
 type Tool struct {
@@ -178,11 +169,18 @@ func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge
 		return nil, fmt.Errorf("generate graph: %w", err)
 	}
 
+	// Ensure total_usage reducer is always present for token tracking
+	if def.Graph.Reducers == nil {
+		def.Graph.Reducers = make(map[string]string)
+	}
+	def.Graph.Reducers["total_usage"] = "total_usage"
+
 	factory := bridge.NewNodeFactory(infra)
 	opts := &definition.ResolveOptions{
 		CustomReducers: map[string]lifecycle.ReducerFunc{
 			"messages":    bridge.MessageReducer,
 			"reflections": bridge.ReflectionReducer,
+			"total_usage": bridge.UsageReducer,
 		},
 	}
 
@@ -202,14 +200,14 @@ func (t *Tool) buildInitialState(in lifecycleInput, snap app.AppState) lifecycle
 		Content: []model.ContentPart{model.TextPart{Text: in.Prompt}},
 	}
 
-	sysText := "You are a helpful AI assistant."
+	sys := snap.Conversation.System
 	if in.System != "" {
-		sysText = in.System
+		sys = model.SystemPrompt{Blocks: []model.SystemBlock{{Text: in.System, Cacheable: true}}}
 	}
 
 	return lifecycle.State{
 		bridge.KeyMessages:  []model.Message{userMsg},
-		bridge.KeySystem:    model.SystemPrompt{Blocks: []model.SystemBlock{{Text: sysText, Cacheable: true}}},
+		bridge.KeySystem:    sys,
 		bridge.KeyModelID:   snap.Model,
 		bridge.KeyMaxTokens: snap.MaxTokens,
 		bridge.KeyTools:     t.Registry.ToolDefs(),

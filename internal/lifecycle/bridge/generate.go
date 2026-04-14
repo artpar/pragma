@@ -200,8 +200,14 @@ func GenerateGraph(ctx context.Context, prov provider.Provider, bus *observe.Eve
 }
 
 // stripMarkdownFences removes ```yaml ... ``` wrapping if present.
+// Handles leading prose before fences (e.g., "Here is the YAML:\n```yaml\n...").
 func stripMarkdownFences(s string) string {
 	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "```") {
+		if idx := strings.Index(s, "```"); idx >= 0 {
+			s = s[idx:]
+		}
+	}
 	if strings.HasPrefix(s, "```") {
 		if idx := strings.Index(s, "\n"); idx >= 0 {
 			s = s[idx+1:]

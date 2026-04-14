@@ -192,7 +192,9 @@ func loadYAMLGraph(path string, infra bridge.Infra) (*lifecycle.Graph, error) {
 	factory := bridge.NewNodeFactory(infra)
 	opts := &definition.ResolveOptions{
 		CustomReducers: map[string]lifecycle.ReducerFunc{
-			"messages": bridge.MessageReducer,
+			"messages":    bridge.MessageReducer,
+			"reflections": bridge.ReflectionReducer,
+			"total_usage": bridge.UsageReducer,
 		},
 	}
 

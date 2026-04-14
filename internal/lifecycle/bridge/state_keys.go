@@ -18,7 +18,8 @@ const (
 	KeyPassed      = "passed"      // bool
 	KeyScore       = "score"       // float64
 	KeyReflections = "reflections" // []string
-	KeyTurnCount   = "turn_count"  // int
+	KeyTurnCount   = "turn_count"   // int
+	KeyTotalUsage  = "total_usage"  // model.TokenUsage
 )
 
 // Messages extracts []model.Message from state. Returns nil if missing or wrong type.
@@ -84,6 +85,15 @@ func Passed(s lifecycle.State) bool {
 // Score extracts the evaluation score from state.
 func Score(s lifecycle.State) float64 {
 	v, _ := s[KeyScore].(float64)
+	return v
+}
+
+// TotalUsage extracts the accumulated token usage from state.
+func TotalUsage(s lifecycle.State) model.TokenUsage {
+	v, ok := s[KeyTotalUsage].(model.TokenUsage)
+	if !ok {
+		return model.TokenUsage{}
+	}
 	return v
 }
 

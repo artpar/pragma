@@ -538,6 +538,12 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 		return nil, err
 	}
 
+	// Ensure total_usage reducer is always present for token tracking
+	if def.Graph.Reducers == nil {
+		def.Graph.Reducers = make(map[string]string)
+	}
+	def.Graph.Reducers["total_usage"] = "total_usage"
+
 	snap := subStore.Snapshot()
 	infra := bridge.Infra{
 		Provider:     t.Provider,
@@ -552,6 +558,7 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 		CustomReducers: map[string]lifecycle.ReducerFunc{
 			"messages":    bridge.MessageReducer,
 			"reflections": bridge.ReflectionReducer,
+			"total_usage": bridge.UsageReducer,
 		},
 	}
 
@@ -575,6 +582,7 @@ func (t *Tool) runGraphSync(
 
 	var result strings.Builder
 	var turnCount int
+	var usage model.TokenUsage
 
 	for ev := range events {
 		switch e := ev.(type) {
@@ -582,6 +590,7 @@ func (t *Tool) runGraphSync(
 			result.WriteString(e.Text)
 		case query.TurnCompleteEvent:
 			turnCount++
+			usage = e.Response.Usage
 		case query.ErrorEvent:
 			t.updateTask(taskID, func(tt *task.Task) {
 				tt.Status = task.TaskFailed
@@ -609,6 +618,7 @@ func (t *Tool) runGraphSync(
 		SubAgentID:  taskID,
 		DurationMs:  time.Since(startTime).Milliseconds(),
 		TurnCount:   turnCount,
+		Usage:       usage,
 	})
 
 	t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)

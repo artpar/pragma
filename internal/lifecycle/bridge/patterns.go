@@ -25,6 +25,7 @@ func NewReAct(infra Infra) *lifecycle.Graph {
 		SetInitialNode("llm").
 		SetReducer(KeyMessages, MessageReducer).
 		SetReducer(KeyTurnCount, lifecycle.ReducerSum).
+		SetReducer(KeyTotalUsage, UsageReducer).
 		AddConditionalEdges("llm", StopReasonRouter(), map[string]string{
 			"continue": "tools",
 			"end":      "",
@@ -53,6 +54,7 @@ func NewPlanExecute(infra Infra) *lifecycle.Graph {
 		SetInitialNode("planner").
 		SetReducer(KeyMessages, MessageReducer).
 		SetReducer(KeyTurnCount, lifecycle.ReducerSum).
+		SetReducer(KeyTotalUsage, UsageReducer).
 		AddEdge("planner", "executor").
 		AddEdge("executor", "replanner").
 		AddConditionalEdges("replanner", StopReasonRouter(), map[string]string{
@@ -78,6 +80,7 @@ func NewReflexion(infra Infra, maxTrials int) *lifecycle.Graph {
 		SetReducer(KeyMessages, MessageReducer).
 		SetReducer(KeyReflections, ReflectionReducer).
 		SetReducer(KeyTurnCount, lifecycle.ReducerSum).
+		SetReducer(KeyTotalUsage, UsageReducer).
 		SetMaxSteps(maxTrials*4+5).
 		AddEdge("actor", "evaluator").
 		AddConditionalEdges("evaluator", func(s lifecycle.State) string {

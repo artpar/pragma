@@ -178,5 +178,19 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	if resultText.Len() > 0 {
 		ch <- TextEvent{Text: resultText.String()}
 	}
-	ch <- TurnCompleteEvent{StopReason: model.StopEndTurn}
+
+	stopReason := model.StopEndTurn
+	if sr := bridge.StopReason(finalState); sr != "" {
+		stopReason = model.StopReason(sr)
+	}
+	var resp model.Response
+	if r, ok := finalState[bridge.KeyResponse].(model.Response); ok {
+		resp = r
+	}
+	// Use accumulated total usage from all LLM calls, not just the last response
+	totalUsage := bridge.TotalUsage(finalState)
+	if totalUsage.InputTokens > 0 || totalUsage.OutputTokens > 0 {
+		resp.Usage = totalUsage
+	}
+	ch <- TurnCompleteEvent{Response: resp, StopReason: stopReason}
 }

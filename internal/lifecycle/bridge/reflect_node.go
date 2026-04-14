@@ -98,6 +98,7 @@ func ReflectNode(prov provider.Provider, bus *observe.EventBus) lifecycle.NodeFu
 		return lifecycle.StateUpdate{
 			KeyReflections: []string{reflectionText},
 			KeyMessages:    []model.Message{injectionMsg},
+			KeyTotalUsage:  resp.Usage,
 		}, nil
 	}
 }

@@ -22,6 +22,24 @@ func MessageReducer(existing, incoming any) any {
 	return result
 }
 
+// UsageReducer sums model.TokenUsage fields across LLM calls.
+func UsageReducer(existing, incoming any) any {
+	inUsage, ok := incoming.(model.TokenUsage)
+	if !ok {
+		return incoming
+	}
+	exUsage, ok := existing.(model.TokenUsage)
+	if !ok {
+		return inUsage
+	}
+	return model.TokenUsage{
+		InputTokens:              exUsage.InputTokens + inUsage.InputTokens,
+		OutputTokens:             exUsage.OutputTokens + inUsage.OutputTokens,
+		CacheCreationInputTokens: exUsage.CacheCreationInputTokens + inUsage.CacheCreationInputTokens,
+		CacheReadInputTokens:     exUsage.CacheReadInputTokens + inUsage.CacheReadInputTokens,
+	}
+}
+
 // ReflectionReducer appends []string slices for accumulated reflections.
 func ReflectionReducer(existing, incoming any) any {
 	inStrs, ok := incoming.([]string)
