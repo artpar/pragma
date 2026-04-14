@@ -43,6 +43,7 @@ import (
 	toolteamcreate "github.com/artpar/gogent/internal/tools/teamcreate"
 	toolteamdelete "github.com/artpar/gogent/internal/tools/teamdelete"
 	tooltodo "github.com/artpar/gogent/internal/tools/todo"
+	toollifecycle "github.com/artpar/gogent/internal/tools/lifecycle"
 	tooltoolsearch "github.com/artpar/gogent/internal/tools/toolsearch"
 	toolwebfetch "github.com/artpar/gogent/internal/tools/webfetch"
 	toolwebsearch "github.com/artpar/gogent/internal/tools/websearch"
@@ -88,7 +89,14 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		}
 	}
 
-	agentTool := &toolagent.Tool{EngineFactory: engineFactory, Store: d.Store, Tasks: d.TaskReg, Bus: d.Bus}
+	agentTool := &toolagent.Tool{
+		EngineFactory:  engineFactory,
+		Store:          d.Store,
+		Tasks:          d.TaskReg,
+		Bus:            d.Bus,
+		Provider:       d.Prov,
+		SecondaryModel: SecondaryModelFor(d.Cfg.Provider),
+	}
 	if err := d.Registry.Register(agentTool); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
@@ -134,6 +142,19 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 			Persist: permission.PersistRule,
 		})
 	}
+	lifecycleTool := &toollifecycle.Tool{
+		Provider:       d.Prov,
+		Orchestrator:   orchestrator,
+		Registry:       d.Registry,
+		Bus:            d.Bus,
+		Store:          d.Store,
+		SecondaryModel: SecondaryModelFor(d.Cfg.Provider),
+	}
+	if err := d.Registry.Register(lifecycleTool); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return nil, fmt.Errorf("register lifecycle tool: %w", err)
+	}
+
 	engine := query.NewEngine(d.Prov, d.Registry, orchestrator, d.Store, d.CostTracker, d.Bus, d.EngineCfg)
 	if d.HookMgr != nil {
 		observe.GlobalTrace("if: d.HookMgr != nil")

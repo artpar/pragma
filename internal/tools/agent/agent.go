@@ -11,9 +11,13 @@ import (
 	"time"
 
 	"github.com/artpar/gogent/internal/app"
+	"github.com/artpar/gogent/internal/lifecycle"
+	"github.com/artpar/gogent/internal/lifecycle/bridge"
+	"github.com/artpar/gogent/internal/lifecycle/definition"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
+	"github.com/artpar/gogent/internal/provider"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/task"
 	"github.com/artpar/gogent/internal/tool"
@@ -27,6 +31,7 @@ type AgentInput struct {
 	Model           string `json:"model,omitempty" desc:"Optional model override for the sub-agent"`
 	RunInBackground bool   `json:"run_in_background,omitempty" desc:"Run the agent asynchronously in the background"`
 	Isolation       string `json:"isolation,omitempty" desc:"Isolation mode: 'worktree' for git worktree isolation, or empty for shared workspace"`
+	Structure       string `json:"structure,omitempty" desc:"Natural language description of the execution structure for this sub-agent"`
 }
 
 var inputSchema = json.RawMessage(`{
@@ -53,6 +58,10 @@ var inputSchema = json.RawMessage(`{
 			"type": "string",
 			"enum": ["worktree", ""],
 			"description": "Isolation mode: 'worktree' creates a git worktree so the agent works on a separate copy of the repo."
+		},
+		"structure": {
+			"type": "string",
+			"description": "Natural language description of the execution structure for this sub-agent. When provided, the sub-agent executes as a structured workflow instead of the default tool-calling loop. Describe the steps, evaluation gates, and retry logic you want. Examples: 'try fixing, run tests, if fail reflect and retry 3x', 'plan steps first, execute each, verify result'."
 		}
 	}
 }`)
@@ -74,10 +83,12 @@ type EngineFactory func(forkedConv model.Conversation, scopedToolNames []string,
 
 // Tool implements the Agent tool for spawning sub-agents.
 type Tool struct {
-	EngineFactory EngineFactory
-	Store         *app.StateStore // parent store — for forking the conversation
-	Tasks         *task.Registry
-	Bus           *observe.EventBus
+	EngineFactory  EngineFactory
+	Store          *app.StateStore // parent store — for forking the conversation
+	Tasks          *task.Registry
+	Bus            *observe.EventBus
+	Provider       provider.Provider // for lifecycle graph generation
+	SecondaryModel string            // cheaper model for graph compilation
 }
 
 func (t *Tool) Name() string {
@@ -231,6 +242,21 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		AgentName:   subject,
 		Model:       in.Model,
 	})
+
+	// Structured execution via lifecycle graph
+	if in.Structure != "" {
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Structure != \"\"")
+		graph, err := t.compileStructure(ctx, in.Structure, engine, subStore)
+		if err != nil {
+			t.updateTask(tk.ID, func(tt *task.Task) {
+				tt.Status = task.TaskFailed
+				tt.Error = err.Error()
+			})
+			t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
+			return tool.InvokeResult{}, fmt.Errorf("compile structure: %w", err)
+		}
+		return t.runGraphSync(ctx, tk.ID, engine, graph, in, wtPath, wtBranch, wtHeadCommit)
+	}
 
 	if in.RunInBackground {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.RunInBackground")
@@ -495,6 +521,107 @@ func (t *Tool) cleanupWorktreeIfEmpty(wtPath, headCommit string) {
 
 	cmd := exec.Command("git", "worktree", "remove", "--force", wtPath)
 	_ = cmd.Run()
+}
+
+// compileStructure generates a lifecycle graph from a natural language description.
+func (t *Tool) compileStructure(ctx context.Context, structure string, engine *query.Engine, subStore *app.StateStore) (*lifecycle.Graph, error) {
+	observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "enter")
+	defer observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "exit")
+
+	modelID := t.SecondaryModel
+	if modelID == "" {
+		modelID = t.Store.Snapshot().Model
+	}
+
+	def, err := bridge.GenerateGraph(ctx, t.Provider, t.Bus, modelID, structure)
+	if err != nil {
+		return nil, err
+	}
+
+	snap := subStore.Snapshot()
+	infra := bridge.Infra{
+		Provider:     t.Provider,
+		Orchestrator: engine.Orchestrator(),
+		Registry:     engine.Registry(),
+		Bus:          t.Bus,
+		Cwd:          snap.CWD,
+	}
+
+	factory := bridge.NewNodeFactory(infra)
+	opts := &definition.ResolveOptions{
+		CustomReducers: map[string]lifecycle.ReducerFunc{
+			"messages":    bridge.MessageReducer,
+			"reflections": bridge.ReflectionReducer,
+		},
+	}
+
+	return definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
+}
+
+// runGraphSync runs a lifecycle graph synchronously and returns the result.
+func (t *Tool) runGraphSync(
+	ctx context.Context,
+	taskID string,
+	engine *query.Engine,
+	graph *lifecycle.Graph,
+	in AgentInput,
+	wtPath, wtBranch, wtHeadCommit string,
+) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "enter")
+	defer observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "exit")
+	startTime := time.Now()
+
+	events := engine.RunGraph(ctx, graph, in.Prompt)
+
+	var result strings.Builder
+	var turnCount int
+
+	for ev := range events {
+		switch e := ev.(type) {
+		case query.TextEvent:
+			result.WriteString(e.Text)
+		case query.TurnCompleteEvent:
+			turnCount++
+		case query.ErrorEvent:
+			t.updateTask(taskID, func(tt *task.Task) {
+				tt.Status = task.TaskFailed
+				tt.Error = e.Err.Error()
+			})
+			t.Bus.Emit(observe.SubAgentFailed{
+				EventHeader:  observe.NewEventHeader("SubAgentFailed", "", observe.NewSpanID(), ""),
+				SubAgentID:   taskID,
+				ErrorType:    "graph_error",
+				ErrorMessage: e.Err.Error(),
+			})
+			t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
+			return tool.InvokeResult{Content: fmt.Sprintf("Agent graph failed: %v", e.Err)}, nil
+		}
+	}
+
+	resultStr := result.String()
+	t.updateTask(taskID, func(tt *task.Task) {
+		tt.Status = task.TaskCompleted
+		tt.Result = resultStr
+	})
+
+	t.Bus.Emit(observe.SubAgentCompleted{
+		EventHeader: observe.NewEventHeader("SubAgentCompleted", "", observe.NewSpanID(), ""),
+		SubAgentID:  taskID,
+		DurationMs:  time.Since(startTime).Milliseconds(),
+		TurnCount:   turnCount,
+	})
+
+	t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
+
+	ar := agentResult{
+		Status:       "completed",
+		Prompt:       in.Prompt,
+		Result:       resultStr,
+		WorktreePath: wtPath,
+		Branch:       wtBranch,
+	}
+	data, _ := json.Marshal(ar)
+	return tool.InvokeResult{Content: string(data)}, nil
 }
 
 func excludeTool(names []string, exclude string) []string {

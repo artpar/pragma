@@ -1,9 +1,15 @@
 package query
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/compact"
 	"github.com/artpar/gogent/internal/hook"
+	"github.com/artpar/gogent/internal/lifecycle"
+	"github.com/artpar/gogent/internal/lifecycle/bridge"
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
@@ -99,4 +105,78 @@ func (e *Engine) SetCompaction(deps CompactionDeps) {
 	e.compactor = deps.Compactor
 	e.autoTracker = deps.AutoTracker
 	e.windowConfig = deps.WindowConfig
+}
+
+// Orchestrator returns the engine's tool orchestrator.
+func (e *Engine) Orchestrator() *tool.Orchestrator { return e.orchestrator }
+
+// Registry returns the engine's tool registry.
+func (e *Engine) Registry() *tool.Registry { return e.registry }
+
+// RunGraph executes a lifecycle graph using the engine's own provider, orchestrator,
+// and registry. Returns a channel of LoopEvents, same as Run().
+func (e *Engine) RunGraph(ctx context.Context, graph *lifecycle.Graph, prompt string) <-chan LoopEvent {
+	observe.TraceCtx(ctx, "query", "Engine.RunGraph", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.RunGraph", "exit")
+	ch := make(chan LoopEvent, 16)
+	go func() {
+		defer close(ch)
+		defer func() {
+			if r := recover(); r != nil {
+				ch <- ErrorEvent{Err: fmt.Errorf("graph execution panic: %v", r)}
+			}
+		}()
+		e.runGraph(ctx, graph, prompt, ch)
+	}()
+	return ch
+}
+
+func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt string, ch chan<- LoopEvent) {
+	observe.TraceCtx(ctx, "query", "Engine.runGraph", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.runGraph", "exit")
+
+	snap := e.store.Snapshot()
+
+	userMsg := model.Message{
+		ID:   model.NewUUID(),
+		Role: model.RoleUser,
+		Content: []model.ContentPart{model.TextPart{Text: prompt}},
+	}
+
+	initialState := lifecycle.State{
+		bridge.KeyMessages:  []model.Message{userMsg},
+		bridge.KeySystem:    snap.Conversation.System,
+		bridge.KeyModelID:   e.config.Model,
+		bridge.KeyMaxTokens: e.config.MaxTokens,
+		bridge.KeyTools:     e.registry.ToolDefs(),
+	}
+
+	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(e.bus))
+	finalState, err := executor.Run(ctx, initialState)
+
+	if err != nil {
+		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", err)}
+		return
+	}
+
+	// Extract final assistant text
+	var resultText strings.Builder
+	msgs := bridge.Messages(finalState)
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == model.RoleAssistant {
+			for _, part := range msgs[i].Content {
+				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+					resultText.WriteString(tp.Text)
+				}
+			}
+			if resultText.Len() > 0 {
+				break
+			}
+		}
+	}
+
+	if resultText.Len() > 0 {
+		ch <- TextEvent{Text: resultText.String()}
+	}
+	ch <- TurnCompleteEvent{StopReason: model.StopEndTurn}
 }
