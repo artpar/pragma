@@ -34,6 +34,9 @@ type evalResponse struct {
 // Reads: messages, system, model_id, max_tokens
 // Writes: passed, score
 func EvalNode(prov provider.Provider, bus *observe.EventBus, cfg EvalNodeConfig) lifecycle.NodeFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, erro...")
 	return func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, error) {
 		msgs := Messages(state)
 		modelID := ModelID(state)
@@ -111,7 +114,7 @@ func EvalNode(prov provider.Provider, bus *observe.EventBus, cfg EvalNodeConfig)
 
 		var evalResp evalResponse
 		if err := json.Unmarshal([]byte(respText), &evalResp); err != nil {
-			// If JSON parsing fails, treat as not passed
+
 			if bus != nil {
 				bus.Emit(observe.ErrorOccurred{
 					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),

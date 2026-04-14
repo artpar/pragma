@@ -349,6 +349,89 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	// Hook events
+	case "HookExecuted":
+		var e HookExecuted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "HookBlocked":
+		var e HookBlocked
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	// Permission persistence
+	case "PermissionPersisted":
+		var e PermissionPersisted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	// LSP events
+	case "LSPServerStarted":
+		var e LSPServerStarted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "LSPServerStopped":
+		var e LSPServerStopped
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "LSPRequestSent":
+		var e LSPRequestSent
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "LSPRequestCompleted":
+		var e LSPRequestCompleted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	// Team events
+	case "TeamCreated":
+		var e TeamCreated
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "TeamDeleted":
+		var e TeamDeleted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	// Lifecycle events
+	case "LifecycleStepStarted":
+		var e LifecycleStepStarted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "LifecycleNodeCompleted":
+		var e LifecycleNodeCompleted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "LifecycleTransition":
+		var e LifecycleTransition
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "LifecycleCompleted":
+		var e LifecycleCompleted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	default:
 		return nil, fmt.Errorf("unknown event kind: %q", peek.Kind)
 	}

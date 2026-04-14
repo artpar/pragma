@@ -95,8 +95,6 @@ func RunBackground(cmd *cobra.Command) error {
 		return fmt.Errorf("create log file: %w", err)
 	}
 
-	// Build child args from parsed flags (not raw os.Args) to preserve
-	// multi-word values. Using --key=value format keeps each as a single arg.
 	childArgs := []string{os.Args[0]}
 	addStringFlag := func(name string) {
 		if v, _ := cmd.Flags().GetString(name); v != "" {
@@ -131,6 +129,7 @@ func RunBackground(cmd *cobra.Command) error {
 	addBoolFlag("verbose")
 	addBoolFlag("record")
 	if cmd.Flags().Changed("temperature") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"temperature\")")
 		v, _ := cmd.Flags().GetFloat64("temperature")
 		childArgs = append(childArgs, fmt.Sprintf("--temperature=%g", v))
 	}
@@ -162,7 +161,7 @@ func RunBackground(cmd *cobra.Command) error {
 		return fmt.Errorf("start background process: %w", err)
 	}
 
-	childPid := proc.Pid // capture before Release() resets it
+	childPid := proc.Pid
 	_ = proc.Release()
 	devNull.Close()
 	logFile.Close()
@@ -345,9 +344,8 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}()
 
-	// Non-interactive mode auto-allows all tool execution (no user to prompt).
-	// If the user explicitly set --permission-mode, respect that; otherwise bypass.
 	if !cmd.Flags().Changed("permission-mode") {
+		observe.GlobalTrace("if: !cmd.Flags().Changed(\"permission-mode\")")
 		d.Checker = permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
 	}
 
@@ -400,11 +398,11 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	hasStructuredOutput := schemaFlag != ""
 	var structuredJSON json.RawMessage
 
-	// In background mode, write output to the log file directly rather than
-	// relying on fd inheritance (which has buffering issues on macOS).
 	out := os.Stdout
 	if bgLog := os.Getenv("GOGENT_BG_SESSION_LOG"); bgLog != "" {
+		observe.GlobalTrace("if: bgLog != \"\"")
 		if f, err := os.OpenFile(bgLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644); err == nil {
+			observe.GlobalTrace("if: err == nil")
 			out = f
 			defer f.Close()
 		}
@@ -454,8 +452,10 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	}
 
 	if hasStructuredOutput && structuredJSON != nil {
+		observe.GlobalTrace("if: hasStructuredOutput && structuredJSON != nil")
 		fmt.Fprintln(out, string(structuredJSON))
 	} else if hasStructuredOutput {
+		observe.GlobalTrace("else-if: hasStructuredOutput")
 		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}
 

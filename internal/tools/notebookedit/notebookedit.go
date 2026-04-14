@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/gogent/internal/util"
 )
 
 type NotebookEditInput struct {
@@ -143,11 +144,7 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 		return tool.InvokeResult{}, fmt.Errorf("file must be a .ipynb notebook")
 	}
 
-	nbPath := in.NotebookPath
-	if !filepath.IsAbs(nbPath) {
-		observe.GlobalTrace("if: !filepath.IsAbs(nbPath)")
-		nbPath = filepath.Join(state.WorkDir(), nbPath)
-	}
+	nbPath := util.ExpandPath(in.NotebookPath, state.WorkDir())
 	nbPath = filepath.Clean(nbPath)
 
 	workDirPrefix := state.WorkDir()

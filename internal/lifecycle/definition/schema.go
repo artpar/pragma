@@ -1,5 +1,7 @@
 package definition
 
+import "github.com/artpar/gogent/internal/observe"
+
 // GraphDef is the top-level YAML-parseable definition of a lifecycle graph.
 type GraphDef struct {
 	Graph GraphSpec `yaml:"graph"`
@@ -58,18 +60,25 @@ type ConditionalEdgeSpec struct {
 // ToConfig merges the top-level NodeSpec fields into a flat config map
 // suitable for passing to a NodeCreator.
 func (ns NodeSpec) ToConfig() map[string]any {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cfg := make(map[string]any)
 	for k, v := range ns.Config {
+		observe.GlobalTrace("range ns.Config")
 		cfg[k] = v
 	}
 	if ns.Model != "" {
+		observe.GlobalTrace("if: ns.Model != \"\"")
 		cfg["model"] = ns.Model
 	}
 	if ns.Prompt != "" {
+		observe.GlobalTrace("if: ns.Prompt != \"\"")
 		cfg["prompt"] = ns.Prompt
 	}
 	if len(ns.Tools) > 0 {
+		observe.GlobalTrace("if: len(ns.Tools) > 0")
 		cfg["tools"] = ns.Tools
 	}
+	observe.GlobalTrace("return: cfg")
 	return cfg
 }

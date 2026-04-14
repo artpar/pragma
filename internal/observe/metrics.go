@@ -23,6 +23,14 @@ type Metrics struct {
 	sessionDurationMs int64
 }
 
+// ToolStat holds per-tool execution statistics.
+type ToolStat struct {
+	Calls      int   `json:"calls"`
+	Errors     int   `json:"errors"`
+	TotalDurMs int64 `json:"total_duration_ms"`
+	AvgDurMs   int64 `json:"avg_duration_ms"`
+}
+
 // MetricsSnapshot is a point-in-time copy of metrics for display.
 type MetricsSnapshot struct {
 	TokenUsage        model.TokenUsage
@@ -34,6 +42,7 @@ type MetricsSnapshot struct {
 	AvgAPILatencyMs   int64
 	Compactions       int
 	SessionDurationMs int64
+	ToolStats         map[string]ToolStat
 }
 
 func NewMetrics() *Metrics {
@@ -108,6 +117,20 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		sessionMs = time.Since(m.sessionStart).Milliseconds()
 	}
 
+	toolStats := make(map[string]ToolStat, len(m.toolCalls))
+	for name, calls := range m.toolCalls {
+		var avg int64
+		if calls > 0 {
+			avg = m.toolDurations[name] / int64(calls)
+		}
+		toolStats[name] = ToolStat{
+			Calls:      calls,
+			Errors:     m.toolErrors[name],
+			TotalDurMs: m.toolDurations[name],
+			AvgDurMs:   avg,
+		}
+	}
+
 	return MetricsSnapshot{
 		TokenUsage:        m.tokenUsage,
 		TurnCount:         m.turnCount,
@@ -118,5 +141,6 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		AvgAPILatencyMs:   avgLatency,
 		Compactions:       m.compactions,
 		SessionDurationMs: sessionMs,
+		ToolStats:         toolStats,
 	}
 }

@@ -243,18 +243,20 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		Model:       in.Model,
 	})
 
-	// Structured execution via lifecycle graph
 	if in.Structure != "" {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Structure != \"\"")
 		graph, err := t.compileStructure(ctx, in.Structure, engine, subStore)
 		if err != nil {
+			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: err != nil")
 			t.updateTask(tk.ID, func(tt *task.Task) {
 				tt.Status = task.TaskFailed
 				tt.Error = err.Error()
 			})
 			t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
+			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"compile structure: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("compile structure: %w", err)
 		}
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runGraphSync(ctx, tk.ID, engine, graph, in, wtPath, wtBranch, wtHeadCommit)")
 		return t.runGraphSync(ctx, tk.ID, engine, graph, in, wtPath, wtBranch, wtHeadCommit)
 	}
 
@@ -530,16 +532,19 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 
 	modelID := t.SecondaryModel
 	if modelID == "" {
+		observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "if: modelID == \"\"")
 		modelID = t.Store.Snapshot().Model
 	}
 
 	def, err := bridge.GenerateGraph(ctx, t.Provider, t.Bus, modelID, structure)
 	if err != nil {
+		observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "if: err != nil")
+		observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: nil, err")
 		return nil, err
 	}
 
-	// Ensure total_usage reducer is always present for token tracking
 	if def.Graph.Reducers == nil {
+		observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "if: def.Graph.Reducers == nil")
 		def.Graph.Reducers = make(map[string]string)
 	}
 	def.Graph.Reducers["total_usage"] = "total_usage"
@@ -561,6 +566,7 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 			"total_usage": bridge.UsageReducer,
 		},
 	}
+	observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)")
 
 	return definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
 }
@@ -585,13 +591,17 @@ func (t *Tool) runGraphSync(
 	var usage model.TokenUsage
 
 	for ev := range events {
+		observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.TextEvent")
 			result.WriteString(e.Text)
 		case query.TurnCompleteEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.TurnCompleteEvent")
 			turnCount++
 			usage = e.Response.Usage
 		case query.ErrorEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.ErrorEvent")
 			t.updateTask(taskID, func(tt *task.Task) {
 				tt.Status = task.TaskFailed
 				tt.Error = e.Err.Error()
@@ -631,6 +641,7 @@ func (t *Tool) runGraphSync(
 		Branch:       wtBranch,
 	}
 	data, _ := json.Marshal(ar)
+	observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 

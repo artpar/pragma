@@ -174,12 +174,16 @@ func GenerateGraph(ctx context.Context, prov provider.Provider, bus *observe.Eve
 		},
 	})
 	if err != nil {
+		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "if: err != nil")
+		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "return: nil, fmt.Errorf(\"graph generation LLM call: %w\", err)")
 		return nil, fmt.Errorf("graph generation LLM call: %w", err)
 	}
 
 	var yamlText string
 	for _, part := range resp.Content {
+		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "range resp.Content")
 		if tp, ok := part.(model.TextPart); ok {
+			observe.TraceCtx(ctx, "bridge", "GenerateGraph", "if: ok")
 			yamlText += tp.Text
 		}
 	}
@@ -188,13 +192,18 @@ func GenerateGraph(ctx context.Context, prov provider.Provider, bus *observe.Eve
 	yamlText = strings.TrimSpace(yamlText)
 
 	if yamlText == "" {
+		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "if: yamlText == \"\"")
+		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "return: nil, fmt.Errorf(\"graph generation returned empty response\")")
 		return nil, fmt.Errorf("graph generation returned empty response")
 	}
 
 	def, err := definition.Parse([]byte(yamlText))
 	if err != nil {
+		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "if: err != nil")
+		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "return: nil, fmt.Errorf(\"generated graph is invalid YAML: %w\\n\\nGenerated:\\n%s\", err,...")
 		return nil, fmt.Errorf("generated graph is invalid YAML: %w\n\nGenerated:\n%s", err, yamlText)
 	}
+	observe.TraceCtx(ctx, "bridge", "GenerateGraph", "return: def, nil")
 
 	return def, nil
 }
@@ -202,19 +211,27 @@ func GenerateGraph(ctx context.Context, prov provider.Provider, bus *observe.Eve
 // stripMarkdownFences removes ```yaml ... ``` wrapping if present.
 // Handles leading prose before fences (e.g., "Here is the YAML:\n```yaml\n...").
 func stripMarkdownFences(s string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, "```") {
+		observe.GlobalTrace("if: !strings.HasPrefix(s, \"```\")")
 		if idx := strings.Index(s, "```"); idx >= 0 {
+			observe.GlobalTrace("if: idx >= 0")
 			s = s[idx:]
 		}
 	}
 	if strings.HasPrefix(s, "```") {
+		observe.GlobalTrace("if: strings.HasPrefix(s, \"```\")")
 		if idx := strings.Index(s, "\n"); idx >= 0 {
+			observe.GlobalTrace("if: idx >= 0")
 			s = s[idx+1:]
 		}
 		if idx := strings.LastIndex(s, "```"); idx >= 0 {
+			observe.GlobalTrace("if: idx >= 0")
 			s = s[:idx]
 		}
 	}
+	observe.GlobalTrace("return: s")
 	return s
 }

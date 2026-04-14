@@ -26,6 +26,9 @@ type NodeFactory struct {
 
 // NewNodeFactory creates a NodeFactory backed by the given infrastructure.
 func NewNodeFactory(infra Infra) *NodeFactory {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &NodeFactory{infra: infra}")
 	return &NodeFactory{infra: infra}
 }
 
@@ -38,8 +41,11 @@ func NewNodeFactory(infra Infra) *NodeFactory {
 //	eval:    "criteria" (string), "model" (string)
 //	reflect: (no config needed)
 func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.NodeFunc, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch nodeType {
 	case "llm":
+		observe.GlobalTrace("case: \"llm\"")
 		cfg := LLMNodeConfig{}
 		if v, ok := config["prompt"].(string); ok {
 			cfg.SystemOverride = v
@@ -50,9 +56,11 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 		return LLMNode(f.infra.Provider, f.infra.Bus, cfg), nil
 
 	case "tools":
+		observe.GlobalTrace("case: \"tools\"")
 		return ToolNode(f.infra.Orchestrator, f.infra.Cwd), nil
 
 	case "eval":
+		observe.GlobalTrace("case: \"eval\"")
 		cfg := EvalNodeConfig{}
 		if v, ok := config["criteria"].(string); ok {
 			cfg.Criteria = v
@@ -63,9 +71,11 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 		return EvalNode(f.infra.Provider, f.infra.Bus, cfg), nil
 
 	case "reflect":
+		observe.GlobalTrace("case: \"reflect\"")
 		return ReflectNode(f.infra.Provider, f.infra.Bus), nil
 
 	default:
+		observe.GlobalTrace("default")
 		return nil, fmt.Errorf("unknown node type: %q", nodeType)
 	}
 }

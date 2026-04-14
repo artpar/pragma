@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/artpar/gogent/internal/lifecycle"
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // RouterCreator resolves router spec strings into RouterFunc values.
@@ -15,6 +16,9 @@ type RouterCreator func(spec string) (lifecycle.RouterFunc, error)
 //   - "field:<key>": routes on the string/bool value of state[key]
 //   - "pass_fail": routes on state["passed"], true → "pass", false → "fail"
 func DefaultRouterCreator() RouterCreator {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(spec string) (lifecycle.RouterFunc, error) {\n\tswitch {\n\tcase spec == \"st...")
 	return func(spec string) (lifecycle.RouterFunc, error) {
 		switch {
 		case spec == "stop_reason":
@@ -34,6 +38,9 @@ func DefaultRouterCreator() RouterCreator {
 }
 
 func stopReasonRouter() lifecycle.RouterFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(s lifecycle.State) string {\n\treason, _ := s[\"stop_reason\"].(string)\n\tif ...")
 	return func(s lifecycle.State) string {
 		reason, _ := s["stop_reason"].(string)
 		if reason == "tool_use" {
@@ -44,6 +51,9 @@ func stopReasonRouter() lifecycle.RouterFunc {
 }
 
 func fieldRouter(key string) lifecycle.RouterFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(s lifecycle.State) string {\n\tv := s[key]\n\tif v == nil {\n\t\treturn \"\"\n\t}\n\t...")
 	return func(s lifecycle.State) string {
 		v := s[key]
 		if v == nil {
@@ -64,6 +74,9 @@ func fieldRouter(key string) lifecycle.RouterFunc {
 }
 
 func passFailRouter() lifecycle.RouterFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(s lifecycle.State) string {\n\tif v, _ := s[\"passed\"].(bool); v {\n\t\treturn...")
 	return func(s lifecycle.State) string {
 		if v, _ := s["passed"].(bool); v {
 			return "pass"

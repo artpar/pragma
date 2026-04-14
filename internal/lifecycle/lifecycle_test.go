@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -299,18 +300,25 @@ func TestFanOutFanIn(t *testing.T) {
 }
 
 func TestMADDebate(t *testing.T) {
+	var mu sync.Mutex
 	agentCallCounts := map[string]int{}
 	agents := map[string]NodeFunc{
 		"bull": func(_ context.Context, s State) (StateUpdate, error) {
+			mu.Lock()
 			agentCallCounts["bull"]++
+			count := agentCallCounts["bull"]
+			mu.Unlock()
 			return StateUpdate{
-				"positions": map[string]any{"bull": fmt.Sprintf("bullish_round_%d", agentCallCounts["bull"])},
+				"positions": map[string]any{"bull": fmt.Sprintf("bullish_round_%d", count)},
 			}, nil
 		},
 		"bear": func(_ context.Context, s State) (StateUpdate, error) {
+			mu.Lock()
 			agentCallCounts["bear"]++
+			count := agentCallCounts["bear"]
+			mu.Unlock()
 			return StateUpdate{
-				"positions": map[string]any{"bear": fmt.Sprintf("bearish_round_%d", agentCallCounts["bear"])},
+				"positions": map[string]any{"bear": fmt.Sprintf("bearish_round_%d", count)},
 			}, nil
 		},
 	}

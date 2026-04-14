@@ -11,11 +11,12 @@ import (
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/gogent/internal/util"
 )
 
 // FileWriteInput defines the parameters for the FileWrite tool.
 type FileWriteInput struct {
-	FilePath string `json:"file_path" desc:"The absolute path to the file to write (must be absolute, not relative)"`
+	FilePath string `json:"file_path" desc:"The path to the file to write"`
 	Content  string `json:"content" desc:"The content to write to the file"`
 }
 
@@ -25,7 +26,7 @@ var inputSchema = json.RawMessage(`{
 	"properties": {
 		"file_path": {
 			"type": "string",
-			"description": "The absolute path to the file to write (must be absolute, not relative)"
+			"description": "The path to the file to write"
 		},
 		"content": {
 			"type": "string",
@@ -105,12 +106,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
 
-	filePath := in.FilePath
-	if !filepath.IsAbs(filePath) {
-		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: !filepath.IsAbs(filePath)")
-		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path must be absolute, got: %s\", filePath)")
-		return tool.InvokeResult{}, fmt.Errorf("file_path must be absolute, got: %s", filePath)
-	}
+	filePath := util.ExpandPath(in.FilePath, state.WorkDir())
 
 	_, err := os.Stat(filePath)
 	isCreate := os.IsNotExist(err)

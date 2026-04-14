@@ -11,6 +11,7 @@ import (
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/gogent/internal/util"
 )
 
 // BriefInput defines the parameters for the SendUserMessage tool.
@@ -191,11 +192,7 @@ var imageExtensions = map[string]bool{
 func resolveAttachment(rawPath, workDir string) (attachmentInfo, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	p := rawPath
-	if !filepath.IsAbs(p) {
-		observe.GlobalTrace("if: !filepath.IsAbs(p)")
-		p = filepath.Join(workDir, p)
-	}
+	p := util.ExpandPath(rawPath, workDir)
 	p = filepath.Clean(p)
 
 	wdPrefix := workDir

@@ -18,6 +18,9 @@ import (
 // Reads: messages, reflections, model_id, max_tokens
 // Writes: reflections (appends new reflection), messages (appends reflection as user message)
 func ReflectNode(prov provider.Provider, bus *observe.EventBus) lifecycle.NodeFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, erro...")
 	return func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, error) {
 		msgs := Messages(state)
 		priorReflections := Reflections(state)
@@ -85,7 +88,6 @@ func ReflectNode(prov provider.Provider, bus *observe.EventBus) lifecycle.NodeFu
 			}
 		}
 
-		// Inject the reflection into the conversation as a user message
 		injectionMsg := model.Message{
 			ID:   model.NewUUID(),
 			Role: model.RoleUser,

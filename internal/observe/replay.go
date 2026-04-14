@@ -77,23 +77,46 @@ func LoadReplay(dir string) (*ReplayEngine, error) {
 	return re, nil
 }
 
-func (re *ReplayEngine) loadEvents(path string) error {
+// LoadEvents reads events from a JSONL file. If path is a directory,
+// it looks for events.jsonl inside it.
+func LoadEvents(path string) ([]Event, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		path = filepath.Join(path, "events.jsonl")
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 
+	var events []Event
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB line buffer
 	for scanner.Scan() {
 		event, err := UnmarshalEvent(scanner.Bytes())
 		if err != nil {
-			return fmt.Errorf("unmarshal event: %w", err)
+			return nil, fmt.Errorf("unmarshal event: %w", err)
 		}
-		re.events = append(re.events, event)
+		events = append(events, event)
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (re *ReplayEngine) loadEvents(path string) error {
+	events, err := LoadEvents(path)
+	if err != nil {
+		return err
+	}
+	re.events = events
+	return nil
 }
 
 // Events returns all loaded events.

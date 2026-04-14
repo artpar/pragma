@@ -6,6 +6,7 @@ import (
 
 	"github.com/artpar/gogent/internal/lifecycle"
 	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/tool"
 )
 
@@ -14,7 +15,12 @@ type simpleSnapshot struct {
 	cwd string
 }
 
-func (s simpleSnapshot) WorkDir() string { return s.cwd }
+func (s simpleSnapshot) WorkDir() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: s.cwd")
+	return s.cwd
+}
 
 // ToolNode returns a NodeFunc that executes tool calls from the last assistant message.
 // The orchestrator and cwd are captured in the closure.
@@ -22,6 +28,9 @@ func (s simpleSnapshot) WorkDir() string { return s.cwd }
 // Reads: messages (extracts ToolCallParts from last assistant message)
 // Writes: messages (appends user message with tool results + supplements)
 func ToolNode(orch *tool.Orchestrator, cwd string) lifecycle.NodeFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, erro...")
 	return func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, error) {
 		msgs := Messages(state)
 		if len(msgs) == 0 {

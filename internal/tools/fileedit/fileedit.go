@@ -12,13 +12,14 @@ import (
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/gogent/internal/util"
 )
 
 const maxEditFileSize = 1024 * 1024 * 1024 // 1 GiB
 
 // FileEditInput defines the parameters for the FileEdit tool.
 type FileEditInput struct {
-	FilePath   string `json:"file_path" desc:"The absolute path to the file to edit"`
+	FilePath   string `json:"file_path" desc:"The path to the file to edit"`
 	OldString  string `json:"old_string" desc:"The exact string to find and replace"`
 	NewString  string `json:"new_string" desc:"The replacement string"`
 	ReplaceAll bool   `json:"replace_all,omitempty" desc:"If true, replace all occurrences. Default false."`
@@ -30,7 +31,7 @@ var inputSchema = json.RawMessage(`{
 	"properties": {
 		"file_path": {
 			"type": "string",
-			"description": "The absolute path to the file to edit"
+			"description": "The path to the file to edit"
 		},
 		"old_string": {
 			"type": "string",
@@ -120,12 +121,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
 
-	filePath := in.FilePath
-	if !filepath.IsAbs(filePath) {
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: !filepath.IsAbs(filePath)")
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path must be absolute, got: %s\", filePath)")
-		return tool.InvokeResult{}, fmt.Errorf("file_path must be absolute, got: %s", filePath)
-	}
+	filePath := util.ExpandPath(in.FilePath, state.WorkDir())
 
 	if in.OldString == in.NewString {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == in.NewString")

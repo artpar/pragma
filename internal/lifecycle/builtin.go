@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"github.com/artpar/gogent/internal/observe"
 )
 
 // NamedNode pairs a name with a NodeFunc for pipeline construction.
@@ -14,10 +15,14 @@ type NamedNode struct {
 // mustBuild calls Build() and panics on error.
 // Used by builtin pattern constructors whose graph structure is known-correct.
 func mustBuild(b *Builder) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	g, err := b.Build()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		panic(fmt.Sprintf("lifecycle: builtin graph build failed: %v", err))
 	}
+	observe.GlobalTrace("return: g")
 	return g
 }
 
@@ -25,6 +30,9 @@ func mustBuild(b *Builder) *Graph {
 // llmFn calls the LLM; toolFn executes tool calls.
 // State must contain "stop_reason" after llmFn: "tool_use" continues, anything else ends.
 func NewReActGraph(llmFn, toolFn NodeFunc) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: mustBuild(NewBuilder().\n\tAddNode(\"llm\", llmFn).\n\tAddNode(\"tools\", toolFn).\n\tS...")
 	return mustBuild(NewBuilder().
 		AddNode("llm", llmFn).
 		AddNode("tools", toolFn).
@@ -45,45 +53,41 @@ func NewReActGraph(llmFn, toolFn NodeFunc) *Graph {
 // Agents debate in parallel for `rounds` rounds, then synthesize.
 // State keys: "round" (int), "max_rounds" (int), "positions" (map[string]any).
 func NewMADGraph(agents map[string]NodeFunc, rounds int, synthesizeFn NodeFunc) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	b := NewBuilder().
-		SetMaxSteps(rounds*2 + 10). // enough headroom for rounds + routing + synthesis
+		SetMaxSteps(rounds*2+10).
 		SetReducer("positions", ReducerMergeMap)
 
-	// Register all agent nodes
 	agentNames := make([]string, 0, len(agents))
 	for name, fn := range agents {
+		observe.GlobalTrace("range agents")
 		b.AddNode(name, fn)
 		agentNames = append(agentNames, name)
 	}
 
-	// Add a round-increment node that bumps the round counter
 	b.AddNode("_round_inc", func(_ context.Context, s State) (StateUpdate, error) {
 		round, _ := s["round"].(int)
 		return StateUpdate{"round": round + 1}, nil
 	})
 
-	// Add synthesize node
 	b.AddNode("synthesize", synthesizeFn)
 
-	// Fan-out: a dispatcher fans out to all agents in parallel
 	b.AddNode("_dispatch", func(_ context.Context, _ State) (StateUpdate, error) {
-		return nil, nil // no-op; just a fan-out source
+		return nil, nil
 	})
 	b.SetInitialNode("_dispatch")
 
-	// Static edges: dispatch → each agent (parallel)
 	for _, name := range agentNames {
+		observe.GlobalTrace("range agentNames")
 		b.AddEdge("_dispatch", name)
 	}
 
-	// Each agent → round_inc (fan-in happens because all agents route here)
-	// Use conditional edge on first agent only to avoid duplicate routing.
-	// Actually: all agents route to _round_inc via static edge, dedup handles it.
 	for _, name := range agentNames {
+		observe.GlobalTrace("range agentNames")
 		b.AddEdge(name, "_round_inc")
 	}
 
-	// Round increment → check if more rounds needed
 	b.AddConditionalEdges("_round_inc", func(s State) string {
 		round, _ := s["round"].(int)
 		maxRounds := rounds
@@ -95,9 +99,7 @@ func NewMADGraph(agents map[string]NodeFunc, rounds int, synthesizeFn NodeFunc) 
 		"synthesize": "synthesize",
 		"dispatch":   "_dispatch",
 	})
-
-	// Synthesize → END
-	// No edges from synthesize = implicit END
+	observe.GlobalTrace("return: mustBuild(b)")
 
 	return mustBuild(b)
 }
@@ -106,6 +108,9 @@ func NewMADGraph(agents map[string]NodeFunc, rounds int, synthesizeFn NodeFunc) 
 // planFn generates plan, executeFn executes one step, replanFn reviews.
 // State keys: "plan" ([]string), "current_step" (int), "past_steps" ([]any), "done" (bool).
 func NewPlanExecuteGraph(planFn, executeFn, replanFn NodeFunc) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: mustBuild(NewBuilder().\n\tAddNode(\"planner\", planFn).\n\tAddNode(\"executor\", exe...")
 	return mustBuild(NewBuilder().
 		AddNode("planner", planFn).
 		AddNode("executor", executeFn).
@@ -128,6 +133,9 @@ func NewPlanExecuteGraph(planFn, executeFn, replanFn NodeFunc) *Graph {
 // NewReflexionGraph creates a Reflexion (trial-reflect-retry) graph.
 // State keys: "trial" (int), "passed" (bool), "reflections" ([]any).
 func NewReflexionGraph(actorFn, evaluatorFn, reflectFn NodeFunc, maxTrials int) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: mustBuild(NewBuilder().\n\tAddNode(\"actor\", actorFn).\n\tAddNode(\"evaluator\", eva...")
 	return mustBuild(NewBuilder().
 		AddNode("actor", actorFn).
 		AddNode("evaluator", evaluatorFn).
@@ -154,16 +162,22 @@ func NewReflexionGraph(actorFn, evaluatorFn, reflectFn NodeFunc, maxTrials int) 
 // NewPipelineGraph creates a sequential pipeline.
 // Steps execute in order: steps[0] → steps[1] → ... → steps[N-1] → END.
 func NewPipelineGraph(steps []NamedNode) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	b := NewBuilder()
 	for _, step := range steps {
+		observe.GlobalTrace("range steps")
 		b.AddNode(step.Name, step.Fn)
 	}
 	if len(steps) > 0 {
+		observe.GlobalTrace("if: len(steps) > 0")
 		b.SetInitialNode(steps[0].Name)
 	}
 	for i := 0; i < len(steps)-1; i++ {
+		observe.GlobalTrace("for: i < len(steps)-1")
 		b.AddEdge(steps[i].Name, steps[i+1].Name)
 	}
+	observe.GlobalTrace("return: mustBuild(b)")
 	return mustBuild(b)
 }
 
@@ -171,9 +185,10 @@ func NewPipelineGraph(steps []NamedNode) *Graph {
 // All parallel nodes execute concurrently, then mergeFn aggregates.
 // Callers should set appropriate reducers on keys updated by parallel nodes.
 func NewFanOutFanInGraph(parallel map[string]NodeFunc, mergeFn NodeFunc) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	b := NewBuilder()
 
-	// Dispatch node fans out to all parallel nodes
 	b.AddNode("_dispatch", func(_ context.Context, _ State) (StateUpdate, error) {
 		return nil, nil
 	})
@@ -181,10 +196,12 @@ func NewFanOutFanInGraph(parallel map[string]NodeFunc, mergeFn NodeFunc) *Graph 
 	b.AddNode("merge", mergeFn)
 
 	for name, fn := range parallel {
+		observe.GlobalTrace("range parallel")
 		b.AddNode(name, fn)
 		b.AddEdge("_dispatch", name)
 		b.AddEdge(name, "merge")
 	}
+	observe.GlobalTrace("return: mustBuild(b)")
 
 	return mustBuild(b)
 }
@@ -193,23 +210,31 @@ func NewFanOutFanInGraph(parallel map[string]NodeFunc, mergeFn NodeFunc) *Graph 
 // Sequential pipeline with voting error correction at each step.
 //
 // sampleFn: calls LLM to generate (action, next_state) from current task_state.
-//   Should set "candidate_action", "candidate_state", "valid" (bool) in state.
+//
+//	Should set "candidate_action", "candidate_state", "valid" (bool) in state.
+//
 // voteFn: accumulates candidate into votes, checks margin.
-//   Should set "margin_reached" (bool), "winning_action", "winning_state".
+//
+//	Should set "margin_reached" (bool), "winning_action", "winning_state".
+//
 // advanceFn: applies winning action, advances step counter.
-//   Should update "task_state", increment "step", append to "action_list", reset "votes".
+//
+//	Should update "task_state", increment "step", append to "action_list", reset "votes".
 //
 // State keys: "task_state" (any), "step" (int), "total_steps" (int),
-//   "k" (int), "action_list" ([]any), "votes" (map[string]any),
-//   "valid" (bool), "margin_reached" (bool).
+//
+//	"k" (int), "action_list" ([]any), "votes" (map[string]any),
+//	"valid" (bool), "margin_reached" (bool).
 func NewMDAP(sampleFn, voteFn, advanceFn NodeFunc) *Graph {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: mustBuild(NewBuilder().\n\tAddNode(\"sample\", sampleFn).\n\tAddNode(\"vote\", voteFn...")
 	return mustBuild(NewBuilder().
 		AddNode("sample", sampleFn).
 		AddNode("vote", voteFn).
 		AddNode("advance", advanceFn).
 		SetInitialNode("sample").
-		SetMaxSteps(1_000_000). // MDAP may run for millions of steps
-		// sample → red-flag check: if valid → vote, else → resample
+		SetMaxSteps(1_000_000).
 		AddConditionalEdges("sample", func(s State) string {
 			if valid, _ := s["valid"].(bool); valid {
 				return "vote"
@@ -219,7 +244,6 @@ func NewMDAP(sampleFn, voteFn, advanceFn NodeFunc) *Graph {
 			"vote":     "vote",
 			"resample": "sample",
 		}).
-		// vote → margin check: if margin reached → advance, else → sample more
 		AddConditionalEdges("vote", func(s State) string {
 			if reached, _ := s["margin_reached"].(bool); reached {
 				return "advance"
@@ -229,7 +253,6 @@ func NewMDAP(sampleFn, voteFn, advanceFn NodeFunc) *Graph {
 			"advance": "advance",
 			"more":    "sample",
 		}).
-		// advance → done check: if all steps done → END, else → next step
 		AddConditionalEdges("advance", func(s State) string {
 			step, _ := s["step"].(int)
 			total, _ := s["total_steps"].(int)

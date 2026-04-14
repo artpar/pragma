@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/gogent/internal/util"
 )
 
 const defaultHeadLimit = 250
@@ -141,13 +141,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	searchPath := state.WorkDir()
 	if in.Path != "" {
 		observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: in.Path != \"\"")
-		if filepath.IsAbs(in.Path) {
-			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "if: filepath.IsAbs(in.Path)")
-			searchPath = in.Path
-		} else {
-			observe.TraceCtx(ctx, "grep", "Tool.Invoke", "else: filepath.IsAbs(in.Path)")
-			searchPath = filepath.Join(state.WorkDir(), in.Path)
-		}
+		searchPath = util.ExpandPath(in.Path, state.WorkDir())
 	}
 
 	if _, err := os.Stat(searchPath); err != nil {
@@ -320,14 +314,8 @@ func applyHeadLimit(items []string, headLimit, offset int) (result []string, app
 func relativizePath(absPath, workDir string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	rel, err := filepath.Rel(workDir, absPath)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: absPath")
-		return absPath
-	}
-	observe.GlobalTrace("return: rel")
-	return rel
+	observe.GlobalTrace("return: util.ToRelativePath(absPath, workDir)")
+	return util.ToRelativePath(absPath, workDir)
 }
 
 func buildContentResult(lines []string, headLimit, offset int, workDir string) string {

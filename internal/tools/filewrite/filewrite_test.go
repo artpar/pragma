@@ -76,16 +76,22 @@ func TestFileWriteTool_CreateParentDirs(t *testing.T) {
 	}
 }
 
-func TestFileWriteTool_RelativePathError(t *testing.T) {
+func TestFileWriteTool_RelativePathResolved(t *testing.T) {
+	dir := t.TempDir()
 	tool := &Tool{}
-	input, _ := json.Marshal(FileWriteInput{FilePath: "relative/path.txt", Content: "x"})
+	input, _ := json.Marshal(FileWriteInput{FilePath: "relative.txt", Content: "resolved"})
 
-	_, err := tool.Invoke(context.Background(), input, testState{t.TempDir()})
-	if err == nil {
-		t.Fatal("expected error for relative path")
+	_, err := tool.Invoke(context.Background(), input, testState{dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "absolute") {
-		t.Errorf("expected absolute path error, got: %v", err)
+
+	content, err := os.ReadFile(filepath.Join(dir, "relative.txt"))
+	if err != nil {
+		t.Fatalf("file not created: %v", err)
+	}
+	if string(content) != "resolved" {
+		t.Errorf("expected 'resolved', got: %s", string(content))
 	}
 }
 

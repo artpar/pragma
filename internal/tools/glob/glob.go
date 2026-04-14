@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/gogent/internal/util"
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/artpar/gogent/internal/observe"
@@ -121,13 +122,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	baseDir := state.WorkDir()
 	if in.Path != "" {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: in.Path != \"\"")
-		if filepath.IsAbs(in.Path) {
-			observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: filepath.IsAbs(in.Path)")
-			baseDir = in.Path
-		} else {
-			observe.TraceCtx(ctx, "glob", "Tool.Invoke", "else: filepath.IsAbs(in.Path)")
-			baseDir = filepath.Join(state.WorkDir(), in.Path)
-		}
+		baseDir = util.ExpandPath(in.Path, state.WorkDir())
 	}
 
 	info, err := os.Stat(baseDir)

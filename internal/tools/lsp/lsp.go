@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/artpar/gogent/internal/lsp"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/gogent/internal/util"
 )
 
 const maxFileSizeBytes = 10 * 1024 * 1024 // 10 MB
@@ -116,11 +116,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
 
-	absPath := in.FilePath
-	if !filepath.IsAbs(absPath) {
-		observe.TraceCtx(ctx, "toollsp", "Tool.Invoke", "if: !filepath.IsAbs(absPath)")
-		absPath = filepath.Join(state.WorkDir(), absPath)
-	}
+	absPath := util.ExpandPath(in.FilePath, state.WorkDir())
 
 	info, err := os.Stat(absPath)
 	if err != nil {

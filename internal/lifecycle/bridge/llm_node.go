@@ -26,8 +26,11 @@ type LLMNodeConfig struct {
 // Reads: messages, system, model_id, max_tokens, tools
 // Writes: messages (appends assistant message), stop_reason, response, turn_count (+1)
 func LLMNode(prov provider.Provider, bus *observe.EventBus, cfg LLMNodeConfig) lifecycle.NodeFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, erro...")
 	return func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, error) {
-		_ = bus // available for future event emission
+		_ = bus
 		msgs := Messages(state)
 		sys := System(state)
 		modelID := ModelID(state)
@@ -47,7 +50,7 @@ func LLMNode(prov provider.Provider, bus *observe.EventBus, cfg LLMNodeConfig) l
 				Content:   []model.ContentPart{model.TextPart{Text: cfg.PromptPrefix}},
 				Timestamp: time.Now(),
 			}
-			// Copy to avoid mutating the shared state slice
+
 			extended := make([]model.Message, len(msgs)+1)
 			copy(extended, msgs)
 			extended[len(msgs)] = prefixMsg

@@ -108,10 +108,20 @@ func (e *Engine) SetCompaction(deps CompactionDeps) {
 }
 
 // Orchestrator returns the engine's tool orchestrator.
-func (e *Engine) Orchestrator() *tool.Orchestrator { return e.orchestrator }
+func (e *Engine) Orchestrator() *tool.Orchestrator {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: e.orchestrator")
+	return e.orchestrator
+}
 
 // Registry returns the engine's tool registry.
-func (e *Engine) Registry() *tool.Registry { return e.registry }
+func (e *Engine) Registry() *tool.Registry {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: e.registry")
+	return e.registry
+}
 
 // RunGraph executes a lifecycle graph using the engine's own provider, orchestrator,
 // and registry. Returns a channel of LoopEvents, same as Run().
@@ -123,11 +133,13 @@ func (e *Engine) RunGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		defer close(ch)
 		defer func() {
 			if r := recover(); r != nil {
+				observe.TraceCtx(ctx, "query", "Engine.RunGraph", "if: r != nil")
 				ch <- ErrorEvent{Err: fmt.Errorf("graph execution panic: %v", r)}
 			}
 		}()
 		e.runGraph(ctx, graph, prompt, ch)
 	}()
+	observe.TraceCtx(ctx, "query", "Engine.RunGraph", "return: ch")
 	return ch
 }
 
@@ -138,8 +150,8 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	snap := e.store.Snapshot()
 
 	userMsg := model.Message{
-		ID:   model.NewUUID(),
-		Role: model.RoleUser,
+		ID:      model.NewUUID(),
+		Role:    model.RoleUser,
 		Content: []model.ContentPart{model.TextPart{Text: prompt}},
 	}
 
@@ -155,6 +167,7 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	finalState, err := executor.Run(ctx, initialState)
 
 	if err != nil {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: err != nil")
 		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", err)}
 		return
 	}
@@ -163,33 +176,42 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	var resultText strings.Builder
 	msgs := bridge.Messages(finalState)
 	for i := len(msgs) - 1; i >= 0; i-- {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "for: i >= 0")
 		if msgs[i].Role == model.RoleAssistant {
+			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: msgs[i].Role == model.RoleAssistant")
 			for _, part := range msgs[i].Content {
+				observe.TraceCtx(ctx, "query", "Engine.runGraph", "range msgs[i].Content")
 				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+					observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ok && tp.Text != \"\"")
 					resultText.WriteString(tp.Text)
 				}
 			}
 			if resultText.Len() > 0 {
+				observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: resultText.Len() > 0")
 				break
 			}
 		}
 	}
 
 	if resultText.Len() > 0 {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: resultText.Len() > 0")
 		ch <- TextEvent{Text: resultText.String()}
 	}
 
 	stopReason := model.StopEndTurn
 	if sr := bridge.StopReason(finalState); sr != "" {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: sr != \"\"")
 		stopReason = model.StopReason(sr)
 	}
 	var resp model.Response
 	if r, ok := finalState[bridge.KeyResponse].(model.Response); ok {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ok")
 		resp = r
 	}
-	// Use accumulated total usage from all LLM calls, not just the last response
+
 	totalUsage := bridge.TotalUsage(finalState)
 	if totalUsage.InputTokens > 0 || totalUsage.OutputTokens > 0 {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: totalUsage.InputTokens > 0 || totalUsage.OutputTokens > 0")
 		resp.Usage = totalUsage
 	}
 	ch <- TurnCompleteEvent{Response: resp, StopReason: stopReason}

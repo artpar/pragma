@@ -78,30 +78,35 @@ type Tool struct {
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"LifecycleRun\"")
 	return "LifecycleRun"
 }
 
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: toolDescription")
 	return toolDescription
 }
 
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "lifecycle", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "lifecycle", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "lifecycletool", "Tool.CheckPerm", "return: checker.Check(ctx, \"LifecycleRun\", \"\")")
 	return checker.Check(ctx, "LifecycleRun", "")
 }
 
@@ -111,15 +116,23 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 
 	var in lifecycleInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Prompt == "" {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.Prompt == \"\"")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("prompt is required")
 	}
 	if in.Pattern != "" && in.Structure != "" {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.Pattern != \"\" && in.Structure != \"\"")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"provide either pattern or structure, not both\")")
 		return tool.InvokeResult{}, fmt.Errorf("provide either pattern or structure, not both")
 	}
 	if in.Pattern == "" && in.Structure == "" {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.Pattern == \"\" && in.Structure == \"\"")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"either pattern or structure is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("either pattern or structure is required")
 	}
 
@@ -134,6 +147,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 
 	graph, err := t.resolveGraph(ctx, in, infra)
 	if err != nil {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"resolve graph: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("resolve graph: %w", err)
 	}
 
@@ -141,6 +156,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 
 	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(t.Bus))
 	finalState, err := executor.Run(ctx, initialState)
+	observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: t.buildResult(finalState, err)")
 
 	return t.buildResult(finalState, err)
 }
@@ -150,27 +166,33 @@ func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge
 	defer observe.GlobalTrace("exit")
 
 	if in.Pattern != "" {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: in.Pattern != \"\"")
 		patterns := bridge.PatternMap(infra)
 		g, ok := patterns[in.Pattern]
 		if !ok {
+			observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: !ok")
+			observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "return: nil, fmt.Errorf(\"unknown pattern %q (available: react, plan-execute, reflexio...")
 			return nil, fmt.Errorf("unknown pattern %q (available: react, plan-execute, reflexion)", in.Pattern)
 		}
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "return: g, nil")
 		return g, nil
 	}
 
-	// Generate graph from natural language structure description
 	modelID := t.SecondaryModel
 	if modelID == "" {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: modelID == \"\"")
 		modelID = t.Store.Snapshot().Model
 	}
 
 	def, err := bridge.GenerateGraph(ctx, t.Provider, t.Bus, modelID, in.Structure)
 	if err != nil {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: err != nil")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "return: nil, fmt.Errorf(\"generate graph: %w\", err)")
 		return nil, fmt.Errorf("generate graph: %w", err)
 	}
 
-	// Ensure total_usage reducer is always present for token tracking
 	if def.Graph.Reducers == nil {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: def.Graph.Reducers == nil")
 		def.Graph.Reducers = make(map[string]string)
 	}
 	def.Graph.Reducers["total_usage"] = "total_usage"
@@ -186,8 +208,11 @@ func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge
 
 	g, err := definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
 	if err != nil {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: err != nil")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "return: nil, fmt.Errorf(\"resolve generated graph: %w\", err)")
 		return nil, fmt.Errorf("resolve generated graph: %w", err)
 	}
+	observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "return: g, nil")
 	return g, nil
 }
 
@@ -202,8 +227,10 @@ func (t *Tool) buildInitialState(in lifecycleInput, snap app.AppState) lifecycle
 
 	sys := snap.Conversation.System
 	if in.System != "" {
+		observe.GlobalTrace("if: in.System != \"\"")
 		sys = model.SystemPrompt{Blocks: []model.SystemBlock{{Text: in.System, Cacheable: true}}}
 	}
+	observe.GlobalTrace("return: lifecycle.State{\n\tbridge.KeyMessages:\t[]model.Message{userMsg},\n\tbridge.KeySy...")
 
 	return lifecycle.State{
 		bridge.KeyMessages:  []model.Message{userMsg},
@@ -221,6 +248,7 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 	status := "completed"
 	var errMsg string
 	if runErr != nil {
+		observe.GlobalTrace("if: runErr != nil")
 		status = "failed"
 		errMsg = runErr.Error()
 	}
@@ -228,14 +256,19 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 	var resultText string
 	msgs := bridge.Messages(finalState)
 	for i := len(msgs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		if msgs[i].Role == model.RoleAssistant {
+			observe.GlobalTrace("if: msgs[i].Role == model.RoleAssistant")
 			var parts []string
 			for _, part := range msgs[i].Content {
+				observe.GlobalTrace("range msgs[i].Content")
 				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+					observe.GlobalTrace("if: ok && tp.Text != \"\"")
 					parts = append(parts, tp.Text)
 				}
 			}
 			if len(parts) > 0 {
+				observe.GlobalTrace("if: len(parts) > 0")
 				resultText = strings.Join(parts, "\n")
 				break
 			}
@@ -263,6 +296,7 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 		Reflections: bridge.Reflections(finalState),
 		Error:       errMsg,
 	})
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(out)}, nil")
 
 	return tool.InvokeResult{Content: string(out)}, nil
 }

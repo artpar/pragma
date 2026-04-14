@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/permission"
 	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/gogent/internal/util"
 )
 
 const maxFileSize = 1024 * 1024 * 1024 // 1 GiB
@@ -168,11 +169,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
 
-	filePath := in.FilePath
-	if !filepath.IsAbs(filePath) {
-		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: !filepath.IsAbs(filePath)")
-		filePath = filepath.Join(state.WorkDir(), filePath)
-	}
+	filePath := util.ExpandPath(in.FilePath, state.WorkDir())
 
 	if blockedDevicePaths[filePath] {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: blockedDevicePaths[filePath]")
