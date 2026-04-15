@@ -54,6 +54,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 	cfgOpts := []config.Option{
 		config.WithAPIKey(apiKey),
 		config.WithBaseURL(pc.baseURL),
+		config.WithTimeout(10 * time.Minute),
 	}
 	inner, err := oai.New(cfgOpts...)
 	if err != nil {

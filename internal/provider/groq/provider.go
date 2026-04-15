@@ -29,7 +29,7 @@ type Provider struct {
 func New(apiKey string, bus *observe.EventBus) (*Provider, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	inner, err := groqprov.New(config.WithAPIKey(apiKey))
+	inner, err := groqprov.New(config.WithAPIKey(apiKey), config.WithTimeout(10*time.Minute))
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"groq: create provider: %w\", err)")

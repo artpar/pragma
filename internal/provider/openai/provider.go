@@ -49,7 +49,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		observe.GlobalTrace("range opts")
 		opt(&pc)
 	}
-	cfgOpts := []config.Option{config.WithAPIKey(apiKey)}
+	cfgOpts := []config.Option{config.WithAPIKey(apiKey), config.WithTimeout(10 * time.Minute)}
 	if pc.baseURL != "" {
 		observe.GlobalTrace("if: pc.baseURL != \"\"")
 		cfgOpts = append(cfgOpts, config.WithBaseURL(pc.baseURL))
