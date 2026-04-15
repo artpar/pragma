@@ -30,6 +30,7 @@ import (
 	toolplan "github.com/artpar/gogent/internal/tools/plan"
 	toolpowershell "github.com/artpar/gogent/internal/tools/powershell"
 	toolremote "github.com/artpar/gogent/internal/tools/remote"
+	toolselftrace "github.com/artpar/gogent/internal/tools/selftrace"
 	toolrepl "github.com/artpar/gogent/internal/tools/repl"
 	toolsendmsg "github.com/artpar/gogent/internal/tools/sendmsg"
 	toolskill "github.com/artpar/gogent/internal/tools/skill"
@@ -202,6 +203,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolwebsearch.Tool{},
 		&toolbrief.Tool{Bus: d.Bus},
 		&toolconfig.Tool{Store: d.Store, WorkDir: d.Cwd},
+		&toolselftrace.Tool{LogFilePath: d.LogFilePath},
 		&toolpowershell.Tool{},
 	}
 

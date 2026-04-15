@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/artpar/gogent/internal/app"
 	"github.com/artpar/gogent/internal/config"
@@ -49,6 +51,7 @@ type Deps struct {
 	Metrics      *observe.Metrics
 	Auditor      *observe.Auditor
 	TokenMonitor *observe.TokenMonitor
+	LogFilePath  string
 	Cwd          string
 	Cleanup      func()
 }
@@ -86,20 +89,28 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
 	}
+
+	creds, _ := config.LoadCredentials()
+
 	if cfg.APIKey == "" {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try credentials.yml)")
-		creds, credErr := config.LoadCredentials()
-		if credErr == nil {
-			cfg.APIKey = creds.CredentialFor(cfg.Provider).APIKey
-		}
+		cfg.APIKey = creds.CredentialFor(cfg.Provider).APIKey
 	}
 	if cfg.APIKey == "" {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try env var)")
 		cfg.APIKey = os.Getenv(envVarForProvider(cfg.Provider))
 	}
 	if cfg.APIKey == "" {
-		observe.GlobalTrace("if: cfg.APIKey == \"\" (error)")
-		return nil, fmt.Errorf("API key required: set --api-key, add to ~/.gogent/credentials.yml, or set %s", envVarForProvider(cfg.Provider))
+		observe.GlobalTrace("if: cfg.APIKey == \"\" (try provider picker)")
+		selected, selErr := pickAvailableProvider(cfg.Provider, creds)
+		if selErr != nil {
+			observe.GlobalTrace("if: selErr != nil")
+			observe.GlobalTrace("return: nil, selErr")
+			return nil, selErr
+		}
+		cfg.Provider = selected.name
+		cfg.APIKey = selected.apiKey
+		cfg.Model = DefaultModelFor(cfg.Provider)
 	}
 
 	bus := observe.NewEventBus(1024)
@@ -121,13 +132,15 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	// Per-execution log file: ~/.gogent/logs/<timestamp>.jsonl
 	// Always enabled, captures everything at LevelTrace in JSON format.
 	var cleanupFns []func()
+	var logFilePath string
 	if gogentHome, homeErr := config.GogentHome(); homeErr == nil {
 		observe.GlobalTrace("if: homeErr == nil")
 		logsDir := filepath.Join(gogentHome, "logs")
 		if mkErr := os.MkdirAll(logsDir, 0o755); mkErr == nil {
 			observe.GlobalTrace("if: mkErr == nil")
 			logFileName := time.Now().Format("2006-01-02T15-04-05") + ".jsonl"
-			logFile, logErr := os.Create(filepath.Join(logsDir, logFileName))
+			logFilePath = filepath.Join(logsDir, logFileName)
+			logFile, logErr := os.Create(logFilePath)
 			if logErr == nil {
 				observe.GlobalTrace("if: logErr == nil")
 				fileLogger := observe.NewLogger(logFile, observe.LevelTrace, observe.FormatJSON, nil)
@@ -389,6 +402,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Metrics:      metrics,
 		Auditor:      auditor,
 		TokenMonitor: tokenMon,
+		LogFilePath:  logFilePath,
 		Cwd:          cwd,
 		Cleanup:      compositeCleanup,
 	}, nil
@@ -540,28 +554,126 @@ func SecondaryModelFor(providerName string) string {
 
 // resolveBaseURL checks env var first, then credentials.yml.
 func resolveBaseURL(envVar, provider string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if v := os.Getenv(envVar); v != "" {
+		observe.GlobalTrace("if: v != \"\"")
+		observe.GlobalTrace("return: v")
 		return v
 	}
 	creds, err := config.LoadCredentials()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: creds.CredentialFor(provider).BaseURL")
 	return creds.CredentialFor(provider).BaseURL
+}
+
+type selectedProvider struct {
+	name   string
+	apiKey string
+}
+
+// knownProviders is the list of all supported provider names.
+var knownProviders = []string{"anthropic", "openai", "google", "groq", "lilac"}
+
+// pickAvailableProvider collects providers that have an API key (from credentials
+// or env vars) and either auto-selects or prompts the user to choose.
+func pickAvailableProvider(defaultProv string, creds config.Credentials) (selectedProvider, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	var available []selectedProvider
+	seen := map[string]bool{}
+
+	for name, cred := range creds.Providers {
+		observe.GlobalTrace("range creds.Providers")
+		if cred.APIKey != "" && !seen[name] {
+			observe.GlobalTrace("if: cred.APIKey != \"\" && !seen[name]")
+			available = append(available, selectedProvider{name: name, apiKey: cred.APIKey})
+			seen[name] = true
+		}
+	}
+
+	for _, name := range knownProviders {
+		observe.GlobalTrace("range knownProviders")
+		if seen[name] {
+			observe.GlobalTrace("if: seen[name]")
+			continue
+		}
+		if key := os.Getenv(envVarForProvider(name)); key != "" {
+			observe.GlobalTrace("if: key != \"\"")
+			available = append(available, selectedProvider{name: name, apiKey: key})
+			seen[name] = true
+		}
+	}
+
+	if len(available) == 0 {
+		observe.GlobalTrace("if: len(available) == 0")
+		observe.GlobalTrace("return: selectedProvider{}, fmt.Errorf(\"API key required: set --api-key, add to ~/.go...")
+		return selectedProvider{}, fmt.Errorf("API key required: set --api-key, add to ~/.gogent/credentials.yml, or set %s", envVarForProvider(defaultProv))
+	}
+
+	sort.Slice(available, func(i, j int) bool {
+		return available[i].name < available[j].name
+	})
+
+	if len(available) == 1 {
+		observe.GlobalTrace("if: len(available) == 1")
+		fmt.Fprintf(os.Stderr, "No API key for %s, using %s\n", defaultProv, available[0].name)
+		observe.GlobalTrace("return: available[0], nil")
+		return available[0], nil
+	}
+
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		observe.GlobalTrace("if: !term.IsTerminal(int(os.Stdin.Fd()))")
+		names := make([]string, len(available))
+		for i, p := range available {
+			observe.GlobalTrace("range available")
+			names[i] = p.name
+		}
+		observe.GlobalTrace("return: selectedProvider{}, fmt.Errorf(\"API key required for %s. Available providers:...")
+		return selectedProvider{}, fmt.Errorf("API key required for %s. Available providers: %v (use --provider to select)", defaultProv, names)
+	}
+
+	fmt.Fprintf(os.Stderr, "No API key found for %s.\nAvailable providers:\n", defaultProv)
+	for i, p := range available {
+		observe.GlobalTrace("range available")
+		fmt.Fprintf(os.Stderr, "  %d) %s\n", i+1, p.name)
+	}
+	fmt.Fprintf(os.Stderr, "Select provider [1-%d]: ", len(available))
+
+	var choice int
+	if _, err := fmt.Fscanf(os.Stdin, "%d", &choice); err != nil || choice < 1 || choice > len(available) {
+		observe.GlobalTrace("if: err != nil || choice < 1 || choice > len(available)")
+		observe.GlobalTrace("return: selectedProvider{}, fmt.Errorf(\"invalid selection\")")
+		return selectedProvider{}, fmt.Errorf("invalid selection")
+	}
+	observe.GlobalTrace("return: available[choice-1], nil")
+	return available[choice-1], nil
 }
 
 // envVarForProvider returns the environment variable name for a provider's API key.
 func envVarForProvider(provider string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch provider {
 	case "groq":
+		observe.GlobalTrace("case: \"groq\"")
 		return "GROQ_API_KEY"
 	case "openai":
+		observe.GlobalTrace("case: \"openai\"")
 		return "OPENAI_API_KEY"
 	case "google":
+		observe.GlobalTrace("case: \"google\"")
 		return "GOOGLE_API_KEY"
 	case "lilac":
+		observe.GlobalTrace("case: \"lilac\"")
 		return "LILAC_API_KEY"
 	default:
+		observe.GlobalTrace("default")
 		return "ANTHROPIC_API_KEY"
 	}
 }

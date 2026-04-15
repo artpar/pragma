@@ -97,9 +97,11 @@ func (p *Provider) CountTokens(ctx context.Context, params provider.RequestParam
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "if: err != nil")
+		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "return: 0, fmt.Errorf(\"google: count tokens: %w\", err)")
 		return 0, fmt.Errorf("google: count tokens: %w", err)
 	}
 	observe.TraceCtx(ctx, "google", "Provider.CountTokens", fmt.Sprintf("return: %d", resp.TotalTokens))
+	observe.TraceCtx(ctx, "google", "Provider.CountTokens", "return: int(resp.TotalTokens), nil")
 	return int(resp.TotalTokens), nil
 }
 
@@ -209,8 +211,10 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 				if cand.Content == nil {
 					observe.TraceCtx(ctx, "google", "Provider.Stream", "if: cand.Content == nil")
 					if p.bus != nil {
+						observe.TraceCtx(ctx, "google", "Provider.Stream", "if: p.bus != nil")
 						reason := ""
 						if cand.FinishReason != "" {
+							observe.TraceCtx(ctx, "google", "Provider.Stream", "if: cand.FinishReason != \"\"")
 							reason = string(cand.FinishReason)
 						}
 						p.bus.Emit(observe.ErrorOccurred{
@@ -278,6 +282,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					}
 					var accContent []model.ContentPart
 					if accText.Len() > 0 {
+						observe.TraceCtx(ctx, "google", "Provider.Stream", "if: accText.Len() > 0")
 						accContent = append(accContent, model.TextPart{Text: accText.String()})
 					}
 					accContent = append(accContent, accToolCalls...)
@@ -304,12 +309,15 @@ func (p *Provider) applyCache(ctx context.Context, model string, contents []*gen
 	defer observe.TraceCtx(ctx, "google", "Provider.applyCache", "exit")
 
 	if p.cache == nil {
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "if: p.cache == nil")
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "return: contents")
 		return contents
 	}
 
 	stable, tail := splitStablePrefix(contents)
 	if len(stable) == 0 {
 		observe.TraceCtx(ctx, "google", "Provider.applyCache", "no stable prefix")
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "return: contents")
 		return contents
 	}
 
@@ -318,8 +326,11 @@ func (p *Provider) applyCache(ctx context.Context, model string, contents []*gen
 	// attempt caching when the prefix is likely large enough.
 	estimatedTokens := 0
 	for _, c := range stable {
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "range stable")
 		for _, part := range c.Parts {
+			observe.TraceCtx(ctx, "google", "Provider.applyCache", "range c.Parts")
 			if part.Text != "" {
+				observe.TraceCtx(ctx, "google", "Provider.applyCache", "if: part.Text != \"\"")
 				estimatedTokens += len(part.Text) / 4
 			}
 		}

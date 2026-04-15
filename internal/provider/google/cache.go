@@ -39,6 +39,7 @@ type cacheEntry struct {
 func newCacheManager(client *genai.Client, bus *observe.EventBus) *cacheManager {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &cacheManager{client: client, bus: bus}")
 	return &cacheManager{client: client, bus: bus}
 }
 
@@ -64,6 +65,7 @@ func (cm *cacheManager) getOrCreateCache(
 
 	if prefixTokens < minCacheTokens {
 		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("skip: prefix %d tokens < min %d", prefixTokens, minCacheTokens))
+		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "return: \"\", nil")
 		return "", nil
 	}
 
@@ -72,20 +74,12 @@ func (cm *cacheManager) getOrCreateCache(
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	// Cache hit — hash matches and not expired
 	if cm.current != nil && cm.current.hash == hash && time.Now().Before(cm.current.expiresAt) {
-		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "cache hit")
-		cm.bus.Emit(observe.ErrorOccurred{
-			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-			Severity:     "info",
-			Component:    "google.cache",
-			ErrorType:    "cache_hit",
-			ErrorMessage: fmt.Sprintf("cache hit: %s (%d tokens)", cm.current.name, prefixTokens),
-		})
+		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("cache hit: %s (%d tokens)", cm.current.name, prefixTokens))
+		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "return: cm.current.name, nil")
 		return cm.current.name, nil
 	}
 
-	// Cache miss — delete old cache if exists
 	if cm.current != nil {
 		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "cache miss, deleting old")
 		deleteCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -97,7 +91,6 @@ func (cm *cacheManager) getOrCreateCache(
 		cm.current = nil
 	}
 
-	// Create new cache
 	observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("creating cache for %d tokens", prefixTokens))
 	cached, err := cm.client.Caches.Create(ctx, model, &genai.CreateCachedContentConfig{
 		Contents:          stableContents,
@@ -108,6 +101,7 @@ func (cm *cacheManager) getOrCreateCache(
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("create cache error: %v", err))
+		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "return: \"\", fmt.Errorf(\"google: create cache: %w\", err)")
 		return "", fmt.Errorf("google: create cache: %w", err)
 	}
 
@@ -117,15 +111,8 @@ func (cm *cacheManager) getOrCreateCache(
 		expiresAt: time.Now().Add(cacheTTL),
 	}
 
-	cm.bus.Emit(observe.ErrorOccurred{
-		EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-		Severity:     "info",
-		Component:    "google.cache",
-		ErrorType:    "cache_created",
-		ErrorMessage: fmt.Sprintf("cache created: %s (%d tokens, TTL %s)", cached.Name, prefixTokens, cacheTTL),
-	})
-
-	observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "return: cached.Name")
+	observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("cache created: %s (%d tokens, TTL %s)", cached.Name, prefixTokens, cacheTTL))
+	observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "return: cached.Name, nil")
 	return cached.Name, nil
 }
 
@@ -136,16 +123,19 @@ func hashPrefix(contents []*genai.Content, sysInstruction *genai.Content, tools 
 	h := sha256.New()
 
 	if sysInstruction != nil {
+		observe.GlobalTrace("if: sysInstruction != nil")
 		sysBytes, _ := json.Marshal(sysInstruction)
 		h.Write(sysBytes)
 	}
 
 	for _, c := range contents {
+		observe.GlobalTrace("range contents")
 		cBytes, _ := json.Marshal(c)
 		h.Write(cBytes)
 	}
 
 	if len(tools) > 0 {
+		observe.GlobalTrace("if: len(tools) > 0")
 		tBytes, _ := json.Marshal(tools)
 		h.Write(tBytes)
 	}
@@ -162,20 +152,23 @@ func splitStablePrefix(contents []*genai.Content) (stable []*genai.Content, tail
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if len(contents) == 0 {
+		observe.GlobalTrace("if: len(contents) == 0")
+		observe.GlobalTrace("return: nil, nil")
 		return nil, nil
 	}
 
-	// Find the last user message boundary
 	lastUserIdx := -1
 	for i := len(contents) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		if contents[i].Role == "user" {
+			observe.GlobalTrace("if: contents[i].Role == \"user\"")
 			lastUserIdx = i
 			break
 		}
 	}
 
 	if lastUserIdx <= 0 {
-		// No stable prefix worth caching (0 or 1 messages)
+
 		observe.GlobalTrace("return: nil, contents")
 		return nil, contents
 	}

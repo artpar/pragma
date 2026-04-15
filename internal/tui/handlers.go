@@ -308,6 +308,38 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	switch msg.Type {
+	case tea.KeyPgUp, tea.KeyPgDown:
+		observe.GlobalTrace("scroll key → viewport")
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
+	case tea.KeyHome:
+		observe.GlobalTrace("Home → viewport top")
+		m.viewport.GotoTop()
+		return m, nil
+	case tea.KeyEnd:
+		observe.GlobalTrace("End → viewport bottom")
+		m.viewport.GotoBottom()
+		return m, nil
+	case tea.KeyUp:
+		observe.GlobalTrace("case: tea.KeyUp")
+		if msg.Alt {
+			observe.GlobalTrace("Alt+Up → viewport line up")
+			m.viewport.ScrollUp(1)
+			observe.GlobalTrace("return: m, nil")
+			return m, nil
+		}
+	case tea.KeyDown:
+		observe.GlobalTrace("case: tea.KeyDown")
+		if msg.Alt {
+			observe.GlobalTrace("Alt+Down → viewport line down")
+			m.viewport.ScrollDown(1)
+			observe.GlobalTrace("return: m, nil")
+			return m, nil
+		}
+	}
+
 	cmd := m.input.Update(msg)
 	observe.GlobalTrace("return: m, cmd")
 	return m, cmd

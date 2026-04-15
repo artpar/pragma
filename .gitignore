@@ -36,3 +36,6 @@ todo-app/
 .gogent/
 gogent-recording.jsonl
 stress-test/
+
+# E2E test snapshots
+e2e/snapshots/

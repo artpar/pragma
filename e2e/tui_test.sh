@@ -1,121 +1,167 @@
 #!/bin/bash
 set -e
 
-BINARY="$(cd "$(dirname "$0")/.." && pwd)/bin/gogent"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/harness.sh"
+
+BINARY="$PROJECT_DIR/bin/gogent"
 API_KEY="${ANTHROPIC_API_KEY:-smoke-test}"
 PASS=0
 FAIL=0
 
-assert_screen() {
-    local pattern="$1"
-    local test_name="$2"
-    if tui-use find "$pattern" >/dev/null 2>&1; then
-        echo "  PASS: $test_name"
-        PASS=$((PASS + 1))
-    else
-        echo "  FAIL: $test_name — pattern '$pattern' not found on screen"
-        echo "  --- screen ---"
-        tui-use snapshot 2>/dev/null || true
-        echo "  --- end ---"
-        FAIL=$((FAIL + 1))
-    fi
-}
-
-cleanup() {
-    tui-use kill 2>/dev/null || true
-}
-trap cleanup EXIT
+trap cleanup_all EXIT
+mkdir -p "$SNAPSHOT_DIR"
 
 echo "Building gogent..."
-(cd "$(dirname "$0")/.." && make build)
+(cd "$PROJECT_DIR" && make build)
 echo ""
 
 # --------------------------------------------------
 # Test 1: /help
 # --------------------------------------------------
-echo "=== Test: /help ==="
-tui-use start env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
-tui-use wait 5000 2>/dev/null
-tui-use type "/help"
-tui-use wait 500 2>/dev/null
-tui-use press enter
-tui-use wait 3000 2>/dev/null
-assert_screen "compact" "/help lists /compact"
-assert_screen "exit" "/help lists /exit"
-assert_screen "cost" "/help lists /cost"
-tui-use kill
+test_help() {
+    local S="gogent-e2e-help-$$"
+    echo "=== Test: /help ==="
+    tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
+    tmux_wait_ready "$S"
+    tmux_send "$S" "/help"
+    tmux_enter "$S"
+    tmux_wait_for "$S" "compact" 5
+    tmux_assert "$S" "compact" "/help lists /compact"
+    tmux_assert "$S" "exit" "/help lists /exit"
+    tmux_assert "$S" "cost" "/help lists /cost"
+    tmux_kill "$S"
+}
 
 # --------------------------------------------------
 # Test 2: /cost
 # --------------------------------------------------
-echo ""
-echo "=== Test: /cost ==="
-tui-use start env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
-tui-use wait 5000 2>/dev/null
-tui-use type "/cost"
-tui-use wait 500 2>/dev/null
-tui-use press enter
-tui-use wait 3000 2>/dev/null
-assert_screen "0.0000" "/cost shows $0.0000"
-tui-use kill
+test_cost() {
+    local S="gogent-e2e-cost-$$"
+    echo ""
+    echo "=== Test: /cost ==="
+    tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
+    tmux_wait_ready "$S"
+    tmux_send "$S" "/cost"
+    tmux_enter "$S"
+    tmux_wait_for "$S" "0\\.00" 5
+    tmux_assert "$S" "0\\.00" "/cost shows cost"
+    tmux_kill "$S"
+}
 
 # --------------------------------------------------
 # Test 3: /exit quits the program
 # --------------------------------------------------
-echo ""
-echo "=== Test: /exit ==="
-tui-use start env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
-tui-use wait 5000 2>/dev/null
-tui-use type "/exit"
-tui-use wait 500
-tui-use press enter
-tui-use wait 3000 2>/dev/null || true
-if tui-use snapshot 2>/dev/null | grep -q "exited"; then
-    echo "  PASS: /exit terminated the program"
-    PASS=$((PASS + 1))
-else
-    echo "  FAIL: /exit did not terminate the program"
-    tui-use snapshot 2>/dev/null || true
-    FAIL=$((FAIL + 1))
-fi
-tui-use kill 2>/dev/null || true
+test_exit() {
+    local S="gogent-e2e-exit-$$"
+    echo ""
+    echo "=== Test: /exit ==="
+    tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
+    tmux_wait_ready "$S"
+    tmux_send "$S" "/exit"
+    tmux_enter "$S"
+    sleep 3
+    if tmux_session_alive "$S"; then
+        echo "  FAIL: /exit did not terminate the program"
+        tmux_save_snapshot "$S" "exit_still_running"
+        FAIL=$((FAIL + 1))
+        tmux_kill "$S"
+    else
+        echo "  PASS: /exit terminated the program"
+        PASS=$((PASS + 1))
+    fi
+}
 
 # --------------------------------------------------
-# Test 4: /unknown shows error
+# Test 4: /unknown command shows error
 # --------------------------------------------------
-echo ""
-echo "=== Test: /unknown ==="
-tui-use start env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
-tui-use wait 5000 2>/dev/null
-tui-use type "/nonexistent"
-tui-use wait 500 2>/dev/null
-tui-use press enter
-tui-use wait 3000 2>/dev/null
-assert_screen "Error\|error\|unknown" "/unknown shows error"
-tui-use kill
+test_unknown() {
+    local S="gogent-e2e-unknown-$$"
+    echo ""
+    echo "=== Test: /unknown ==="
+    tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
+    tmux_wait_ready "$S"
+    tmux_send "$S" "/nonexistent"
+    tmux_enter "$S"
+    tmux_wait_for "$S" "[Ee]rror|[Uu]nknown" 5
+    tmux_assert "$S" "[Ee]rror|[Uu]nknown" "/unknown shows error"
+    tmux_kill "$S"
+}
 
 # --------------------------------------------------
-# Test 5: Regular message (only with real API key)
+# Test 5: Regular message (real API key only)
 # --------------------------------------------------
-if [ "$API_KEY" != "smoke-test" ]; then
+test_message() {
+    if [ "$API_KEY" = "smoke-test" ]; then
+        echo ""
+        echo "=== Test: regular message === (SKIPPED: no real API key)"
+        return
+    fi
+    local S="gogent-e2e-msg-$$"
     echo ""
     echo "=== Test: regular message ==="
-    tui-use start env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
-    tui-use wait 5000 2>/dev/null
-    tui-use type "say hello in one word"
-    tui-use wait 500
-    tui-use press enter
-    tui-use wait --text "Assistant" 2>/dev/null || tui-use wait 15000
-    tui-use wait 5000
-    echo "  Screen after message:"
-    tui-use snapshot
-    assert_screen "turns: 1" "regular message incremented turn counter"
-    tui-use kill
-fi
+    tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
+    tmux_wait_ready "$S"
+    tmux_send "$S" "say hello in one word"
+    tmux_enter "$S"
+    tmux_wait_for "$S" "turns: 1" 30
+    tmux_assert "$S" "turns: 1" "regular message incremented turn counter"
+    tmux_kill "$S"
+}
 
 # --------------------------------------------------
-# Summary
+# Test 6: Provider picker (interactive selection)
 # --------------------------------------------------
+test_provider_picker() {
+    echo ""
+    echo "=== Test: provider picker ==="
+
+    local TEMP_HOME
+    TEMP_HOME=$(mktemp -d)
+    harness_track_tmpdir "$TEMP_HOME"
+    mkdir -p "$TEMP_HOME/.gogent"
+    cat > "$TEMP_HOME/.gogent/credentials.yml" << 'CREDS'
+providers:
+  google:
+    api_key: fake-google-key-for-picker-test
+  lilac:
+    api_key: fake-lilac-key-for-picker-test
+CREDS
+
+    local S="gogent-e2e-picker-$$"
+    tmux_start "$S" env -i HOME="$TEMP_HOME" PATH="$PATH" TERM="${TERM:-xterm-256color}" "$BINARY"
+
+    if ! tmux_wait_for "$S" "Select provider" 10; then
+        echo "  FAIL: provider picker menu did not appear"
+        tmux_save_snapshot "$S" "picker_no_menu"
+        FAIL=$((FAIL + 1))
+        tmux_kill "$S"
+        return
+    fi
+
+    tmux_assert "$S" "google" "picker shows google"
+    tmux_assert "$S" "lilac" "picker shows lilac"
+
+    # google is alphabetically first → option 1
+    tmux_send "$S" "1"
+    tmux_enter "$S"
+
+    tmux_wait_ready "$S" 15
+    tmux_assert "$S" "gemini" "picker selected google (shows gemini model)"
+
+    tmux_kill "$S"
+}
+
+# --- Run all tests ---
+test_help
+test_cost
+test_exit
+test_unknown
+test_message
+test_provider_picker
+
+# --- Summary ---
 echo ""
 echo "========================"
 echo "Results: $PASS passed, $FAIL failed"

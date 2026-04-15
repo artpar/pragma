@@ -50,7 +50,7 @@ smoke: build
 	echo "OK: init succeeded"; \
 	echo "=== Smoke test passed ==="
 
-# E2E TUI tests using tui-use (real PTY, real keystrokes, real screen capture)
+# E2E TUI tests using tmux (real terminal, real keystrokes, real screen capture)
 e2e: build
 	bash e2e/tui_test.sh
 
