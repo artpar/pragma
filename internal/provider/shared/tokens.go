@@ -43,7 +43,7 @@ func EstimateTokens(params provider.RequestParams) int {
 				total += 1000
 			case model.DocumentPart:
 				observe.GlobalTrace("typecase: model.DocumentPart")
-				// Flat estimate for binary documents (PDFs). Binary byte count / 4 is meaningless.
+
 				total += 5000
 			}
 		}
@@ -54,27 +54,42 @@ func EstimateTokens(params provider.RequestParams) int {
 
 // MarshalContent serializes ContentParts to json.RawMessage for event recording.
 func MarshalContent(parts []model.ContentPart) json.RawMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(parts) == 0 {
+		observe.GlobalTrace("if: len(parts) == 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	data, err := model.MarshalContentParts(parts)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: data")
 	return data
 }
 
 // SystemText concatenates all system prompt blocks into a single string.
 func SystemText(sp model.SystemPrompt) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(sp.Blocks) == 0 {
+		observe.GlobalTrace("if: len(sp.Blocks) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	if len(sp.Blocks) == 1 {
+		observe.GlobalTrace("if: len(sp.Blocks) == 1")
+		observe.GlobalTrace("return: sp.Blocks[0].Text")
 		return sp.Blocks[0].Text
 	}
 	var parts []string
 	for _, b := range sp.Blocks {
+		observe.GlobalTrace("range sp.Blocks")
 		parts = append(parts, b.Text)
 	}
+	observe.GlobalTrace("return: strings.Join(parts, \"\\n\\n\")")
 	return strings.Join(parts, "\n\n")
 }

@@ -87,44 +87,19 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		cfg.MaxTokens = 16384
 	}
 	if cfg.APIKey == "" {
-		observe.GlobalTrace("if: cfg.APIKey == \"\"")
-		switch cfg.Provider {
-		case "groq":
-			observe.GlobalTrace("case: \"groq\"")
-			cfg.APIKey = os.Getenv("GROQ_API_KEY")
-		case "openai":
-			observe.GlobalTrace("case: \"openai\"")
-			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
-		case "google":
-			observe.GlobalTrace("case: \"google\"")
-			cfg.APIKey = os.Getenv("GOOGLE_API_KEY")
-		case "lilac":
-			observe.GlobalTrace("case: \"lilac\"")
-			cfg.APIKey = os.Getenv("LILAC_API_KEY")
-		default:
-			observe.GlobalTrace("default")
-			cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
+		observe.GlobalTrace("if: cfg.APIKey == \"\" (try credentials.yml)")
+		creds, credErr := config.LoadCredentials()
+		if credErr == nil {
+			cfg.APIKey = creds.CredentialFor(cfg.Provider).APIKey
 		}
 	}
 	if cfg.APIKey == "" {
-		observe.GlobalTrace("if: cfg.APIKey == \"\"")
-		envVar := "ANTHROPIC_API_KEY"
-		switch cfg.Provider {
-		case "groq":
-			observe.GlobalTrace("case: \"groq\"")
-			envVar = "GROQ_API_KEY"
-		case "openai":
-			observe.GlobalTrace("case: \"openai\"")
-			envVar = "OPENAI_API_KEY"
-		case "google":
-			observe.GlobalTrace("case: \"google\"")
-			envVar = "GOOGLE_API_KEY"
-		case "lilac":
-			observe.GlobalTrace("case: \"lilac\"")
-			envVar = "LILAC_API_KEY"
-		}
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"API key required: set --api-key or %s environment variable\",...")
-		return nil, fmt.Errorf("API key required: set --api-key or %s environment variable", envVar)
+		observe.GlobalTrace("if: cfg.APIKey == \"\" (try env var)")
+		cfg.APIKey = os.Getenv(envVarForProvider(cfg.Provider))
+	}
+	if cfg.APIKey == "" {
+		observe.GlobalTrace("if: cfg.APIKey == \"\" (error)")
+		return nil, fmt.Errorf("API key required: set --api-key, add to ~/.gogent/credentials.yml, or set %s", envVarForProvider(cfg.Provider))
 	}
 
 	bus := observe.NewEventBus(1024)
@@ -138,7 +113,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	logLevel := observe.LevelError
 	if cfg.Verbose {
 		observe.GlobalTrace("if: cfg.Verbose")
-		logLevel = observe.LevelTrace
+		logLevel = observe.LevelDebug
 	}
 	logger := observe.NewLogger(os.Stderr, logLevel, observe.FormatText, nil)
 	bus.Subscribe(logger)
@@ -493,21 +468,21 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) (provider.Provider
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		var opts []oaiprov.Option
-		if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
+		if baseURL := resolveBaseURL("OPENAI_BASE_URL", "openai"); baseURL != "" {
 			opts = append(opts, oaiprov.WithBaseURL(baseURL))
 		}
 		return oaiprov.New(cfg.APIKey, bus, opts...)
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		var opts []googleprov.Option
-		if baseURL := os.Getenv("GOOGLE_BASE_URL"); baseURL != "" {
+		if baseURL := resolveBaseURL("GOOGLE_BASE_URL", "google"); baseURL != "" {
 			opts = append(opts, googleprov.WithBaseURL(baseURL))
 		}
 		return googleprov.New(cfg.APIKey, bus, opts...)
 	case "lilac":
 		observe.GlobalTrace("case: \"lilac\"")
 		var opts []lilacprov.Option
-		if baseURL := os.Getenv("LILAC_BASE_URL"); baseURL != "" {
+		if baseURL := resolveBaseURL("LILAC_BASE_URL", "lilac"); baseURL != "" {
 			opts = append(opts, lilacprov.WithBaseURL(baseURL))
 		}
 		return lilacprov.New(cfg.APIKey, bus, opts...)
@@ -560,5 +535,33 @@ func SecondaryModelFor(providerName string) string {
 	default:
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
+	}
+}
+
+// resolveBaseURL checks env var first, then credentials.yml.
+func resolveBaseURL(envVar, provider string) string {
+	if v := os.Getenv(envVar); v != "" {
+		return v
+	}
+	creds, err := config.LoadCredentials()
+	if err != nil {
+		return ""
+	}
+	return creds.CredentialFor(provider).BaseURL
+}
+
+// envVarForProvider returns the environment variable name for a provider's API key.
+func envVarForProvider(provider string) string {
+	switch provider {
+	case "groq":
+		return "GROQ_API_KEY"
+	case "openai":
+		return "OPENAI_API_KEY"
+	case "google":
+		return "GOOGLE_API_KEY"
+	case "lilac":
+		return "LILAC_API_KEY"
+	default:
+		return "ANTHROPIC_API_KEY"
 	}
 }

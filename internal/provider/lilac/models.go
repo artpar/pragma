@@ -45,17 +45,24 @@ func LookupModel(modelID string) (ModelInfo, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if info, ok := registry[modelID]; ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: info, true")
 		return info, true
 	}
 	var candidates []string
 	for id := range registry {
+		observe.GlobalTrace("range registry")
 		if strings.HasPrefix(id, modelID) {
+			observe.GlobalTrace("if: strings.HasPrefix(id, modelID)")
 			candidates = append(candidates, id)
 		}
 	}
 	if len(candidates) > 0 {
+		observe.GlobalTrace("if: len(candidates) > 0")
 		sort.Strings(candidates)
+		observe.GlobalTrace("return: registry[candidates[0]], true")
 		return registry[candidates[0]], true
 	}
+	observe.GlobalTrace("return: ModelInfo{}, false")
 	return ModelInfo{}, false
 }

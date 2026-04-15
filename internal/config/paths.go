@@ -15,6 +15,15 @@ func GogentHome() (string, error) {
 	return filepath.Join(home, ".gogent"), nil
 }
 
+// CredentialsPath returns ~/.gogent/credentials.yml.
+func CredentialsPath() (string, error) {
+	dir, err := GogentHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "credentials.yml"), nil
+}
+
 // GlobalSettingsPath returns ~/.gogent/settings.json.
 func GlobalSettingsPath() (string, error) {
 	dir, err := GogentHome()

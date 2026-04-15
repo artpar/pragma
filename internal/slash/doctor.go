@@ -44,15 +44,35 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 	check("Provider configured", providerName != "", "")
 
 	hasKey := false
-	for _, env := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"} {
-		observe.GlobalTrace("range []string{\"ANTHROPIC_API_KEY\", \"OPENAI_API_KEY\", \"GOOGLE_API_KEY\", \"GROQ_API_K...")
+	for _, env := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY", "LILAC_API_KEY"} {
+		observe.GlobalTrace("range env key check")
 		if os.Getenv(env) != "" {
 			observe.GlobalTrace("if: os.Getenv(env) != \"\"")
 			hasKey = true
 			break
 		}
 	}
-	check("API key found", hasKey, "set ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY")
+	if !hasKey {
+		creds, credErr := config.LoadCredentials()
+		if credErr == nil {
+			for _, pc := range creds.Providers {
+				if pc.APIKey != "" {
+					hasKey = true
+					break
+				}
+			}
+		}
+	}
+	check("API key found", hasKey, "set env var, --api-key, or add to ~/.gogent/credentials.yml")
+
+	credPath, credPathErr := config.CredentialsPath()
+	if credPathErr == nil {
+		if _, err := os.Stat(credPath); err == nil {
+			check("Credentials file", true, "")
+		} else {
+			check("Credentials file", false, "optional — ~/.gogent/credentials.yml not found")
+		}
+	}
 
 	home, homeErr := config.GogentHome()
 	if homeErr != nil {
