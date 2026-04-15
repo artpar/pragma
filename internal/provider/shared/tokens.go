@@ -3,6 +3,9 @@
 package shared
 
 import (
+	"encoding/json"
+	"strings"
+
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
@@ -47,4 +50,31 @@ func EstimateTokens(params provider.RequestParams) int {
 	}
 	observe.GlobalTrace("return: total")
 	return total
+}
+
+// MarshalContent serializes ContentParts to json.RawMessage for event recording.
+func MarshalContent(parts []model.ContentPart) json.RawMessage {
+	if len(parts) == 0 {
+		return nil
+	}
+	data, err := model.MarshalContentParts(parts)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// SystemText concatenates all system prompt blocks into a single string.
+func SystemText(sp model.SystemPrompt) string {
+	if len(sp.Blocks) == 0 {
+		return ""
+	}
+	if len(sp.Blocks) == 1 {
+		return sp.Blocks[0].Text
+	}
+	var parts []string
+	for _, b := range sp.Blocks {
+		parts = append(parts, b.Text)
+	}
+	return strings.Join(parts, "\n\n")
 }

@@ -180,6 +180,8 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
 		TokenEstimate: shared.EstimateTokens(params),
+		Messages:      params.Messages,
+		System:        shared.SystemText(params.System),
 	})
 
 	start := time.Now()
@@ -203,6 +205,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		Usage:       resp.Usage,
 		DurationMs:  time.Since(start).Milliseconds(),
 		Model:       resp.Model,
+		Content:     shared.MarshalContent(resp.Content),
 	})
 	observe.TraceCtx(ctx, "anthropic", "Provider.Complete", "return: resp, nil")
 	return resp, nil
@@ -231,6 +234,8 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
 		TokenEstimate: shared.EstimateTokens(params),
+		Messages:      params.Messages,
+		System:        shared.SystemText(params.System),
 	})
 
 	stream := p.client.Messages.NewStreaming(ctx, wireParams)

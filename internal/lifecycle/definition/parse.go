@@ -67,6 +67,10 @@ func validate(def *GraphDef) error {
 			observe.GlobalTrace("return: fmt.Errorf(\"graph definition: edge from unknown node %q\", e.From)")
 			return fmt.Errorf("graph definition: edge from unknown node %q", e.From)
 		}
+		if e.To == "" {
+			observe.GlobalTrace("if: e.To == \"\" (treat as END, skip)")
+			continue
+		}
 		if _, ok := def.Graph.Nodes[e.To]; !ok {
 			observe.GlobalTrace("if: !ok")
 			observe.GlobalTrace("return: fmt.Errorf(\"graph definition: edge to unknown node %q\", e.To)")

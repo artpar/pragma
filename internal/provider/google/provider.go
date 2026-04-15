@@ -132,6 +132,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  result.StopReason, Usage: result.Usage,
 		DurationMs: time.Since(start).Milliseconds(), Model: result.Model,
+		Content: shared.MarshalContent(result.Content),
 	})
 	observe.TraceCtx(ctx, "google", "Provider.Complete", "return: result, nil")
 	return result, nil
@@ -153,6 +154,8 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		start := time.Now()
 		var usage model.TokenUsage
 		seenToolCalls := make(map[string]bool)
+		var accText strings.Builder
+		var accToolCalls []model.ContentPart
 
 		for resp, err := range p.client.Models.GenerateContentStream(ctx, params.Model, contents, cfg) {
 			observe.TraceCtx(ctx, "google", "Provider.Stream", "range p.client.Models.GenerateContentStream(ctx, params.Model, contents, cfg)")
@@ -203,6 +206,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						}
 					case part.Text != "":
 						observe.TraceCtx(ctx, "google", "Provider.Stream", "case: part.Text != \"\"")
+						accText.WriteString(part.Text)
 						ch <- provider.StreamChunk{TextDelta: part.Text}
 					case part.FunctionCall != nil:
 						observe.TraceCtx(ctx, "google", "Provider.Stream", "case: part.FunctionCall != nil")
@@ -212,6 +216,12 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							id = model.NewUUID()
 						}
 						seenToolCalls[id] = true
+						tc := model.ToolCallPart{ID: id, Name: fc.Name}
+						if fc.Args != nil {
+							argsJSON, _ := json.Marshal(fc.Args)
+							tc.Input = argsJSON
+						}
+						accToolCalls = append(accToolCalls, tc)
 						ch <- provider.StreamChunk{
 							ToolCallStart: &model.ToolCallPart{ID: id, Name: fc.Name},
 						}
@@ -238,10 +248,16 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							StopReason: stopReason, Usage: usage, Model: params.Model,
 						},
 					}
+					var accContent []model.ContentPart
+					if accText.Len() > 0 {
+						accContent = append(accContent, model.TextPart{Text: accText.String()})
+					}
+					accContent = append(accContent, accToolCalls...)
 					p.bus.Emit(observe.APIRequestCompleted{
 						EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 						StopReason:  stopReason, Usage: usage,
 						DurationMs: time.Since(start).Milliseconds(), Model: params.Model,
+						Content: shared.MarshalContent(accContent),
 					})
 				}
 			}
@@ -614,5 +630,7 @@ func (p *Provider) emitStart(traceID, spanID string, params provider.RequestPara
 		MessageCount:  len(params.Messages),
 		ToolCount:     len(params.Tools),
 		TokenEstimate: shared.EstimateTokens(params),
+		Messages:      params.Messages,
+		System:        shared.SystemText(params.System),
 	})
 }

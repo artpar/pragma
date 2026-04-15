@@ -136,7 +136,7 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 				return
 			}
 
-			ch <- ExecutionEvent{Type: "step_started", Step: step, State: state.Snapshot()}
+			ch <- ExecutionEvent{Type: "step_started", Step: step, Nodes: append([]string(nil), pending...), State: state.Snapshot()}
 
 			updates, nodeErrors := e.executeSuperstep(ctx, step, pending, state)
 

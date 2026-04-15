@@ -16,7 +16,7 @@ const graphSpecSystemPrompt = `You are a graph compiler. Given a natural languag
 ## Node types
 
 - llm: Calls the LLM provider. Reads messages from state, appends assistant response. Sets stop_reason.
-  Config: prompt (system prompt override string), temperature (float).
+  Config: prompt (additional instruction prepended to the system prompt), temperature (float).
 - tools: Executes tool calls from the last assistant message. Appends tool results to messages.
 - eval: LLM judges whether the task succeeded. Sets "passed" (bool) and "score" (0.0-1.0).
   Config (inside config: map): criteria (the evaluation question string).
@@ -62,6 +62,9 @@ Empty string "" in paths means END (terminate the graph).
 - Use stop_reason router after llm to check if it wants to call tools or is done
 - Use pass_fail router after eval to branch on success/failure
 - Always set a reasonable max_steps (default 50) to prevent infinite loops
+- CRITICAL: Regular edges (under "edges:") MUST have a real node name in "to". NEVER use to: "" in regular edges. Use "" for END ONLY inside conditional_edges paths
+- CRITICAL: Any task that reads files, writes files, runs commands, or uses tools MUST include a "tools" node. The "tools" node is the ONLY way to execute tool calls from an llm node. An llm node without a following tools node cannot interact with the outside world
+- After an llm node, ALWAYS add a stop_reason conditional edge to route to tools (if tools requested) vs the next step (if done)
 
 ## Examples
 

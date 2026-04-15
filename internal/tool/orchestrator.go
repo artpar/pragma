@@ -95,6 +95,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			ToolCallID:     call.ID,
 			ToolName:       call.Name,
 			InputSizeBytes: len(call.Input),
+			Input:          call.Input,
 		})
 
 		desc, ok := o.registry.Get(call.Name)
@@ -400,6 +401,7 @@ func (o *Orchestrator) executeSingle(
 		DurationMs:      duration.Milliseconds(),
 		OutputSizeBytes: len(invokeResult.Content),
 		IsError:         false,
+		Output:          invokeResult.Content,
 	})
 
 	if o.hookMgr != nil {

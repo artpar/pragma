@@ -48,7 +48,7 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 		observe.GlobalTrace("case: \"llm\"")
 		cfg := LLMNodeConfig{}
 		if v, ok := config["prompt"].(string); ok {
-			cfg.SystemOverride = v
+			cfg.NodePrompt = v
 		}
 		if v, ok := config["temperature"].(float64); ok {
 			cfg.Temperature = &v

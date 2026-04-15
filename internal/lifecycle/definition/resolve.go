@@ -47,6 +47,10 @@ func Resolve(def *GraphDef, createNode NodeCreator, createRouter RouterCreator, 
 
 	for _, e := range def.Graph.Edges {
 		observe.GlobalTrace("range def.Graph.Edges")
+		if e.To == "" {
+			observe.GlobalTrace("if: e.To == \"\" (skip, treat as terminal)")
+			continue
+		}
 		b.AddEdge(e.From, e.To)
 	}
 
@@ -63,6 +67,16 @@ func Resolve(def *GraphDef, createNode NodeCreator, createRouter RouterCreator, 
 
 	for key, reducerName := range def.Graph.Reducers {
 		observe.GlobalTrace("range def.Graph.Reducers")
+		// Check if a custom reducer is registered for this state key.
+		// This allows callers to override reducers for specific keys
+		// (e.g., "messages" needs MessageReducer for []model.Message).
+		if opts != nil {
+			if fn, ok := opts.CustomReducers[key]; ok {
+				observe.GlobalTrace("if: custom reducer found for key")
+				b.SetReducer(key, fn)
+				continue
+			}
+		}
 		fn, err := resolveReducer(reducerName, opts)
 		if err != nil {
 			observe.GlobalTrace("if: err != nil")

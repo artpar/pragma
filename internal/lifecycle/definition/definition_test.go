@@ -100,6 +100,28 @@ func TestParse_Invalid(t *testing.T) {
 	}
 }
 
+func TestParse_EdgeToEmptyIsEND(t *testing.T) {
+	yamlDef := `
+graph:
+  initial: agent
+  nodes:
+    agent:
+      type: llm
+  edges:
+    - from: agent
+      to: ""
+  reducers:
+    messages: overwrite
+`
+	def, err := definition.Parse([]byte(yamlDef))
+	if err != nil {
+		t.Fatalf("expected to: \"\" to be accepted as END, got error: %v", err)
+	}
+	if def.Graph.Initial != "agent" {
+		t.Errorf("expected initial=agent, got %q", def.Graph.Initial)
+	}
+}
+
 func TestParse_InvalidYAML(t *testing.T) {
 	_, err := definition.Parse([]byte(`{invalid yaml [[[`))
 	if err == nil {

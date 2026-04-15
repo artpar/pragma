@@ -328,6 +328,52 @@ func TestOrchestratorPanicRecovery(t *testing.T) {
 	}
 }
 
+func TestOrchestratorEmitsInputAndOutput(t *testing.T) {
+	orch, bus, sub := setupOrchestrator(t, allowAllChecker{}, newEchoTool("Bash", false))
+
+	inputJSON := json.RawMessage(`{"cmd":"ls -la"}`)
+	calls := []model.ToolCallPart{
+		{ID: "tc-1", Name: "Bash", Input: inputJSON},
+	}
+
+	orch.Execute(context.Background(), calls, staticState{"/tmp"})
+	bus.Drain()
+
+	// Find ToolCallReceived and verify Input
+	var received *observe.ToolCallReceived
+	for _, e := range sub.events {
+		if r, ok := e.(observe.ToolCallReceived); ok {
+			received = &r
+			break
+		}
+	}
+	if received == nil {
+		t.Fatal("no ToolCallReceived event")
+	}
+	if received.Input == nil {
+		t.Fatal("ToolCallReceived.Input is nil")
+	}
+	if string(received.Input) != string(inputJSON) {
+		t.Errorf("Input: got %s, want %s", string(received.Input), string(inputJSON))
+	}
+
+	// Find ToolExecutionCompleted and verify Output
+	var completed *observe.ToolExecutionCompleted
+	for _, e := range sub.events {
+		if c, ok := e.(observe.ToolExecutionCompleted); ok {
+			completed = &c
+			break
+		}
+	}
+	if completed == nil {
+		t.Fatal("no ToolExecutionCompleted event")
+	}
+	// echoTool returns string(input) as Content
+	if completed.Output != string(inputJSON) {
+		t.Errorf("Output: got %q, want %q", completed.Output, string(inputJSON))
+	}
+}
+
 func TestOrchestratorResultOrder(t *testing.T) {
 	orch, bus, _ := setupOrchestrator(t, allowAllChecker{},
 		newEchoTool("A", true),

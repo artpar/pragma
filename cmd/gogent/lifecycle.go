@@ -24,8 +24,8 @@ import (
 func lifecycleCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lifecycle",
-		Short: "Run lifecycle patterns and graphs",
-		Long:  "Execute lifecycle orchestration patterns (ReAct, Plan-Execute, Reflexion) or custom YAML graph definitions.",
+		Short: "Run lifecycle graphs",
+		Long:  "Execute lifecycle workflow graphs — either from a YAML file or by describing the structure in natural language.",
 	}
 	cmd.AddCommand(lifecycleRunCmd())
 	cmd.AddCommand(lifecycleListCmd())
@@ -34,31 +34,40 @@ func lifecycleCmd() *cobra.Command {
 
 func lifecycleRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run <pattern|file.yaml>",
-		Short: "Execute a lifecycle pattern or YAML graph definition",
-		Args:  cobra.ExactArgs(1),
-		RunE:  runLifecycle,
+		Use:   "run [file.yaml]",
+		Short: "Execute a lifecycle graph from YAML file or structure description",
+		Long: `Execute a lifecycle workflow graph.
+
+Provide either a YAML file path or a --structure description (which the LLM compiles into a graph).
+
+Examples:
+  gogent lifecycle run workflow.yaml --prompt "analyze this code"
+  gogent lifecycle run --structure "tool-calling loop" --prompt "list files"
+  gogent lifecycle run --structure "attempt with tools, evaluate, reflect on failure, retry" --prompt "fix the bug"`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: runLifecycle,
 	}
 	cmd.Flags().String("prompt", "", "Initial task/message for the lifecycle")
+	cmd.Flags().String("structure", "", "Natural language description of the execution structure (LLM compiles to graph)")
 	return cmd
 }
 
 func lifecycleListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List available lifecycle patterns",
+		Short: "List example lifecycle structure descriptions",
 		Run: func(cmd *cobra.Command, args []string) {
-			descs := bridge.PatternDescriptions()
-			names := make([]string, 0, len(descs))
-			for name := range descs {
+			examples := bridge.StructureExamples()
+			names := make([]string, 0, len(examples))
+			for name := range examples {
 				names = append(names, name)
 			}
 			sort.Strings(names)
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PATTERN\tDESCRIPTION")
+			fmt.Fprintln(w, "STRUCTURE\tDESCRIPTION")
 			for _, name := range names {
-				fmt.Fprintf(w, "%s\t%s\n", name, descs[name])
+				fmt.Fprintf(w, "%s\t%s\n", name, examples[name])
 			}
 			w.Flush()
 		},
@@ -79,9 +88,18 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--prompt is required")
 	}
 
-	// RegisterTools populates d.Registry with all 36 tools.
-	// We create a separate orchestrator for the lifecycle context
-	// (non-interactive, no hooks — NonInteractivePrompter denies all asks).
+	structure, _ := cmd.Flags().GetString("structure")
+	hasYAML := len(args) == 1
+	if !hasYAML && structure == "" {
+		return fmt.Errorf("provide either a YAML file path or --structure description")
+	}
+	if hasYAML && structure != "" {
+		return fmt.Errorf("provide either a YAML file path or --structure, not both")
+	}
+
+	// Lifecycle is non-interactive — bypass permission prompts.
+	checker := permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
+
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tui.NonInteractiveAsker{}
 	_, err = cli.RegisterTools(d, prompter, asker)
@@ -89,7 +107,7 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	orch := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
+	orch := tool.NewOrchestrator(d.Registry, checker, prompter, d.Bus)
 	if d.HookMgr != nil {
 		orch.SetHookManager(d.HookMgr)
 	}
@@ -102,27 +120,23 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 		Cwd:          d.Cwd,
 	}
 
-	// Resolve the graph: either a built-in pattern name or a YAML file
+	// Resolve the graph: YAML file or LLM-generated from structure description
 	var graph *lifecycle.Graph
-	target := args[0]
 
-	ext := strings.ToLower(filepath.Ext(target))
-	if ext == ".yaml" || ext == ".yml" {
+	if hasYAML {
+		target := args[0]
+		ext := strings.ToLower(filepath.Ext(target))
+		if ext != ".yaml" && ext != ".yml" {
+			return fmt.Errorf("file must have .yaml or .yml extension, got %q", target)
+		}
 		graph, err = loadYAMLGraph(target, infra)
 		if err != nil {
 			return fmt.Errorf("load graph from %s: %w", target, err)
 		}
 	} else {
-		patterns := bridge.PatternMap(infra)
-		var ok bool
-		graph, ok = patterns[target]
-		if !ok {
-			available := make([]string, 0, len(patterns))
-			for name := range patterns {
-				available = append(available, name)
-			}
-			sort.Strings(available)
-			return fmt.Errorf("unknown pattern %q (available: %s)", target, strings.Join(available, ", "))
+		graph, err = generateGraph(cmd, d, structure, infra)
+		if err != nil {
+			return fmt.Errorf("generate graph: %w", err)
 		}
 	}
 
@@ -153,9 +167,14 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 	for ev := range events {
 		switch ev.Type {
 		case "step_started":
-			fmt.Fprintf(os.Stderr, "⎿ Step %d\n", ev.Step)
+			if len(ev.Nodes) > 0 {
+				fmt.Fprintf(os.Stderr, "⎿ Step %d: %s\n", ev.Step, strings.Join(ev.Nodes, ", "))
+			} else {
+				fmt.Fprintf(os.Stderr, "⎿ Step %d\n", ev.Step)
+			}
 		case "node_completed":
 			if ev.Err != nil {
+				fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", ev.Node, ev.Err)
 				return fmt.Errorf("lifecycle node %q failed at step %d: %w", ev.Node, ev.Step, ev.Err)
 			}
 			fmt.Fprintf(os.Stderr, "  ✓ %s\n", ev.Node)
@@ -181,6 +200,32 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func generateGraph(cmd *cobra.Command, d *cli.Deps, structure string, infra bridge.Infra) (*lifecycle.Graph, error) {
+	modelID := cli.SecondaryModelFor(d.Cfg.Provider)
+
+	def, err := bridge.GenerateGraph(cmd.Context(), d.Prov, d.Bus, modelID, structure)
+	if err != nil {
+		return nil, err
+	}
+
+	if def.Graph.Reducers == nil {
+		def.Graph.Reducers = make(map[string]string)
+	}
+	def.Graph.Reducers["total_usage"] = "total_usage"
+	def.Graph.Reducers["turn_count"] = "sum"
+
+	factory := bridge.NewNodeFactory(infra)
+	opts := &definition.ResolveOptions{
+		CustomReducers: map[string]lifecycle.ReducerFunc{
+			"messages":    bridge.MessageReducer,
+			"reflections": bridge.ReflectionReducer,
+			"total_usage": bridge.UsageReducer,
+		},
+	}
+
+	return definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
 }
 
 func loadYAMLGraph(path string, infra bridge.Infra) (*lifecycle.Graph, error) {

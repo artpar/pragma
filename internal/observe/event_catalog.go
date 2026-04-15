@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/artpar/gogent/internal/model"
@@ -41,10 +42,12 @@ func (ConversationForked) eventSealed() {}
 
 type APIRequestStarted struct {
 	EventHeader
-	Model         string `json:"model"`
-	MessageCount  int    `json:"message_count"`
-	ToolCount     int    `json:"tool_count"`
-	TokenEstimate int    `json:"token_estimate"`
+	Model         string          `json:"model"`
+	MessageCount  int             `json:"message_count"`
+	ToolCount     int             `json:"tool_count"`
+	TokenEstimate int             `json:"token_estimate"`
+	Messages      []model.Message `json:"messages,omitempty"`
+	System        string          `json:"system,omitempty"`
 }
 
 func (APIRequestStarted) eventSealed() {}
@@ -63,6 +66,7 @@ type APIRequestCompleted struct {
 	Usage      model.TokenUsage `json:"usage"`
 	DurationMs int64            `json:"duration_ms"`
 	Model      string           `json:"model"`
+	Content    json.RawMessage  `json:"content,omitempty"`
 }
 
 func (APIRequestCompleted) eventSealed() {}
@@ -90,9 +94,10 @@ func (APIRetryScheduled) eventSealed() {}
 
 type ToolCallReceived struct {
 	EventHeader
-	ToolCallID     string `json:"tool_call_id"`
-	ToolName       string `json:"tool_name"`
-	InputSizeBytes int    `json:"input_size_bytes"`
+	ToolCallID     string          `json:"tool_call_id"`
+	ToolName       string          `json:"tool_name"`
+	InputSizeBytes int             `json:"input_size_bytes"`
+	Input          json.RawMessage `json:"input,omitempty"`
 }
 
 func (ToolCallReceived) eventSealed() {}
@@ -134,6 +139,7 @@ type ToolExecutionCompleted struct {
 	DurationMs      int64  `json:"duration_ms"`
 	OutputSizeBytes int    `json:"output_size_bytes"`
 	IsError         bool   `json:"is_error"`
+	Output          string `json:"output,omitempty"`
 }
 
 func (ToolExecutionCompleted) eventSealed() {}

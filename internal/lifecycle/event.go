@@ -9,9 +9,10 @@ package lifecycle
 
 // ExecutionEvent is the streaming event type for Executor.Stream().
 type ExecutionEvent struct {
-	Type  string `json:"type"` // "step_started", "node_completed", "transition", "completed"
-	Step  int    `json:"step"`
-	Node  string `json:"node,omitempty"`
-	State State  `json:"state,omitempty"`
-	Err   error  `json:"-"`
+	Type  string   `json:"type"` // "step_started", "node_completed", "transition", "completed"
+	Step  int      `json:"step"`
+	Node  string   `json:"node,omitempty"`
+	Nodes []string `json:"nodes,omitempty"` // pending nodes for step_started
+	State State    `json:"state,omitempty"`
+	Err   error    `json:"-"`
 }

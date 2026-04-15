@@ -191,7 +191,7 @@ func TestLLMNode_ToolUse(t *testing.T) {
 	}
 }
 
-func TestLLMNode_SystemOverride(t *testing.T) {
+func TestLLMNode_NodePrompt(t *testing.T) {
 	resp := model.Response{
 		Content:    []model.ContentPart{model.TextPart{Text: "ok"}},
 		StopReason: model.StopEndTurn,
@@ -199,7 +199,7 @@ func TestLLMNode_SystemOverride(t *testing.T) {
 	prov := gtesting.NewSequenceProvider(resp)
 
 	node := bridge.LLMNode(prov, newTestBus(), bridge.LLMNodeConfig{
-		SystemOverride: "Custom system prompt",
+		NodePrompt: "Custom system prompt",
 	})
 	state := lifecycle.State{
 		bridge.KeyMessages:  []model.Message{},
@@ -214,8 +214,14 @@ func TestLLMNode_SystemOverride(t *testing.T) {
 	}
 
 	calls := prov.Calls()
+	if len(calls[0].System.Blocks) != 2 {
+		t.Fatalf("expected 2 system blocks (node prompt + original), got %d", len(calls[0].System.Blocks))
+	}
 	if calls[0].System.Blocks[0].Text != "Custom system prompt" {
-		t.Fatalf("expected overridden system prompt, got %q", calls[0].System.Blocks[0].Text)
+		t.Fatalf("expected node prompt as first block, got %q", calls[0].System.Blocks[0].Text)
+	}
+	if calls[0].System.Blocks[1].Text != "Original" {
+		t.Fatalf("expected original system prompt preserved as second block, got %q", calls[0].System.Blocks[1].Text)
 	}
 }
 
@@ -388,15 +394,23 @@ func TestReActPattern_FullLoop(t *testing.T) {
 		},
 	)
 
-	infra := bridge.Infra{
-		Provider:     prov,
-		Orchestrator: orch,
-		Registry:     reg,
-		Bus:          bus,
-		Cwd:          "/tmp",
+	// Build ReAct graph directly with bridge node constructors (no hardcoded patterns).
+	graph, buildErr := lifecycle.NewBuilder().
+		AddNode("llm", bridge.LLMNode(prov, bus, bridge.LLMNodeConfig{})).
+		AddNode("tools", bridge.ToolNode(orch, "/tmp")).
+		SetInitialNode("llm").
+		SetReducer(bridge.KeyMessages, bridge.MessageReducer).
+		SetReducer(bridge.KeyTurnCount, lifecycle.ReducerSum).
+		SetReducer(bridge.KeyTotalUsage, bridge.UsageReducer).
+		AddConditionalEdges("llm", bridge.StopReasonRouter(), map[string]string{
+			"continue": "tools",
+			"end":      "",
+		}).
+		AddEdge("tools", "llm").
+		Build()
+	if buildErr != nil {
+		t.Fatalf("graph build: %v", buildErr)
 	}
-
-	graph := bridge.NewReAct(infra)
 	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(bus))
 
 	initialState := lifecycle.State{

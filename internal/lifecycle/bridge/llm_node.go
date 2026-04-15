@@ -12,8 +12,10 @@ import (
 
 // LLMNodeConfig configures an LLM call node.
 type LLMNodeConfig struct {
-	// SystemOverride replaces the system prompt from state if non-empty.
-	SystemOverride string
+	// NodePrompt is prepended as the first system block before the main system prompt.
+	// This gives the node a specific instruction while preserving the full context
+	// (cwd, tool descriptions, AGENT.md) from the parent agent.
+	NodePrompt string
 	// PromptPrefix is prepended as a user message before calling the LLM.
 	PromptPrefix string
 	// Temperature overrides the default temperature if non-nil.
@@ -37,10 +39,10 @@ func LLMNode(prov provider.Provider, bus *observe.EventBus, cfg LLMNodeConfig) l
 		maxTokens := MaxTokens(state)
 		tools := Tools(state)
 
-		if cfg.SystemOverride != "" {
-			sys = model.SystemPrompt{
-				Blocks: []model.SystemBlock{{Text: cfg.SystemOverride}},
-			}
+		if cfg.NodePrompt != "" {
+			prepended := []model.SystemBlock{{Text: cfg.NodePrompt}}
+			prepended = append(prepended, sys.Blocks...)
+			sys = model.SystemPrompt{Blocks: prepended}
 		}
 
 		if cfg.PromptPrefix != "" {

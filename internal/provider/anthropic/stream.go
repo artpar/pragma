@@ -2,6 +2,8 @@ package anthropic
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
@@ -10,15 +12,19 @@ import (
 	"github.com/artpar/gogent/internal/model"
 	"github.com/artpar/gogent/internal/observe"
 	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/gogent/internal/provider/shared"
 )
 
 // streamState tracks content blocks being accumulated during streaming.
 type streamState struct {
-	blockTypes   map[int64]string // index → "text" | "tool_use" | "thinking"
-	blockToolIDs map[int64]string // index → internal UUID
-	startTime    time.Time
-	doneSent     bool
-	model        string
+	blockTypes     map[int64]string // index → "text" | "tool_use" | "thinking"
+	blockToolIDs   map[int64]string // index → internal UUID
+	blockToolNames map[int64]string // index → tool name
+	startTime      time.Time
+	doneSent       bool
+	model          string
+	accText        strings.Builder
+	accToolInputs  map[string]*strings.Builder // internalID → accumulated JSON
 }
 
 // startStream begins consuming an Anthropic SSE stream and writing StreamChunks
@@ -40,9 +46,11 @@ func (p *Provider) startStream(
 		defer stream.Close()
 
 		state := &streamState{
-			blockTypes:   make(map[int64]string),
-			blockToolIDs: make(map[int64]string),
-			startTime:    time.Now(),
+			blockTypes:     make(map[int64]string),
+			blockToolIDs:   make(map[int64]string),
+			blockToolNames: make(map[int64]string),
+			startTime:      time.Now(),
+			accToolInputs:  make(map[string]*strings.Builder),
 		}
 
 		streamCtx := ctx
@@ -228,6 +236,8 @@ func (p *Provider) handleBlockStart(
 		wireID := event.ContentBlock.ID
 		mapper.RegisterPair(internalID, wireID)
 		state.blockToolIDs[idx] = internalID
+		state.blockToolNames[idx] = event.ContentBlock.Name
+		state.accToolInputs[internalID] = &strings.Builder{}
 
 		ch <- provider.StreamChunk{
 			ToolCallStart: &model.ToolCallPart{
@@ -265,6 +275,7 @@ func (p *Provider) handleBlockDelta(
 	switch deltaType {
 	case "text_delta":
 		observe.GlobalTrace("case: \"text_delta\"")
+		state.accText.WriteString(event.Delta.Text)
 		ch <- provider.StreamChunk{TextDelta: event.Delta.Text}
 
 	case "input_json_delta":
@@ -273,6 +284,9 @@ func (p *Provider) handleBlockDelta(
 		internalID, ok := state.blockToolIDs[idx]
 		if !ok {
 			return
+		}
+		if b, ok := state.accToolInputs[internalID]; ok {
+			b.WriteString(event.Delta.PartialJSON)
 		}
 		ch <- provider.StreamChunk{
 			ToolCallInputDelta: &provider.ToolCallDelta{
@@ -324,11 +338,23 @@ func (p *Provider) handleMessageDelta(
 
 	if bus != nil {
 		observe.GlobalTrace("if: bus != nil")
+		var accContent []model.ContentPart
+		if state.accText.Len() > 0 {
+			accContent = append(accContent, model.TextPart{Text: state.accText.String()})
+		}
+		for idx, internalID := range state.blockToolIDs {
+			tc := model.ToolCallPart{ID: internalID, Name: state.blockToolNames[idx]}
+			if b, ok := state.accToolInputs[internalID]; ok {
+				tc.Input = json.RawMessage(b.String())
+			}
+			accContent = append(accContent, tc)
+		}
 		bus.Emit(observe.APIRequestCompleted{
 			EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 			StopReason:  stopReason,
 			Usage:       usage,
 			DurationMs:  time.Since(state.startTime).Milliseconds(),
+			Content:     shared.MarshalContent(accContent),
 		})
 	}
 }

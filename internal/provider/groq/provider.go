@@ -3,7 +3,9 @@ package groq
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/artpar/gogent/internal/model"
@@ -110,6 +112,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  resp.StopReason, Usage: resp.Usage,
 		DurationMs: time.Since(start).Milliseconds(), Model: resp.Model,
+		Content: shared.MarshalContent(resp.Content),
 	})
 	observe.TraceCtx(ctx, "groq", "Provider.Complete", "return: resp, nil")
 	return resp, nil
@@ -133,6 +136,9 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		var respModel string
 		var toolCallIDs []string
 		seenToolCalls := make(map[string]bool)
+		var accText strings.Builder
+		accToolInputs := make(map[string]*strings.Builder)
+		accToolNames := make(map[string]string)
 
 		for chunk := range chunks {
 			observe.TraceCtx(ctx, "groq", "Provider.Stream", "range chunks")
@@ -149,6 +155,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 				delta := choice.Delta
 				if delta.Content != "" {
 					observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: delta.Content != \"\"")
+					accText.WriteString(delta.Content)
 					ch <- provider.StreamChunk{TextDelta: delta.Content}
 				}
 				if delta.Reasoning != nil && delta.Reasoning.Content != "" {
@@ -161,6 +168,8 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: tc.ID != \"\" && !seenToolCalls[tc.ID]")
 						seenToolCalls[tc.ID] = true
 						toolCallIDs = append(toolCallIDs, tc.ID)
+						accToolInputs[tc.ID] = &strings.Builder{}
+						accToolNames[tc.ID] = tc.Function.Name
 						ch <- provider.StreamChunk{
 							ToolCallStart: &model.ToolCallPart{ID: tc.ID, Name: tc.Function.Name},
 						}
@@ -172,6 +181,9 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: id == \"\" && len(toolCallIDs) > 0")
 							id = toolCallIDs[len(toolCallIDs)-1]
 						observe.TraceCtx(ctx, "groq", "Provider.Stream", "warn: tool call input delta has no ID, falling back to last tool call")
+						}
+						if b, ok := accToolInputs[id]; ok {
+							b.WriteString(tc.Function.Arguments)
 						}
 						ch <- provider.StreamChunk{
 							ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: id, JSONDelta: tc.Function.Arguments},
@@ -188,10 +200,22 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					ch <- provider.StreamChunk{
 						Done: &provider.StreamDone{StopReason: stopReason, Usage: usage, Model: respModel},
 					}
+					var accContent []model.ContentPart
+					if accText.Len() > 0 {
+						accContent = append(accContent, model.TextPart{Text: accText.String()})
+					}
+					for _, id := range toolCallIDs {
+						tc := model.ToolCallPart{ID: id, Name: accToolNames[id]}
+						if b, ok := accToolInputs[id]; ok {
+							tc.Input = json.RawMessage(b.String())
+						}
+						accContent = append(accContent, tc)
+					}
 					p.bus.Emit(observe.APIRequestCompleted{
 						EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 						StopReason:  stopReason, Usage: usage,
 						DurationMs: time.Since(start).Milliseconds(), Model: respModel,
+						Content: shared.MarshalContent(accContent),
 					})
 				}
 			}
@@ -217,5 +241,6 @@ func (p *Provider) emitStart(traceID, spanID string, params provider.RequestPara
 		EventHeader: observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:       params.Model, MessageCount: len(params.Messages),
 		ToolCount: len(params.Tools), TokenEstimate: shared.EstimateTokens(params),
+		Messages: params.Messages, System: shared.SystemText(params.System),
 	})
 }
