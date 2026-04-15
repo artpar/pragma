@@ -31,3 +31,8 @@ Thumbs.db
 /dist/
 /completions/
 todo-app/
+
+# Runtime artifacts
+.gogent/
+gogent-recording.jsonl
+stress-test/
