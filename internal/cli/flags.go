@@ -15,7 +15,7 @@ func RegisterFlags(cmd *cobra.Command) {
 	// Persistent flags — inherited by all subcommands
 	pf := cmd.PersistentFlags()
 	pf.String("model", "", "model name")
-	pf.String("provider", "", "provider name (anthropic, openai, google, groq)")
+	pf.String("provider", "", "provider name (anthropic, openai, google, groq, lilac)")
 	pf.String("api-key", "", "API key")
 	pf.Int("max-tokens", 0, "max output tokens")
 	pf.Float64("temperature", 0, "sampling temperature")

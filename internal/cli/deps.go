@@ -22,6 +22,7 @@ import (
 	"github.com/artpar/gogent/internal/provider/anthropic"
 	googleprov "github.com/artpar/gogent/internal/provider/google"
 	groqprov "github.com/artpar/gogent/internal/provider/groq"
+	lilacprov "github.com/artpar/gogent/internal/provider/lilac"
 	oaiprov "github.com/artpar/gogent/internal/provider/openai"
 	"github.com/artpar/gogent/internal/query"
 	"github.com/artpar/gogent/internal/session"
@@ -97,6 +98,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		case "google":
 			observe.GlobalTrace("case: \"google\"")
 			cfg.APIKey = os.Getenv("GOOGLE_API_KEY")
+		case "lilac":
+			observe.GlobalTrace("case: \"lilac\"")
+			cfg.APIKey = os.Getenv("LILAC_API_KEY")
 		default:
 			observe.GlobalTrace("default")
 			cfg.APIKey = os.Getenv("ANTHROPIC_API_KEY")
@@ -115,6 +119,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		case "google":
 			observe.GlobalTrace("case: \"google\"")
 			envVar = "GOOGLE_API_KEY"
+		case "lilac":
+			observe.GlobalTrace("case: \"lilac\"")
+			envVar = "LILAC_API_KEY"
 		}
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"API key required: set --api-key or %s environment variable\",...")
 		return nil, fmt.Errorf("API key required: set --api-key or %s environment variable", envVar)
@@ -497,6 +504,13 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) (provider.Provider
 			opts = append(opts, googleprov.WithBaseURL(baseURL))
 		}
 		return googleprov.New(cfg.APIKey, bus, opts...)
+	case "lilac":
+		observe.GlobalTrace("case: \"lilac\"")
+		var opts []lilacprov.Option
+		if baseURL := os.Getenv("LILAC_BASE_URL"); baseURL != "" {
+			opts = append(opts, lilacprov.WithBaseURL(baseURL))
+		}
+		return lilacprov.New(cfg.APIKey, bus, opts...)
 	default:
 		observe.GlobalTrace("default")
 		return nil, fmt.Errorf("unknown provider %q", cfg.Provider)
@@ -517,6 +531,9 @@ func DefaultModelFor(providerName string) string {
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "gemini-2.5-flash"
+	case "lilac":
+		observe.GlobalTrace("case: \"lilac\"")
+		return "zai-org/glm-5.1"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-sonnet-4-20250514"
@@ -537,6 +554,9 @@ func SecondaryModelFor(providerName string) string {
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "gemini-2.5-flash"
+	case "lilac":
+		observe.GlobalTrace("case: \"lilac\"")
+		return "moonshotai/kimi-k2.5"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
