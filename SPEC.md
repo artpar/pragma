@@ -382,12 +382,19 @@ type Provider interface {
 
 type Feature string
 const (
-    FeaturePrefixCaching Feature = "prefix_caching"
-    FeatureThinking      Feature = "thinking"
-    FeatureImages        Feature = "images"
-    FeatureToolUse       Feature = "tool_use"
-    FeatureStreaming      Feature = "streaming"
+    FeaturePrefixCaching    Feature = "prefix_caching"
+    FeatureThinking         Feature = "thinking"
+    FeatureImages           Feature = "images"
+    FeatureToolUse          Feature = "tool_use"
+    FeatureStreaming         Feature = "streaming"
+    FeatureStructuredOutput Feature = "structured_output"
 )
+
+// TokenCounter is an optional interface for precise token counting.
+// Providers that don't implement it fall back to heuristic estimation.
+type TokenCounter interface {
+    CountTokens(ctx context.Context, params RequestParams) (int, error)
+}
 ```
 
 ### 4.2 RequestParams (internal types IN)
@@ -399,8 +406,9 @@ type RequestParams struct {
     Messages    []model.Message     `json:"messages"`
     System      model.SystemPrompt  `json:"system"`
     Tools       []model.ToolDef     `json:"tools,omitempty"`
-    Temperature *float64            `json:"temperature,omitempty"`
-    Thinking    *ThinkingConfig     `json:"thinking,omitempty"`
+    Temperature    *float64            `json:"temperature,omitempty"`
+    Thinking       *ThinkingConfig     `json:"thinking,omitempty"`
+    ResponseSchema json.RawMessage     `json:"response_schema,omitempty"`
 }
 
 type ThinkingConfig struct {

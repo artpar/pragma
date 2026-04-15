@@ -22,6 +22,7 @@ type Provider struct {
 	client     *genai.Client
 	bus        *observe.EventBus
 	maxRetries int
+	cache      *cacheManager
 }
 
 // Option configures the Provider.
@@ -48,7 +49,12 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"google: create client: %w\", err)")
 		return nil, fmt.Errorf("google: create client: %w", err)
 	}
-	p := &Provider{client: client, bus: bus, maxRetries: 10}
+	p := &Provider{
+		client:     client,
+		bus:        bus,
+		maxRetries: 10,
+		cache:      newCacheManager(client, bus),
+	}
 	for _, opt := range opts {
 		observe.GlobalTrace("range opts")
 		opt(p)
@@ -69,12 +75,32 @@ func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	defer observe.GlobalTrace("exit")
 	switch feature {
 	case provider.FeatureToolUse, provider.FeatureStreaming,
-		provider.FeatureImages, provider.FeatureThinking:
+		provider.FeatureImages, provider.FeatureThinking,
+		provider.FeatureStructuredOutput, provider.FeaturePrefixCaching:
 		observe.GlobalTrace("case: provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages, p...")
 		return true
 	}
 	observe.GlobalTrace("return: false")
 	return false
+}
+
+// CountTokens returns the precise token count for the given request parameters
+// using the Gemini CountTokens API. Implements provider.TokenCounter.
+func (p *Provider) CountTokens(ctx context.Context, params provider.RequestParams) (int, error) {
+	observe.TraceCtx(ctx, "google", "Provider.CountTokens", "enter")
+	defer observe.TraceCtx(ctx, "google", "Provider.CountTokens", "exit")
+
+	contents, cfg := p.buildRequest(params)
+	resp, err := p.client.Models.CountTokens(ctx, params.Model, contents, &genai.CountTokensConfig{
+		SystemInstruction: cfg.SystemInstruction,
+		Tools:             cfg.Tools,
+	})
+	if err != nil {
+		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "if: err != nil")
+		return 0, fmt.Errorf("google: count tokens: %w", err)
+	}
+	observe.TraceCtx(ctx, "google", "Provider.CountTokens", fmt.Sprintf("return: %d", resp.TotalTokens))
+	return int(resp.TotalTokens), nil
 }
 
 func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
@@ -114,6 +140,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	start := time.Now()
 
 	contents, cfg := p.buildRequest(params)
+	contents = p.applyCache(ctx, params.Model, contents, cfg)
 
 	var resp *genai.GenerateContentResponse
 	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, googleClassify, func() error {
@@ -147,6 +174,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	p.emitStart(traceID, spanID, params)
 
 	contents, cfg := p.buildRequest(params)
+	contents = p.applyCache(ctx, params.Model, contents, cfg)
 	ch := make(chan provider.StreamChunk, 32)
 
 	go func() {
@@ -268,6 +296,63 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	return ch, nil
 }
 
+// applyCache attempts to use context caching for the request. If the stable prefix
+// is large enough and caching succeeds, it sets CachedContent on the config and
+// returns only the tail (uncached) contents. Otherwise returns the original contents unchanged.
+func (p *Provider) applyCache(ctx context.Context, model string, contents []*genai.Content, cfg *genai.GenerateContentConfig) []*genai.Content {
+	observe.TraceCtx(ctx, "google", "Provider.applyCache", "enter")
+	defer observe.TraceCtx(ctx, "google", "Provider.applyCache", "exit")
+
+	if p.cache == nil {
+		return contents
+	}
+
+	stable, tail := splitStablePrefix(contents)
+	if len(stable) == 0 {
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "no stable prefix")
+		return contents
+	}
+
+	// Estimate prefix tokens using the heuristic to avoid an extra API call.
+	// The CountTokens call is expensive; we use a rough check first and only
+	// attempt caching when the prefix is likely large enough.
+	estimatedTokens := 0
+	for _, c := range stable {
+		for _, part := range c.Parts {
+			if part.Text != "" {
+				estimatedTokens += len(part.Text) / 4
+			}
+		}
+	}
+	// Add system instruction tokens
+	if cfg.SystemInstruction != nil {
+		for _, part := range cfg.SystemInstruction.Parts {
+			if part.Text != "" {
+				estimatedTokens += len(part.Text) / 4
+			}
+		}
+	}
+
+	if estimatedTokens < minCacheTokens {
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", fmt.Sprintf("estimated %d tokens < min %d, skipping", estimatedTokens, minCacheTokens))
+		return contents
+	}
+
+	cacheName, err := p.cache.getOrCreateCache(ctx, model, stable, cfg.SystemInstruction, cfg.Tools, estimatedTokens)
+	if err != nil || cacheName == "" {
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "cache unavailable, using full contents")
+		return contents
+	}
+
+	// Cache active — set the cached content reference and strip cached prefix from request
+	cfg.CachedContent = cacheName
+	// When using cached content, system instruction and tools are in the cache
+	cfg.SystemInstruction = nil
+	cfg.Tools = nil
+	observe.TraceCtx(ctx, "google", "Provider.applyCache", fmt.Sprintf("using cache %s, tail has %d messages", cacheName, len(tail)))
+	return tail
+}
+
 // buildRequest converts gogent params to genai SDK types.
 func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content, *genai.GenerateContentConfig) {
 	observe.GlobalTrace("enter")
@@ -304,6 +389,15 @@ func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content
 	if len(params.Tools) > 0 {
 		observe.GlobalTrace("if: len(params.Tools) > 0")
 		cfg.Tools = toolsToGenai(params.Tools)
+	}
+
+	if len(params.ResponseSchema) > 0 {
+		observe.GlobalTrace("if: len(params.ResponseSchema) > 0")
+		cfg.ResponseMIMEType = "application/json"
+		schema := rawJSONToGenaiSchema(params.ResponseSchema)
+		if schema != nil {
+			cfg.ResponseSchema = schema
+		}
 	}
 
 	if params.Thinking != nil && params.Thinking.Enabled {
@@ -444,6 +538,21 @@ func toolsToGenai(tools []model.ToolDef) []*genai.Tool {
 	}
 	observe.GlobalTrace("return: []*genai.Tool{{FunctionDeclarations: decls}}")
 	return []*genai.Tool{{FunctionDeclarations: decls}}
+}
+
+// rawJSONToGenaiSchema converts a json.RawMessage JSON Schema to a *genai.Schema,
+// applying Gemini-compatible sanitization.
+func rawJSONToGenaiSchema(raw json.RawMessage) *genai.Schema {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	sanitized := sanitizeSchema(raw)
+	schema := &genai.Schema{}
+	if err := json.Unmarshal(sanitized, schema); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return nil
+	}
+	observe.GlobalTrace("return: schema")
+	return schema
 }
 
 // sanitizeSchema cleans a JSON Schema for Gemini compatibility.
@@ -597,9 +706,15 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 func usageFromGenai(u *genai.GenerateContentResponseUsageMetadata) model.TokenUsage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: model.TokenUsage{\n\tInputTokens:\t\tint(u.PromptTokenCount),\n\tOutputTokens:\t\tint...")
+	// PromptTokenCount includes CachedContentTokenCount per SDK docs:
+	// "When cached_content is set, this is still the total effective prompt size
+	//  meaning this includes the number of tokens in the cached content."
+	// Subtract cached tokens to avoid double-counting in CostTracker, which
+	// bills InputTokens at full rate and CacheReadInputTokens at reduced rate.
+	inputTokens := int(u.PromptTokenCount) - int(u.CachedContentTokenCount)
+	observe.GlobalTrace("return: model.TokenUsage{...}")
 	return model.TokenUsage{
-		InputTokens:          int(u.PromptTokenCount),
+		InputTokens:          inputTokens,
 		OutputTokens:         int(u.CandidatesTokenCount) + int(u.ThoughtsTokenCount),
 		CacheReadInputTokens: int(u.CachedContentTokenCount),
 	}

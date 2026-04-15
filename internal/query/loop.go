@@ -142,7 +142,25 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		if e.compactor != nil && e.autoTracker != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.compactor != nil && e.autoTracker != nil")
 			compSnap := e.store.Snapshot()
-			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
+			var tokenCount int
+			if counter, ok := e.provider.(provider.TokenCounter); ok {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: provider implements TokenCounter")
+				countParams := provider.RequestParams{
+					Model:    resolvedModel,
+					Messages: compSnap.Conversation.APIMessages(),
+					System:   compSnap.Conversation.System,
+					Tools:    tools,
+				}
+				precise, countErr := counter.CountTokens(ctx, countParams)
+				if countErr != nil {
+					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: countErr != nil, falling back to heuristic")
+					tokenCount = compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
+				} else {
+					tokenCount = precise
+				}
+			} else {
+				tokenCount = compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
+			}
 			if e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig)")
 				compResult, compErr := e.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
