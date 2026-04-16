@@ -72,7 +72,7 @@ func TestBuild_NoAgentMD(t *testing.T) {
 
 	// All static blocks present
 	if !strings.Contains(prompt.Blocks[0].Text, "pragma") {
-		t.Error("identity block should mention gogent")
+		t.Error("identity block should mention pragma")
 	}
 }
 
