@@ -53,10 +53,14 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 		}
 	}
 	if !hasKey {
+		observe.GlobalTrace("if: !hasKey")
 		creds, credErr := config.LoadCredentials()
 		if credErr == nil {
+			observe.GlobalTrace("if: credErr == nil")
 			for _, pc := range creds.Providers {
+				observe.GlobalTrace("range creds.Providers")
 				if pc.APIKey != "" {
+					observe.GlobalTrace("if: pc.APIKey != \"\"")
 					hasKey = true
 					break
 				}
@@ -67,9 +71,12 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 
 	credPath, credPathErr := config.CredentialsPath()
 	if credPathErr == nil {
+		observe.GlobalTrace("if: credPathErr == nil")
 		if _, err := os.Stat(credPath); err == nil {
+			observe.GlobalTrace("if: err == nil")
 			check("Credentials file", true, "")
 		} else {
+			observe.GlobalTrace("else: err == nil")
 			check("Credentials file", false, "optional — ~/.gogent/credentials.yml not found")
 		}
 	}

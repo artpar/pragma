@@ -321,9 +321,6 @@ func (p *Provider) applyCache(ctx context.Context, model string, contents []*gen
 		return contents
 	}
 
-	// Estimate prefix tokens using the heuristic to avoid an extra API call.
-	// The CountTokens call is expensive; we use a rough check first and only
-	// attempt caching when the prefix is likely large enough.
 	estimatedTokens := 0
 	for _, c := range stable {
 		observe.TraceCtx(ctx, "google", "Provider.applyCache", "range stable")
@@ -335,10 +332,13 @@ func (p *Provider) applyCache(ctx context.Context, model string, contents []*gen
 			}
 		}
 	}
-	// Add system instruction tokens
+
 	if cfg.SystemInstruction != nil {
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "if: cfg.SystemInstruction != nil")
 		for _, part := range cfg.SystemInstruction.Parts {
+			observe.TraceCtx(ctx, "google", "Provider.applyCache", "range cfg.SystemInstruction.Parts")
 			if part.Text != "" {
+				observe.TraceCtx(ctx, "google", "Provider.applyCache", "if: part.Text != \"\"")
 				estimatedTokens += len(part.Text) / 4
 			}
 		}
@@ -346,21 +346,23 @@ func (p *Provider) applyCache(ctx context.Context, model string, contents []*gen
 
 	if estimatedTokens < minCacheTokens {
 		observe.TraceCtx(ctx, "google", "Provider.applyCache", fmt.Sprintf("estimated %d tokens < min %d, skipping", estimatedTokens, minCacheTokens))
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "return: contents")
 		return contents
 	}
 
 	cacheName, err := p.cache.getOrCreateCache(ctx, model, stable, cfg.SystemInstruction, cfg.Tools, estimatedTokens)
 	if err != nil || cacheName == "" {
 		observe.TraceCtx(ctx, "google", "Provider.applyCache", "cache unavailable, using full contents")
+		observe.TraceCtx(ctx, "google", "Provider.applyCache", "return: contents")
 		return contents
 	}
 
-	// Cache active — set the cached content reference and strip cached prefix from request
 	cfg.CachedContent = cacheName
-	// When using cached content, system instruction and tools are in the cache
+
 	cfg.SystemInstruction = nil
 	cfg.Tools = nil
 	observe.TraceCtx(ctx, "google", "Provider.applyCache", fmt.Sprintf("using cache %s, tail has %d messages", cacheName, len(tail)))
+	observe.TraceCtx(ctx, "google", "Provider.applyCache", "return: tail")
 	return tail
 }
 
@@ -407,6 +409,7 @@ func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content
 		cfg.ResponseMIMEType = "application/json"
 		schema := rawJSONToGenaiSchema(params.ResponseSchema)
 		if schema != nil {
+			observe.GlobalTrace("if: schema != nil")
 			cfg.ResponseSchema = schema
 		}
 	}
@@ -560,6 +563,7 @@ func rawJSONToGenaiSchema(raw json.RawMessage) *genai.Schema {
 	schema := &genai.Schema{}
 	if err := json.Unmarshal(sanitized, schema); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	observe.GlobalTrace("return: schema")
@@ -717,13 +721,10 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 func usageFromGenai(u *genai.GenerateContentResponseUsageMetadata) model.TokenUsage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	// PromptTokenCount includes CachedContentTokenCount per SDK docs:
-	// "When cached_content is set, this is still the total effective prompt size
-	//  meaning this includes the number of tokens in the cached content."
-	// Subtract cached tokens to avoid double-counting in CostTracker, which
-	// bills InputTokens at full rate and CacheReadInputTokens at reduced rate.
+
 	inputTokens := int(u.PromptTokenCount) - int(u.CachedContentTokenCount)
 	observe.GlobalTrace("return: model.TokenUsage{...}")
+	observe.GlobalTrace("return: model.TokenUsage{\n\tInputTokens:\t\tinputTokens,\n\tOutputTokens:\t\tint(u.Candidate...")
 	return model.TokenUsage{
 		InputTokens:          inputTokens,
 		OutputTokens:         int(u.CandidatesTokenCount) + int(u.ThoughtsTokenCount),

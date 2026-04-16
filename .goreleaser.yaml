@@ -54,14 +54,14 @@ changelog:
 release:
   github:
     owner: artpar
-    name: gogent
+    name: gogent-releases
   draft: false
   prerelease: auto
 
 nfpms:
   - id: packages
     package_name: gogent
-    homepage: https://github.com/artpar/gogent
+    homepage: https://github.com/artpar/gogent-releases
     maintainer: artpar
     description: AI coding assistant CLI powered by LLMs
     formats:
@@ -80,8 +80,9 @@ brews:
   - repository:
       owner: artpar
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
-    homepage: https://github.com/artpar/gogent
+    homepage: https://github.com/artpar/gogent-releases
     description: AI coding assistant CLI powered by LLMs
     install: |
       bin.install "gogent"
@@ -95,5 +96,6 @@ scoops:
   - repository:
       owner: artpar
       name: scoop-bucket
-    homepage: https://github.com/artpar/gogent
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    homepage: https://github.com/artpar/gogent-releases
     description: AI coding assistant CLI powered by LLMs
