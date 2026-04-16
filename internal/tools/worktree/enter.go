@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 type enterInput struct {
@@ -70,7 +70,7 @@ const enterDescription = `Use this tool ONLY when the user explicitly asks to wo
 
 ## Behavior
 
-- Creates a new git worktree inside ` + "`.gogent/worktrees/`" + ` with a new branch based on HEAD
+- Creates a new git worktree inside ` + "`.pragma/worktrees/`" + ` with a new branch based on HEAD
 - Switches the session's working directory to the new worktree
 - Use ExitWorktree to leave the worktree mid-session (keep or remove)
 - On session exit, if still in the worktree, the user will be prompted to keep or remove it`
@@ -127,7 +127,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 
 	flatSlug := FlattenSlug(slug)
 	branch := "worktree-" + flatSlug
-	dir := filepath.Join(state.WorkDir(), ".gogent", "worktrees", flatSlug)
+	dir := filepath.Join(state.WorkDir(), ".pragma", "worktrees", flatSlug)
 
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")

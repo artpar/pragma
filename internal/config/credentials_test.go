@@ -24,7 +24,7 @@ func TestLoadCredentials_ValidFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	dir := filepath.Join(home, ".gogent")
+	dir := filepath.Join(home, ".pragma")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestLoadCredentials_MalformedYAML(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	dir := filepath.Join(home, ".gogent")
+	dir := filepath.Join(home, ".pragma")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestSaveCredentials_Permissions(t *testing.T) {
 		t.Fatalf("SaveCredentials: %v", err)
 	}
 
-	path := filepath.Join(home, ".gogent", "credentials.yml")
+	path := filepath.Join(home, ".pragma", "credentials.yml")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat: %v", err)

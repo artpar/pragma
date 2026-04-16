@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/provider"
 	"google.golang.org/genai"
 )
 

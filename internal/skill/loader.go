@@ -7,13 +7,13 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Loader discovers and loads skills from disk.
-// Skills are loaded from two scopes: user (~/.gogent/skills/) and
-// project (<workDir>/.gogent/skills/). Project skills override user skills
+// Skills are loaded from two scopes: user (~/.pragma/skills/) and
+// project (<workDir>/.pragma/skills/). Project skills override user skills
 // on name collision.
 type Loader struct {
 	workDir string
@@ -35,7 +35,7 @@ func (l *Loader) LoadAll() ([]Skill, error) {
 
 	byName := make(map[string]Skill)
 
-	home, err := config.GogentHome()
+	home, err := config.PragmaHome()
 	if err == nil {
 		observe.GlobalTrace("if: err == nil")
 		userDir := filepath.Join(home, "skills")
@@ -46,7 +46,7 @@ func (l *Loader) LoadAll() ([]Skill, error) {
 		}
 	}
 
-	projDir := filepath.Join(l.workDir, ".gogent", "skills")
+	projDir := filepath.Join(l.workDir, ".pragma", "skills")
 	skills, _ := loadSkillsFromDir(projDir, "project")
 	for _, s := range skills {
 		observe.GlobalTrace("range skills")
@@ -69,14 +69,14 @@ func (l *Loader) Load(name string) (Skill, error) {
 
 	name = strings.ToLower(strings.TrimSpace(name))
 
-	projDir := filepath.Join(l.workDir, ".gogent", "skills")
+	projDir := filepath.Join(l.workDir, ".pragma", "skills")
 	if s, err := loadSkillFromDir(projDir, name, "project"); err == nil {
 		observe.GlobalTrace("if: err == nil")
 		observe.GlobalTrace("return: s, nil")
 		return s, nil
 	}
 
-	home, err := config.GogentHome()
+	home, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: Skill{}, fmt.Errorf(\"unknown skill: %s\", name)")
@@ -178,14 +178,14 @@ func loadSkillFromDir(dir, name, source string) (Skill, error) {
 //   - $ARGUMENTS → full raw args string
 //   - $1, $2, ... → positional (shell-style split)
 //   - $name → named arg (positional mapped to argNames[i])
-//   - ${GOGENT_SKILL_DIR} → skill's BaseDir
+//   - ${PRAGMA_SKILL_DIR} → skill's BaseDir
 //
 // Unmatched $N placeholders are left as-is.
 func SubstituteArgs(content, rawArgs string, argNames []string, baseDir string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	content = strings.ReplaceAll(content, "${GOGENT_SKILL_DIR}", baseDir)
+	content = strings.ReplaceAll(content, "${PRAGMA_SKILL_DIR}", baseDir)
 
 	content = strings.ReplaceAll(content, "$ARGUMENTS", rawArgs)
 

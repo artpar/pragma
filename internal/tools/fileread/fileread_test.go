@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 type testState struct{ dir string }

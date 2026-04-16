@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 func TestServerConfig_Validate(t *testing.T) {
@@ -154,7 +154,7 @@ func TestLoadSingleLSPConfig_MissingFile(t *testing.T) {
 
 func TestLoadConfig_MergesScopes(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(gogentDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestLoadConfig_MergesScopes(t *testing.T) {
 
 func TestLoadConfig_SkipsInvalidServers(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(gogentDir, 0755); err != nil {
 		t.Fatal(err)
 	}

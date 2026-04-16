@@ -11,26 +11,26 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/cron"
-	"github.com/artpar/gogent/internal/hook"
-	"github.com/artpar/gogent/internal/lsp"
-	"github.com/artpar/gogent/internal/mcp"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/provider"
-	"github.com/artpar/gogent/internal/provider/anthropic"
-	googleprov "github.com/artpar/gogent/internal/provider/google"
-	groqprov "github.com/artpar/gogent/internal/provider/groq"
-	lilacprov "github.com/artpar/gogent/internal/provider/lilac"
-	oaiprov "github.com/artpar/gogent/internal/provider/openai"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/session"
-	"github.com/artpar/gogent/internal/sysprompt"
-	"github.com/artpar/gogent/internal/task"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/cron"
+	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/lsp"
+	"github.com/artpar/pragma/internal/mcp"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/provider/anthropic"
+	googleprov "github.com/artpar/pragma/internal/provider/google"
+	groqprov "github.com/artpar/pragma/internal/provider/groq"
+	lilacprov "github.com/artpar/pragma/internal/provider/lilac"
+	oaiprov "github.com/artpar/pragma/internal/provider/openai"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/session"
+	"github.com/artpar/pragma/internal/sysprompt"
+	"github.com/artpar/pragma/internal/task"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // Deps holds all shared dependencies created by SetupDeps.
@@ -116,7 +116,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	bus := observe.NewEventBus(1024)
 	observe.SetGlobalBus(bus)
 
-	if traceFilter := os.Getenv("GOGENT_TRACE_FILTER"); traceFilter != "" {
+	if traceFilter := os.Getenv("PRAGMA_TRACE_FILTER"); traceFilter != "" {
 		observe.GlobalTrace("if: traceFilter != \"\"")
 		observe.SetTraceFilter(observe.ParseTraceFilter(traceFilter))
 	}
@@ -129,11 +129,11 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	logger := observe.NewLogger(os.Stderr, logLevel, observe.FormatText, nil)
 	bus.Subscribe(logger)
 
-	// Per-execution log file: ~/.gogent/logs/<timestamp>.jsonl
+	// Per-execution log file: ~/.pragma/logs/<timestamp>.jsonl
 	// Always enabled, captures everything at LevelTrace in JSON format.
 	var cleanupFns []func()
 	var logFilePath string
-	if gogentHome, homeErr := config.GogentHome(); homeErr == nil {
+	if gogentHome, homeErr := config.PragmaHome(); homeErr == nil {
 		observe.GlobalTrace("if: homeErr == nil")
 		logsDir := filepath.Join(gogentHome, "logs")
 		if mkErr := os.MkdirAll(logsDir, 0o755); mkErr == nil {
@@ -311,7 +311,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	taskReg := task.NewRegistry(bus)
 
 	var cronSched *cron.Scheduler
-	if gogentHome, homeErr := config.GogentHome(); homeErr == nil {
+	if gogentHome, homeErr := config.PragmaHome(); homeErr == nil {
 		observe.GlobalTrace("if: homeErr == nil")
 		cronStore := cron.NewStore(filepath.Join(gogentHome, "scheduled_tasks.json"))
 		cronSched = cron.NewScheduler(bus, cronStore)
@@ -613,7 +613,7 @@ func pickAvailableProvider(defaultProv string, creds config.Credentials) (select
 	if len(available) == 0 {
 		observe.GlobalTrace("if: len(available) == 0")
 		observe.GlobalTrace("return: selectedProvider{}, fmt.Errorf(\"API key required: set --api-key, add to ~/.go...")
-		return selectedProvider{}, fmt.Errorf("API key required: set --api-key, add to ~/.gogent/credentials.yml, or set %s", envVarForProvider(defaultProv))
+		return selectedProvider{}, fmt.Errorf("API key required: set --api-key, add to ~/.pragma/credentials.yml, or set %s", envVarForProvider(defaultProv))
 	}
 
 	sort.Slice(available, func(i, j int) bool {

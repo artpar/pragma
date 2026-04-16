@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 func TestLoadSingleConfig(t *testing.T) {
@@ -112,7 +112,7 @@ func TestServerConfig_Validate(t *testing.T) {
 func TestLoadConfig_MergeScopes(t *testing.T) {
 	// Create a temp directory structure with global and project configs
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(gogentDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestLoadConfig_MergeScopes(t *testing.T) {
 
 func TestLoadConfig_InvalidEntrySkipped(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(gogentDir, 0755); err != nil {
 		t.Fatal(err)
 	}

@@ -2,7 +2,7 @@ package team
 
 import (
 	"crypto/rand"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"math/big"
 )
 

@@ -1,8 +1,8 @@
 package bridge
 
 import (
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // MessageReducer appends []model.Message slices. The generic ReducerAppendList

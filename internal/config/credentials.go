@@ -19,7 +19,7 @@ type Credentials struct {
 	Providers map[string]ProviderCredential `yaml:"providers"`
 }
 
-// LoadCredentials reads ~/.gogent/credentials.yml.
+// LoadCredentials reads ~/.pragma/credentials.yml.
 // Returns zero Credentials if file does not exist.
 func LoadCredentials() (Credentials, error) {
 	path, err := CredentialsPath()
@@ -42,14 +42,14 @@ func LoadCredentials() (Credentials, error) {
 	return creds, nil
 }
 
-// SaveCredentials writes credentials to ~/.gogent/credentials.yml with 0600 perms.
+// SaveCredentials writes credentials to ~/.pragma/credentials.yml with 0600 perms.
 func SaveCredentials(creds Credentials) error {
 	path, err := CredentialsPath()
 	if err != nil {
 		return fmt.Errorf("resolve credentials path: %w", err)
 	}
 
-	dir, dirErr := GogentHome()
+	dir, dirErr := PragmaHome()
 	if dirErr != nil {
 		return dirErr
 	}

@@ -3,7 +3,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // NamedNode pairs a name with a NodeFunc for pipeline construction.

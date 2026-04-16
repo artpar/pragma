@@ -11,22 +11,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/background"
-	"github.com/artpar/gogent/internal/compact"
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/hook"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/session"
-	"github.com/artpar/gogent/internal/skill"
-	"github.com/artpar/gogent/internal/slash"
-	"github.com/artpar/gogent/internal/sysprompt"
-	"github.com/artpar/gogent/internal/tool"
-	toolsynthetic "github.com/artpar/gogent/internal/tools/synthetic"
-	"github.com/artpar/gogent/internal/tui"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/background"
+	"github.com/artpar/pragma/internal/compact"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/session"
+	"github.com/artpar/pragma/internal/skill"
+	"github.com/artpar/pragma/internal/slash"
+	"github.com/artpar/pragma/internal/sysprompt"
+	"github.com/artpar/pragma/internal/tool"
+	toolsynthetic "github.com/artpar/pragma/internal/tools/synthetic"
+	"github.com/artpar/pragma/internal/tui"
 )
 
 // RunDispatcher routes to interactive TUI, non-interactive mode, background, or list-sessions.
@@ -72,7 +72,7 @@ func RunBackground(cmd *cobra.Command) error {
 		return fmt.Errorf("background mode requires --prompt flag")
 	}
 
-	gogentHome, err := config.GogentHome()
+	gogentHome, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"resolve gogent home: %w\", err)")
@@ -134,8 +134,8 @@ func RunBackground(cmd *cobra.Command) error {
 	}
 
 	env := append(os.Environ(),
-		"GOGENT_BG_SESSION=1",
-		"GOGENT_BG_SESSION_LOG="+logPath,
+		"PRAGMA_BG_SESSION=1",
+		"PRAGMA_BG_SESSION_LOG="+logPath,
 	)
 
 	devNull, err := os.Open(os.DevNull)
@@ -315,8 +315,8 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		defer d.Cleanup()
 	}
 
-	if os.Getenv("GOGENT_BG_SESSION") == "1" {
-		observe.GlobalTrace("if: os.Getenv(\"GOGENT_BG_SESSION\") == \"1\"")
+	if os.Getenv("PRAGMA_BG_SESSION") == "1" {
+		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_BG_SESSION\") == \"1\"")
 		if reg, regErr := background.NewRegistry(); regErr == nil {
 			observe.GlobalTrace("if: regErr == nil")
 			defer reg.Unregister(os.Getpid())
@@ -398,7 +398,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	var structuredJSON json.RawMessage
 
 	out := os.Stdout
-	if bgLog := os.Getenv("GOGENT_BG_SESSION_LOG"); bgLog != "" {
+	if bgLog := os.Getenv("PRAGMA_BG_SESSION_LOG"); bgLog != "" {
 		observe.GlobalTrace("if: bgLog != \"\"")
 		if f, err := os.OpenFile(bgLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644); err == nil {
 			observe.GlobalTrace("if: err == nil")

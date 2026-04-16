@@ -1,7 +1,7 @@
 package webfetch
 
 import (
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"sync"
 	"time"
 )

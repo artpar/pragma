@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/artpar/gogent/internal/lsp"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/tool"
-	"github.com/artpar/gogent/internal/util"
+	"github.com/artpar/pragma/internal/lsp"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/util"
 )
 
 const maxEditFileSize = 1024 * 1024 * 1024 // 1 GiB

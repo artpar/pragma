@@ -6,7 +6,7 @@ import (
 )
 
 func TestToolbarView(t *testing.T) {
-	tb := newToolbar("claude-sonnet-4", "anthropic", "gogent")
+	tb := newToolbar("claude-sonnet-4", "anthropic", "pragma")
 
 	view := tb.View(80)
 	if !strings.Contains(view, "claude-sonnet-4") {

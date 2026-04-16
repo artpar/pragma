@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/artpar/gogent/internal/lifecycle/definition"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/pragma/internal/lifecycle/definition"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
 )
 
 const graphSpecSystemPrompt = `You are a graph compiler. Given a natural language description of an execution workflow, output a valid YAML lifecycle graph definition. Output ONLY the YAML — no markdown fences, no explanation.

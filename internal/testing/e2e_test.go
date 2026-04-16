@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/query"
-	gtesting "github.com/artpar/gogent/internal/testing"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/query"
+	gtesting "github.com/artpar/pragma/internal/testing"
 )
 
 // These tests reproduce E2E scenarios observed against Google Gemini (gemini-2.5-flash)
@@ -168,13 +168,13 @@ func TestE2E_ReadTool(t *testing.T) {
 			model.Response{
 				ID:         "resp-read-summary",
 				Model:      "gemini-2.5-flash",
-				Content:    []model.ContentPart{model.TextPart{Text: "The module is github.com/artpar/gogent."}},
+				Content:    []model.ContentPart{model.TextPart{Text: "The module is github.com/artpar/pragma."}},
 				StopReason: model.StopEndTurn,
 				Usage:      model.TokenUsage{InputTokens: 300, OutputTokens: 10},
 			},
 		).
 		WithTool("Read", func(input json.RawMessage) (string, error) {
-			return "module github.com/artpar/gogent\n\ngo 1.25.0\n", nil
+			return "module github.com/artpar/pragma\n\ngo 1.25.0\n", nil
 		})
 
 	_, err := h.Run(context.Background(), "Read the first 10 lines of go.mod")

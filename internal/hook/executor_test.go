@@ -117,9 +117,9 @@ func TestExecCommandTimeout(t *testing.T) {
 
 func TestExecCommandEnvVars(t *testing.T) {
 	dir := t.TempDir()
-	script := writeScript(t, dir, "hook.sh", `echo "$GOGENT_TOOL_NAME"`)
+	script := writeScript(t, dir, "hook.sh", `echo "$PRAGMA_TOOL_NAME"`)
 
-	env := map[string]string{"GOGENT_TOOL_NAME": "Bash"}
+	env := map[string]string{"PRAGMA_TOOL_NAME": "Bash"}
 	result := ExecCommand(context.Background(), Command{Command: script}, nil, dir, env)
 	if result.Stdout != "Bash\n" {
 		t.Errorf("stdout: got %q, want Bash", result.Stdout)

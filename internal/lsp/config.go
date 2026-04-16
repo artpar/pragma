@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // ServerConfig describes how to start and configure one LSP server.
@@ -63,7 +63,7 @@ func (sc ServerConfig) startupTimeoutMsOrDefault() int {
 	return 30000
 }
 
-// LSPConfig is the top-level .gogent/lsp.json file structure.
+// LSPConfig is the top-level .pragma/lsp.json file structure.
 type LSPConfig struct {
 	LSPServers map[string]ServerConfig `json:"lspServers"`
 }

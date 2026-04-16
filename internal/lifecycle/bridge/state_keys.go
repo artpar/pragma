@@ -1,9 +1,9 @@
 package bridge
 
 import (
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // State key constants for bridge nodes. All bridge nodes use these

@@ -16,10 +16,10 @@ func TestNoDirectProviderImports(t *testing.T) {
 	files := scanGoFiles(internalDir)
 
 	forbidden := []string{
-		"github.com/artpar/gogent/internal/provider/anthropic",
-		"github.com/artpar/gogent/internal/provider/openai",
-		"github.com/artpar/gogent/internal/provider/google",
-		"github.com/artpar/gogent/internal/provider/groq",
+		"github.com/artpar/pragma/internal/provider/anthropic",
+		"github.com/artpar/pragma/internal/provider/openai",
+		"github.com/artpar/pragma/internal/provider/google",
+		"github.com/artpar/pragma/internal/provider/groq",
 	}
 
 	for _, file := range files {

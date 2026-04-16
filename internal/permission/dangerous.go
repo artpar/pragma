@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // DangerousFiles lists file names that require explicit permission to edit.
@@ -33,7 +33,7 @@ var DangerousDirs = []string{
 	".vscode",
 	".idea",
 	".pragma",
-	".gogent",
+	".pragma",
 }
 
 // IsDangerousPath checks if a file path is in a dangerous location.

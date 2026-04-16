@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/permission"
+	"github.com/artpar/pragma/internal/permission"
 )
 
 type staticState struct{ dir string }

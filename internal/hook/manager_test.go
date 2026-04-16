@@ -10,7 +10,7 @@ import (
 
 func setupHookConfig(t *testing.T, dir string, hooks map[string][]Entry) {
 	t.Helper()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

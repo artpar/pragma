@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/task"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/task"
 )
 
 func setupTaskRegistry(t *testing.T) *task.Registry {

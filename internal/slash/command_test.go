@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestParse(t *testing.T) {

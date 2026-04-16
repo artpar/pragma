@@ -3,8 +3,8 @@ package permission
 import (
 	"strings"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // RulesFromConfigEntries converts raw config permission entries to structured Rules.

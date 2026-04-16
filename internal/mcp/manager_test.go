@@ -9,8 +9,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcptest"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 func TestManager_RegisterTools(t *testing.T) {

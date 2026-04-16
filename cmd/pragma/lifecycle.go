@@ -11,14 +11,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/gogent/internal/cli"
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/lifecycle/bridge"
-	"github.com/artpar/gogent/internal/lifecycle/definition"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/tool"
-	"github.com/artpar/gogent/internal/tui"
+	"github.com/artpar/pragma/internal/cli"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/lifecycle/bridge"
+	"github.com/artpar/pragma/internal/lifecycle/definition"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/tui"
 )
 
 func lifecycleCmd() *cobra.Command {

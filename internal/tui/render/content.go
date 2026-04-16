@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Styles used by content rendering. These use AdaptiveColor

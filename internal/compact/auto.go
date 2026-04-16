@@ -1,6 +1,6 @@
 package compact
 
-import "github.com/artpar/gogent/internal/observe"
+import "github.com/artpar/pragma/internal/observe"
 
 // AutoTracker tracks auto-compaction state across turns.
 // It implements a circuit breaker (max 3 consecutive failures) and a cooldown

@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Kill terminates a background session and its entire process group.

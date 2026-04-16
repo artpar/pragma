@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // commitPromptTemplate uses !`command` patterns that ExecShellInPrompt replaces

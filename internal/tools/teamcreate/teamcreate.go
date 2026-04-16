@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/team"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/team"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 type teamCreateInput struct {
@@ -81,7 +81,7 @@ that benefit from parallel work.
 - Each team has a lead agent (you) and zero or more teammates
 - Teammates go idle between turns — this is normal, not an error
 - Task list coordination: check periodically, claim tasks via TaskUpdate
-- Team config stored at ~/.gogent/teams/{name}/config.json
+- Team config stored at ~/.pragma/teams/{name}/config.json
 - Only one team per leader at a time`
 
 func (t *Tool) InputSchema() json.RawMessage {

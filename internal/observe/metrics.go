@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 // Metrics is a Subscriber that accumulates operational counters.

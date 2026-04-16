@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/lifecycle/bridge"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	gtesting "github.com/artpar/gogent/internal/testing"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/lifecycle/bridge"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	gtesting "github.com/artpar/pragma/internal/testing"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 func newTestBus() *observe.EventBus {

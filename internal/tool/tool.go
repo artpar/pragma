@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/permission"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/permission"
 )
 
 // StateSnapshot provides read-only state to tools at invocation time.

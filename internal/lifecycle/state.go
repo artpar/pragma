@@ -1,6 +1,6 @@
 package lifecycle
 
-import "github.com/artpar/gogent/internal/observe"
+import "github.com/artpar/pragma/internal/observe"
 
 // State is the shared blackboard flowing through the graph.
 // Keys are strings, values are any type. Nodes receive a snapshot

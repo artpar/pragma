@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	cronpkg "github.com/artpar/gogent/internal/cron"
-	"github.com/artpar/gogent/internal/observe"
+	cronpkg "github.com/artpar/pragma/internal/cron"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 func setupScheduler(t *testing.T) *cronpkg.Scheduler {

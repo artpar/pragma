@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // OAuthToken holds OAuth credentials for an MCP server.
@@ -260,7 +260,7 @@ func ExchangeCode(ctx context.Context, tokenURL, code, codeVerifier, redirectURI
 }
 
 // SaveToken writes an OAuth token to disk atomically.
-// Tokens are stored at ~/.gogent/mcp-tokens/<server>.json.
+// Tokens are stored at ~/.pragma/mcp-tokens/<server>.json.
 func SaveToken(serverName string, token OAuthToken) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -339,7 +339,7 @@ func LoadToken(serverName string) (OAuthToken, bool, error) {
 func tokenDir() (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	home, err := config.GogentHome()
+	home, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", err")

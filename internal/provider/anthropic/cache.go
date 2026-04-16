@@ -2,7 +2,7 @@ package anthropic
 
 import (
 	sdk "github.com/anthropics/anthropic-sdk-go"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // applyCacheBreakpoints adds cache_control markers to the wire params:

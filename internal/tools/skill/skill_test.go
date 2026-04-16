@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/observe"
-	skillpkg "github.com/artpar/gogent/internal/skill"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/observe"
+	skillpkg "github.com/artpar/pragma/internal/skill"
 )
 
 type staticState struct{ dir string }
@@ -80,8 +80,8 @@ func TestInvoke_InlineSkill(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	// Skills are loaded from .gogent/skills/<name>/SKILL.md
-	skillDir := filepath.Join(tmp, ".gogent", "skills", "test-skill")
+	// Skills are loaded from .pragma/skills/<name>/SKILL.md
+	skillDir := filepath.Join(tmp, ".pragma", "skills", "test-skill")
 	os.MkdirAll(skillDir, 0755)
 
 	// Write a simple skill file

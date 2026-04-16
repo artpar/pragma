@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // registerBuiltins registers all built-in slash commands.

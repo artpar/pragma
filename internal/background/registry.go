@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // pidFilePattern guards against reading non-PID files from the registry directory.
@@ -24,11 +24,11 @@ type Registry struct {
 	dir string
 }
 
-// NewRegistry creates a Registry at ~/.gogent/active-sessions/.
+// NewRegistry creates a Registry at ~/.pragma/active-sessions/.
 func NewRegistry() (*Registry, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	gogentHome, err := config.GogentHome()
+	gogentHome, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve gogent home: %w\", err)")

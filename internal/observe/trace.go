@@ -55,7 +55,7 @@ func GlobalTrace(msg string) {
 	component := filepath.Base(filepath.Dir(file))
 	function := "unknown"
 	if fn := runtime.FuncForPC(pc); fn != nil {
-		// fn.Name() returns "github.com/artpar/gogent/internal/model.(*Conversation).Append"
+		// fn.Name() returns "github.com/artpar/pragma/internal/model.(*Conversation).Append"
 		// We want just "Append" or "(*Conversation).Append"
 		name := fn.Name()
 		if idx := strings.LastIndex(name, "."); idx >= 0 {

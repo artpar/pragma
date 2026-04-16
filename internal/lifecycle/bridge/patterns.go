@@ -1,6 +1,6 @@
 package bridge
 
-import "github.com/artpar/gogent/internal/observe"
+import "github.com/artpar/pragma/internal/observe"
 
 // StructureExamples returns example natural-language structure descriptions
 // that can be passed to GenerateGraph. These are documentation, not code paths.

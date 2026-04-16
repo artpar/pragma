@@ -1,6 +1,6 @@
 package compact
 
-import "github.com/artpar/gogent/internal/observe"
+import "github.com/artpar/pragma/internal/observe"
 
 // Threshold constants matching the TS reference (autoCompact.ts).
 const (

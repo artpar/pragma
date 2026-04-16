@@ -7,13 +7,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/hook"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/slash"
-	"github.com/artpar/gogent/internal/tui"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/slash"
+	"github.com/artpar/pragma/internal/tui"
 )
 
 // RegisterSubcommands creates Cobra subcommands from slash.Registry commands

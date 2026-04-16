@@ -5,14 +5,14 @@ before:
     - go test ./...
     - go test ./internal/archtest/ -v
     - mkdir -p completions
-    - go run ./cmd/gogent/ completion bash > completions/gogent.bash
-    - go run ./cmd/gogent/ completion zsh > completions/gogent.zsh
-    - go run ./cmd/gogent/ completion fish > completions/gogent.fish
+    - go run ./cmd/pragma/ completion bash > completions/pragma.bash
+    - go run ./cmd/pragma/ completion zsh > completions/pragma.zsh
+    - go run ./cmd/pragma/ completion fish > completions/pragma.fish
 
 builds:
   - id: gogent
     main: ./cmd/gogent/
-    binary: gogent
+    binary: pragma
     env:
       - CGO_ENABLED=0
     goos:
@@ -24,10 +24,10 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/artpar/gogent/internal/buildinfo.Version={{.Version}}
-      - -X github.com/artpar/gogent/internal/buildinfo.Commit={{.ShortCommit}}
-      - -X github.com/artpar/gogent/internal/buildinfo.Date={{.Date}}
-      - -X github.com/artpar/gogent/internal/buildinfo.GoVersion={{.Env.GOVERSION}}
+      - -X github.com/artpar/pragma/internal/buildinfo.Version={{.Version}}
+      - -X github.com/artpar/pragma/internal/buildinfo.Commit={{.ShortCommit}}
+      - -X github.com/artpar/pragma/internal/buildinfo.Date={{.Date}}
+      - -X github.com/artpar/pragma/internal/buildinfo.GoVersion={{.Env.GOVERSION}}
 
 archives:
   - id: default
@@ -54,14 +54,14 @@ changelog:
 release:
   github:
     owner: artpar
-    name: gogent-releases
+    name: pragma-releases
   draft: false
   prerelease: auto
 
 nfpms:
   - id: packages
-    package_name: gogent
-    homepage: https://github.com/artpar/gogent-releases
+    package_name: pragma
+    homepage: https://github.com/artpar/pragma-releases
     maintainer: artpar
     description: AI coding assistant CLI powered by LLMs
     formats:
@@ -69,12 +69,12 @@ nfpms:
       - rpm
     bindir: /usr/bin
     contents:
-      - src: ./completions/gogent.bash
-        dst: /usr/share/bash-completion/completions/gogent
-      - src: ./completions/gogent.zsh
-        dst: /usr/share/zsh/vendor-completions/_gogent
-      - src: ./completions/gogent.fish
-        dst: /usr/share/fish/vendor_completions.d/gogent.fish
+      - src: ./completions/pragma.bash
+        dst: /usr/share/bash-completion/completions/pragma
+      - src: ./completions/pragma.zsh
+        dst: /usr/share/zsh/vendor-completions/_pragma
+      - src: ./completions/pragma.fish
+        dst: /usr/share/fish/vendor_completions.d/pragma.fish
 
 brews:
   - repository:
@@ -82,13 +82,13 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
-    homepage: https://github.com/artpar/gogent-releases
+    homepage: https://github.com/artpar/pragma-releases
     description: AI coding assistant CLI powered by LLMs
     install: |
-      bin.install "gogent"
-      bash_completion.install "completions/gogent.bash" => "gogent"
-      zsh_completion.install "completions/gogent.zsh" => "_gogent"
-      fish_completion.install "completions/gogent.fish"
+      bin.install "pragma"
+      bash_completion.install "completions/pragma.bash" => "pragma"
+      zsh_completion.install "completions/pragma.zsh" => "_pragma"
+      fish_completion.install "completions/pragma.fish"
     test: |
       system "#{bin}/gogent", "version"
 
@@ -97,5 +97,5 @@ scoops:
       owner: artpar
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
-    homepage: https://github.com/artpar/gogent-releases
+    homepage: https://github.com/artpar/pragma-releases
     description: AI coding assistant CLI powered by LLMs

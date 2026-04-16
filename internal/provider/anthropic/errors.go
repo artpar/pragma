@@ -12,7 +12,7 @@ import (
 	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Sentinel errors for Anthropic API error categories.

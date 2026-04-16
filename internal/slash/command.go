@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/compact"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/compact"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // ErrUnknownCommand is returned when no command matches the given name.

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/lifecycle/bridge"
-	"github.com/artpar/gogent/internal/lifecycle/definition"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/provider/google"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/lifecycle/bridge"
+	"github.com/artpar/pragma/internal/lifecycle/definition"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider/google"
 )
 
 func setupGoogleProvider(t *testing.T) (*google.Provider, *observe.EventBus) {

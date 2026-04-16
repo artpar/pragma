@@ -6,7 +6,7 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestContentBlockFromWireText(t *testing.T) {

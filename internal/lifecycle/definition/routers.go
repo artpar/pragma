@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // RouterCreator resolves router spec strings into RouterFunc values.

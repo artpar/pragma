@@ -13,10 +13,10 @@ import (
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/provider"
-	"github.com/artpar/gogent/internal/provider/shared"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/provider/shared"
 )
 
 // Provider implements provider.Provider for the Anthropic Messages API.

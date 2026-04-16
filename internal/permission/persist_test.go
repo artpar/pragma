@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/artpar/gogent/internal/config"
+	"github.com/artpar/pragma/internal/config"
 )
 
 func TestPersistRuleNewFile(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestPersistRuleNewFile(t *testing.T) {
 
 func TestPersistRuleDedup(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, ".gogent"), 0o755)
+	os.MkdirAll(filepath.Join(dir, ".pragma"), 0o755)
 
 	rule := Rule{ToolName: "Bash", Content: "git *", Decision: DecisionAllow}
 
@@ -64,7 +64,7 @@ func TestPersistRuleDedup(t *testing.T) {
 
 func TestPersistRulePreservesExisting(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	os.MkdirAll(gogentDir, 0o755)
 
 	// Write initial settings with an existing permission
@@ -111,7 +111,7 @@ func TestPersistRulePreservesExisting(t *testing.T) {
 
 func TestPersistRuleNoFile(t *testing.T) {
 	dir := t.TempDir()
-	// No .gogent dir exists yet
+	// No .pragma dir exists yet
 
 	rule := Rule{ToolName: "Read", Decision: DecisionAllow}
 	if err := PersistRule(dir, rule); err != nil {

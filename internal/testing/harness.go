@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/provider"
-	"github.com/artpar/gogent/internal/provider/replay"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/provider/replay"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // SequenceProvider implements provider.Provider with predetermined responses.

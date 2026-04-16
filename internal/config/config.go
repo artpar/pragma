@@ -38,7 +38,7 @@ type ThinkingConfig struct {
 	BudgetTokens int  `json:"budget_tokens,omitempty"`
 }
 
-// Load reads global (~/.gogent/settings.json) and project (<workDir>/.gogent/settings.json)
+// Load reads global (~/.pragma/settings.json) and project (<workDir>/.pragma/settings.json)
 // config files and merges them. Project settings override global settings.
 // CLI flag overrides are applied by the caller after Load returns.
 func Load(workDir string) (Config, error) {

@@ -6,49 +6,49 @@ import (
 	"os"
 	"time"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/skill"
-	"github.com/artpar/gogent/internal/tool"
-	toolagent "github.com/artpar/gogent/internal/tools/agent"
-	toolask "github.com/artpar/gogent/internal/tools/ask"
-	toolbash "github.com/artpar/gogent/internal/tools/bash"
-	toolbrief "github.com/artpar/gogent/internal/tools/brief"
-	toolconfig "github.com/artpar/gogent/internal/tools/config"
-	toolcron "github.com/artpar/gogent/internal/tools/cron"
-	toolfileedit "github.com/artpar/gogent/internal/tools/fileedit"
-	toolfileread "github.com/artpar/gogent/internal/tools/fileread"
-	toolfilewrite "github.com/artpar/gogent/internal/tools/filewrite"
-	toolglob "github.com/artpar/gogent/internal/tools/glob"
-	toolgrep "github.com/artpar/gogent/internal/tools/grep"
-	toollsp "github.com/artpar/gogent/internal/tools/lsp"
-	toolmcp "github.com/artpar/gogent/internal/tools/mcp"
-	toolnotebookedit "github.com/artpar/gogent/internal/tools/notebookedit"
-	toolplan "github.com/artpar/gogent/internal/tools/plan"
-	toolpowershell "github.com/artpar/gogent/internal/tools/powershell"
-	toolremote "github.com/artpar/gogent/internal/tools/remote"
-	toolselftrace "github.com/artpar/gogent/internal/tools/selftrace"
-	toolrepl "github.com/artpar/gogent/internal/tools/repl"
-	toolsendmsg "github.com/artpar/gogent/internal/tools/sendmsg"
-	toolskill "github.com/artpar/gogent/internal/tools/skill"
-	toolsleep "github.com/artpar/gogent/internal/tools/sleep"
-	tooltaskcreate "github.com/artpar/gogent/internal/tools/taskcreate"
-	tooltaskget "github.com/artpar/gogent/internal/tools/taskget"
-	tooltasklist "github.com/artpar/gogent/internal/tools/tasklist"
-	tooltaskoutput "github.com/artpar/gogent/internal/tools/taskoutput"
-	tooltaskstop "github.com/artpar/gogent/internal/tools/taskstop"
-	tooltaskupdate "github.com/artpar/gogent/internal/tools/taskupdate"
-	toolteamcreate "github.com/artpar/gogent/internal/tools/teamcreate"
-	toolteamdelete "github.com/artpar/gogent/internal/tools/teamdelete"
-	tooltodo "github.com/artpar/gogent/internal/tools/todo"
-	toollifecycle "github.com/artpar/gogent/internal/tools/lifecycle"
-	tooltoolsearch "github.com/artpar/gogent/internal/tools/toolsearch"
-	toolwebfetch "github.com/artpar/gogent/internal/tools/webfetch"
-	toolwebsearch "github.com/artpar/gogent/internal/tools/websearch"
-	toolworktree "github.com/artpar/gogent/internal/tools/worktree"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/skill"
+	"github.com/artpar/pragma/internal/tool"
+	toolagent "github.com/artpar/pragma/internal/tools/agent"
+	toolask "github.com/artpar/pragma/internal/tools/ask"
+	toolbash "github.com/artpar/pragma/internal/tools/bash"
+	toolbrief "github.com/artpar/pragma/internal/tools/brief"
+	toolconfig "github.com/artpar/pragma/internal/tools/config"
+	toolcron "github.com/artpar/pragma/internal/tools/cron"
+	toolfileedit "github.com/artpar/pragma/internal/tools/fileedit"
+	toolfileread "github.com/artpar/pragma/internal/tools/fileread"
+	toolfilewrite "github.com/artpar/pragma/internal/tools/filewrite"
+	toolglob "github.com/artpar/pragma/internal/tools/glob"
+	toolgrep "github.com/artpar/pragma/internal/tools/grep"
+	toollsp "github.com/artpar/pragma/internal/tools/lsp"
+	toolmcp "github.com/artpar/pragma/internal/tools/mcp"
+	toolnotebookedit "github.com/artpar/pragma/internal/tools/notebookedit"
+	toolplan "github.com/artpar/pragma/internal/tools/plan"
+	toolpowershell "github.com/artpar/pragma/internal/tools/powershell"
+	toolremote "github.com/artpar/pragma/internal/tools/remote"
+	toolselftrace "github.com/artpar/pragma/internal/tools/selftrace"
+	toolrepl "github.com/artpar/pragma/internal/tools/repl"
+	toolsendmsg "github.com/artpar/pragma/internal/tools/sendmsg"
+	toolskill "github.com/artpar/pragma/internal/tools/skill"
+	toolsleep "github.com/artpar/pragma/internal/tools/sleep"
+	tooltaskcreate "github.com/artpar/pragma/internal/tools/taskcreate"
+	tooltaskget "github.com/artpar/pragma/internal/tools/taskget"
+	tooltasklist "github.com/artpar/pragma/internal/tools/tasklist"
+	tooltaskoutput "github.com/artpar/pragma/internal/tools/taskoutput"
+	tooltaskstop "github.com/artpar/pragma/internal/tools/taskstop"
+	tooltaskupdate "github.com/artpar/pragma/internal/tools/taskupdate"
+	toolteamcreate "github.com/artpar/pragma/internal/tools/teamcreate"
+	toolteamdelete "github.com/artpar/pragma/internal/tools/teamdelete"
+	tooltodo "github.com/artpar/pragma/internal/tools/todo"
+	toollifecycle "github.com/artpar/pragma/internal/tools/lifecycle"
+	tooltoolsearch "github.com/artpar/pragma/internal/tools/toolsearch"
+	toolwebfetch "github.com/artpar/pragma/internal/tools/webfetch"
+	toolwebsearch "github.com/artpar/pragma/internal/tools/websearch"
+	toolworktree "github.com/artpar/pragma/internal/tools/worktree"
 )
 
 // RegisterTools registers all tools on the registry. The agent tool needs the
@@ -123,8 +123,8 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		return nil, fmt.Errorf("register skill tool: %w", err)
 	}
 
-	if os.Getenv("GOGENT_REPL") == "1" {
-		observe.GlobalTrace("if: os.Getenv(\"GOGENT_REPL\") == \"1\"")
+	if os.Getenv("PRAGMA_REPL") == "1" {
+		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_REPL\") == \"1\"")
 		replTool := &toolrepl.Tool{Registry: d.Registry, Bus: d.Bus}
 		if err := d.Registry.Register(replTool); err != nil {
 			observe.GlobalTrace("if: err != nil")
@@ -207,16 +207,16 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolpowershell.Tool{},
 	}
 
-	if os.Getenv("GOGENT_FEATURE_AGENT_TEAMS") == "1" {
-		observe.GlobalTrace("if: os.Getenv(\"GOGENT_FEATURE_AGENT_TEAMS\") == \"1\"")
+	if os.Getenv("PRAGMA_FEATURE_AGENT_TEAMS") == "1" {
+		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_FEATURE_AGENT_TEAMS\") == \"1\"")
 		tools = append(tools,
 			&toolteamcreate.Tool{Store: d.Store, Bus: d.Bus},
 			&toolteamdelete.Tool{Store: d.Store, Bus: d.Bus},
 		)
 	}
 
-	if os.Getenv("GOGENT_FEATURE_REMOTE_TRIGGERS") == "1" {
-		observe.GlobalTrace("if: os.Getenv(\"GOGENT_FEATURE_REMOTE_TRIGGERS\") == \"1\"")
+	if os.Getenv("PRAGMA_FEATURE_REMOTE_TRIGGERS") == "1" {
+		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_FEATURE_REMOTE_TRIGGERS\") == \"1\"")
 		tools = append(tools, &toolremote.Tool{
 			HTTPClient: &http.Client{Timeout: 20 * time.Second},
 			BaseURL:    "https://api.anthropic.com",

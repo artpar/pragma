@@ -12,7 +12,7 @@ func TestBuild_FullPrompt(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	// Create an AGENT.md
-	gogentDir := filepath.Join(dir, "proj", ".gogent")
+	gogentDir := filepath.Join(dir, "proj", ".pragma")
 	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestBuild_NoAgentMD(t *testing.T) {
 	}
 
 	// All static blocks present
-	if !strings.Contains(prompt.Blocks[0].Text, "gogent") {
+	if !strings.Contains(prompt.Blocks[0].Text, "pragma") {
 		t.Error("identity block should mention gogent")
 	}
 }

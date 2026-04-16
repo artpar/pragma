@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Registry holds all registered tools and provides lookup.

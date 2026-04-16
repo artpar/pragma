@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Manager loads, matches, and executes hooks.
@@ -101,10 +101,10 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 	}
 
 	envVars := map[string]string{
-		"GOGENT_HOOK_EVENT": string(event),
-		"GOGENT_SESSION_ID": sessionID,
-		"GOGENT_CWD":        workDir,
-		"GOGENT_TOOL_NAME":  input.ToolName,
+		"PRAGMA_HOOK_EVENT": string(event),
+		"PRAGMA_SESSION_ID": sessionID,
+		"PRAGMA_CWD":        workDir,
+		"PRAGMA_TOOL_NAME":  input.ToolName,
 	}
 
 	var agg AggregatedResult

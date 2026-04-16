@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 // stripANSI removes ANSI escape sequences for test assertions.

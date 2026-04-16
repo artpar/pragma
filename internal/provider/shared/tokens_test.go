@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestMarshalContent_TextOnly(t *testing.T) {

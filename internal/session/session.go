@@ -3,7 +3,7 @@ package session
 import (
 	"time"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 // Session wraps a Conversation with persistence metadata.

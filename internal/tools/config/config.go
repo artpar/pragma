@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/artpar/gogent/internal/app"
-	goconfig "github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/app"
+	goconfig "github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // ConfigInput defines the parameters for the Config tool.

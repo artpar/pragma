@@ -2,7 +2,7 @@ package sysprompt
 
 import (
 	"context"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"os/exec"
 	"strings"
 	"time"

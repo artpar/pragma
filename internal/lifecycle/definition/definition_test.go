@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/lifecycle/definition"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/lifecycle/definition"
 )
 
 const validYAML = `

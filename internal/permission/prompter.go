@@ -2,7 +2,7 @@ package permission
 
 import (
 	"context"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Prompter asks the user for a permission decision when a rule evaluates to "ask".

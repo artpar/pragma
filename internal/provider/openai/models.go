@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // ModelInfo holds capabilities and pricing for a known OpenAI model.

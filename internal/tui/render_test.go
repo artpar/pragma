@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/tui/render"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/tui/render"
 )
 
 func TestRenderToolCall(t *testing.T) {

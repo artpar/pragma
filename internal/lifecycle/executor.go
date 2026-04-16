@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"golang.org/x/sync/errgroup"
 )
 

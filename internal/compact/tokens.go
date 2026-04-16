@@ -1,8 +1,8 @@
 package compact
 
 import (
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // bytesPerToken is the rough heuristic for token estimation.

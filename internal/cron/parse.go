@@ -2,7 +2,7 @@ package cron
 
 import (
 	"fmt"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"strconv"
 	"strings"
 	"time"

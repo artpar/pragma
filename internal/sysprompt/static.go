@@ -1,8 +1,8 @@
 package sysprompt
 
 import (
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // staticBlocks returns the static system prompt blocks. These are identical

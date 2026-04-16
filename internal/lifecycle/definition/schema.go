@@ -1,6 +1,6 @@
 package definition
 
-import "github.com/artpar/gogent/internal/observe"
+import "github.com/artpar/pragma/internal/observe"
 
 // GraphDef is the top-level YAML-parseable definition of a lifecycle graph.
 type GraphDef struct {

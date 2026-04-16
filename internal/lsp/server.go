@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // ServerState represents the lifecycle state of an LSP server.

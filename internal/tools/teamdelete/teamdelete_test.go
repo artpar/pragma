@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/team"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/team"
 )
 
 func newTestTool(t *testing.T) (*Tool, *app.StateStore) {

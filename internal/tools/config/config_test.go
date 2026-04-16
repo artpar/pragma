@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
 )
 
 type staticState struct{ dir string }
@@ -159,7 +159,7 @@ func TestHandleSet_CreateFile(t *testing.T) {
 	}
 
 	// Verify settings file was created (model is project-scoped)
-	settingsPath := filepath.Join(tmp, ".gogent", "settings.json")
+	settingsPath := filepath.Join(tmp, ".pragma", "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("ReadFile settings: %v", err)

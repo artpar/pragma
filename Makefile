@@ -1,4 +1,4 @@
-BINARY := bin/gogent
+BINARY := bin/pragma
 
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -13,19 +13,19 @@ LDFLAGS   := -X github.com/artpar/gogent/internal/buildinfo.Version=$(VERSION) \
 
 # Re-run AST instrumentation (idempotent)
 instrument:
-	go run ./cmd/gogent-instrument/ ./internal/...
+	go run ./cmd/pragma-instrument/ ./internal/...
 
 # Build the binary (instrumentation runs first)
 build: instrument
 	@mkdir -p bin
-	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/gogent/
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/pragma/
 
 # Generate shell completion scripts
 completions: build
 	@mkdir -p completions
-	./$(BINARY) completion bash > completions/gogent.bash
-	./$(BINARY) completion zsh > completions/gogent.zsh
-	./$(BINARY) completion fish > completions/gogent.fish
+	./$(BINARY) completion bash > completions/pragma.bash
+	./$(BINARY) completion zsh > completions/pragma.zsh
+	./$(BINARY) completion fish > completions/pragma.fish
 
 # Run all unit tests
 test:

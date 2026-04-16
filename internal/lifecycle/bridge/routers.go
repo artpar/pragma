@@ -3,9 +3,9 @@ package bridge
 import (
 	"fmt"
 
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // StopReasonRouter returns a RouterFunc that routes based on state["stop_reason"].

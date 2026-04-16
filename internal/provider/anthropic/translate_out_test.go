@@ -6,8 +6,8 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/provider"
 )
 
 func TestContentPartToWireUserText(t *testing.T) {

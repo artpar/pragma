@@ -1,8 +1,8 @@
 package anthropic
 
 import (
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // normalizeMessages prepares a message sequence for the Anthropic API:

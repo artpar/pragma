@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 func testConversation() model.Conversation {

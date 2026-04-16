@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestMetricsAPIRequestCompleted(t *testing.T) {

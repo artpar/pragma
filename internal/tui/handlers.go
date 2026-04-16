@@ -7,12 +7,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/artpar/gogent/internal/hook"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/slash"
-	"github.com/artpar/gogent/internal/tui/render"
+	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/slash"
+	"github.com/artpar/pragma/internal/tui/render"
 )
 
 // handleSlashCommand dispatches a slash command and returns a SlashResultMsg.

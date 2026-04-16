@@ -3,7 +3,7 @@ package slash
 import (
 	"context"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 const initPrompt = `Please analyze this codebase and create an AGENT.md file in the project root, which will be given to future instances of gogent to operate in this repository.
@@ -20,7 +20,7 @@ Usage notes:
 - If there are Cursor rules (in .cursor/rules/ or .cursorrules), Copilot rules (in .github/copilot-instructions.md), or an existing AGENT.md, make sure to include the important parts.
 - If there is a README.md, make sure to include the important parts.
 - Do not make up information such as "Common Development Tasks", "Tips for Development", "Support and Documentation" unless this is expressly included in other files that you read.
-- Also create the .gogent/ directory if it doesn't exist.
+- Also create the .pragma/ directory if it doesn't exist.
 - Be sure to prefix the file with the following text:
 
 ` + "```" + `

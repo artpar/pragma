@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // RuleChecker is the production implementation of Checker.

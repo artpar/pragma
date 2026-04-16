@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/gogent/internal/background"
+	"github.com/artpar/pragma/internal/background"
 )
 
 func sessionsCmd() *cobra.Command {

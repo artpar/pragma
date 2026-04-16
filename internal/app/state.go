@@ -1,6 +1,6 @@
 package app
 
-import "github.com/artpar/gogent/internal/model"
+import "github.com/artpar/pragma/internal/model"
 
 // TodoItem represents a single item in the session task checklist.
 type TodoItem struct {

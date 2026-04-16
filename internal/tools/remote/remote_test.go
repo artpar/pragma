@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/permission"
+	"github.com/artpar/pragma/internal/permission"
 )
 
 type testState struct{ cwd string }

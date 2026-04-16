@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/mcp"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/mcp"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 type readInput struct {
@@ -41,7 +41,7 @@ var readInputSchema = json.RawMessage(`{
 // ReadTool reads a specific MCP resource by URI.
 type ReadTool struct {
 	Manager  *mcp.Manager
-	CacheDir string // directory for persisting binary content (default: .gogent/cache)
+	CacheDir string // directory for persisting binary content (default: .pragma/cache)
 }
 
 func (t *ReadTool) Name() string {
@@ -196,7 +196,7 @@ func (t *ReadTool) persistBinary(snap tool.StateSnapshot, data []byte, mimeType 
 	cacheDir := t.CacheDir
 	if cacheDir == "" {
 		observe.GlobalTrace("if: cacheDir == \"\"")
-		cacheDir = filepath.Join(snap.WorkDir(), ".gogent", "cache")
+		cacheDir = filepath.Join(snap.WorkDir(), ".pragma", "cache")
 	}
 
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {

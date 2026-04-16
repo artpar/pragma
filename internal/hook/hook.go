@@ -2,7 +2,7 @@ package hook
 
 import (
 	"encoding/json"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Event identifies when a hook fires.

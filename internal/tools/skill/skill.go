@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/query"
-	skillpkg "github.com/artpar/gogent/internal/skill"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/query"
+	skillpkg "github.com/artpar/pragma/internal/skill"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // SkillInput defines the parameters for the Skill tool.

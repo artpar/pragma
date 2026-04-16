@@ -1,7 +1,7 @@
 package anthropic
 
 import (
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"strings"
 	"sync"
 )

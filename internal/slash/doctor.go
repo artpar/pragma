@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
@@ -67,7 +67,7 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 			}
 		}
 	}
-	check("API key found", hasKey, "set env var, --api-key, or add to ~/.gogent/credentials.yml")
+	check("API key found", hasKey, "set env var, --api-key, or add to ~/.pragma/credentials.yml")
 
 	credPath, credPathErr := config.CredentialsPath()
 	if credPathErr == nil {
@@ -77,18 +77,18 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 			check("Credentials file", true, "")
 		} else {
 			observe.GlobalTrace("else: err == nil")
-			check("Credentials file", false, "optional — ~/.gogent/credentials.yml not found")
+			check("Credentials file", false, "optional — ~/.pragma/credentials.yml not found")
 		}
 	}
 
-	home, homeErr := config.GogentHome()
+	home, homeErr := config.PragmaHome()
 	if homeErr != nil {
 		observe.GlobalTrace("if: homeErr != nil")
-		check("Config directory (~/.gogent/)", false, homeErr.Error())
+		check("Config directory (~/.pragma/)", false, homeErr.Error())
 	} else {
 		observe.GlobalTrace("else: homeErr != nil")
 		_, err := os.Stat(home)
-		check("Config directory (~/.gogent/)", err == nil, "run 'mkdir -p "+home+"'")
+		check("Config directory (~/.pragma/)", err == nil, "run 'mkdir -p "+home+"'")
 	}
 
 	globalSettings, gsErr := config.GlobalSettingsPath()
@@ -139,18 +139,18 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 		check("Config loads cleanly", true, "")
 	}
 
-	mcpPath := filepath.Join(cwd, ".gogent", "mcp.json")
+	mcpPath := filepath.Join(cwd, ".pragma", "mcp.json")
 	if _, err := os.Stat(mcpPath); err == nil {
 		observe.GlobalTrace("if: err == nil")
 		check("MCP config exists", true, "")
 	} else {
 		observe.GlobalTrace("else: err == nil")
-		check("MCP config", false, "no .gogent/mcp.json (optional)")
+		check("MCP config", false, "no .pragma/mcp.json (optional)")
 	}
 
 	hookPaths := []string{
-		filepath.Join(cwd, ".gogent", "settings.json"),
-		filepath.Join(cwd, ".gogent", "settings.local.json"),
+		filepath.Join(cwd, ".pragma", "settings.json"),
+		filepath.Join(cwd, ".pragma", "settings.local.json"),
 	}
 	hookFound := false
 	for _, hp := range hookPaths {
@@ -166,7 +166,7 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 		check("Hook config", true, "")
 	} else {
 		observe.GlobalTrace("else: hookFound")
-		check("Hook config", false, "no .gogent/settings.json (optional)")
+		check("Hook config", false, "no .pragma/settings.json (optional)")
 	}
 
 	fmt.Fprintf(&b, "\n%d passed, %d warnings, %d failures\n", passes, warnings, failures)

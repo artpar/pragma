@@ -3,7 +3,7 @@ package skill
 import (
 	"strings"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"gopkg.in/yaml.v3"
 )
 

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/mcp"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/mcp"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 func setupManager(t *testing.T) *mcp.Manager {

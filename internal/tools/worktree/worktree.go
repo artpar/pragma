@@ -2,7 +2,7 @@ package worktree
 
 import (
 	"fmt"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"os/exec"
 	"regexp"
 	"strings"

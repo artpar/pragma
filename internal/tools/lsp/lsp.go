@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/artpar/gogent/internal/lsp"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/tool"
-	"github.com/artpar/gogent/internal/util"
+	"github.com/artpar/pragma/internal/lsp"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/util"
 )
 
 const maxFileSizeBytes = 10 * 1024 * 1024 // 10 MB
@@ -79,7 +79,7 @@ func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: `Provides code intelligence via Language Server Protocol. Operations: goToDef...")
-	return `Provides code intelligence via Language Server Protocol. Operations: goToDefinition, findReferences, hover, documentSymbol, workspaceSymbol, goToImplementation, prepareCallHierarchy, incomingCalls, outgoingCalls. Requires LSP servers configured in .gogent/lsp.json.`
+	return `Provides code intelligence via Language Server Protocol. Operations: goToDefinition, findReferences, hover, documentSymbol, workspaceSymbol, goToImplementation, prepareCallHierarchy, incomingCalls, outgoingCalls. Requires LSP servers configured in .pragma/lsp.json.`
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {

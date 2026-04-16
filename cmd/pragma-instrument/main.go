@@ -179,7 +179,7 @@ func processFile(fset *token.FileSet, filePath string, file *ast.File, pkgName s
 	}
 
 	// Ensure observe import
-	addImport(file, "github.com/artpar/gogent/internal/observe")
+	addImport(file, "github.com/artpar/pragma/internal/observe")
 
 	// Strip comments before writing — injected AST nodes have zero positions which
 	// causes go/format to float comments into the wrong places. We preserve the

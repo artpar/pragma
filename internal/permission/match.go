@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"github.com/bmatcuk/doublestar/v4"
 )
 

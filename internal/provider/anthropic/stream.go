@@ -9,10 +9,10 @@ import (
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/provider"
-	"github.com/artpar/gogent/internal/provider/shared"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/provider/shared"
 )
 
 // streamState tracks content blocks being accumulated during streaming.

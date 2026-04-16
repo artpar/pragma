@@ -5,16 +5,16 @@ import (
 	"testing"
 )
 
-func TestGogentHome(t *testing.T) {
+func TestPragmaHome(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
-	home, err := GogentHome()
+	home, err := PragmaHome()
 	if err != nil {
-		t.Fatalf("GogentHome: %v", err)
+		t.Fatalf("PragmaHome: %v", err)
 	}
-	if home != filepath.Join(dir, ".gogent") {
-		t.Errorf("GogentHome = %q, want %q", home, filepath.Join(dir, ".gogent"))
+	if home != filepath.Join(dir, ".pragma") {
+		t.Errorf("PragmaHome = %q, want %q", home, filepath.Join(dir, ".pragma"))
 	}
 }
 
@@ -26,7 +26,7 @@ func TestSessionsDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SessionsDir: %v", err)
 	}
-	expected := filepath.Join(dir, ".gogent", "sessions")
+	expected := filepath.Join(dir, ".pragma", "sessions")
 	if sessDir != expected {
 		t.Errorf("SessionsDir = %q, want %q", sessDir, expected)
 	}
@@ -40,7 +40,7 @@ func TestGlobalAgentMDPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GlobalAgentMDPath: %v", err)
 	}
-	expected := filepath.Join(dir, ".gogent", "AGENT.md")
+	expected := filepath.Join(dir, ".pragma", "AGENT.md")
 	if path != expected {
 		t.Errorf("GlobalAgentMDPath = %q, want %q", path, expected)
 	}
@@ -54,10 +54,10 @@ func TestProjectPaths(t *testing.T) {
 		fn   func(string) string
 		want string
 	}{
-		{"ProjectSettingsPath", ProjectSettingsPath, filepath.Join(workDir, ".gogent", "settings.json")},
-		{"LocalSettingsPath", LocalSettingsPath, filepath.Join(workDir, ".gogent", "settings.local.json")},
-		{"ProjectAgentMDPath", ProjectAgentMDPath, filepath.Join(workDir, ".gogent", "AGENT.md")},
-		{"LocalAgentMDPath", LocalAgentMDPath, filepath.Join(workDir, ".gogent", "AGENT.local.md")},
+		{"ProjectSettingsPath", ProjectSettingsPath, filepath.Join(workDir, ".pragma", "settings.json")},
+		{"LocalSettingsPath", LocalSettingsPath, filepath.Join(workDir, ".pragma", "settings.local.json")},
+		{"ProjectAgentMDPath", ProjectAgentMDPath, filepath.Join(workDir, ".pragma", "AGENT.md")},
+		{"LocalAgentMDPath", LocalAgentMDPath, filepath.Join(workDir, ".pragma", "AGENT.local.md")},
 	}
 
 	for _, tt := range tests {

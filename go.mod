@@ -1,4 +1,4 @@
-module github.com/artpar/gogent
+module github.com/artpar/pragma
 
 go 1.25.0
 

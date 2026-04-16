@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/model"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/model"
 )
 
-// Store persists sessions to ~/.gogent/sessions/.
+// Store persists sessions to ~/.pragma/sessions/.
 type Store struct {
 	dir string
 }

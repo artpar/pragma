@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // formatEvent returns a compact one-line representation of an event.

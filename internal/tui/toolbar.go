@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/tui/render"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/tui/render"
 )
 
 // toolbar renders a single-line status bar at the bottom of the viewport.

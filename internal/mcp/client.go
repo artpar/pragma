@@ -13,8 +13,8 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/artpar/gogent/internal/buildinfo"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/buildinfo"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 const (
@@ -127,7 +127,7 @@ func (c *Client) Connect(ctx context.Context) error {
 		Params: mcp.InitializeParams{
 			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
 			ClientInfo: mcp.Implementation{
-				Name:    "gogent",
+				Name:    "pragma",
 				Version: buildinfo.Version,
 			},
 			Capabilities: mcp.ClientCapabilities{},

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/artpar/gogent/internal/mcp"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/tool"
+	"github.com/artpar/pragma/internal/mcp"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 type listInput struct {

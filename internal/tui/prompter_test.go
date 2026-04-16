@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/artpar/gogent/internal/permission"
+	"github.com/artpar/pragma/internal/permission"
 )
 
 func TestInteractivePrompterNilProgram(t *testing.T) {

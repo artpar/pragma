@@ -13,7 +13,7 @@ const (
 )
 
 // ProcessInfo holds metadata about a running background session.
-// Persisted as ~/.gogent/active-sessions/{pid}.json.
+// Persisted as ~/.pragma/active-sessions/{pid}.json.
 type ProcessInfo struct {
 	PID       int       `json:"pid"`
 	PGID      int       `json:"pgid"`                 // Process group ID for cleanup

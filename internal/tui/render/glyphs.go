@@ -2,7 +2,7 @@ package render
 
 import (
 	"runtime"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Unicode glyphs for visual hierarchy, matching Pragma TS reference.

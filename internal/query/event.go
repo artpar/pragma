@@ -1,6 +1,6 @@
 package query
 
-import "github.com/artpar/gogent/internal/model"
+import "github.com/artpar/pragma/internal/model"
 
 // LoopEvent is the sealed interface for events emitted by Engine.Run().
 // These are query-local events consumed by the caller — distinct from

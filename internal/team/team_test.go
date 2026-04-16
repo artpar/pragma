@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 func TestSanitizeName(t *testing.T) {
@@ -204,12 +204,12 @@ func TestTeamDir_TasksDir(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	teamDir := TeamDir("My Team")
-	if !strings.Contains(teamDir, filepath.Join(".gogent", "teams", "my-team")) {
+	if !strings.Contains(teamDir, filepath.Join(".pragma", "teams", "my-team")) {
 		t.Errorf("TeamDir = %q, expected to contain teams/my-team", teamDir)
 	}
 
 	tasksDir := TasksDir("My Team")
-	if !strings.Contains(tasksDir, filepath.Join(".gogent", "tasks", "my-team")) {
+	if !strings.Contains(tasksDir, filepath.Join(".pragma", "tasks", "my-team")) {
 		t.Errorf("TasksDir = %q, expected to contain tasks/my-team", tasksDir)
 	}
 }

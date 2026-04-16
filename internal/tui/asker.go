@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

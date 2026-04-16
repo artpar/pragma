@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/slash"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/slash"
 )
 
 func newTestModel() Model {

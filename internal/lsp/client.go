@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Client manages a single LSP server process and JSON-RPC communication.

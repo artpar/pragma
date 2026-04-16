@@ -60,7 +60,7 @@ func TestLoadAgentMD_AllScopes(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	// Create global AGENT.md
-	globalDir := filepath.Join(dir, ".gogent")
+	globalDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestLoadAgentMD_AllScopes(t *testing.T) {
 	}
 
 	// Create project AGENT.md
-	projectDir := filepath.Join(dir, "myproject", ".gogent")
+	projectDir := filepath.Join(dir, "myproject", ".pragma")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestLoadAgentMD_MissingFiles(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	// Only project AGENT.md exists
-	projectDir := filepath.Join(dir, "proj", ".gogent")
+	projectDir := filepath.Join(dir, "proj", ".pragma")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestLoadAgentMD_FrontmatterStripped(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
-	projectDir := filepath.Join(dir, "proj", ".gogent")
+	projectDir := filepath.Join(dir, "proj", ".pragma")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestLoadAgentMD_Truncation(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
-	projectDir := filepath.Join(dir, "proj", ".gogent")
+	projectDir := filepath.Join(dir, "proj", ".pragma")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -184,8 +184,8 @@ func TestLoadAgentMD_Truncation(t *testing.T) {
 
 func TestAgentMDBlock_Format(t *testing.T) {
 	sources := []AgentMDSource{
-		{Path: "/home/user/.gogent/AGENT.md", Content: "global rule 1", Scope: "global"},
-		{Path: "/project/.gogent/AGENT.md", Content: "project rule 1", Scope: "project"},
+		{Path: "/home/user/.pragma/AGENT.md", Content: "global rule 1", Scope: "global"},
+		{Path: "/project/.pragma/AGENT.md", Content: "project rule 1", Scope: "project"},
 	}
 
 	block := agentMDBlock(sources)
@@ -196,7 +196,7 @@ func TestAgentMDBlock_Format(t *testing.T) {
 	if !strings.Contains(block.Text, "IMPORTANT: These instructions OVERRIDE") {
 		t.Error("missing override instruction header")
 	}
-	if !strings.Contains(block.Text, "/home/user/.gogent/AGENT.md (global instructions)") {
+	if !strings.Contains(block.Text, "/home/user/.pragma/AGENT.md (global instructions)") {
 		t.Error("missing global path header")
 	}
 	if !strings.Contains(block.Text, "global rule 1") {

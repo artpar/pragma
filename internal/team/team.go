@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/artpar/gogent/internal/config"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 const (
@@ -69,23 +69,23 @@ func SanitizeName(s string) string {
 	return slug
 }
 
-// gogentHome returns the gogent home dir, falling back to ~/.gogent on error.
+// gogentHome returns the gogent home dir, falling back to ~/.pragma on error.
 func gogentHome() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	home, err := config.GogentHome()
+	home, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 
 		h, _ := os.UserHomeDir()
-		observe.GlobalTrace("return: filepath.Join(h, \".gogent\")")
-		return filepath.Join(h, ".gogent")
+		observe.GlobalTrace("return: filepath.Join(h, \".pragma\")")
+		return filepath.Join(h, ".pragma")
 	}
 	observe.GlobalTrace("return: home")
 	return home
 }
 
-// TeamDir returns the directory path for a team: ~/.gogent/teams/{sanitized}/
+// TeamDir returns the directory path for a team: ~/.pragma/teams/{sanitized}/
 func TeamDir(teamName string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -93,7 +93,7 @@ func TeamDir(teamName string) string {
 	return filepath.Join(gogentHome(), teamsSubdir, SanitizeName(teamName))
 }
 
-// TasksDir returns the tasks directory for a team: ~/.gogent/tasks/{sanitized}/
+// TasksDir returns the tasks directory for a team: ~/.pragma/tasks/{sanitized}/
 func TasksDir(teamName string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

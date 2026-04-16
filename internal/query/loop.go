@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/compact"
-	"github.com/artpar/gogent/internal/hook"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/provider"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/compact"
+	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
 )
 
 // continuationPrompt is sent when the model returns StopPauseTurn,

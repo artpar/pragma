@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/mcp"
+	"github.com/artpar/pragma/internal/mcp"
 )
 
 func TestInvoke_UnsupportedTransport(t *testing.T) {

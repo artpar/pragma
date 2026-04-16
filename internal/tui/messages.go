@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/slash"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/slash"
 )
 
 // LoopEventMsg wraps a query.LoopEvent for the bubbletea Update loop.

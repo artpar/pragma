@@ -3,7 +3,7 @@ package background
 import (
 	"os"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // StatusSubscriber updates the PID file status based on engine events.

@@ -10,18 +10,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/gogent/internal/app"
-	"github.com/artpar/gogent/internal/lifecycle"
-	"github.com/artpar/gogent/internal/lifecycle/bridge"
-	"github.com/artpar/gogent/internal/lifecycle/definition"
-	"github.com/artpar/gogent/internal/model"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	"github.com/artpar/gogent/internal/provider"
-	"github.com/artpar/gogent/internal/query"
-	"github.com/artpar/gogent/internal/task"
-	"github.com/artpar/gogent/internal/tool"
-	"github.com/artpar/gogent/internal/tools/worktree"
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/lifecycle"
+	"github.com/artpar/pragma/internal/lifecycle/bridge"
+	"github.com/artpar/pragma/internal/lifecycle/definition"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/task"
+	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/tools/worktree"
 )
 
 // AgentInput defines the parameters for the Agent tool.
@@ -475,7 +475,7 @@ func (t *Tool) createWorktree(ctx context.Context, workDir, taskID string) (stri
 	slug := "agent-" + taskID + "-" + fmt.Sprintf("%d", time.Now().UnixMilli())
 	flatSlug := worktree.FlattenSlug(slug)
 	branch := "worktree-" + flatSlug
-	dir := filepath.Join(workDir, ".gogent", "worktrees", flatSlug)
+	dir := filepath.Join(workDir, ".pragma", "worktrees", flatSlug)
 
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		observe.TraceCtx(ctx, "agent", "Tool.createWorktree", "if: err != nil")

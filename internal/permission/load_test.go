@@ -3,7 +3,7 @@ package permission
 import (
 	"testing"
 
-	"github.com/artpar/gogent/internal/config"
+	"github.com/artpar/pragma/internal/config"
 )
 
 func TestParseRuleString(t *testing.T) {

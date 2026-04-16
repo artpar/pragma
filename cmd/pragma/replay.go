@@ -6,11 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/gogent/internal/cli"
-	"github.com/artpar/gogent/internal/observe"
-	"github.com/artpar/gogent/internal/permission"
-	replayprov "github.com/artpar/gogent/internal/provider/replay"
-	"github.com/artpar/gogent/internal/tui"
+	"github.com/artpar/pragma/internal/cli"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
+	replayprov "github.com/artpar/pragma/internal/provider/replay"
+	"github.com/artpar/pragma/internal/tui"
 )
 
 func replayCmd() *cobra.Command {

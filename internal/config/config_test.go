@@ -130,7 +130,7 @@ func TestLoad_NoFiles(t *testing.T) {
 
 func TestLoad_GlobalOnly(t *testing.T) {
 	dir := t.TempDir()
-	globalDir := filepath.Join(dir, "global", ".gogent")
+	globalDir := filepath.Join(dir, "global", ".pragma")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestLoad_GlobalOnly(t *testing.T) {
 
 func TestLoad_ProjectOverride(t *testing.T) {
 	dir := t.TempDir()
-	globalDir := filepath.Join(dir, "global", ".gogent")
+	globalDir := filepath.Join(dir, "global", ".pragma")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestLoad_ProjectOverride(t *testing.T) {
 	writeJSON(t, globalPath, Config{Model: "global-model", MaxTokens: 4096, Provider: "anthropic"})
 
 	projectDir := filepath.Join(dir, "project")
-	projectClaudeDir := filepath.Join(projectDir, ".gogent")
+	projectClaudeDir := filepath.Join(projectDir, ".pragma")
 	if err := os.MkdirAll(projectClaudeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestLoad_ProjectOverride(t *testing.T) {
 
 func TestLoad_MalformedJSON(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".gogent")
+	gogentDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestLoad_RealFunction(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	// Create global config
-	globalDir := filepath.Join(dir, ".gogent")
+	globalDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(globalDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestLoad_RealFunction(t *testing.T) {
 
 	// Create project config in a subdirectory
 	projDir := filepath.Join(dir, "myproject")
-	projGogentDir := filepath.Join(projDir, ".gogent")
+	projGogentDir := filepath.Join(projDir, ".pragma")
 	if err := os.MkdirAll(projGogentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +297,7 @@ func TestGlobalSettingsPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GlobalSettingsPath: %v", err)
 	}
-	expected := filepath.Join(dir, ".gogent", "settings.json")
+	expected := filepath.Join(dir, ".pragma", "settings.json")
 	if path != expected {
 		t.Errorf("GlobalSettingsPath = %q, want %q", path, expected)
 	}

@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 	"os"
 	"os/exec"
 	"strings"
@@ -82,8 +82,8 @@ func ExecCommand(ctx context.Context, cmd Command, input []byte, workDir string,
 // buildEnv creates the environment for hook execution.
 // Inherits parent env and adds hook-specific variables.
 //
-// Security note: GOGENT_TOOL_INPUT and GOGENT_TOOL_NAME are passed as-is.
-// Hook scripts MUST quote these variables (e.g., "$GOGENT_TOOL_INPUT") to
+// Security note: PRAGMA_TOOL_INPUT and PRAGMA_TOOL_NAME are passed as-is.
+// Hook scripts MUST quote these variables (e.g., "$PRAGMA_TOOL_INPUT") to
 // prevent shell metacharacter expansion. Sanitizing here would break
 // legitimate JSON payloads containing special characters.
 func buildEnv(vars map[string]string) []string {

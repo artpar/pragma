@@ -8,14 +8,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/gogent/internal/buildinfo"
-	"github.com/artpar/gogent/internal/cli"
-	"github.com/artpar/gogent/internal/slash"
+	"github.com/artpar/pragma/internal/buildinfo"
+	"github.com/artpar/pragma/internal/cli"
+	"github.com/artpar/pragma/internal/slash"
 )
 
 func main() {
 	root := &cobra.Command{
-		Use:           "gogent",
+		Use:           "pragma",
 		Short:         "AI coding assistant",
 		Long:          "gogent is a CLI AI coding assistant powered by LLMs.",
 		RunE:          cli.RunDispatcher,

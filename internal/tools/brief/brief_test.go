@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/gogent/internal/observe"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 type staticState struct{ dir string }
