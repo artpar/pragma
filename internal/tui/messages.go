@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"encoding/json"
+
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/slash"
@@ -16,10 +18,11 @@ type LoopEventMsg struct {
 // decision from the user. The TUI renders a permission dialog and sends
 // the result back on the Response channel.
 type PermRequestMsg struct {
-	ToolName string
-	Content  string
-	Reason   string
-	Response chan<- PermResponseMsg
+	ToolName  string
+	ToolInput json.RawMessage // raw tool input for rendering previews
+	Content   string
+	Reason    string
+	Response  chan<- PermResponseMsg
 }
 
 // PermResponseMsg carries the user's permission decision back to the

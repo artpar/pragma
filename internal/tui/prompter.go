@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -43,7 +44,7 @@ func (p *InteractivePrompter) SetProgram(prog *tea.Program) {
 
 // Prompt asks the user for a permission decision. It blocks the calling
 // goroutine until the user responds or the context is cancelled.
-func (p *InteractivePrompter) Prompt(ctx context.Context, toolName, content, reason string) (permission.Decision, *permission.Rule) {
+func (p *InteractivePrompter) Prompt(ctx context.Context, toolName string, toolInput json.RawMessage, content, reason string) (permission.Decision, *permission.Rule) {
 	observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "enter")
 	defer observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "exit")
 	p.mu.Lock()
@@ -57,10 +58,11 @@ func (p *InteractivePrompter) Prompt(ctx context.Context, toolName, content, rea
 
 	respCh := make(chan PermResponseMsg, 1)
 	p.program.Send(PermRequestMsg{
-		ToolName: toolName,
-		Content:  content,
-		Reason:   reason,
-		Response: respCh,
+		ToolName:  toolName,
+		ToolInput: toolInput,
+		Content:   content,
+		Reason:    reason,
+		Response:  respCh,
 	})
 
 	select {

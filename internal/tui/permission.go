@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -12,15 +13,15 @@ import (
 
 const (
 	permOptAllow       = 0
-	permOptDeny        = 1
-	permOptAlwaysAllow = 2
+	permOptAlwaysAllow = 1
+	permOptDeny        = 2
 	permOptCount       = 3
 )
 
 var permOptionLabels = [permOptCount]string{
-	"Allow (once)",
-	"Deny",
-	"Always Allow (session)",
+	"Yes",
+	"Yes, for this session",
+	"No",
 }
 
 // permissionDialog renders an interactive permission prompt.
@@ -33,7 +34,6 @@ type permissionDialog struct {
 func newPermissionDialog() permissionDialog {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: permissionDialog{}")
 	return permissionDialog{}
 }
 
@@ -52,39 +52,30 @@ func (d *permissionDialog) Update(msg tea.Msg) tea.Cmd {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !d.active {
-		observe.GlobalTrace("if: !d.active")
-		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
-		observe.GlobalTrace("if: !ok")
-		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	switch keyMsg.String() {
 	case "up", "k":
-		observe.GlobalTrace("case: \"up\", \"k\"")
 		d.selected--
 		if d.selected < 0 {
 			d.selected = permOptCount - 1
 		}
 	case "down", "j":
-		observe.GlobalTrace("case: \"down\", \"j\"")
 		d.selected++
 		if d.selected >= permOptCount {
 			d.selected = 0
 		}
 	case "enter":
-		observe.GlobalTrace("case: \"enter\"")
 		return d.confirm()
 	case "esc":
-		observe.GlobalTrace("case: \"esc\"")
 		return d.deny()
 	}
-	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -101,13 +92,10 @@ func (d *permissionDialog) confirm() tea.Cmd {
 
 	switch d.selected {
 	case permOptAllow:
-		observe.GlobalTrace("case: permOptAllow")
 		decision = permission.DecisionAllow
 	case permOptDeny:
-		observe.GlobalTrace("case: permOptDeny")
 		decision = permission.DecisionDeny
 	case permOptAlwaysAllow:
-		observe.GlobalTrace("case: permOptAlwaysAllow")
 		decision = permission.DecisionAllow
 		rule = &permission.Rule{
 			ToolName: req.ToolName,
@@ -118,7 +106,6 @@ func (d *permissionDialog) confirm() tea.Cmd {
 	}
 
 	resp := PermResponseMsg{Decision: decision, Rule: rule}
-	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	return func() tea.Msg {
 		req.Response <- resp
 		return resp
@@ -134,63 +121,245 @@ func (d *permissionDialog) deny() tea.Cmd {
 	d.request = nil
 
 	resp := PermResponseMsg{Decision: permission.DecisionDeny}
-	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	return func() tea.Msg {
 		req.Response <- resp
 		return resp
 	}
 }
 
-// View renders the permission dialog box.
+// toolPreview holds parsed tool input fields for rendering previews.
+type toolPreview struct {
+	FilePath  string
+	OldString string
+	NewString string
+	Content   string
+	Command   string
+}
+
+// parseToolPreview extracts display-relevant fields from tool input JSON.
+// Returns zero values on parse failure (graceful degradation).
+func parseToolPreview(toolName string, input json.RawMessage) toolPreview {
+	if len(input) == 0 {
+		return toolPreview{}
+	}
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(input, &raw) != nil {
+		return toolPreview{}
+	}
+	var p toolPreview
+	getString := func(key string) string {
+		v, ok := raw[key]
+		if !ok {
+			return ""
+		}
+		var s string
+		if json.Unmarshal(v, &s) != nil {
+			return ""
+		}
+		return s
+	}
+	switch toolName {
+	case "Edit":
+		p.FilePath = getString("file_path")
+		p.OldString = getString("old_string")
+		p.NewString = getString("new_string")
+	case "Write":
+		p.FilePath = getString("file_path")
+		p.Content = getString("content")
+	case "Bash":
+		p.Command = getString("command")
+	}
+	return p
+}
+
+// View renders the permission dialog.
 func (d permissionDialog) View() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !d.active || d.request == nil {
-		observe.GlobalTrace("if: !d.active || d.request == nil")
-		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
+	preview := parseToolPreview(d.request.ToolName, d.request.ToolInput)
+
 	var b strings.Builder
-	b.WriteString(permTitleStyle.Render("Permission Required"))
-	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf("Tool:    %s\n", d.request.ToolName))
-	b.WriteString(fmt.Sprintf("Content: %s\n", truncateStr(d.request.Content, 80)))
-	if d.request.Reason != "" {
-		observe.GlobalTrace("if: d.request.Reason != \"\"")
-		b.WriteString(fmt.Sprintf("Reason:  %s\n", d.request.Reason))
+
+	// Title + subtitle (matching TS PermissionRequestTitle)
+	title, subtitle := permDialogTitle(d.request.ToolName, preview)
+	b.WriteString(permTitleStyle.Render(title))
+	if subtitle != "" {
+		b.WriteString("\n")
+		b.WriteString(permSubtitleStyle.Render(subtitle))
 	}
 	b.WriteString("\n")
 
+	// Content area (tool-specific preview)
+	content := permDialogContent(d.request, preview)
+	if content != "" {
+		b.WriteString("\n")
+		b.WriteString(content)
+		b.WriteString("\n")
+	}
+
+	// Options
+	b.WriteString("\n")
 	for i, label := range permOptionLabels {
-		observe.GlobalTrace("range permOptionLabels")
 		cursor := "  "
 		style := permUnselectedStyle
 		if i == d.selected {
-			observe.GlobalTrace("if: i == d.selected")
 			cursor = "> "
 			style = permSelectedStyle
 		}
 		b.WriteString(cursor + style.Render(label) + "\n")
 	}
+
+	// Footer
 	b.WriteString("\n")
 	b.WriteString(permUnselectedStyle.Render("[↑↓] navigate  [Enter] confirm  [Esc] deny"))
-	observe.GlobalTrace("return: permDialogBorderStyle.Render(b.String())")
 
 	return permDialogBorderStyle.Render(b.String())
 }
 
-// truncateStr truncates a string to maxLen runes (not bytes).
-// Safe for multi-byte UTF-8 characters.
-func truncateStr(s string, maxLen int) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		observe.GlobalTrace("if: len(runes) <= maxLen")
-		observe.GlobalTrace("return: s")
-		return s
+// permDialogTitle returns the title and subtitle for a permission dialog.
+func permDialogTitle(toolName string, preview toolPreview) (string, string) {
+	switch toolName {
+	case "Edit":
+		return "Edit file", preview.FilePath
+	case "Write":
+		return "Write file", preview.FilePath
+	case "Bash":
+		return "Run command", ""
+	default:
+		return "Tool use", ""
 	}
-	observe.GlobalTrace("return: string(runes[:maxLen-3]) + \"...\"")
-	return string(runes[:maxLen-3]) + "..."
+}
+
+// permDialogContent renders the tool-specific content area.
+func permDialogContent(req *PermRequestMsg, preview toolPreview) string {
+	switch req.ToolName {
+	case "Edit":
+		return renderEditPreview(preview)
+	case "Write":
+		return renderWritePreview(preview)
+	case "Bash":
+		return renderBashPreview(preview)
+	default:
+		return renderDefaultPreview(req)
+	}
+}
+
+// renderEditPreview renders old_string → new_string diff for Edit tool.
+func renderEditPreview(p toolPreview) string {
+	if p.OldString == "" && p.NewString == "" {
+		return ""
+	}
+	var b strings.Builder
+	oldLines := strings.Split(p.OldString, "\n")
+	newLines := strings.Split(p.NewString, "\n")
+
+	// Truncate to avoid overwhelming the terminal (#48248, #46190)
+	const maxLines = 20
+	totalLines := len(oldLines) + len(newLines)
+	truncated := totalLines > maxLines
+
+	maxOld := len(oldLines)
+	maxNew := len(newLines)
+	if truncated {
+		maxOld = min(len(oldLines), maxLines/2)
+		maxNew = min(len(newLines), maxLines-maxOld)
+	}
+
+	for i := 0; i < maxOld; i++ {
+		b.WriteString("  ")
+		b.WriteString(permDiffRemove.Render("- " + oldLines[i]))
+		b.WriteString("\n")
+	}
+	if maxOld < len(oldLines) {
+		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("  ... (+%d lines)", len(oldLines)-maxOld)) + "\n")
+	}
+	for i := 0; i < maxNew; i++ {
+		b.WriteString("  ")
+		b.WriteString(permDiffAdd.Render("+ " + newLines[i]))
+		b.WriteString("\n")
+	}
+	if maxNew < len(newLines) {
+		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("  ... (+%d lines)", len(newLines)-maxNew)) + "\n")
+	}
+
+	// Trim trailing newline
+	result := b.String()
+	if strings.HasSuffix(result, "\n") {
+		result = result[:len(result)-1]
+	}
+	return result
+}
+
+// renderWritePreview renders a content preview for Write tool.
+func renderWritePreview(p toolPreview) string {
+	if p.Content == "" {
+		return ""
+	}
+	lines := strings.Split(p.Content, "\n")
+	const maxLines = 10
+	show := min(len(lines), maxLines)
+
+	var b strings.Builder
+	for i := 0; i < show; i++ {
+		b.WriteString("  ")
+		b.WriteString(permDiffAdd.Render("+ " + lines[i]))
+		b.WriteString("\n")
+	}
+	if len(lines) > maxLines {
+		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("(+%d more lines)", len(lines)-maxLines)) + "\n")
+	}
+
+	result := b.String()
+	if strings.HasSuffix(result, "\n") {
+		result = result[:len(result)-1]
+	}
+	return result
+}
+
+// renderBashPreview renders the command for Bash tool.
+func renderBashPreview(p toolPreview) string {
+	if p.Command == "" {
+		return ""
+	}
+	// Truncate very long commands (#48248)
+	lines := strings.Split(p.Command, "\n")
+	const maxLines = 5
+	show := min(len(lines), maxLines)
+	var b strings.Builder
+	for i := 0; i < show; i++ {
+		b.WriteString("  ")
+		b.WriteString(permCommandStyle.Render(lines[i]))
+		b.WriteString("\n")
+	}
+	if len(lines) > maxLines {
+		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("... (+%d lines)", len(lines)-maxLines)) + "\n")
+	}
+	result := b.String()
+	if strings.HasSuffix(result, "\n") {
+		result = result[:len(result)-1]
+	}
+	return result
+}
+
+// renderDefaultPreview renders the fallback content for unknown tools.
+func renderDefaultPreview(req *PermRequestMsg) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("  Tool:    %s\n", req.ToolName))
+	content := req.Content
+	// Truncate to 3 lines (matching TS truncateToLines(description, 3))
+	if lines := strings.Split(content, "\n"); len(lines) > 3 {
+		content = strings.Join(lines[:3], "\n") + "..."
+	}
+	if len([]rune(content)) > 200 {
+		content = string([]rune(content)[:197]) + "..."
+	}
+	b.WriteString(fmt.Sprintf("  Content: %s", content))
+	if req.Reason != "" {
+		b.WriteString(fmt.Sprintf("\n  Reason:  %s", req.Reason))
+	}
+	return b.String()
 }

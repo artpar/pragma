@@ -298,7 +298,7 @@ func (o *Orchestrator) executeSingle(
 	if permResult.Decision == permission.DecisionAsk {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Decision == permission.DecisionAsk")
 		promptStart := time.Now()
-		decision, sessionRule := o.prompter.Prompt(ctx, call.Name, permResult.Content, permResult.Reason)
+		decision, sessionRule := o.prompter.Prompt(ctx, call.Name, call.Input, permResult.Content, permResult.Reason)
 		promptDuration := time.Since(promptStart)
 
 		if sessionRule != nil {

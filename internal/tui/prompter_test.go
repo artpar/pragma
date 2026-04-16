@@ -13,7 +13,7 @@ import (
 func TestInteractivePrompterNilProgram(t *testing.T) {
 	p := NewInteractivePrompter()
 	// Without a program set, Prompt should return deny
-	decision, rule := p.Prompt(context.Background(), "Bash", "ls", "needs approval")
+	decision, rule := p.Prompt(context.Background(), "Bash", nil, "ls", "needs approval")
 	if decision != permission.DecisionDeny {
 		t.Errorf("expected DecisionDeny, got %s", decision)
 	}
@@ -42,7 +42,7 @@ func TestInteractivePrompterContextCancellation(t *testing.T) {
 	// Cancel immediately — the prompter should return deny without waiting for user
 	cancel()
 
-	decision, rule := p.Prompt(ctx, "Bash", "rm -rf /", "dangerous")
+	decision, rule := p.Prompt(ctx, "Bash", nil, "rm -rf /", "dangerous")
 	if decision != permission.DecisionDeny {
 		t.Errorf("expected DecisionDeny on cancelled ctx, got %s", decision)
 	}
@@ -69,7 +69,7 @@ func TestInteractivePrompterBlocksAndUnblocks(t *testing.T) {
 	var gotDecision permission.Decision
 
 	go func() {
-		gotDecision, _ = p.Prompt(context.Background(), "FileWrite", "/tmp/test", "write file")
+		gotDecision, _ = p.Prompt(context.Background(), "FileWrite", nil, "/tmp/test", "write file")
 		close(done)
 	}()
 

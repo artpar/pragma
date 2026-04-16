@@ -47,14 +47,21 @@ var (
 				Background(lipgloss.AdaptiveColor{Light: "236", Dark: "236"})
 
 	// Permission dialog — used by permission.go
+	// Top-only border matching TS PermissionDialog (borderBottom=false borderLeft=false borderRight=false)
 	permDialogBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"}). // yellow
-				Padding(1, 2)
+				BorderBottom(false).
+				BorderLeft(false).
+				BorderRight(false).
+				Padding(0, 1)
 
 	permTitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"})
+
+	permSubtitleStyle = lipgloss.NewStyle().
+				Faint(true)
 
 	permSelectedStyle = lipgloss.NewStyle().
 				Bold(true).
@@ -62,6 +69,16 @@ var (
 
 	permUnselectedStyle = lipgloss.NewStyle().
 				Faint(true)
+
+	// Diff styles for permission previews
+	permDiffAdd = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "114"}) // green
+
+	permDiffRemove = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "124", Dark: "210"}) // red
+
+	permCommandStyle = lipgloss.NewStyle().
+				Bold(true)
 
 	// Input — used by input.go
 	inputPromptStyle = lipgloss.NewStyle().
