@@ -16,17 +16,17 @@ import (
 )
 
 type selfTraceInput struct {
-	Topic      string `json:"topic"`
-	Kind       string `json:"kind"`
-	TraceID    string `json:"trace_id"`
-	ToolName   string `json:"tool_name"`
-	Since      string `json:"since"`
-	Until      string `json:"until"`
-	Contains   string `json:"contains"`
-	ErrorsOnly bool   `json:"errors_only"`
-	Page       int    `json:"page"`
-	PageSize   int    `json:"page_size"`
-	Summary    bool   `json:"summary"`
+	Topic      string `json:"topic"       desc:"Event category to query: all, api, tools, errors, permissions, session, agents, mcp, lifecycle, compaction, flow"`
+	Kind       string `json:"kind"        desc:"Exact event kind to filter by (e.g. ToolInvoked, APIRequestSent)"`
+	TraceID    string `json:"trace_id"    desc:"Filter events belonging to this trace ID"`
+	ToolName   string `json:"tool_name"   desc:"Filter events for this tool name"`
+	Since      string `json:"since"       desc:"ISO 8601 timestamp; return events at or after this time"`
+	Until      string `json:"until"       desc:"ISO 8601 timestamp; return events at or before this time"`
+	Contains   string `json:"contains"    desc:"Return only events whose JSON contains this substring"`
+	ErrorsOnly bool   `json:"errors_only" desc:"When true, return only events with an error field set"`
+	Page       int    `json:"page"        desc:"Page number for paginated results (1-based)"`
+	PageSize   int    `json:"page_size"   desc:"Number of events per page (default 50)"`
+	Summary    bool   `json:"summary"     desc:"When true, return a statistical summary instead of raw events"`
 }
 
 var inputSchema = json.RawMessage(`{
