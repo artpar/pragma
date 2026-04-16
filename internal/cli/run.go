@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -151,7 +150,7 @@ func RunBackground(cmd *cobra.Command) error {
 		Dir:   "",
 		Env:   env,
 		Files: []*os.File{devNull, logFile, logFile},
-		Sys:   &syscall.SysProcAttr{Setsid: true},
+		Sys:   daemonSysProcAttr(),
 	})
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
