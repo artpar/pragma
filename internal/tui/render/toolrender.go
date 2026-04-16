@@ -122,11 +122,13 @@ func renderRead(input json.RawMessage, content string, isError bool, width int, 
 
 	lineCount := strings.Count(strings.TrimRight(content, "\n"), "\n") + 1
 	if strings.TrimSpace(content) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(content) == \"\"")
 		lineCount = 0
 	}
 
 	noun := "lines"
 	if lineCount == 1 {
+		observe.GlobalTrace("if: lineCount == 1")
 		noun = "line"
 	}
 
@@ -148,6 +150,7 @@ func renderEdit(input json.RawMessage, content string, isError bool, width int, 
 	defer observe.GlobalTrace("exit")
 	if isError {
 		observe.GlobalTrace("if: isError")
+		observe.GlobalTrace("return: WrapWithBracket(content, true, width)")
 		return WrapWithBracket(content, true, width)
 	}
 
@@ -160,39 +163,44 @@ func renderEdit(input json.RawMessage, content string, isError bool, width int, 
 
 	var b strings.Builder
 
-	// File header
 	if params.FilePath != "" {
+		observe.GlobalTrace("if: params.FilePath != \"\"")
 		b.WriteString(bracketDim.Render(BracketPrefix))
 		b.WriteString(fileHeader.Render(params.FilePath))
 		b.WriteString("\n")
 	}
 
-	// Prefer unified diff from Display if available
 	if display != "" {
+		observe.GlobalTrace("if: display != \"\"")
 		b.WriteString(renderUnifiedDiff(display, width))
 		b.WriteString("\n")
+		observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 		return strings.TrimRight(b.String(), "\n")
 	}
 
-	// Fallback: reconstruct from old_string/new_string input params
 	if params.OldString != "" || params.NewString != "" {
+		observe.GlobalTrace("if: params.OldString != \"\" || params.NewString != \"\"")
 		oldLines := strings.Split(params.OldString, "\n")
 		newLines := strings.Split(params.NewString, "\n")
 
 		for _, line := range oldLines {
+			observe.GlobalTrace("range oldLines")
 			b.WriteString(ContentIndent)
 			b.WriteString(diffRemove.Render("- " + truncateLine(line, width-len(ContentIndent)-2)))
 			b.WriteString("\n")
 		}
 		for _, line := range newLines {
+			observe.GlobalTrace("range newLines")
 			b.WriteString(ContentIndent)
 			b.WriteString(diffAdd.Render("+ " + truncateLine(line, width-len(ContentIndent)-2)))
 			b.WriteString("\n")
 		}
 	} else {
+		observe.GlobalTrace("else: params.OldString != \"\" || params.NewString != \"\"")
 		b.WriteString(WrapWithBracket(content, false, width))
 		b.WriteString("\n")
 	}
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -209,8 +217,10 @@ func renderUnifiedDiff(diff string, width int) string {
 	hunkIdx := 0
 
 	for _, line := range lines {
+		observe.GlobalTrace("range lines")
 		if line == "..." {
-			// Hunk separator
+			observe.GlobalTrace("if: line == \"...\"")
+
 			b.WriteString(ContentIndent)
 			b.WriteString(dimText.Render("..."))
 			b.WriteString("\n")
@@ -219,28 +229,32 @@ func renderUnifiedDiff(diff string, width int) string {
 		}
 
 		if strings.HasPrefix(line, "@@") {
-			// Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+			observe.GlobalTrace("if: strings.HasPrefix(line, \"@@\")")
+
 			if hunkIdx > 0 && !strings.HasSuffix(b.String(), "...\n") {
-				// We already wrote separator above if it was explicit
+				observe.GlobalTrace("if: hunkIdx > 0 && !strings.HasSuffix(b.String(), \"...\\n\")")
+
 			}
 			n, _ := fmt.Sscanf(line, "@@ -%d,%*d +%d,%*d @@", &oldLine, &newLine)
 			if n < 2 {
-				// Try without counts (e.g., @@ -0,0 +1,5 @@)
+				observe.GlobalTrace("if: n < 2")
+
 				fmt.Sscanf(line, "@@ -%d,0 +%d,%*d @@", &oldLine, &newLine)
 			}
 			continue
 		}
 
-		// Gutter width: 5 chars per side + 1 separator = 11 chars + ContentIndent
 		gutterWidth := 11
-		contentWidth := width - len(ContentIndent) - gutterWidth - 2 // -2 for prefix
+		contentWidth := width - len(ContentIndent) - gutterWidth - 2
 		if contentWidth < 10 {
+			observe.GlobalTrace("if: contentWidth < 10")
 			contentWidth = 10
 		}
 
 		switch {
 		case strings.HasPrefix(line, " "):
-			// Context line
+			observe.GlobalTrace("case: strings.HasPrefix(line, \" \")")
+
 			code := line[1:]
 			gutter := diffGutter.Render(fmt.Sprintf("%4d %4d ", oldLine, newLine))
 			b.WriteString(ContentIndent)
@@ -251,7 +265,8 @@ func renderUnifiedDiff(diff string, width int) string {
 			newLine++
 
 		case strings.HasPrefix(line, "-"):
-			// Removed line
+			observe.GlobalTrace("case: strings.HasPrefix(line, \"-\")")
+
 			code := line[1:]
 			gutter := diffGutter.Render(fmt.Sprintf("%4d      ", oldLine))
 			b.WriteString(ContentIndent)
@@ -261,7 +276,8 @@ func renderUnifiedDiff(diff string, width int) string {
 			oldLine++
 
 		case strings.HasPrefix(line, "+"):
-			// Added line
+			observe.GlobalTrace("case: strings.HasPrefix(line, \"+\")")
+
 			code := line[1:]
 			gutter := diffGutter.Render(fmt.Sprintf("     %4d ", newLine))
 			b.WriteString(ContentIndent)
@@ -271,12 +287,15 @@ func renderUnifiedDiff(diff string, width int) string {
 			newLine++
 		}
 	}
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderWrite renders FileWrite tool output.
-func renderWrite(input json.RawMessage, content string, isError bool, width int, _ string) string {
+// When display contains a unified diff (from InvokeResult.Display), renders it with
+// line numbers, context, and color. Falls back to line count summary.
+func renderWrite(input json.RawMessage, content string, isError bool, width int, display string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -287,18 +306,100 @@ func renderWrite(input json.RawMessage, content string, isError bool, width int,
 
 	var params struct {
 		FilePath string `json:"file_path"`
+		Content  string `json:"content"`
 	}
 	json.Unmarshal(input, &params)
 
-	msg := content
+	var b strings.Builder
+
+	// File header (same as renderEdit)
 	if params.FilePath != "" {
 		observe.GlobalTrace("if: params.FilePath != \"\"")
-		byteCount := len(content)
-		msg = fmt.Sprintf("Wrote %d bytes to %s", byteCount, params.FilePath)
+		b.WriteString(bracketDim.Render(BracketPrefix))
+		b.WriteString(fileHeader.Render(params.FilePath))
+		b.WriteString("\n")
 	}
-	observe.GlobalTrace("return: bracketDim.Render(BracketPrefix) + dimText.Render(msg)")
 
-	return bracketDim.Render(BracketPrefix) + dimText.Render(msg)
+	if display != "" {
+		observe.GlobalTrace("if: display != \"\"")
+		isCreate := strings.Contains(content, "created")
+		if isCreate {
+			// Create: "Wrote N lines"
+			numLines := countContentLines(params.Content)
+			b.WriteString(bracketDim.Render(BracketPrefix))
+			b.WriteString(dimText.Render(fmt.Sprintf("Wrote %d lines", numLines)))
+			b.WriteString("\n")
+		} else {
+			// Update: "Added N lines, removed N lines"
+			added, removed := countDiffLines(display)
+			b.WriteString(bracketDim.Render(BracketPrefix))
+			b.WriteString(dimText.Render(formatChangeSummary(added, removed)))
+			b.WriteString("\n")
+		}
+		b.WriteString(renderUnifiedDiff(display, width))
+		b.WriteString("\n")
+		observe.GlobalTrace("return: rendered display diff")
+		return strings.TrimRight(b.String(), "\n")
+	}
+
+	// Fallback: line count summary (file header already shows path above)
+	numLines := countContentLines(params.Content)
+	b.WriteString(bracketDim.Render(BracketPrefix))
+	b.WriteString(dimText.Render(fmt.Sprintf("Wrote %d lines", numLines)))
+	observe.GlobalTrace("return: fallback line count summary")
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// countContentLines counts visible lines in file content.
+// A trailing newline is treated as a line terminator, matching editor line numbering.
+func countContentLines(content string) int {
+	if content == "" {
+		return 0
+	}
+	n := strings.Count(content, "\n") + 1
+	if strings.HasSuffix(content, "\n") {
+		n--
+	}
+	return n
+}
+
+// countDiffLines counts added (+) and removed (-) lines in a unified diff string.
+func countDiffLines(diff string) (added, removed int) {
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "+") {
+			added++
+		} else if strings.HasPrefix(line, "-") {
+			removed++
+		}
+	}
+	return
+}
+
+// formatChangeSummary builds "Added N lines, removed N lines" string.
+func formatChangeSummary(added, removed int) string {
+	var parts []string
+	if added > 0 {
+		noun := "line"
+		if added > 1 {
+			noun = "lines"
+		}
+		parts = append(parts, fmt.Sprintf("Added %d %s", added, noun))
+	}
+	if removed > 0 {
+		noun := "line"
+		if removed > 1 {
+			noun = "lines"
+		}
+		prefix := "Removed"
+		if added > 0 {
+			prefix = "removed"
+		}
+		parts = append(parts, fmt.Sprintf("%s %d %s", prefix, removed, noun))
+	}
+	if len(parts) == 0 {
+		return "No changes"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // renderGrep renders Grep tool search results.

@@ -111,6 +111,15 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	_, err := os.Stat(filePath)
 	isCreate := os.IsNotExist(err)
 
+	// Capture old content before overwriting (needed for diff generation)
+	var oldContent string
+	if !isCreate {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: !isCreate")
+		if data, readErr := os.ReadFile(filePath); readErr == nil {
+			oldContent = string(data)
+		}
+	}
+
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: err != nil")
@@ -130,11 +139,21 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		_ = t.LSP.SaveFile(ctx, filePath)
 	}
 
+	// Generate display diff for TUI (never sent to LLM)
+	var display string
 	if isCreate {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: isCreate")
-		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been created successf...")
-		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been created successfully.", in.FilePath)}, nil
+		display = util.GenerateEditDiff("", "", in.Content, in.FilePath, false, 3)
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: ..., Display: display}")
+		return tool.InvokeResult{
+			Content: fmt.Sprintf("File created successfully at: %s", in.FilePath),
+			Display: display,
+		}, nil
 	}
-	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
-	return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
+	display = util.GenerateEditDiff(oldContent, oldContent, in.Content, in.FilePath, false, 3)
+	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{Content: ..., Display: display}")
+	return tool.InvokeResult{
+		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
+		Display: display,
+	}, nil
 }
