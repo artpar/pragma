@@ -69,6 +69,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		s.Conversation.Append(userMsg)
 	})
 
+	lifecycleRunInvoked := false
 	turnCount := 0
 	for turnCount < maxTurns {
 		observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("turn %d/%d", turnCount+1, maxTurns))
@@ -195,6 +196,20 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		switch response.StopReason {
 		case model.StopEndTurn:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn")
+			if !lifecycleRunInvoked && !snap.PlanMode {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn: LifecycleRun not invoked, injecting correction")
+				correctionMsg := model.Message{
+					ID:        model.NewUUID(),
+					Role:      model.RoleUser,
+					Content:   []model.ContentPart{model.TextPart{Text: "You must use the LifecycleRun tool. Do not respond with plain text. Call LifecycleRun now."}},
+					Timestamp: time.Now(),
+				}
+				e.store.Update(func(s *app.AppState) {
+					s.Conversation.Append(correctionMsg)
+				})
+				turnCount++
+				continue
+			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
 
@@ -230,6 +245,9 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopToolUse")
 			toolCalls := extractToolCalls(response.Content)
 			for _, tc := range toolCalls {
+				if tc.Name == "LifecycleRun" {
+					lifecycleRunInvoked = true
+				}
 				ch <- ToolCallEvent{Call: tc}
 			}
 
