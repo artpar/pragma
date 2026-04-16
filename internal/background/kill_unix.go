@@ -1,5 +1,3 @@
-//go:build !windows
-
 package background
 
 import (
@@ -19,6 +17,7 @@ func (r *Registry) Kill(pid int) error {
 	info, err := r.Get(pid)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 
@@ -32,9 +31,11 @@ func (r *Registry) Kill(pid int) error {
 		observe.GlobalTrace("if: err != nil")
 		if err != syscall.ESRCH {
 			observe.GlobalTrace("if: err != syscall.ESRCH")
+			observe.GlobalTrace("return: fmt.Errorf(\"SIGTERM process group %d: %w\", pgid, err)")
 			return fmt.Errorf("SIGTERM process group %d: %w", pgid, err)
 		}
 		_ = r.Unregister(pid)
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
@@ -44,6 +45,7 @@ func (r *Registry) Kill(pid int) error {
 		if !isProcessAlive(pid) {
 			observe.GlobalTrace("if: !isProcessAlive(pid)")
 			_ = r.Unregister(pid)
+			observe.GlobalTrace("return: nil")
 			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -51,6 +53,7 @@ func (r *Registry) Kill(pid int) error {
 
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	_ = r.Unregister(pid)
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -58,5 +61,6 @@ func (r *Registry) Kill(pid int) error {
 func isProcessAlive(pid int) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: syscall.Kill(pid, 0) == nil")
 	return syscall.Kill(pid, 0) == nil
 }

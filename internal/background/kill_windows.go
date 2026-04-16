@@ -1,5 +1,3 @@
-//go:build windows
-
 package background
 
 import (
@@ -17,14 +15,17 @@ func (r *Registry) Kill(pid int) error {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		_ = r.Unregister(pid)
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	if err := proc.Kill(); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		_ = r.Unregister(pid)
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	_ = r.Unregister(pid)
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -34,12 +35,12 @@ func isProcessAlive(pid int) bool {
 	defer observe.GlobalTrace("exit")
 	proc, err := os.FindProcess(pid)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: false")
 		return false
 	}
-	// On Windows, FindProcess always succeeds; OpenProcess with SYNCHRONIZE probes liveness.
-	// We use a lightweight signal via proc.Signal(os.Signal(nil)) — not available on Windows.
-	// Instead, attempt to wait with WNOHANG equivalent: just check if proc exists in the table.
-	// The most reliable approach without cgo: try to open the process handle.
+
 	_ = proc
+	observe.GlobalTrace("return: true")
 	return true
 }
