@@ -173,6 +173,8 @@ func (d permissionDialog) View() string {
 		}
 		b.WriteString(cursor + style.Render(label) + "\n")
 	}
+	b.WriteString("\n")
+	b.WriteString(permUnselectedStyle.Render("[↑↓] navigate  [Enter] confirm  [Esc] deny"))
 	observe.GlobalTrace("return: permDialogBorderStyle.Render(b.String())")
 
 	return permDialogBorderStyle.Render(b.String())

@@ -16,10 +16,6 @@ var (
 			Bold(true).
 			Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "86"}) // cyan
 
-	assistantLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.AdaptiveColor{Light: "133", Dark: "183"}) // magenta
-
 	// Content types — used by handlers.go for inline status messages
 	thinkingStyle = lipgloss.NewStyle().
 			Faint(true).

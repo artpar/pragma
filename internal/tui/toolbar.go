@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/tui/render"
 )
@@ -63,7 +65,7 @@ func (t toolbar) View(width int) string {
 	right := fmt.Sprintf(" %s ", t.status)
 	styledRight := statusActiveStyle.Render(right)
 
-	gap := max(width-len(left)-len(right), 0)
+	gap := max(width-lipgloss.Width(left)-len(right), 0)
 	bar := left + strings.Repeat(" ", gap) + styledRight
 	observe.GlobalTrace("return: statusBarStyle.Render(bar)")
 

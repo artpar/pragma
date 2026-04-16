@@ -59,8 +59,8 @@ func TestRenderToolCallWithPrimaryParam(t *testing.T) {
 		Input: json.RawMessage(`{"command":"ls -la /tmp"}`),
 	}
 	result := RenderToolCall(tc, 80)
-	if !strings.Contains(result, ToolHint) {
-		t.Errorf("expected tool hint glyph in %q", result)
+	if !strings.Contains(result, BlackCircle) {
+		t.Errorf("expected ⏺ glyph in %q", result)
 	}
 	if !strings.Contains(result, "Bash") {
 		t.Errorf("expected tool name in %q", result)
@@ -137,9 +137,7 @@ func TestRenderThinkingRedacted(t *testing.T) {
 func TestRenderToolOutputBash(t *testing.T) {
 	input := json.RawMessage(`{"command":"echo hello"}`)
 	result := RenderToolOutput("Bash", input, "hello\n", false, 80)
-	if !strings.Contains(result, "echo hello") {
-		t.Errorf("expected command in %q", result)
-	}
+	// Command is shown in tool call line, not repeated in result
 	if !strings.Contains(result, "hello") {
 		t.Errorf("expected output in %q", result)
 	}
@@ -200,12 +198,9 @@ func TestRenderToolOutputRead(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/test.go","offset":0,"limit":5}`)
 	content := "line1\nline2\nline3\nline4\nline5"
 	result := RenderToolOutput("Read", input, content, false, 80)
-	if !strings.Contains(result, "/tmp/test.go") {
-		t.Errorf("expected file path in %q", result)
-	}
-	// Should contain line numbers in gutter
-	if !strings.Contains(result, "1 ") {
-		t.Errorf("expected line number gutter in %q", result)
+	// Compact summary: "Read N lines" — path is shown in the tool call line
+	if !strings.Contains(result, "Read 5 lines") {
+		t.Errorf("expected compact summary in %q", result)
 	}
 }
 
@@ -248,15 +243,19 @@ func TestRenderToolOutputAgentError(t *testing.T) {
 	}
 }
 
-func TestRenderConversationWithSeparators(t *testing.T) {
+func TestRenderConversationNoSeparators(t *testing.T) {
 	md := NewMarkdownRenderer(80)
 	msgs := []model.Message{
 		{ID: "1", Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "Hi"}}},
 		{ID: "2", Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: "Hello"}}},
 	}
 	result := RenderConversation(msgs, md)
-	if !strings.Contains(result, HeavyHorizontal) {
-		t.Errorf("expected turn separator in conversation output")
+	// No turn separators — clean flow like Pragma
+	if strings.Contains(result, HeavyHorizontal) {
+		t.Errorf("expected no turn separator in conversation output, got %q", result)
+	}
+	if !strings.Contains(result, "Hi") || !strings.Contains(result, "Hello") {
+		t.Errorf("expected both messages in conversation output")
 	}
 }
 

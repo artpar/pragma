@@ -7,28 +7,27 @@ import (
 )
 
 // inputComponent wraps a textarea for user message input.
-// It handles submit (Enter), newlines (Shift+Enter / Alt+Enter),
-// and active/inactive states.
+// The input is always active — never disabled during streaming.
+// This matches pragma behavior where users can type and queue messages
+// while the assistant is responding.
 type inputComponent struct {
 	textarea textarea.Model
-	active   bool
 }
 
 func newInputComponent() inputComponent {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	ta := textarea.New()
-	ta.Placeholder = "Type a message..."
-	ta.Prompt = inputPromptStyle.Render("> ")
+	ta.Placeholder = ""
+	ta.Prompt = inputPromptStyle.Render("❯ ")
 	ta.CharLimit = 0
-	ta.MaxHeight = 5
+	ta.MaxHeight = 3
+	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
 	ta.Focus()
-	observe.GlobalTrace("return: inputComponent{\n\ttextarea:\tta,\n\tactive:\t\ttrue,\n}")
 
 	return inputComponent{
 		textarea: ta,
-		active:   true,
 	}
 }
 
@@ -36,11 +35,6 @@ func newInputComponent() inputComponent {
 func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if !c.active {
-		observe.GlobalTrace("if: !c.active")
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
 
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		observe.GlobalTrace("if: ok")
@@ -71,31 +65,11 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-// View renders the input area.
+// View renders the input area. Always shows the textarea (never disabled).
 func (c inputComponent) View() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if !c.active {
-		observe.GlobalTrace("if: !c.active")
-		observe.GlobalTrace("return: inputPromptStyle.Render(\"> \") + thinkingStyle.Render(\"waiting...\")")
-		return inputPromptStyle.Render("> ") + thinkingStyle.Render("waiting...")
-	}
-	observe.GlobalTrace("return: c.textarea.View()")
 	return c.textarea.View()
-}
-
-// SetActive enables or disables the input.
-func (c *inputComponent) SetActive(active bool) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	c.active = active
-	if active {
-		observe.GlobalTrace("if: active")
-		c.textarea.Focus()
-	} else {
-		observe.GlobalTrace("else: active")
-		c.textarea.Blur()
-	}
 }
 
 // SetWidth adjusts the textarea width to fit the terminal.

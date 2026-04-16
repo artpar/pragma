@@ -63,15 +63,16 @@ type Model struct {
 	spinnerTool   string
 
 	// Streaming state
-	outputBuf      *strings.Builder // accumulated rendered output for viewport
-	streamBuf      *strings.Builder // current streaming text (not yet finalized)
-	eventCh        <-chan query.LoopEvent
-	streaming      bool
-	parentCtx      context.Context // original parent context — never overwritten
-	ctx            context.Context
-	cancel         context.CancelFunc
-	interruptCount int
-	permQueue      []PermRequestMsg // queued permission requests when dialog is already visible
+	outputBuf    *strings.Builder // accumulated rendered output for viewport
+	streamBuf    *strings.Builder // current streaming text (not yet finalized)
+	eventCh      <-chan query.LoopEvent
+	streaming    bool
+	parentCtx    context.Context // original parent context — never overwritten
+	ctx          context.Context
+	cancel       context.CancelFunc
+	pendingInput string           // queued message to submit after current turn completes
+	quitPending  bool             // true after 2nd idle Ctrl+C, waiting for 3rd to quit
+	permQueue    []PermRequestMsg // queued permission requests when dialog is already visible
 
 	// Layout
 	width  int
@@ -199,6 +200,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the full TUI layout.
+// Layout (top to bottom): viewport ── input ── toolbar
 func (m Model) View() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -208,10 +210,12 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
+	sep := strings.Repeat("─", m.width)
 	var b strings.Builder
 
 	b.WriteString(m.viewport.View())
-	b.WriteString("\n")
+	// \n terminates the last viewport line; sep fills the next line
+	b.WriteString("\n" + sep + "\n")
 
 	if m.perm.active {
 		observe.GlobalTrace("if: m.perm.active")
@@ -225,16 +229,17 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(m.toolbar.View(m.width))
-	b.WriteString("\n")
-
 	b.WriteString(m.input.View())
+	// \n terminates the last input line; sep fills the next line
+	b.WriteString("\n" + sep + "\n")
+	b.WriteString(m.toolbar.View(m.width))
 	observe.GlobalTrace("return: b.String()")
 
 	return b.String()
 }
 
 // viewportContent returns the full viewport content including spinner.
+// Shows a welcome message when the conversation is empty.
 func (m Model) viewportContent() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -243,9 +248,18 @@ func (m Model) viewportContent() string {
 		observe.GlobalTrace("if: m.spinnerActive")
 		content += "\n" + m.spin.View() + " " + m.spinnerTool + "..."
 	}
+	if content == "" {
+		observe.GlobalTrace("if: content == \"\"")
+		return welcomeMessage
+	}
 	observe.GlobalTrace("return: content")
 	return content
 }
+
+// welcomeMessage is shown in the viewport when the conversation is empty.
+var welcomeMessage = lipgloss.NewStyle().Faint(true).Render(
+	"\n  pragma\n  Type a message and press Enter · Alt+Enter for newlines · /help for commands\n",
+)
 
 // handleResize adjusts all components to the new terminal size.
 func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -256,7 +270,8 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 	inputHeight := 3
 	toolbarHeight := 1
-	headerHeight := inputHeight + toolbarHeight + 2
+	separatorHeight := 2 // two ─ separator lines (above input, above toolbar)
+	headerHeight := inputHeight + toolbarHeight + separatorHeight
 
 	vpHeight := max(m.height-headerHeight, 1)
 
@@ -271,9 +286,9 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		if len(snap.Conversation.Messages) > 0 {
 			observe.GlobalTrace("if: len(snap.Conversation.Messages) > 0")
 			m.outputBuf.WriteString(render.RenderConversation(snap.Conversation.Messages, m.mdRenderer))
-			m.viewport.SetContent(m.outputBuf.String())
-			m.viewport.GotoBottom()
 		}
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
 	} else {
 		observe.GlobalTrace("else: !m.ready")
 		m.viewport.Width = m.width

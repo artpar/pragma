@@ -24,9 +24,6 @@ const (
 	// Bullet is the list/item indicator.
 	Bullet = "∙"
 
-	// ToolHint is the tool call hint glyph.
-	ToolHint = "⤿"
-
 	// BlockquoteBar is the left bar for blockquotes.
 	BlockquoteBar = "▎"
 

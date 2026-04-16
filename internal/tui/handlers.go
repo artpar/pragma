@@ -25,7 +25,7 @@ func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: trimmedArgs != \"\"")
 		label += " " + trimmedArgs
 	}
-	m.outputBuf.WriteString(userLabelStyle.Render("> "+label) + "\n")
+	m.outputBuf.WriteString(userLabelStyle.Render("❯") + " " + label + "\n\n")
 	m.viewport.SetContent(m.outputBuf.String())
 	m.viewport.GotoBottom()
 
@@ -76,10 +76,15 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	// Ignore stale events after an interrupt (interruptTurn already called finishTurn).
+	if !m.streaming {
+		observe.GlobalTrace("if: !m.streaming — ignoring stale event")
+		return m, nil
+	}
 	if msg.Event == nil {
 		observe.GlobalTrace("if: msg.Event == nil")
-		observe.GlobalTrace("return: m.finishTurn(), nil")
-		return m.finishTurn(), nil
+		finished, cmd := m.finishTurn()
+		return finished, cmd
 	}
 
 	switch e := msg.Event.(type) {
@@ -160,7 +165,8 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 			in, out := m.tokenMonitor.Usage()
 			m.toolbar.UpdateTokens(in, out, m.tokenMonitor.Budget())
 		}
-		return m.finishTurn(), saveSessionCmd(m.sessionSave)
+		finished, pendingCmd := m.finishTurn()
+		return finished, tea.Batch(saveSessionCmd(m.sessionSave), pendingCmd)
 
 	case query.ErrorEvent:
 		observe.GlobalTrace("typecase: query.ErrorEvent")
@@ -171,7 +177,8 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.outputBuf.WriteString("\n" + errorStyle.Render("Error: "+e.Err.Error()) + "\n\n")
 		}
-		return m.finishTurn(), nil
+		finished, pendingCmd := m.finishTurn()
+		return finished, pendingCmd
 	}
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
@@ -197,8 +204,6 @@ func (m Model) startEngineFromPrompt(prompt string) (tea.Model, tea.Cmd) {
 	m.viewport.GotoBottom()
 
 	m.streaming = true
-	m.interruptCount = 0
-	m.input.SetActive(false)
 	m.toolbar.SetStatus("streaming...")
 	m.toolbar.IncrementTurn()
 
@@ -206,8 +211,6 @@ func (m Model) startEngineFromPrompt(prompt string) (tea.Model, tea.Cmd) {
 	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
 	m.eventCh = m.engine.Run(m.ctx, prompt)
 
-	m.outputBuf.WriteString(assistantLabelStyle.Render("Assistant"))
-	m.outputBuf.WriteString("\n")
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
@@ -256,21 +259,32 @@ func (m Model) handlePermResponse(_ PermResponseMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+
+	// Any non-Ctrl+C key resets the quit pending state and restores toolbar.
+	if msg.Type != tea.KeyCtrlC && m.quitPending {
+		m.quitPending = false
+		if m.streaming {
+			m.toolbar.SetStatus("streaming...")
+		} else {
+			m.toolbar.SetStatus("ready")
+		}
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		observe.GlobalTrace("case: tea.KeyCtrlC")
 		if m.streaming {
-			m.interruptCount++
-			if m.interruptCount >= 2 {
-				observe.GlobalTrace("if: m.interruptCount >= 2")
-				observe.GlobalTrace("return: m.quit()")
-				return m.quit()
-			}
-			m.cancel()
-			observe.GlobalTrace("return: m, nil")
-			return m, nil
+			// Interrupt current turn immediately.
+			return m.interruptTurn()
 		}
-		return m.quit()
+		// Idle: 2-step exit ("press again" → quit).
+		if m.quitPending {
+			observe.GlobalTrace("return: m.quit()")
+			return m.quit()
+		}
+		m.quitPending = true
+		m.toolbar.SetStatus("press Ctrl+C again to exit")
+		return m, nil
 
 	case tea.KeyEsc:
 		observe.GlobalTrace("case: tea.KeyEsc")
@@ -282,6 +296,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.ask.active {
 			observe.GlobalTrace("return: m, nil")
 			return m, nil
+		}
+		// Esc during streaming interrupts, matching pragma.
+		if m.streaming {
+			return m.interruptTurn()
 		}
 	}
 
@@ -346,16 +364,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleInputSubmitted processes user message submission.
+// If streaming, queues the message to auto-submit after the current turn.
 func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if m.streaming {
-		observe.GlobalTrace("if: m.streaming")
-		observe.GlobalTrace("return: m, nil")
+		observe.GlobalTrace("if: m.streaming — queuing message")
+		m.pendingInput = msg.Text
+		label := msg.Text
+		if len(label) > 40 {
+			label = label[:37] + "..."
+		}
+		m.toolbar.SetStatus("queued: " + label)
 		return m, nil
 	}
 
-	if name, args, ok := slash.Parse(msg.Text); ok {
+	return m.submitPrompt(msg.Text)
+}
+
+// submitPrompt sends a user prompt to the engine and starts streaming.
+func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	if name, args, ok := slash.Parse(text); ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: m.handleSlashCommand(name, args)")
 		return m.handleSlashCommand(name, args)
@@ -364,7 +396,7 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	if m.hookMgr != nil {
 		observe.GlobalTrace("if: m.hookMgr != nil")
 		hookResult := m.hookMgr.Execute(m.ctx, hook.UserPromptSubmit, hook.HookInput{
-			PromptText: msg.Text,
+			PromptText: text,
 		})
 		if hookResult.Blocked {
 			observe.GlobalTrace("if: hookResult.Blocked")
@@ -380,7 +412,7 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 		ID:   model.NewUUID(),
 		Role: model.RoleUser,
 		Content: []model.ContentPart{
-			model.TextPart{Text: msg.Text},
+			model.TextPart{Text: text},
 		},
 	}
 	m.outputBuf.WriteString(render.RenderMessage(userMsg, m.mdRenderer))
@@ -388,35 +420,54 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	m.viewport.GotoBottom()
 
 	m.streaming = true
-	m.interruptCount = 0
-	m.input.SetActive(false)
 	m.toolbar.SetStatus("streaming...")
 	m.toolbar.IncrementTurn()
 
 	m.cancel()
 	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
-	m.eventCh = m.engine.Run(m.ctx, msg.Text)
+	m.eventCh = m.engine.Run(m.ctx, text)
 
-	m.outputBuf.WriteString(assistantLabelStyle.Render("Assistant"))
-	m.outputBuf.WriteString("\n")
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
 }
 
-// finishTurn resets streaming state and re-enables input.
-func (m Model) finishTurn() Model {
+// finishTurn resets streaming state. If a message was queued during streaming,
+// it returns a tea.Cmd to auto-submit it as the next turn.
+func (m Model) finishTurn() (Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	m.streaming = false
 	m.spinnerActive = false
 	m.eventCh = nil
-	m.input.SetActive(true)
 	m.toolbar.SetStatus("ready")
 	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
-	observe.GlobalTrace("return: m")
-	return m
+
+	// Chain queued message if present.
+	if m.pendingInput != "" {
+		observe.GlobalTrace("if: m.pendingInput != \"\"")
+		text := m.pendingInput
+		m.pendingInput = ""
+		return m, func() tea.Msg {
+			return InputSubmittedMsg{Text: text}
+		}
+	}
+	observe.GlobalTrace("return: m, nil")
+	return m, nil
+}
+
+// interruptTurn cancels the streaming context, shows an immediate "Interrupted" message,
+// and finishes the turn. Matches pragma's Esc/Ctrl+C behavior.
+func (m Model) interruptTurn() (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.cancel()
+	m.flushStreamBuf()
+	m.spinnerActive = false
+	m.outputBuf.WriteString("\n" + render.BracketPrefix + thinkingStyle.Render("Interrupted · What should pragma do instead?") + "\n\n")
+	finished, cmd := m.finishTurn()
+	return finished, cmd
 }
 
 // maxOutputBufBytes is the maximum size of the output buffer before trimming.

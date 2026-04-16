@@ -53,27 +53,12 @@ func RenderToolOutput(name string, input json.RawMessage, content string, isErro
 }
 
 // renderBash renders Bash tool output.
-// Shows command header, stdout content, with tail truncation for long output.
+// Shows stdout content with tail truncation for long output.
+// The command itself is already shown in the tool call line (⏺ Bash(cmd)).
 func renderBash(input json.RawMessage, content string, isError bool, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
-
-	// Extract command from input
-	var params struct {
-		Command string `json:"command"`
-	}
-	if json.Unmarshal(input, &params) == nil && params.Command != "" {
-		observe.GlobalTrace("if: json.Unmarshal(input, &params) == nil && params.Command != \"\"")
-		cmd := params.Command
-		if len(cmd) > width-len(ContentIndent)-2 {
-			observe.GlobalTrace("if: len(cmd) > width-len(ContentIndent)-2")
-			cmd = cmd[:width-len(ContentIndent)-5] + "..."
-		}
-		b.WriteString(bracketDim.Render(BracketPrefix))
-		b.WriteString(dimText.Render("$ " + cmd))
-		b.WriteString("\n")
-	}
 
 	if isError {
 		observe.GlobalTrace("if: isError")
@@ -117,8 +102,8 @@ func renderBash(input json.RawMessage, content string, isError bool, width int) 
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// renderRead renders FileRead tool output.
-// Shows file path header, content with line number gutter.
+// renderRead renders FileRead tool output as a compact "Read N lines" summary.
+// The file path is already shown in the tool call line (⏺ Read(path)).
 func renderRead(input json.RawMessage, content string, isError bool, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -128,59 +113,30 @@ func renderRead(input json.RawMessage, content string, isError bool, width int) 
 		return WrapWithBracket(content, true, width)
 	}
 
-	var b strings.Builder
-
 	var params struct {
-		FilePath string `json:"file_path"`
-		Offset   int    `json:"offset"`
-		Limit    int    `json:"limit"`
+		Offset int `json:"offset"`
+		Limit  int `json:"limit"`
 	}
 	json.Unmarshal(input, &params)
 
-	if params.FilePath != "" {
-		observe.GlobalTrace("if: params.FilePath != \"\"")
-		b.WriteString(bracketDim.Render(BracketPrefix))
-		path := params.FilePath
-		if params.Offset > 0 || params.Limit > 0 {
-			observe.GlobalTrace("if: params.Offset > 0 || params.Limit > 0")
-			path += fmt.Sprintf(" (lines %d-%d)", params.Offset+1, params.Offset+params.Limit)
-		}
-		b.WriteString(fileHeader.Render(path))
-		b.WriteString("\n")
+	lineCount := strings.Count(strings.TrimRight(content, "\n"), "\n") + 1
+	if strings.TrimSpace(content) == "" {
+		lineCount = 0
 	}
 
-	lines := strings.Split(content, "\n")
-	maxLines := 20
-	truncated := len(lines) > maxLines
-	if truncated {
-		observe.GlobalTrace("if: truncated")
-		lines = lines[:maxLines]
+	noun := "lines"
+	if lineCount == 1 {
+		noun = "line"
 	}
 
-	startLine := params.Offset + 1
-	maxLineNum := startLine + len(lines) - 1
-	gutterWidth := len(fmt.Sprintf("%d", maxLineNum)) + 1
-
-	for i, line := range lines {
-		observe.GlobalTrace("range lines")
-		lineNum := startLine + i
-		gutter := fmt.Sprintf("%*d ", gutterWidth, lineNum)
-		b.WriteString(ContentIndent)
-		b.WriteString(diffGutter.Render(gutter))
-		b.WriteString(truncateLine(line, width-len(ContentIndent)-gutterWidth-1))
-		b.WriteString("\n")
+	summary := fmt.Sprintf("Read %d %s", lineCount, noun)
+	if params.Offset > 0 {
+		observe.GlobalTrace("if: params.Offset > 0")
+		summary += fmt.Sprintf(" (from line %d)", params.Offset+1)
 	}
 
-	if truncated {
-		observe.GlobalTrace("if: truncated")
-		remaining := len(strings.Split(content, "\n")) - maxLines
-		b.WriteString(ContentIndent)
-		b.WriteString(dimText.Render(fmt.Sprintf("(+%d more lines)", remaining)))
-		b.WriteString("\n")
-	}
-	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
-
-	return strings.TrimRight(b.String(), "\n")
+	observe.GlobalTrace("return: bracketDim.Render(BracketPrefix) + dimText.Render(summary)")
+	return bracketDim.Render(BracketPrefix) + dimText.Render(summary)
 }
 
 // renderEdit renders FileEdit tool output as a unified diff.

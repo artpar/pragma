@@ -19,10 +19,6 @@ var (
 			Bold(true).
 			Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "86"})
 
-	assistantLabel = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.AdaptiveColor{Light: "133", Dark: "183"})
-
 	thinkStyle = lipgloss.NewStyle().
 			Faint(true).
 			Italic(true)
@@ -42,7 +38,6 @@ var (
 		Bold(true).
 		Foreground(lipgloss.AdaptiveColor{Light: "124", Dark: "196"})
 
-	sepStyle = lipgloss.NewStyle().Faint(true)
 )
 
 // primaryParams maps tool names to their primary input parameter.
@@ -69,12 +64,26 @@ func RenderMessage(msg model.Message, md *MarkdownRenderer) string {
 			observe.GlobalTrace("return: \"\"")
 			return ""
 		}
-		b.WriteString(userLabel.Render("You"))
-		b.WriteString("\n")
+		// Render user message inline: ❯ message text (no separate "You" label)
+		var parts []string
+		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
+			rendered := RenderContentPart(part, md, 80)
+			if rendered != "" {
+				parts = append(parts, rendered)
+			}
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		b.WriteString(userLabel.Render("❯") + " " + strings.Join(parts, "\n"))
+		b.WriteString("\n\n")
+		observe.GlobalTrace("return: b.String()")
+		return b.String()
+
 	case model.RoleAssistant:
 		observe.GlobalTrace("case: model.RoleAssistant")
-		b.WriteString(assistantLabel.Render("Assistant"))
-		b.WriteString("\n")
+		// No "Assistant" label — content flows directly
 	}
 
 	for _, part := range msg.Content {
@@ -96,18 +105,12 @@ func RenderConversation(msgs []model.Message, md *MarkdownRenderer) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
-	for i, msg := range msgs {
+	for _, msg := range msgs {
 		observe.GlobalTrace("range msgs")
 		rendered := RenderMessage(msg, md)
 		if rendered == "" {
 			observe.GlobalTrace("if: rendered == \"\"")
 			continue
-		}
-
-		if i > 0 {
-			observe.GlobalTrace("if: i > 0")
-			b.WriteString(sepStyle.Render(strings.Repeat(HeavyHorizontal, 40)))
-			b.WriteString("\n")
 		}
 		b.WriteString(rendered)
 	}
@@ -161,15 +164,14 @@ func RenderThinking(tp model.ThinkingPart) string {
 	return thinkStyle.Render(ThinkGlyph + " " + tp.Text)
 }
 
-// RenderToolCall renders a tool call with glyph, name, and primary parameter.
+// RenderToolCall renders a tool call as ⏺ ToolName(primaryArg) inline.
 func RenderToolCall(tc model.ToolCallPart, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	var b strings.Builder
 
-	b.WriteString(ToolHint + " ")
-	b.WriteString(toolCall.Render(tc.Name))
-	b.WriteString("\n")
+	// Build: ⏺ ToolName(primaryArg)
+	label := toolCall.Render(tc.Name)
+	arg := ""
 
 	if len(tc.Input) > 0 {
 		observe.GlobalTrace("if: len(tc.Input) > 0")
@@ -179,32 +181,32 @@ func RenderToolCall(tc model.ToolCallPart, width int) string {
 			primaryKey := primaryParams[tc.Name]
 			if primaryKey == "" {
 				observe.GlobalTrace("if: primaryKey == \"\"")
-
 				for k := range parsed {
 					observe.GlobalTrace("range parsed")
 					primaryKey = k
 					break
 				}
 			}
-
 			if val, ok := parsed[primaryKey]; ok {
 				observe.GlobalTrace("if: ok")
 				valStr := fmt.Sprintf("%v", val)
-				maxLen := width - len(ContentIndent) - len(primaryKey) - 2
+				// Leave room for: "⏺ " + name + "(" + ")" = ~len(name)+4
+				maxLen := width - len(tc.Name) - 4
 				if maxLen > 10 && len(valStr) > maxLen {
 					observe.GlobalTrace("if: maxLen > 10 && len(valStr) > maxLen")
 					valStr = valStr[:maxLen-3] + "..."
 				}
-				b.WriteString(ContentIndent)
-				b.WriteString(toolParam.Render(primaryKey + ": "))
-				b.WriteString(valStr)
-				b.WriteString("\n")
+				arg = valStr
 			}
 		}
 	}
-	observe.GlobalTrace("return: b.String()")
 
-	return b.String()
+	line := BlackCircle + " " + label
+	if arg != "" {
+		line += toolParam.Render("("+arg+")")
+	}
+	observe.GlobalTrace("return: line + \"\\n\"")
+	return line + "\n"
 }
 
 // RenderToolResultGeneric renders a tool result with bracket wrapper.

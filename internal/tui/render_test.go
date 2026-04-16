@@ -22,7 +22,7 @@ func TestRenderToolCall(t *testing.T) {
 				Name:  "Bash",
 				Input: json.RawMessage(`{"command":"ls -la"}`),
 			},
-			contains: []string{"Bash", "command"},
+			contains: []string{"Bash", "ls -la"}, // arg shown inline in parens
 		},
 		{
 			name: "empty input",
@@ -143,8 +143,8 @@ func TestRenderMessage(t *testing.T) {
 		},
 	}
 	result := render.RenderMessage(userMsg, md)
-	if !strings.Contains(result, "You") {
-		t.Error("expected user label in rendered message")
+	if !strings.Contains(result, "❯") {
+		t.Error("expected ❯ glyph in rendered user message")
 	}
 	if !strings.Contains(result, "Hello") {
 		t.Error("expected message text in rendered message")
@@ -173,8 +173,8 @@ func TestRenderMessage(t *testing.T) {
 		},
 	}
 	result = render.RenderMessage(assistantMsg, md)
-	if !strings.Contains(result, "Assistant") {
-		t.Error("expected assistant label in rendered message")
+	if !strings.Contains(result, "I can help") {
+		t.Error("expected assistant text in rendered message")
 	}
 }
 
