@@ -62,12 +62,14 @@ func (o *Orchestrator) SetPermPersister(p *PermPersister) {
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
 	Results     []model.ToolResultPart
+	Displays    []string           // per-result TUI display text, same index as Results
 	Supplements []model.ContentPart // additional content parts (e.g., DocumentPart for PDFs)
 }
 
 // singleResult holds the output of one tool invocation.
 type singleResult struct {
 	part        model.ToolResultPart
+	display     string
 	supplements []model.ContentPart
 }
 
@@ -202,11 +204,13 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	})
 
 	out := ExecuteResult{
-		Results: make([]model.ToolResultPart, len(singles)),
+		Results:  make([]model.ToolResultPart, len(singles)),
+		Displays: make([]string, len(singles)),
 	}
 	for i, s := range singles {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range singles")
 		out.Results[i] = s.part
+		out.Displays[i] = s.display
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
@@ -419,6 +423,7 @@ func (o *Orchestrator) executeSingle(
 			ToolCallID: call.ID,
 			Content:    invokeResult.Content,
 		},
+		display:     invokeResult.Display,
 		supplements: invokeResult.Supplements,
 	}
 }

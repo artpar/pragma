@@ -31,8 +31,10 @@ type ToolCallEvent struct {
 func (ToolCallEvent) loopEventSealed() {}
 
 // ToolResultEvent carries the result of a tool execution.
+// Display carries optional TUI-only rendering content from the tool's InvokeResult.
 type ToolResultEvent struct {
-	Result model.ToolResultPart
+	Result  model.ToolResultPart
+	Display string
 }
 
 func (ToolResultEvent) loopEventSealed() {}

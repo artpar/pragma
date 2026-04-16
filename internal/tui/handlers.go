@@ -143,7 +143,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 		call, ok := m.activeToolCalls[e.Result.ToolCallID]
 		if ok {
-			m.outputSegs = appendText(m.outputSegs, render.RenderToolOutput(call.Name, call.Input, e.Result.Content, e.Result.IsError, m.width))
+			m.outputSegs = appendText(m.outputSegs, render.RenderToolOutput(call.Name, call.Input, e.Result.Content, e.Result.IsError, m.width, e.Display))
 			delete(m.activeToolCalls, e.Result.ToolCallID)
 		} else {
 			m.outputSegs = appendText(m.outputSegs, render.WrapWithBracket(e.Result.Content, e.Result.IsError, m.width))

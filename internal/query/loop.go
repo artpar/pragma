@@ -252,8 +252,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			}
 
 			execResult := e.orchestrator.Execute(ctx, toolCalls, snap)
-			for _, r := range execResult.Results {
-				ch <- ToolResultEvent{Result: r}
+			for i, r := range execResult.Results {
+				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i]}
 			}
 
 			resultParts := make([]model.ContentPart, 0, len(execResult.Results)+len(execResult.Supplements))

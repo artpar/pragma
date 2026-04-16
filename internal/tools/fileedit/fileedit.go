@@ -146,8 +146,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 				return tool.InvokeResult{}, err
 			}
-			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
-			return tool.InvokeResult{Content: result}, nil
+			display := util.GenerateEditDiff("", in.OldString, in.NewString, in.FilePath, false, 3)
+			return tool.InvokeResult{Content: result, Display: display}, nil
 		}
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read file: %w", err)
@@ -181,8 +181,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			_ = t.LSP.ChangeFile(ctx, filePath, in.NewString)
 			_ = t.LSP.SaveFile(ctx, filePath)
 		}
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
-		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
+		display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, false, 3)
+		return tool.InvokeResult{
+			Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
+			Display: display,
+		}, nil
 	}
 
 	count := strings.Count(content, in.OldString)
@@ -209,6 +212,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		updated = strings.Replace(content, in.OldString, in.NewString, 1)
 	}
 
+	// Generate unified diff for TUI display (before writing, using pre-edit content)
+	display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, in.ReplaceAll, 3)
+
 	if err := os.WriteFile(filePath, []byte(updated), 0644); err != nil {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
@@ -223,11 +229,15 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if in.ReplaceAll && count > 1 {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.ReplaceAll && count > 1")
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated. All %d ...")
-		return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count)}, nil
+		return tool.InvokeResult{
+			Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count),
+			Display: display,
+		}, nil
 	}
-	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"The file %s has been updated successf...")
-	return tool.InvokeResult{Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath)}, nil
+	return tool.InvokeResult{
+		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
+		Display: display,
+	}, nil
 }
 
 func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
