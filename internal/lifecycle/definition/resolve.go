@@ -45,10 +45,16 @@ func Resolve(def *GraphDef, createNode NodeCreator, createRouter RouterCreator, 
 		b.AddNode(name, fn)
 	}
 
+	hasConditional := make(map[string]bool, len(def.Graph.ConditionalEdges))
+	for _, ce := range def.Graph.ConditionalEdges {
+		observe.GlobalTrace("range def.Graph.ConditionalEdges (pre-pass)")
+		hasConditional[ce.From] = true
+	}
+
 	for _, e := range def.Graph.Edges {
 		observe.GlobalTrace("range def.Graph.Edges")
-		if e.To == "" {
-			observe.GlobalTrace("if: e.To == \"\" (skip, treat as terminal)")
+		if e.To == "" || hasConditional[e.From] {
+			observe.GlobalTrace("if: e.To == \"\" || hasConditional[e.From] (skip)")
 			continue
 		}
 		b.AddEdge(e.From, e.To)
