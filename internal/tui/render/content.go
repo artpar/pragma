@@ -132,7 +132,7 @@ func RenderContentPart(part model.ContentPart, md *MarkdownRenderer, width int) 
 		return p.Text
 	case model.ThinkingPart:
 		observe.GlobalTrace("typecase: model.ThinkingPart")
-		return RenderThinking(p)
+		return RenderThinking(p, true)
 	case model.ToolCallPart:
 		observe.GlobalTrace("typecase: model.ToolCallPart")
 		return RenderToolCall(p, width)
@@ -152,25 +152,28 @@ func RenderContentPart(part model.ContentPart, md *MarkdownRenderer, width int) 
 }
 
 // RenderThinking renders a thinking block with glyph prefix.
-// Caps output at 5 lines to avoid flooding the viewport.
-// TS reference uses binary show/hide (Ctrl+O toggle); pragma truncates instead
-// since expand/collapse is not yet implemented.
-func RenderThinking(tp model.ThinkingPart) string {
+// Collapsed (default): single-line "∴ Thinking [Ctrl+O to expand]".
+// Expanded: "∴ Thinking…" header + full text indented 2 spaces.
+// Matches TS AssistantThinkingMessage.tsx collapsed/expanded behavior.
+func RenderThinking(tp model.ThinkingPart, expanded bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if tp.Redacted {
 		observe.GlobalTrace("if: tp.Redacted")
 		return thinkStyle.Render(ThinkGlyph + " [thinking redacted]")
 	}
-	const maxLines = 5
-	lines := strings.Split(tp.Text, "\n")
-	if len(lines) <= maxLines {
-		return thinkStyle.Render(ThinkGlyph + " " + tp.Text)
+	if !expanded {
+		return thinkStyle.Render(ThinkGlyph+" Thinking") +
+			" " + lipgloss.NewStyle().Faint(true).Render("(ctrl+o to expand)")
 	}
-	visible := strings.Join(lines[:maxLines-1], "\n")
-	remaining := len(tp.Text) - len(visible)
-	return thinkStyle.Render(ThinkGlyph + " " + visible + "\n" +
-		fmt.Sprintf("(%d more chars)", remaining))
+	// Expanded: header + full text indented 2 spaces (matches TS paddingLeft={2})
+	header := thinkStyle.Render(ThinkGlyph + " Thinking\u2026")
+	lines := strings.Split(tp.Text, "\n")
+	for i, line := range lines {
+		lines[i] = "  " + line
+	}
+	body := thinkStyle.Render(strings.Join(lines, "\n"))
+	return header + "\n" + body
 }
 
 // RenderToolCall renders a tool call as ⏺ ToolName(primaryArg) inline.

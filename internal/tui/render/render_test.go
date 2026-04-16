@@ -117,7 +117,7 @@ func TestWrapWithBracketTruncation(t *testing.T) {
 
 func TestRenderThinkingWithGlyph(t *testing.T) {
 	tp := model.ThinkingPart{Text: "analyzing..."}
-	result := RenderThinking(tp)
+	result := RenderThinking(tp, true)
 	if !strings.Contains(result, ThinkGlyph) {
 		t.Errorf("expected think glyph in %q", result)
 	}
@@ -126,9 +126,23 @@ func TestRenderThinkingWithGlyph(t *testing.T) {
 	}
 }
 
+func TestRenderThinkingCollapsed(t *testing.T) {
+	tp := model.ThinkingPart{Text: "analyzing..."}
+	result := RenderThinking(tp, false)
+	if !strings.Contains(result, "Thinking") {
+		t.Errorf("expected 'Thinking' label in collapsed result %q", result)
+	}
+	if strings.Contains(result, "analyzing") {
+		t.Errorf("collapsed thinking should not contain content, got %q", result)
+	}
+	if !strings.Contains(result, "ctrl+o") {
+		t.Errorf("expected Ctrl+O hint in collapsed result %q", result)
+	}
+}
+
 func TestRenderThinkingRedacted(t *testing.T) {
 	tp := model.ThinkingPart{Redacted: true}
-	result := RenderThinking(tp)
+	result := RenderThinking(tp, false)
 	if !strings.Contains(result, "redacted") {
 		t.Errorf("expected redacted in %q", result)
 	}

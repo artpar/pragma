@@ -102,30 +102,51 @@ func TestRenderThinking(t *testing.T) {
 	tests := []struct {
 		name     string
 		part     model.ThinkingPart
+		expanded bool
 		contains string
+		excludes string // must NOT appear in result (empty = no check)
 	}{
 		{
-			name:     "normal thinking",
+			name:     "expanded thinking",
 			part:     model.ThinkingPart{Text: "Let me think about this..."},
+			expanded: true,
 			contains: "Let me think",
+		},
+		{
+			name:     "collapsed thinking hides content",
+			part:     model.ThinkingPart{Text: "Let me think about this..."},
+			expanded: false,
+			contains: "Thinking",
+			excludes: "Let me think",
+		},
+		{
+			name:     "collapsed thinking shows hint",
+			part:     model.ThinkingPart{Text: "anything"},
+			expanded: false,
+			contains: "ctrl+o",
 		},
 		{
 			name:     "redacted thinking",
 			part:     model.ThinkingPart{Redacted: true, RedactedData: "encrypted"},
+			expanded: false,
 			contains: "redacted",
 		},
 		{
-			name:     "long thinking preserved",
+			name:     "long thinking expanded",
 			part:     model.ThinkingPart{Text: strings.Repeat("x", 600)},
-			contains: strings.Repeat("x", 100), // no truncation anymore
+			expanded: true,
+			contains: strings.Repeat("x", 100),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := render.RenderThinking(tt.part)
+			result := render.RenderThinking(tt.part, tt.expanded)
 			if !strings.Contains(result, tt.contains) {
 				t.Errorf("expected %q in result %q", tt.contains, result)
+			}
+			if tt.excludes != "" && strings.Contains(result, tt.excludes) {
+				t.Errorf("did not expect %q in result %q", tt.excludes, result)
 			}
 		})
 	}

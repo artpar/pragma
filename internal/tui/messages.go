@@ -49,3 +49,6 @@ type AskRequestMsg struct {
 
 // sessionSavedMsg signals that a session save completed.
 type sessionSavedMsg struct{}
+
+// quitTimeoutMsg signals that the 800ms Ctrl+C exit window has expired.
+type quitTimeoutMsg struct{}

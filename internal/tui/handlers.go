@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -25,8 +26,8 @@ func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: trimmedArgs != \"\"")
 		label += " " + trimmedArgs
 	}
-	m.outputBuf.WriteString(userLabelStyle.Render("❯") + " " + label + "\n\n")
-	m.viewport.SetContent(m.outputBuf.String())
+	m.outputSegs = appendText(m.outputSegs, userLabelStyle.Render("❯") + " " + label + "\n\n")
+	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
 
 	slashCmds := m.slashCmds
@@ -44,7 +45,7 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 	defer observe.GlobalTrace("exit")
 	if msg.Err != nil {
 		observe.GlobalTrace("if: msg.Err != nil")
-		m.outputBuf.WriteString(errorStyle.Render("Error: "+msg.Err.Error()) + "\n\n")
+		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: "+msg.Err.Error()) + "\n\n")
 	} else {
 		observe.GlobalTrace("else: msg.Err != nil")
 		if msg.Result.Quit {
@@ -54,11 +55,11 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Result.ClearConversation {
 			observe.GlobalTrace("if: msg.Result.ClearConversation")
-			m.outputBuf.Reset()
+			m.outputSegs = m.outputSegs[:0]
 		}
 		if msg.Result.DisplayText != "" {
 			observe.GlobalTrace("if: msg.Result.DisplayText != \"\"")
-			m.outputBuf.WriteString(msg.Result.DisplayText + "\n\n")
+			m.outputSegs = appendText(m.outputSegs, msg.Result.DisplayText + "\n\n")
 		}
 		if msg.Result.InjectPrompt != "" {
 			observe.GlobalTrace("if: msg.Result.InjectPrompt != \"\"")
@@ -66,7 +67,7 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			return m.startEngineFromPrompt(msg.Result.InjectPrompt)
 		}
 	}
-	m.viewport.SetContent(m.outputBuf.String())
+	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
@@ -90,8 +91,8 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	switch e := msg.Event.(type) {
 	case query.CompactionEvent:
 		observe.GlobalTrace("typecase: query.CompactionEvent")
-		m.flushStreamBuf()
-		m.outputBuf.WriteString(thinkingStyle.Render(
+		m.outputSegs = m.flushStreamBuf()
+		m.outputSegs = appendText(m.outputSegs, thinkingStyle.Render(
 			fmt.Sprintf("[auto-compacted: %d → %d tokens]", e.PreTokens, e.PostTokens)) + "\n")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
@@ -106,7 +107,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 			complete := raw[:boundary+2]
 			pending := raw[boundary+2:]
 			rendered := m.mdRenderer.Render(complete)
-			m.outputBuf.WriteString(rendered + "\n")
+			m.outputSegs = appendText(m.outputSegs, rendered + "\n")
 			m.streamBuf.Reset()
 			m.streamBuf.WriteString(pending)
 		}
@@ -115,16 +116,16 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	case query.ThinkingEvent:
 		observe.GlobalTrace("typecase: query.ThinkingEvent")
-		m.flushStreamBuf()
-		m.outputBuf.WriteString(render.RenderThinking(model.ThinkingPart{Text: e.Text}) + "\n")
+		m.outputSegs = m.flushStreamBuf()
+		m.outputSegs = appendThinking(m.outputSegs, e.Text, false)
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
 	case query.ToolCallEvent:
 		observe.GlobalTrace("typecase: query.ToolCallEvent")
-		m.flushStreamBuf()
-		m.outputBuf.WriteString(render.RenderToolCall(e.Call, m.width))
-		m.outputBuf.WriteString("\n")
+		m.outputSegs = m.flushStreamBuf()
+		m.outputSegs = appendText(m.outputSegs, render.RenderToolCall(e.Call, m.width))
+		m.outputSegs = appendText(m.outputSegs, "\n")
 
 		m.activeToolCalls[e.Call.ID] = e.Call
 
@@ -142,23 +143,23 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 		call, ok := m.activeToolCalls[e.Result.ToolCallID]
 		if ok {
-			m.outputBuf.WriteString(render.RenderToolOutput(call.Name, call.Input, e.Result.Content, e.Result.IsError, m.width))
+			m.outputSegs = appendText(m.outputSegs, render.RenderToolOutput(call.Name, call.Input, e.Result.Content, e.Result.IsError, m.width))
 			delete(m.activeToolCalls, e.Result.ToolCallID)
 		} else {
-			m.outputBuf.WriteString(render.WrapWithBracket(e.Result.Content, e.Result.IsError, m.width))
+			m.outputSegs = appendText(m.outputSegs, render.WrapWithBracket(e.Result.Content, e.Result.IsError, m.width))
 		}
-		m.outputBuf.WriteString("\n")
+		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.SetStatus("streaming...")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
 	case query.TurnCompleteEvent:
 		observe.GlobalTrace("typecase: query.TurnCompleteEvent")
-		m.flushStreamBuf()
+		m.outputSegs = m.flushStreamBuf()
 		if e.StopReason == model.StopMaxTokens {
-			m.outputBuf.WriteString("\n" + thinkingStyle.Render("[response truncated — hit max_tokens limit]") + "\n")
+			m.outputSegs = appendText(m.outputSegs, "\n" + thinkingStyle.Render("[response truncated — hit max_tokens limit]") + "\n")
 		}
-		m.outputBuf.WriteString("\n")
+		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
 
 		if m.tokenMonitor != nil {
@@ -170,12 +171,12 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	case query.ErrorEvent:
 		observe.GlobalTrace("typecase: query.ErrorEvent")
-		m.flushStreamBuf()
+		m.outputSegs = m.flushStreamBuf()
 		m.spinnerActive = false
 		if m.ctx.Err() != nil {
-			m.outputBuf.WriteString("\n" + thinkingStyle.Render("[interrupted]") + "\n\n")
+			m.outputSegs = appendText(m.outputSegs, "\n" + thinkingStyle.Render("[interrupted]") + "\n\n")
 		} else {
-			m.outputBuf.WriteString("\n" + errorStyle.Render("Error: "+e.Err.Error()) + "\n\n")
+			m.outputSegs = appendText(m.outputSegs, "\n" + errorStyle.Render("Error: "+e.Err.Error()) + "\n\n")
 		}
 		finished, pendingCmd := m.finishTurn()
 		return finished, pendingCmd
@@ -200,7 +201,7 @@ func (m Model) startEngineFromPrompt(prompt string) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	m.viewport.SetContent(m.outputBuf.String())
+	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
 
 	m.streaming = true
@@ -286,7 +287,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.quitPending = true
 		m.toolbar.SetStatus("press Ctrl+C again to exit")
-		return m, nil
+		return m, tea.Tick(800*time.Millisecond, func(t time.Time) tea.Msg {
+			return quitTimeoutMsg{}
+		})
 
 	case tea.KeyEsc:
 		observe.GlobalTrace("case: tea.KeyEsc")
@@ -329,6 +332,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.Type {
+	case tea.KeyCtrlO:
+		observe.GlobalTrace("case: tea.KeyCtrlO — toggle thinking")
+		m.thinkingExpanded = !m.thinkingExpanded
+		m.viewport.SetContent(m.viewportContent())
+		return m, nil
 	case tea.KeyPgUp, tea.KeyPgDown:
 		observe.GlobalTrace("scroll key → viewport")
 		var cmd tea.Cmd
@@ -402,8 +410,8 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 		})
 		if hookResult.Blocked {
 			observe.GlobalTrace("if: hookResult.Blocked")
-			m.outputBuf.WriteString(errorStyle.Render("Blocked: "+hookResult.BlockMsg) + "\n")
-			m.viewport.SetContent(m.outputBuf.String())
+			m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Blocked: "+hookResult.BlockMsg) + "\n")
+			m.viewport.SetContent(m.viewportContent())
 			m.viewport.GotoBottom()
 			observe.GlobalTrace("return: m, nil")
 			return m, nil
@@ -417,8 +425,8 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 			model.TextPart{Text: text},
 		},
 	}
-	m.outputBuf.WriteString(render.RenderMessage(userMsg, m.mdRenderer))
-	m.viewport.SetContent(m.outputBuf.String())
+	m.outputSegs = appendText(m.outputSegs, render.RenderMessage(userMsg, m.mdRenderer))
+	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
 
 	m.streaming = true
@@ -467,9 +475,9 @@ func (m Model) interruptTurn() (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	m.cancel()
-	m.flushStreamBuf()
+	m.outputSegs = m.flushStreamBuf()
 	m.spinnerActive = false
-	m.outputBuf.WriteString("\n" + render.BracketPrefix + thinkingStyle.Render("Interrupted · What should pragma do instead?") + "\n\n")
+	m.outputSegs = appendText(m.outputSegs, "\n" + render.BracketPrefix + thinkingStyle.Render("Interrupted · What should pragma do instead?") + "\n\n")
 	finished, cmd := m.finishTurn()
 	return finished, cmd
 }
@@ -477,37 +485,53 @@ func (m Model) interruptTurn() (tea.Model, tea.Cmd) {
 // maxOutputBufBytes is the maximum size of the output buffer before trimming.
 const maxOutputBufBytes = 512 * 1024 // 512KB
 
-// flushStreamBuf moves accumulated streaming text into the permanent output buffer.
-// Renders remaining text through markdown before flushing.
-func (m Model) flushStreamBuf() {
+// flushStreamBuf moves accumulated streaming text into the permanent output segments.
+// Renders remaining text through markdown before flushing, then trims excess.
+// Returns the updated segment slice — caller must assign:
+//
+//	m.outputSegs = m.flushStreamBuf()
+func (m Model) flushStreamBuf() []segment {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	segs := m.outputSegs
 	if m.streamBuf.Len() > 0 {
 		observe.GlobalTrace("if: m.streamBuf.Len() > 0")
 		rendered := m.mdRenderer.Render(m.streamBuf.String())
-		m.outputBuf.WriteString(rendered + "\n")
+		segs = appendText(segs, rendered+"\n")
 		m.streamBuf.Reset()
 	}
-	m.trimOutputBuf()
+	return trimOutputSegs(segs)
 }
 
-// trimOutputBuf trims the output buffer to maxOutputBufBytes, keeping the tail.
-func (m Model) trimOutputBuf() {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if m.outputBuf.Len() <= maxOutputBufBytes {
-		observe.GlobalTrace("if: m.outputBuf.Len() <= maxOutputBufBytes")
-		return
+// trimOutputSegs trims output segments to maxOutputBufBytes, keeping the tail.
+// Returns the trimmed slice — caller must assign: m.outputSegs = trimOutputSegs(m.outputSegs)
+func trimOutputSegs(segs []segment) []segment {
+	total := outputLen(segs)
+	if total <= maxOutputBufBytes {
+		return segs
 	}
-	content := m.outputBuf.String()
-	trimAt := len(content) - maxOutputBufBytes
-	idx := strings.IndexByte(content[trimAt:], '\n')
-	if idx >= 0 {
-		observe.GlobalTrace("if: idx >= 0")
-		trimAt += idx + 1
+	excess := total - maxOutputBufBytes
+	trimmed := 0
+	cutIdx := 0
+	for i, seg := range segs {
+		if trimmed+len(seg.content) > excess {
+			// Partial trim of this segment (only for text segments).
+			if seg.kind == segText {
+				remainder := excess - trimmed
+				idx := strings.IndexByte(seg.content[remainder:], '\n')
+				if idx >= 0 {
+					segs[i].content = seg.content[remainder+idx+1:]
+				} else {
+					segs[i].content = seg.content[remainder:]
+				}
+			}
+			cutIdx = i
+			break
+		}
+		trimmed += len(seg.content)
+		cutIdx = i + 1
 	}
-	m.outputBuf.Reset()
-	m.outputBuf.WriteString(content[trimAt:])
+	return segs[cutIdx:]
 }
 
 // quit saves the session and exits.

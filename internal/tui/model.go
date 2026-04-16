@@ -34,6 +34,22 @@ type Config struct {
 	Workspace    string                // workspace directory basename
 }
 
+// segmentKind distinguishes text (pre-rendered) from thinking (rendered on demand).
+type segmentKind int
+
+const (
+	segText     segmentKind = iota
+	segThinking
+)
+
+// segment is a typed chunk of viewport output. Text segments are pre-rendered;
+// thinking segments store raw text and are rendered based on thinkingExpanded.
+type segment struct {
+	kind     segmentKind
+	content  string // segText: pre-rendered; segThinking: raw thinking text
+	redacted bool   // only meaningful for segThinking
+}
+
 // Model is the main bubbletea model for the interactive TUI.
 type Model struct {
 	// Dependencies
@@ -63,16 +79,17 @@ type Model struct {
 	spinnerTool   string
 
 	// Streaming state
-	outputBuf    *strings.Builder // accumulated rendered output for viewport
-	streamBuf    *strings.Builder // current streaming text (not yet finalized)
-	eventCh      <-chan query.LoopEvent
-	streaming    bool
-	parentCtx    context.Context // original parent context — never overwritten
-	ctx          context.Context
-	cancel       context.CancelFunc
-	pendingInput string           // queued message to submit after current turn completes
-	quitPending  bool             // true after 2nd idle Ctrl+C, waiting for 3rd to quit
-	permQueue    []PermRequestMsg // queued permission requests when dialog is already visible
+	outputSegs       []segment        // typed segments for viewport content
+	thinkingExpanded bool             // Ctrl+O toggles thinking block visibility
+	streamBuf        *strings.Builder // current streaming text (not yet finalized)
+	eventCh          <-chan query.LoopEvent
+	streaming        bool
+	parentCtx        context.Context // original parent context — never overwritten
+	ctx              context.Context
+	cancel           context.CancelFunc
+	pendingInput     string           // queued message to submit after current turn completes
+	quitPending      bool             // true after idle Ctrl+C, waiting for second to quit
+	permQueue        []PermRequestMsg // queued permission requests when dialog is already visible
 
 	// Layout
 	width  int
@@ -111,7 +128,6 @@ func New(cfg Config) Model {
 		spin:            s,
 		mdRenderer:      render.NewMarkdownRenderer(80),
 		activeToolCalls: make(map[string]model.ToolCallPart),
-		outputBuf:       &strings.Builder{},
 		streamBuf:       &strings.Builder{},
 		parentCtx:       parentCtx,
 		ctx:             ctx,
@@ -179,6 +195,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionSavedMsg:
 		observe.GlobalTrace("typecase: sessionSavedMsg")
 		return m, nil
+
+	case quitTimeoutMsg:
+		observe.GlobalTrace("typecase: quitTimeoutMsg")
+		if m.quitPending {
+			m.quitPending = false
+			if m.streaming {
+				m.toolbar.SetStatus("streaming...")
+			} else {
+				m.toolbar.SetStatus("ready")
+			}
+		}
+		return m, nil
 	}
 
 	if m.ask.active {
@@ -239,21 +267,83 @@ func (m Model) View() string {
 }
 
 // viewportContent returns the full viewport content including spinner.
+// Thinking segments are rendered on demand based on thinkingExpanded state.
 // Shows a welcome message when the conversation is empty.
 func (m Model) viewportContent() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	content := m.outputBuf.String() + m.streamBuf.String()
+	var b strings.Builder
+	for _, seg := range m.outputSegs {
+		switch seg.kind {
+		case segText:
+			b.WriteString(seg.content)
+		case segThinking:
+			b.WriteString(render.RenderThinking(model.ThinkingPart{
+				Text: seg.content, Redacted: seg.redacted,
+			}, m.thinkingExpanded) + "\n")
+		}
+	}
+	b.WriteString(m.streamBuf.String())
 	if m.spinnerActive {
 		observe.GlobalTrace("if: m.spinnerActive")
-		content += "\n" + m.spin.View() + " " + m.spinnerTool + "..."
+		b.WriteString("\n" + m.spin.View() + " " + m.spinnerTool + "...")
 	}
-	if content == "" {
-		observe.GlobalTrace("if: content == \"\"")
+	if b.Len() == 0 {
+		observe.GlobalTrace("if: b.Len() == 0")
 		return welcomeMessage
 	}
-	observe.GlobalTrace("return: content")
-	return content
+	observe.GlobalTrace("return: b.String()")
+	return b.String()
+}
+
+// appendText appends pre-rendered text to segments, merging into last text segment.
+// Returns the updated slice — caller must assign: m.outputSegs = appendText(m.outputSegs, s)
+func appendText(segs []segment, s string) []segment {
+	if n := len(segs); n > 0 && segs[n-1].kind == segText {
+		segs[n-1].content += s
+		return segs
+	}
+	return append(segs, segment{kind: segText, content: s})
+}
+
+// appendThinking appends a raw thinking block to segments.
+// Returns the updated slice — caller must assign.
+func appendThinking(segs []segment, text string, redacted bool) []segment {
+	return append(segs, segment{kind: segThinking, content: text, redacted: redacted})
+}
+
+// outputLen returns the total content length across all segments.
+func outputLen(segs []segment) int {
+	n := 0
+	for _, seg := range segs {
+		n += len(seg.content)
+	}
+	return n
+}
+
+// loadMessageSegments loads a single message into output segments.
+// Thinking parts become thinking segments; everything else becomes text.
+func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownRenderer) []segment {
+	if msg.Role == model.RoleUser {
+		rendered := render.RenderMessage(msg, md)
+		if rendered != "" {
+			segs = appendText(segs, rendered)
+		}
+		return segs
+	}
+	// Assistant messages: split thinking parts into segments
+	for _, part := range msg.Content {
+		if tp, ok := part.(model.ThinkingPart); ok {
+			segs = appendThinking(segs, tp.Text, tp.Redacted)
+		} else {
+			rendered := render.RenderContentPart(part, md, 80)
+			if rendered != "" {
+				segs = appendText(segs, rendered+"\n")
+			}
+		}
+	}
+	segs = appendText(segs, "\n")
+	return segs
 }
 
 // welcomeMessage is shown in the viewport when the conversation is empty.
@@ -285,7 +375,9 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		snap := m.store.Snapshot()
 		if len(snap.Conversation.Messages) > 0 {
 			observe.GlobalTrace("if: len(snap.Conversation.Messages) > 0")
-			m.outputBuf.WriteString(render.RenderConversation(snap.Conversation.Messages, m.mdRenderer))
+			for _, msg := range snap.Conversation.Messages {
+				m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
+			}
 		}
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()

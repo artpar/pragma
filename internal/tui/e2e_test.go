@@ -107,8 +107,9 @@ func sendKeysAndCapture(t *testing.T, keys string) string {
 	// Write actual key bytes (like a real terminal would)
 	_, _ = pw.Write([]byte(keys))
 
-	// Small delay for processing
-	time.Sleep(200 * time.Millisecond)
+	// Wait for slash command processing (with segments, model updates are
+	// propagated through Update() rather than shared pointer mutation)
+	time.Sleep(500 * time.Millisecond)
 
 	// Quit
 	p.Quit()
@@ -119,7 +120,7 @@ func sendKeysAndCapture(t *testing.T, keys string) string {
 		if fm == nil {
 			t.Fatal("nil final model")
 		}
-		return fm.(Model).outputBuf.String()
+		return fm.(Model).viewportContent()
 	case <-time.After(5 * time.Second):
 		p.Kill()
 		t.Fatal("TUI did not exit within 5s")
