@@ -41,9 +41,9 @@ func lifecycleRunCmd() *cobra.Command {
 Provide either a YAML file path or a --structure description (which the LLM compiles into a graph).
 
 Examples:
-  gogent lifecycle run workflow.yaml --prompt "analyze this code"
-  gogent lifecycle run --structure "tool-calling loop" --prompt "list files"
-  gogent lifecycle run --structure "attempt with tools, evaluate, reflect on failure, retry" --prompt "fix the bug"`,
+  pragma lifecycle run workflow.yaml --prompt "analyze this code"
+  pragma lifecycle run --structure "tool-calling loop" --prompt "list files"
+  pragma lifecycle run --structure "attempt with tools, evaluate, reflect on failure, retry" --prompt "fix the bug"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runLifecycle,
 	}

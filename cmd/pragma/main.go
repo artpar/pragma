@@ -17,7 +17,7 @@ func main() {
 	root := &cobra.Command{
 		Use:           "pragma",
 		Short:         "AI coding assistant",
-		Long:          "gogent is a CLI AI coding assistant powered by LLMs.",
+		Long:          "pragma is a CLI AI coding assistant powered by LLMs.",
 		RunE:          cli.RunDispatcher,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -51,7 +51,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("gogent %s (commit %s, built %s, %s)\n",
+			fmt.Printf("pragma %s (commit %s, built %s, %s)\n",
 				buildinfo.Version, buildinfo.Commit, buildinfo.Date, buildinfo.GoVersion)
 		},
 	}
@@ -61,27 +61,27 @@ func completionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "completion [bash|zsh|fish|powershell]",
 		Short: "Generate shell completion scripts",
-		Long: `Generate shell completion scripts for gogent.
+		Long: `Generate shell completion scripts for pragma.
 
 To load completions:
 
 Bash:
-  $ source <(gogent completion bash)
+  $ source <(pragma completion bash)
   # Or install permanently:
-  $ gogent completion bash > /usr/share/bash-completion/completions/gogent
+  $ pragma completion bash > /usr/share/bash-completion/completions/pragma
 
 Zsh:
-  $ source <(gogent completion zsh)
+  $ source <(pragma completion zsh)
   # Or install permanently:
-  $ gogent completion zsh > "${fpath[1]}/_gogent"
+  $ pragma completion zsh > "${fpath[1]}/_pragma"
 
 Fish:
-  $ gogent completion fish | source
+  $ pragma completion fish | source
   # Or install permanently:
-  $ gogent completion fish > ~/.config/fish/completions/gogent.fish
+  $ pragma completion fish > ~/.config/fish/completions/pragma.fish
 
 PowerShell:
-  PS> gogent completion powershell | Out-String | Invoke-Expression
+  PS> pragma completion powershell | Out-String | Invoke-Expression
 `,
 		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
 		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),

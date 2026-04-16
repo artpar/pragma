@@ -95,6 +95,7 @@ brews:
 
 scoops:
   - name: pragma
+    folder: bucket
     repository:
       owner: artpar
       name: scoop-bucket

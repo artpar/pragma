@@ -19,7 +19,7 @@ func metricsCmd() *cobra.Command {
 		Long: `Display aggregated metrics from a recorded session.
 
 The path can be:
-  - A .jsonl file (e.g., gogent-recording.jsonl)
+  - A .jsonl file (e.g., pragma-recording.jsonl)
   - A replay directory containing events.jsonl`,
 		Args: cobra.ExactArgs(1),
 		RunE: metricsRun,
