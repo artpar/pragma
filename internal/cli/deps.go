@@ -37,6 +37,7 @@ import (
 type Deps struct {
 	Cfg          config.Config
 	Bus          *observe.EventBus
+	StderrLogger *observe.Logger
 	Prov         provider.Provider
 	Checker      permission.Checker
 	Store        *app.StateStore
@@ -127,7 +128,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		logLevel = observe.LevelDebug
 	}
 	logger := observe.NewLogger(os.Stderr, logLevel, observe.FormatText, nil)
-	bus.Subscribe(logger)
 
 	// Per-execution log file: ~/.pragma/logs/<timestamp>.jsonl
 	// Always enabled, captures everything at LevelTrace in JSON format.
@@ -388,6 +388,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	return &Deps{
 		Cfg:          cfg,
 		Bus:          bus,
+		StderrLogger: logger,
 		Prov:         prov,
 		Checker:      checker,
 		Store:        store,

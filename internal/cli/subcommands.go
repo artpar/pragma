@@ -67,6 +67,7 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 		observe.GlobalTrace("if: d.Cleanup != nil")
 		defer d.Cleanup()
 	}
+	d.Bus.Subscribe(d.StderrLogger)
 
 	snap := d.Store.Snapshot()
 	d.Bus.Emit(observe.SessionStarted{
@@ -193,6 +194,7 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 			observe.GlobalTrace("if: d.Cleanup != nil")
 			defer d.Cleanup()
 		}
+		d.Bus.Subscribe(d.StderrLogger)
 		slashDeps := slash.Deps{
 			Store:       d.Store,
 			CostTracker: d.CostTracker,

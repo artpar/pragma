@@ -314,6 +314,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		observe.GlobalTrace("if: d.Cleanup != nil")
 		defer d.Cleanup()
 	}
+	d.Bus.Subscribe(d.StderrLogger)
 
 	if os.Getenv("PRAGMA_BG_SESSION") == "1" {
 		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_BG_SESSION\") == \"1\"")
