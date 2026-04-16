@@ -6,6 +6,7 @@ import (
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/slash"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // LoopEventMsg wraps a query.LoopEvent for the bubbletea Update loop.
@@ -44,10 +45,11 @@ type SlashResultMsg struct {
 }
 
 // AskRequestMsg signals that a tool goroutine needs to ask the user a question.
-// The TUI renders a question dialog and sends the answer back on the Response channel.
+// The TUI renders a question dialog (option selection or free-text) and sends
+// the answer back on the Response channel.
 type AskRequestMsg struct {
-	Question string
-	Response chan<- string
+	Request  tool.AskRequest
+	Response chan<- tool.AskResponse
 }
 
 // sessionSavedMsg signals that a session save completed.

@@ -299,8 +299,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if m.ask.active {
-			observe.GlobalTrace("return: m, nil")
-			return m, nil
+			cmd := m.ask.Update(msg)
+			if !m.ask.active {
+				if m.streaming {
+					m.toolbar.SetStatus("streaming...")
+				} else {
+					m.toolbar.SetStatus("ready")
+				}
+			}
+			return m, cmd
 		}
 		// Esc during streaming interrupts, matching pragma.
 		if m.streaming {

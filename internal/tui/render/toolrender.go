@@ -3,6 +3,7 @@ package render
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/artpar/pragma/internal/observe"
@@ -31,13 +32,14 @@ type ToolRenderer func(input json.RawMessage, content string, isError bool, widt
 
 // toolRenderers maps tool names to their specific renderer.
 var toolRenderers = map[string]ToolRenderer{
-	"Bash":  renderBash,
-	"Read":  renderRead,
-	"Edit":  renderEdit,
-	"Write": renderWrite,
-	"Grep":  renderGrep,
-	"Glob":  renderGlob,
-	"Agent": renderAgent,
+	"Bash":             renderBash,
+	"Read":             renderRead,
+	"Edit":             renderEdit,
+	"Write":            renderWrite,
+	"Grep":             renderGrep,
+	"Glob":             renderGlob,
+	"Agent":            renderAgent,
+	"AskUserQuestion":  renderAskResult,
 }
 
 // RenderToolOutput dispatches to a tool-specific renderer or generic fallback.
@@ -54,9 +56,10 @@ func RenderToolOutput(name string, input json.RawMessage, content string, isErro
 }
 
 // renderBash renders Bash tool output.
-// Shows stdout content with tail truncation for long output.
+// Shows last 5 lines (matching TS non-verbose ShellProgressMessage), with styled
+// exit code/timeout when present in the Display field.
 // The command itself is already shown in the tool call line (⏺ Bash(cmd)).
-func renderBash(_ json.RawMessage, content string, isError bool, width int, _ string) string {
+func renderBash(_ json.RawMessage, content string, isError bool, width int, display string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
@@ -66,7 +69,6 @@ func renderBash(_ json.RawMessage, content string, isError bool, width int, _ st
 		b.WriteString(bracketErr.Render(BracketPrefix))
 		b.WriteString(errBold.Render(truncateContent(content, width-len(ContentIndent), 10)))
 		b.WriteString("\n")
-		observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 		return strings.TrimRight(b.String(), "\n")
 	}
 
@@ -76,16 +78,26 @@ func renderBash(_ json.RawMessage, content string, isError bool, width int, _ st
 		b.WriteString(ContentIndent)
 		b.WriteString(dimText.Render("(no output)"))
 		b.WriteString("\n")
-		observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 		return strings.TrimRight(b.String(), "\n")
 	}
 
 	lines := strings.Split(trimmed, "\n")
-	maxLines := 15
-	if len(lines) > maxLines {
-		observe.GlobalTrace("if: len(lines) > maxLines")
-		skipped := len(lines) - (maxLines - 1)
 
+	// Separate trailing status line ("Exit code N" / "Command timed out...")
+	// for styled rendering below.
+	var statusLine string
+	if len(lines) > 0 {
+		last := lines[len(lines)-1]
+		if strings.HasPrefix(last, "Exit code ") || strings.HasPrefix(last, "Command timed out") {
+			statusLine = last
+			lines = lines[:len(lines)-1]
+		}
+	}
+
+	// Tail truncation: show last 5 output lines (matching TS non-verbose)
+	maxLines := 5
+	if len(lines) > maxLines {
+		skipped := len(lines) - maxLines
 		b.WriteString(ContentIndent)
 		b.WriteString(dimText.Render(fmt.Sprintf("(%d lines hidden)", skipped)))
 		b.WriteString("\n")
@@ -93,14 +105,38 @@ func renderBash(_ json.RawMessage, content string, isError bool, width int, _ st
 	}
 
 	for _, line := range lines {
-		observe.GlobalTrace("range lines")
 		b.WriteString(ContentIndent)
 		b.WriteString(truncateLine(line, width-len(ContentIndent)))
 		b.WriteString("\n")
 	}
-	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
+
+	// Render status line with exit code styling
+	if statusLine != "" {
+		exitCode := parseBashExitCode(display)
+		b.WriteString(ContentIndent)
+		if exitCode == 2 && strings.Contains(content, "blocked") {
+			// Exit code 2 = intentional hook block, not error (GitHub #34600)
+			b.WriteString(dimText.Render(statusLine))
+		} else {
+			// Non-zero exit or timeout: red
+			b.WriteString(errBold.Render(statusLine))
+		}
+		b.WriteString("\n")
+	}
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// parseBashExitCode extracts exit code from display metadata.
+// Display format: "exit_code:N" or "timeout:N".
+func parseBashExitCode(display string) int {
+	if strings.HasPrefix(display, "exit_code:") {
+		code, err := strconv.Atoi(display[len("exit_code:"):])
+		if err == nil {
+			return code
+		}
+	}
+	return -1
 }
 
 // renderRead renders FileRead tool output as a compact "Read N lines" summary.
@@ -577,6 +613,80 @@ func renderAgent(input json.RawMessage, content string, isError bool, width int,
 	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderAskResult renders AskUserQuestion tool result.
+// Shows the user's answers in "Q"="A" format, matching TS AskUserQuestionResultMessage.
+func renderAskResult(_ json.RawMessage, content string, isError bool, width int, _ string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if isError {
+		return WrapWithBracket(content, true, width)
+	}
+
+	// Content format from tool: "User has answered your questions: "Q1"="A1", "Q2"="A2". ..."
+	// or plain answer string for legacy questions
+	var b strings.Builder
+
+	if strings.HasPrefix(content, "User has answered") {
+		b.WriteString(bracketDim.Render(BracketPrefix))
+		b.WriteString(dimText.Render("User answered questions"))
+		b.WriteString("\n")
+
+		// Extract the answers portion between ": " and ". You can"
+		answersStart := strings.Index(content, ": ")
+		answersEnd := strings.Index(content, ". You can")
+		if answersStart >= 0 && answersEnd > answersStart {
+			answersPart := content[answersStart+2 : answersEnd]
+			// Split on ", " between answer pairs (but not within quoted strings)
+			pairs := splitAnswerPairs(answersPart)
+			for _, pair := range pairs {
+				b.WriteString(ContentIndent)
+				b.WriteString(truncateLine(pair, width-len(ContentIndent)))
+				b.WriteString("\n")
+			}
+		}
+	} else {
+		// Legacy single-answer format
+		b.WriteString(bracketDim.Render(BracketPrefix))
+		b.WriteString(truncateLine(content, width-len(BracketPrefix)))
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// splitAnswerPairs splits "Q1"="A1", "Q2"="A2" respecting Go %q escaped quotes.
+// Handles \" inside quoted strings correctly (e.g., "Which \"library\"?"="React").
+func splitAnswerPairs(s string) []string {
+	var pairs []string
+	var current strings.Builder
+	inQuote := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch == '\\' && inQuote && i+1 < len(s) {
+			// Escaped character inside quotes — consume both bytes
+			current.WriteByte(ch)
+			i++
+			current.WriteByte(s[i])
+		} else if ch == '"' {
+			inQuote = !inQuote
+			current.WriteByte(ch)
+		} else if ch == ',' && !inQuote {
+			pair := strings.TrimSpace(current.String())
+			if pair != "" {
+				pairs = append(pairs, pair)
+			}
+			current.Reset()
+		} else {
+			current.WriteByte(ch)
+		}
+	}
+	pair := strings.TrimSpace(current.String())
+	if pair != "" {
+		pairs = append(pairs, pair)
+	}
+	return pairs
 }
 
 // truncateContent truncates multi-line content to maxLines.

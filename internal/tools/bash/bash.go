@@ -262,8 +262,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				output += "\n"
 			}
 			output += fmt.Sprintf("Command timed out after %dms", timeoutMs)
-			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
-			return tool.InvokeResult{Content: output}, nil
+			display := fmt.Sprintf("timeout:%d", timeoutMs)
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output, Display: display}, nil")
+			return tool.InvokeResult{Content: output, Display: display}, nil
 		}
 
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -274,9 +275,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				output += "\n"
 			}
 			output += fmt.Sprintf("Exit code %d", exitCode)
-			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
+			display := fmt.Sprintf("exit_code:%d", exitCode)
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output, Display: display}, nil")
 
-			return tool.InvokeResult{Content: output}, nil
+			return tool.InvokeResult{Content: output, Display: display}, nil
 		}
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"execute command: %w\", err)")
 

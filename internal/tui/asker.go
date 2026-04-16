@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/tool"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -32,7 +33,7 @@ func (a *InteractiveAsker) SetProgram(prog *tea.Program) {
 }
 
 // Ask sends a question to the TUI and blocks until the user answers.
-func (a *InteractiveAsker) Ask(ctx context.Context, question string) (string, error) {
+func (a *InteractiveAsker) Ask(ctx context.Context, req tool.AskRequest) (tool.AskResponse, error) {
 	observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "enter")
 	defer observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "exit")
 	a.mu.Lock()
@@ -40,13 +41,12 @@ func (a *InteractiveAsker) Ask(ctx context.Context, question string) (string, er
 
 	if a.program == nil {
 		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "if: a.program == nil")
-		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
-		return "", errors.New("AskUserQuestion requires interactive mode")
+		return tool.AskResponse{}, errors.New("AskUserQuestion requires interactive mode")
 	}
 
-	respCh := make(chan string, 1)
+	respCh := make(chan tool.AskResponse, 1)
 	a.program.Send(AskRequestMsg{
-		Question: question,
+		Request:  req,
 		Response: respCh,
 	})
 
@@ -56,7 +56,7 @@ func (a *InteractiveAsker) Ask(ctx context.Context, question string) (string, er
 		return answer, nil
 	case <-ctx.Done():
 		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "select: <-ctx.Done()")
-		return "", ctx.Err()
+		return tool.AskResponse{}, ctx.Err()
 	}
 }
 
@@ -64,9 +64,8 @@ func (a *InteractiveAsker) Ask(ctx context.Context, question string) (string, er
 type NonInteractiveAsker struct{}
 
 // Ask always returns an error in non-interactive mode.
-func (a *NonInteractiveAsker) Ask(_ context.Context, _ string) (string, error) {
+func (a *NonInteractiveAsker) Ask(_ context.Context, _ tool.AskRequest) (tool.AskResponse, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"\", errors.New(\"AskUserQuestion requires interactive mode\")")
-	return "", errors.New("AskUserQuestion requires interactive mode")
+	return tool.AskResponse{}, errors.New("AskUserQuestion requires interactive mode")
 }
