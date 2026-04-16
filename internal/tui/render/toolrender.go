@@ -28,7 +28,8 @@ var (
 
 // ToolRenderer renders a tool result given context.
 // display carries optional TUI-only content from InvokeResult.Display (e.g., unified diff).
-type ToolRenderer func(input json.RawMessage, content string, isError bool, width int, display string) string
+// verbose controls expanded (full output) vs compact (truncated summary) rendering.
+type ToolRenderer func(input json.RawMessage, content string, isError bool, width int, display string, verbose bool) string
 
 // toolRenderers maps tool names to their specific renderer.
 var toolRenderers = map[string]ToolRenderer{
@@ -43,23 +44,28 @@ var toolRenderers = map[string]ToolRenderer{
 }
 
 // RenderToolOutput dispatches to a tool-specific renderer or generic fallback.
-func RenderToolOutput(name string, input json.RawMessage, content string, isError bool, width int, display string) string {
+func RenderToolOutput(name string, input json.RawMessage, content string, isError bool, width int, display string, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if renderer, ok := toolRenderers[name]; ok {
 		observe.GlobalTrace("if: ok")
-		observe.GlobalTrace("return: renderer(input, content, isError, width, display)")
-		return renderer(input, content, isError, width, display)
+		return renderer(input, content, isError, width, display, verbose)
 	}
-	observe.GlobalTrace("return: WrapWithBracket(content, isError, width)")
-	return WrapWithBracket(content, isError, width)
+	return WrapWithBracket(content, isError, width, verbose)
+}
+
+// appendExpandHint appends dim "(ctrl+o to expand)" hint to a builder.
+func appendExpandHint(b *strings.Builder) {
+	b.WriteString(ContentIndent)
+	b.WriteString(dimText.Render("(ctrl+o to expand)"))
+	b.WriteString("\n")
 }
 
 // renderBash renders Bash tool output.
 // Shows last 5 lines (matching TS non-verbose ShellProgressMessage), with styled
 // exit code/timeout when present in the Display field.
 // The command itself is already shown in the tool call line (⏺ Bash(cmd)).
-func renderBash(_ json.RawMessage, content string, isError bool, width int, display string) string {
+func renderBash(_ json.RawMessage, content string, isError bool, width int, display string, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
@@ -94,14 +100,18 @@ func renderBash(_ json.RawMessage, content string, isError bool, width int, disp
 		}
 	}
 
-	// Tail truncation: show last 5 output lines (matching TS non-verbose)
-	maxLines := 5
-	if len(lines) > maxLines {
-		skipped := len(lines) - maxLines
-		b.WriteString(ContentIndent)
-		b.WriteString(dimText.Render(fmt.Sprintf("(%d lines hidden)", skipped)))
-		b.WriteString("\n")
-		lines = lines[skipped:]
+	// Tail truncation: show last 5 output lines in non-verbose (matching TS ShellProgressMessage)
+	truncated := false
+	if !verbose {
+		maxLines := 5
+		if len(lines) > maxLines {
+			truncated = true
+			skipped := len(lines) - maxLines
+			b.WriteString(ContentIndent)
+			b.WriteString(dimText.Render(fmt.Sprintf("(%d lines hidden)", skipped)))
+			b.WriteString("\n")
+			lines = lines[skipped:]
+		}
 	}
 
 	for _, line := range lines {
@@ -124,6 +134,10 @@ func renderBash(_ json.RawMessage, content string, isError bool, width int, disp
 		b.WriteString("\n")
 	}
 
+	if truncated && !verbose {
+		appendExpandHint(&b)
+	}
+
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -141,13 +155,11 @@ func parseBashExitCode(display string) int {
 
 // renderRead renders FileRead tool output as a compact "Read N lines" summary.
 // The file path is already shown in the tool call line (⏺ Read(path)).
-func renderRead(input json.RawMessage, content string, isError bool, width int, _ string) string {
+func renderRead(input json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
-		observe.GlobalTrace("if: isError")
-		observe.GlobalTrace("return: WrapWithBracket(content, true, width)")
-		return WrapWithBracket(content, true, width)
+		return WrapWithBracket(content, true, width, verbose)
 	}
 
 	var params struct {
@@ -158,36 +170,63 @@ func renderRead(input json.RawMessage, content string, isError bool, width int, 
 
 	lineCount := strings.Count(strings.TrimRight(content, "\n"), "\n") + 1
 	if strings.TrimSpace(content) == "" {
-		observe.GlobalTrace("if: strings.TrimSpace(content) == \"\"")
 		lineCount = 0
 	}
 
 	noun := "lines"
 	if lineCount == 1 {
-		observe.GlobalTrace("if: lineCount == 1")
 		noun = "line"
 	}
 
 	summary := fmt.Sprintf("Read %d %s", lineCount, noun)
 	if params.Offset > 0 {
-		observe.GlobalTrace("if: params.Offset > 0")
 		summary += fmt.Sprintf(" (from line %d)", params.Offset+1)
 	}
 
-	observe.GlobalTrace("return: bracketDim.Render(BracketPrefix) + dimText.Render(summary)")
-	return bracketDim.Render(BracketPrefix) + dimText.Render(summary)
+	if !verbose {
+		var b strings.Builder
+		b.WriteString(bracketDim.Render(BracketPrefix) + dimText.Render(summary))
+		b.WriteString("\n")
+		appendExpandHint(&b)
+		return strings.TrimRight(b.String(), "\n")
+	}
+
+	// Verbose: show full content with line numbers (size guard: max 2000 lines per #46190)
+	var b strings.Builder
+	b.WriteString(bracketDim.Render(BracketPrefix) + dimText.Render(summary))
+	b.WriteString("\n")
+
+	lines := strings.Split(content, "\n")
+	maxVerboseLines := 2000
+	showLines := lines
+	if len(showLines) > maxVerboseLines {
+		showLines = showLines[:maxVerboseLines]
+	}
+	startLine := params.Offset + 1
+	for i, line := range showLines {
+		b.WriteString(ContentIndent)
+		b.WriteString(diffGutter.Render(fmt.Sprintf("%4d ", startLine+i)))
+		b.WriteString(truncateLine(line, width-len(ContentIndent)-5))
+		b.WriteString("\n")
+	}
+	if len(lines) > maxVerboseLines {
+		b.WriteString(ContentIndent)
+		b.WriteString(dimText.Render(fmt.Sprintf("(+%d more lines beyond display limit)", len(lines)-maxVerboseLines)))
+		b.WriteString("\n")
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderEdit renders FileEdit tool output as a unified diff.
 // When display contains a unified diff (from InvokeResult.Display), renders it with
 // line numbers, context, and color. Falls back to simple -/+ from input params.
-func renderEdit(input json.RawMessage, content string, isError bool, width int, display string) string {
+func renderEdit(input json.RawMessage, content string, isError bool, width int, display string, _ bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
 		observe.GlobalTrace("if: isError")
-		observe.GlobalTrace("return: WrapWithBracket(content, true, width)")
-		return WrapWithBracket(content, true, width)
+		return WrapWithBracket(content, true, width, false)
 	}
 
 	var params struct {
@@ -233,7 +272,7 @@ func renderEdit(input json.RawMessage, content string, isError bool, width int, 
 		}
 	} else {
 		observe.GlobalTrace("else: params.OldString != \"\" || params.NewString != \"\"")
-		b.WriteString(WrapWithBracket(content, false, width))
+		b.WriteString(WrapWithBracket(content, false, width, false))
 		b.WriteString("\n")
 	}
 	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
@@ -331,13 +370,12 @@ func renderUnifiedDiff(diff string, width int) string {
 // renderWrite renders FileWrite tool output.
 // When display contains a unified diff (from InvokeResult.Display), renders it with
 // line numbers, context, and color. Falls back to line count summary.
-func renderWrite(input json.RawMessage, content string, isError bool, width int, display string) string {
+func renderWrite(input json.RawMessage, content string, isError bool, width int, display string, _ bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
 		observe.GlobalTrace("if: isError")
-		observe.GlobalTrace("return: WrapWithBracket(content, true, width)")
-		return WrapWithBracket(content, true, width)
+		return WrapWithBracket(content, true, width, false)
 	}
 
 	var params struct {
@@ -440,21 +478,17 @@ func formatChangeSummary(added, removed int) string {
 
 // renderGrep renders Grep tool search results.
 // Shows summary + file list.
-func renderGrep(_ json.RawMessage, content string, isError bool, width int, _ string) string {
+func renderGrep(_ json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
-		observe.GlobalTrace("if: isError")
-		observe.GlobalTrace("return: WrapWithBracket(content, true, width)")
-		return WrapWithBracket(content, true, width)
+		return WrapWithBracket(content, true, width, verbose)
 	}
 
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	fileCount := 0
 	for _, line := range lines {
-		observe.GlobalTrace("range lines")
 		if strings.TrimSpace(line) != "" {
-			observe.GlobalTrace("if: strings.TrimSpace(line) != \"\"")
 			fileCount++
 		}
 	}
@@ -463,26 +497,26 @@ func renderGrep(_ json.RawMessage, content string, isError bool, width int, _ st
 	b.WriteString(bracketDim.Render(BracketPrefix))
 
 	if fileCount == 0 {
-		observe.GlobalTrace("if: fileCount == 0")
 		b.WriteString(dimText.Render("No matches found"))
 	} else {
-		observe.GlobalTrace("else: fileCount == 0")
 		b.WriteString(fmt.Sprintf("Found results in %d files", fileCount))
 	}
 	b.WriteString("\n")
 
 	maxFiles := 10
+	if verbose {
+		maxFiles = fileCount // no limit in verbose mode
+	}
+	truncated := false
 	shown := 0
 	for _, line := range lines {
-		observe.GlobalTrace("range lines")
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
-			observe.GlobalTrace("if: trimmed == \"\"")
 			continue
 		}
 		if shown >= maxFiles {
-			observe.GlobalTrace("if: shown >= maxFiles")
-			remaining := fileCount - maxFiles
+			truncated = true
+			remaining := fileCount - shown
 			b.WriteString(ContentIndent)
 			b.WriteString(dimText.Render(fmt.Sprintf("(+%d more files)", remaining)))
 			b.WriteString("\n")
@@ -493,27 +527,26 @@ func renderGrep(_ json.RawMessage, content string, isError bool, width int, _ st
 		b.WriteString("\n")
 		shown++
 	}
-	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
+
+	if truncated && !verbose {
+		appendExpandHint(&b)
+	}
 
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderGlob renders Glob tool file listing results.
-func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ string) string {
+func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
-		observe.GlobalTrace("if: isError")
-		observe.GlobalTrace("return: WrapWithBracket(content, true, width)")
-		return WrapWithBracket(content, true, width)
+		return WrapWithBracket(content, true, width, verbose)
 	}
 
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	fileCount := 0
 	for _, line := range lines {
-		observe.GlobalTrace("range lines")
 		if strings.TrimSpace(line) != "" {
-			observe.GlobalTrace("if: strings.TrimSpace(line) != \"\"")
 			fileCount++
 		}
 	}
@@ -522,26 +555,26 @@ func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ st
 	b.WriteString(bracketDim.Render(BracketPrefix))
 
 	if fileCount == 0 {
-		observe.GlobalTrace("if: fileCount == 0")
 		b.WriteString(dimText.Render("No files found"))
 	} else {
-		observe.GlobalTrace("else: fileCount == 0")
 		b.WriteString(fmt.Sprintf("Found %d files", fileCount))
 	}
 	b.WriteString("\n")
 
 	maxFiles := 15
+	if verbose {
+		maxFiles = fileCount // no limit in verbose mode
+	}
+	truncated := false
 	shown := 0
 	for _, line := range lines {
-		observe.GlobalTrace("range lines")
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
-			observe.GlobalTrace("if: trimmed == \"\"")
 			continue
 		}
 		if shown >= maxFiles {
-			observe.GlobalTrace("if: shown >= maxFiles")
-			remaining := fileCount - maxFiles
+			truncated = true
+			remaining := fileCount - shown
 			b.WriteString(ContentIndent)
 			b.WriteString(dimText.Render(fmt.Sprintf("(+%d more files)", remaining)))
 			b.WriteString("\n")
@@ -552,13 +585,16 @@ func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ st
 		b.WriteString("\n")
 		shown++
 	}
-	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
+
+	if truncated && !verbose {
+		appendExpandHint(&b)
+	}
 
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderAgent renders Agent tool results with diamond glyphs.
-func renderAgent(input json.RawMessage, content string, isError bool, width int, _ string) string {
+func renderAgent(input json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
@@ -570,58 +606,55 @@ func renderAgent(input json.RawMessage, content string, isError bool, width int,
 
 	glyph := DiamondFilled
 	if isError {
-		observe.GlobalTrace("if: isError")
 		glyph = DiamondOpen
 	}
 
 	summary := params.Prompt
 	if len(summary) > 60 {
-		observe.GlobalTrace("if: len(summary) > 60")
 		summary = summary[:57] + "..."
 	}
 
 	b.WriteString(bracketDim.Render(BracketPrefix))
 	b.WriteString(glyph + " ")
 	if summary != "" {
-		observe.GlobalTrace("if: summary != \"\"")
 		b.WriteString(dimText.Render(summary))
 	}
 	b.WriteString("\n")
 
 	if content != "" {
-		observe.GlobalTrace("if: content != \"\"")
 		lines := strings.Split(strings.TrimSpace(content), "\n")
-		maxLines := 5
-		if len(lines) > maxLines {
-			observe.GlobalTrace("if: len(lines) > maxLines")
-			lines = lines[:maxLines]
+		total := len(lines)
+		truncated := false
+		if !verbose {
+			maxLines := 5
+			if len(lines) > maxLines {
+				truncated = true
+				lines = lines[:maxLines]
+			}
 		}
 		for _, line := range lines {
-			observe.GlobalTrace("range lines")
 			b.WriteString(ContentIndent)
 			b.WriteString(truncateLine(line, width-len(ContentIndent)))
 			b.WriteString("\n")
 		}
-		total := len(strings.Split(strings.TrimSpace(content), "\n"))
-		if total > maxLines {
-			observe.GlobalTrace("if: total > maxLines")
+		if truncated {
 			b.WriteString(ContentIndent)
-			b.WriteString(dimText.Render(fmt.Sprintf("(+%d more lines)", total-maxLines)))
+			b.WriteString(dimText.Render(fmt.Sprintf("(+%d more lines)", total-len(lines))))
 			b.WriteString("\n")
+			appendExpandHint(&b)
 		}
 	}
-	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderAskResult renders AskUserQuestion tool result.
 // Shows the user's answers in "Q"="A" format, matching TS AskUserQuestionResultMessage.
-func renderAskResult(_ json.RawMessage, content string, isError bool, width int, _ string) string {
+func renderAskResult(_ json.RawMessage, content string, isError bool, width int, _ string, _ bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
-		return WrapWithBracket(content, true, width)
+		return WrapWithBracket(content, true, width, false)
 	}
 
 	// Content format from tool: "User has answered your questions: "Q1"="A1", "Q2"="A2". ..."

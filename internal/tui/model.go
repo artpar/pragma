@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -34,20 +35,32 @@ type Config struct {
 	Workspace    string                // workspace directory basename
 }
 
-// segmentKind distinguishes text (pre-rendered) from thinking (rendered on demand).
+// segmentKind distinguishes text (pre-rendered) from thinking/tool (rendered on demand).
 type segmentKind int
 
 const (
 	segText     segmentKind = iota
 	segThinking
+	segTool // raw tool result data, rendered on demand based on verbose
 )
 
+// toolSegData holds raw tool result data for on-demand rendering.
+// Stored in segTool segments; re-rendered when verbose toggles.
+type toolSegData struct {
+	Name    string
+	Input   json.RawMessage
+	Content string
+	IsError bool
+	Display string
+}
+
 // segment is a typed chunk of viewport output. Text segments are pre-rendered;
-// thinking segments store raw text and are rendered based on thinkingExpanded.
+// thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
 	kind     segmentKind
-	content  string // segText: pre-rendered; segThinking: raw thinking text
-	redacted bool   // only meaningful for segThinking
+	content  string       // segText: pre-rendered; segThinking: raw thinking text
+	redacted bool         // only meaningful for segThinking
+	tool     *toolSegData // only meaningful for segTool
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -80,7 +93,7 @@ type Model struct {
 
 	// Streaming state
 	outputSegs       []segment        // typed segments for viewport content
-	thinkingExpanded bool             // Ctrl+O toggles thinking block visibility
+	verbose bool             // Ctrl+O toggles verbose mode: thinking expanded + tool results full output
 	streamBuf        *strings.Builder // current streaming text (not yet finalized)
 	eventCh          <-chan query.LoopEvent
 	streaming        bool
@@ -267,7 +280,7 @@ func (m Model) View() string {
 }
 
 // viewportContent returns the full viewport content including spinner.
-// Thinking segments are rendered on demand based on thinkingExpanded state.
+// Thinking segments are rendered on demand based on verbose state.
 // Shows a welcome message when the conversation is empty.
 func (m Model) viewportContent() string {
 	observe.GlobalTrace("enter")
@@ -280,7 +293,13 @@ func (m Model) viewportContent() string {
 		case segThinking:
 			b.WriteString(render.RenderThinking(model.ThinkingPart{
 				Text: seg.content, Redacted: seg.redacted,
-			}, m.thinkingExpanded) + "\n")
+			}, m.verbose) + "\n")
+		case segTool:
+			b.WriteString(render.RenderToolOutput(
+				seg.tool.Name, seg.tool.Input, seg.tool.Content,
+				seg.tool.IsError, m.width, seg.tool.Display, m.verbose,
+			))
+			b.WriteString("\n")
 		}
 	}
 	b.WriteString(m.streamBuf.String())
@@ -312,11 +331,21 @@ func appendThinking(segs []segment, text string, redacted bool) []segment {
 	return append(segs, segment{kind: segThinking, content: text, redacted: redacted})
 }
 
+// appendTool appends a raw tool result to segments for on-demand rendering.
+// Returns the updated slice — caller must assign.
+func appendTool(segs []segment, data toolSegData) []segment {
+	return append(segs, segment{kind: segTool, tool: &data})
+}
+
 // outputLen returns the total content length across all segments.
 func outputLen(segs []segment) int {
 	n := 0
 	for _, seg := range segs {
-		n += len(seg.content)
+		if seg.kind == segTool && seg.tool != nil {
+			n += len(seg.tool.Content) + len(seg.tool.Input) + len(seg.tool.Display)
+		} else {
+			n += len(seg.content)
+		}
 	}
 	return n
 }
@@ -331,11 +360,31 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 		}
 		return segs
 	}
-	// Assistant messages: split thinking parts into segments
+	// Assistant messages: split thinking/tool parts into segments for on-demand rendering.
+	// Track last ToolCallPart to pair with its ToolResultPart into segTool segments.
+	var lastCall *model.ToolCallPart
 	for _, part := range msg.Content {
-		if tp, ok := part.(model.ThinkingPart); ok {
-			segs = appendThinking(segs, tp.Text, tp.Redacted)
-		} else {
+		switch p := part.(type) {
+		case model.ThinkingPart:
+			segs = appendThinking(segs, p.Text, p.Redacted)
+		case model.ToolCallPart:
+			segs = appendText(segs, render.RenderToolCall(p, 80)+"\n")
+			call := p
+			lastCall = &call
+		case model.ToolResultPart:
+			if lastCall != nil {
+				segs = appendTool(segs, toolSegData{
+					Name:    lastCall.Name,
+					Input:   lastCall.Input,
+					Content: p.Content,
+					IsError: p.IsError,
+					Display: "", // Display is TUI-only, not persisted
+				})
+				lastCall = nil
+			} else {
+				segs = appendText(segs, render.RenderToolResultGeneric(p, 80)+"\n")
+			}
+		default:
 			rendered := render.RenderContentPart(part, md, 80)
 			if rendered != "" {
 				segs = appendText(segs, rendered+"\n")

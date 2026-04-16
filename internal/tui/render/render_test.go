@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -93,7 +94,7 @@ func TestWrapWithBracket(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := WrapWithBracket(tt.content, tt.isError, 80)
+			result := WrapWithBracket(tt.content, tt.isError, 80, false)
 			if !strings.Contains(result, tt.contains) {
 				t.Errorf("expected %q in %q", tt.contains, result)
 			}
@@ -109,7 +110,7 @@ func TestWrapWithBracketTruncation(t *testing.T) {
 	}
 	content := strings.Join(lines, "\n")
 
-	result := WrapWithBracket(content, false, 80)
+	result := WrapWithBracket(content, false, 80, false)
 	if !strings.Contains(result, "+5 more lines") {
 		t.Errorf("expected truncation indicator, got %q", result)
 	}
@@ -150,7 +151,7 @@ func TestRenderThinkingRedacted(t *testing.T) {
 
 func TestRenderToolOutputBash(t *testing.T) {
 	input := json.RawMessage(`{"command":"echo hello"}`)
-	result := RenderToolOutput("Bash", input, "hello\n", false, 80, "")
+	result := RenderToolOutput("Bash", input, "hello\n", false, 80, "", false)
 	// Command is shown in tool call line, not repeated in result
 	if !strings.Contains(result, "hello") {
 		t.Errorf("expected output in %q", result)
@@ -159,7 +160,7 @@ func TestRenderToolOutputBash(t *testing.T) {
 
 func TestRenderToolOutputBashNoOutput(t *testing.T) {
 	input := json.RawMessage(`{"command":"true"}`)
-	result := RenderToolOutput("Bash", input, "", false, 80, "")
+	result := RenderToolOutput("Bash", input, "", false, 80, "", false)
 	if !strings.Contains(result, "no output") {
 		t.Errorf("expected no output indicator in %q", result)
 	}
@@ -167,7 +168,7 @@ func TestRenderToolOutputBashNoOutput(t *testing.T) {
 
 func TestRenderToolOutputEdit(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"test.go","old_string":"foo","new_string":"bar"}`)
-	result := RenderToolOutput("Edit", input, "ok", false, 80, "")
+	result := RenderToolOutput("Edit", input, "ok", false, 80, "", false)
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("expected file path in %q", result)
 	}
@@ -182,7 +183,7 @@ func TestRenderToolOutputEdit(t *testing.T) {
 func TestRenderToolOutputEditWithUnifiedDiff(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"test.go","old_string":"foo","new_string":"bar"}`)
 	display := "@@ -2,5 +2,5 @@\n ctx1\n ctx2\n ctx3\n-foo\n+bar\n ctx4\n ctx5"
-	result := RenderToolOutput("Edit", input, "ok", false, 80, display)
+	result := RenderToolOutput("Edit", input, "ok", false, 80, display, false)
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("expected file path in %q", result)
 	}
@@ -199,7 +200,7 @@ func TestRenderToolOutputEditWithUnifiedDiff(t *testing.T) {
 func TestRenderToolOutputGrep(t *testing.T) {
 	input := json.RawMessage(`{"pattern":"TODO"}`)
 	content := "file1.go\nfile2.go\nfile3.go\n"
-	result := RenderToolOutput("Grep", input, content, false, 80, "")
+	result := RenderToolOutput("Grep", input, content, false, 80, "", false)
 	if !strings.Contains(result, "3 files") {
 		t.Errorf("expected file count in %q", result)
 	}
@@ -208,7 +209,7 @@ func TestRenderToolOutputGrep(t *testing.T) {
 func TestRenderToolOutputGlob(t *testing.T) {
 	input := json.RawMessage(`{"pattern":"*.go"}`)
 	content := "a.go\nb.go\n"
-	result := RenderToolOutput("Glob", input, content, false, 80, "")
+	result := RenderToolOutput("Glob", input, content, false, 80, "", false)
 	if !strings.Contains(result, "2 files") {
 		t.Errorf("expected file count in %q", result)
 	}
@@ -216,7 +217,7 @@ func TestRenderToolOutputGlob(t *testing.T) {
 
 func TestRenderToolOutputUnknownTool(t *testing.T) {
 	input := json.RawMessage(`{"key":"value"}`)
-	result := RenderToolOutput("UnknownTool", input, "some output", false, 80, "")
+	result := RenderToolOutput("UnknownTool", input, "some output", false, 80, "", false)
 	if !strings.Contains(result, Bracket) {
 		t.Errorf("expected bracket wrapper for unknown tool in %q", result)
 	}
@@ -228,7 +229,7 @@ func TestRenderToolOutputUnknownTool(t *testing.T) {
 func TestRenderToolOutputRead(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/test.go","offset":0,"limit":5}`)
 	content := "line1\nline2\nline3\nline4\nline5"
-	result := RenderToolOutput("Read", input, content, false, 80, "")
+	result := RenderToolOutput("Read", input, content, false, 80, "", false)
 	// Compact summary: "Read N lines" — path is shown in the tool call line
 	if !strings.Contains(result, "Read 5 lines") {
 		t.Errorf("expected compact summary in %q", result)
@@ -237,7 +238,7 @@ func TestRenderToolOutputRead(t *testing.T) {
 
 func TestRenderToolOutputReadError(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/missing.go"}`)
-	result := RenderToolOutput("Read", input, "file not found", true, 80, "")
+	result := RenderToolOutput("Read", input, "file not found", true, 80, "", false)
 	if !strings.Contains(result, "file not found") {
 		t.Errorf("expected error content in %q", result)
 	}
@@ -245,7 +246,7 @@ func TestRenderToolOutputReadError(t *testing.T) {
 
 func TestRenderToolOutputWrite(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/out.go"}`)
-	result := RenderToolOutput("Write", input, "package main", false, 80, "")
+	result := RenderToolOutput("Write", input, "package main", false, 80, "", false)
 	if !strings.Contains(result, "/tmp/out.go") {
 		t.Errorf("expected file path in %q", result)
 	}
@@ -257,7 +258,7 @@ func TestRenderToolOutputWrite(t *testing.T) {
 func TestRenderToolOutputAgent(t *testing.T) {
 	input := json.RawMessage(`{"prompt":"search for patterns in the codebase"}`)
 	content := "Found 3 patterns\nin file1.go\nin file2.go"
-	result := RenderToolOutput("Agent", input, content, false, 80, "")
+	result := RenderToolOutput("Agent", input, content, false, 80, "", false)
 	if !strings.Contains(result, DiamondFilled) {
 		t.Errorf("expected filled diamond for completed agent in %q", result)
 	}
@@ -268,9 +269,147 @@ func TestRenderToolOutputAgent(t *testing.T) {
 
 func TestRenderToolOutputAgentError(t *testing.T) {
 	input := json.RawMessage(`{"prompt":"do something"}`)
-	result := RenderToolOutput("Agent", input, "timeout", true, 80, "")
+	result := RenderToolOutput("Agent", input, "timeout", true, 80, "", false)
 	if !strings.Contains(result, DiamondOpen) {
 		t.Errorf("expected open diamond for error agent in %q", result)
+	}
+}
+
+func TestRenderToolOutputBashVerbose(t *testing.T) {
+	input := json.RawMessage(`{"command":"seq 10"}`)
+	// 10 lines: verbose should show all, non-verbose only last 5
+	content := "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
+	nonVerbose := RenderToolOutput("Bash", input, content, false, 80, "", false)
+	verbose := RenderToolOutput("Bash", input, content, false, 80, "", true)
+
+	// Non-verbose: should hide first 5 lines and show hint
+	if !strings.Contains(nonVerbose, "5 lines hidden") {
+		t.Errorf("non-verbose should show hidden count, got %q", nonVerbose)
+	}
+	if !strings.Contains(nonVerbose, "ctrl+o to expand") {
+		t.Errorf("non-verbose should show expand hint, got %q", nonVerbose)
+	}
+
+	// Verbose: should show all lines, no hint
+	plain := stripANSI(verbose)
+	if strings.Contains(plain, "lines hidden") {
+		t.Errorf("verbose should not hide lines, got %q", plain)
+	}
+	if strings.Contains(plain, "ctrl+o") {
+		t.Errorf("verbose should not show expand hint, got %q", plain)
+	}
+	if !strings.Contains(plain, "1") || !strings.Contains(plain, "10") {
+		t.Errorf("verbose should show all lines, got %q", plain)
+	}
+}
+
+func TestRenderToolOutputReadVerbose(t *testing.T) {
+	input := json.RawMessage(`{"file_path":"/tmp/test.go","offset":0,"limit":100}`)
+	content := "line1\nline2\nline3"
+	nonVerbose := RenderToolOutput("Read", input, content, false, 80, "", false)
+	verbose := RenderToolOutput("Read", input, content, false, 80, "", true)
+
+	// Non-verbose: summary only + hint
+	plain := stripANSI(nonVerbose)
+	if !strings.Contains(plain, "Read 3 lines") {
+		t.Errorf("non-verbose should show summary, got %q", plain)
+	}
+	if !strings.Contains(plain, "ctrl+o to expand") {
+		t.Errorf("non-verbose should show expand hint, got %q", plain)
+	}
+	if strings.Contains(plain, "line1") {
+		t.Errorf("non-verbose should not show file content, got %q", plain)
+	}
+
+	// Verbose: should show numbered content
+	vPlain := stripANSI(verbose)
+	if !strings.Contains(vPlain, "line1") {
+		t.Errorf("verbose should show file content, got %q", vPlain)
+	}
+	if !strings.Contains(vPlain, "1 ") {
+		t.Errorf("verbose should show line numbers, got %q", vPlain)
+	}
+	if strings.Contains(vPlain, "ctrl+o") {
+		t.Errorf("verbose should not show expand hint, got %q", vPlain)
+	}
+}
+
+func TestRenderToolOutputGrepVerbose(t *testing.T) {
+	input := json.RawMessage(`{"pattern":"TODO"}`)
+	// 12 files: non-verbose shows 10, verbose shows all
+	var files []string
+	for i := 1; i <= 12; i++ {
+		files = append(files, fmt.Sprintf("file%d.go", i))
+	}
+	content := strings.Join(files, "\n")
+
+	nonVerbose := RenderToolOutput("Grep", input, content, false, 80, "", false)
+	verbose := RenderToolOutput("Grep", input, content, false, 80, "", true)
+
+	// Non-verbose: should truncate + hint
+	plain := stripANSI(nonVerbose)
+	if !strings.Contains(plain, "+2 more files") {
+		t.Errorf("non-verbose should show remaining count, got %q", plain)
+	}
+	if !strings.Contains(plain, "ctrl+o to expand") {
+		t.Errorf("non-verbose should show expand hint, got %q", plain)
+	}
+
+	// Verbose: should show all 12
+	vPlain := stripANSI(verbose)
+	if !strings.Contains(vPlain, "file12.go") {
+		t.Errorf("verbose should show all files, got %q", vPlain)
+	}
+	if strings.Contains(vPlain, "more files") {
+		t.Errorf("verbose should not truncate, got %q", vPlain)
+	}
+}
+
+func TestRenderToolOutputAgentVerbose(t *testing.T) {
+	input := json.RawMessage(`{"prompt":"search patterns"}`)
+	content := "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8"
+
+	nonVerbose := RenderToolOutput("Agent", input, content, false, 80, "", false)
+	verbose := RenderToolOutput("Agent", input, content, false, 80, "", true)
+
+	// Non-verbose: truncated to 5 lines + hint
+	plain := stripANSI(nonVerbose)
+	if !strings.Contains(plain, "+3 more lines") {
+		t.Errorf("non-verbose should show truncation count, got %q", plain)
+	}
+	if !strings.Contains(plain, "ctrl+o to expand") {
+		t.Errorf("non-verbose should show expand hint, got %q", plain)
+	}
+
+	// Verbose: all lines
+	vPlain := stripANSI(verbose)
+	if !strings.Contains(vPlain, "line8") {
+		t.Errorf("verbose should show all lines, got %q", vPlain)
+	}
+	if strings.Contains(vPlain, "more lines") {
+		t.Errorf("verbose should not truncate, got %q", vPlain)
+	}
+}
+
+func TestWrapWithBracketVerbose(t *testing.T) {
+	// 20 lines: non-verbose truncates to 15, verbose shows up to 200
+	var lines []string
+	for i := 0; i < 20; i++ {
+		lines = append(lines, "line content here")
+	}
+	content := strings.Join(lines, "\n")
+
+	nonVerbose := WrapWithBracket(content, false, 80, false)
+	verbose := WrapWithBracket(content, false, 80, true)
+
+	if !strings.Contains(nonVerbose, "+5 more lines") {
+		t.Errorf("non-verbose should truncate, got %q", nonVerbose)
+	}
+	if !strings.Contains(nonVerbose, "ctrl+o to expand") {
+		t.Errorf("non-verbose should show expand hint, got %q", nonVerbose)
+	}
+	if strings.Contains(verbose, "more lines") {
+		t.Errorf("verbose should not truncate 20 lines, got %q", verbose)
 	}
 }
 

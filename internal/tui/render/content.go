@@ -226,23 +226,19 @@ func RenderToolCall(tc model.ToolCallPart, width int) string {
 func RenderToolResultGeneric(tr model.ToolResultPart, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: WrapWithBracket(tr.Content, tr.IsError, width)")
-	return WrapWithBracket(tr.Content, tr.IsError, width)
+	return WrapWithBracket(tr.Content, tr.IsError, width, false)
 }
 
 // WrapWithBracket wraps content with the ⎿ bracket glyph.
 // Matches TS MessageResponse component layout.
-func WrapWithBracket(content string, isError bool, width int) string {
+// verbose controls whether output is truncated (non-verbose: 15 lines) or shown in full.
+func WrapWithBracket(content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if content == "" {
-		observe.GlobalTrace("if: content == \"\"")
 		if isError {
-			observe.GlobalTrace("if: isError")
-			observe.GlobalTrace("return: bracketErr.Render(BracketPrefix + \"(error)\")")
 			return bracketErr.Render(BracketPrefix + "(error)")
 		}
-		observe.GlobalTrace("return: bracketDim.Render(BracketPrefix + \"(no output)\")")
 		return bracketDim.Render(BracketPrefix + "(no output)")
 	}
 
@@ -251,28 +247,24 @@ func WrapWithBracket(content string, isError bool, width int) string {
 	var b strings.Builder
 	bracket := bracketDim
 	if isError {
-		observe.GlobalTrace("if: isError")
 		bracket = bracketErr
 	}
 
 	maxLines := 15
+	if verbose {
+		maxLines = 200 // size guard for verbose mode
+	}
 	truncated := false
 	if len(lines) > maxLines {
-		observe.GlobalTrace("if: len(lines) > maxLines")
 		truncated = true
 		lines = lines[:maxLines]
 	}
 
 	for i, line := range lines {
-		observe.GlobalTrace("range lines")
 		if i == 0 {
-			observe.GlobalTrace("if: i == 0")
-
 			b.WriteString(bracket.Render(BracketPrefix))
 			b.WriteString(truncateLine(line, width-len(BracketPrefix)))
 		} else {
-			observe.GlobalTrace("else: i == 0")
-
 			b.WriteString(ContentIndent)
 			b.WriteString(truncateLine(line, width-len(ContentIndent)))
 		}
@@ -280,13 +272,14 @@ func WrapWithBracket(content string, isError bool, width int) string {
 	}
 
 	if truncated {
-		observe.GlobalTrace("if: truncated")
 		remaining := len(strings.Split(content, "\n")) - maxLines
 		b.WriteString(ContentIndent)
 		b.WriteString(bracketDim.Render(fmt.Sprintf("(+%d more lines)", remaining)))
 		b.WriteString("\n")
+		if !verbose {
+			appendExpandHint(&b)
+		}
 	}
-	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
 }

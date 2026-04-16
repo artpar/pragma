@@ -143,10 +143,16 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 		call, ok := m.activeToolCalls[e.Result.ToolCallID]
 		if ok {
-			m.outputSegs = appendText(m.outputSegs, render.RenderToolOutput(call.Name, call.Input, e.Result.Content, e.Result.IsError, m.width, e.Display))
+			m.outputSegs = appendTool(m.outputSegs, toolSegData{
+				Name:    call.Name,
+				Input:   call.Input,
+				Content: e.Result.Content,
+				IsError: e.Result.IsError,
+				Display: e.Display,
+			})
 			delete(m.activeToolCalls, e.Result.ToolCallID)
 		} else {
-			m.outputSegs = appendText(m.outputSegs, render.WrapWithBracket(e.Result.Content, e.Result.IsError, m.width))
+			m.outputSegs = appendText(m.outputSegs, render.WrapWithBracket(e.Result.Content, e.Result.IsError, m.width, false))
 		}
 		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.SetStatus("streaming...")
@@ -340,8 +346,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.Type {
 	case tea.KeyCtrlO:
-		observe.GlobalTrace("case: tea.KeyCtrlO — toggle thinking")
-		m.thinkingExpanded = !m.thinkingExpanded
+		observe.GlobalTrace("case: tea.KeyCtrlO — toggle verbose")
+		m.verbose = !m.verbose
 		m.viewport.SetContent(m.viewportContent())
 		return m, nil
 	case tea.KeyPgUp, tea.KeyPgDown:
