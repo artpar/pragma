@@ -77,7 +77,8 @@ nfpms:
         dst: /usr/share/fish/vendor_completions.d/pragma.fish
 
 brews:
-  - repository:
+  - name: pragma
+    repository:
       owner: artpar
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
@@ -93,7 +94,8 @@ brews:
       system "#{bin}/pragma", "version"
 
 scoops:
-  - repository:
+  - name: pragma
+    repository:
       owner: artpar
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
