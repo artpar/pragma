@@ -11,7 +11,7 @@ before:
 
 builds:
   - id: gogent
-    main: ./cmd/gogent/
+    main: ./cmd/pragma/
     binary: pragma
     env:
       - CGO_ENABLED=0
