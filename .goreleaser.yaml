@@ -10,7 +10,7 @@ before:
     - go run ./cmd/pragma/ completion fish > completions/pragma.fish
 
 builds:
-  - id: gogent
+  - id: pragma
     main: ./cmd/pragma/
     binary: pragma
     env:
@@ -90,7 +90,7 @@ brews:
       zsh_completion.install "completions/pragma.zsh" => "_pragma"
       fish_completion.install "completions/pragma.fish"
     test: |
-      system "#{bin}/gogent", "version"
+      system "#{bin}/pragma", "version"
 
 scoops:
   - repository:
