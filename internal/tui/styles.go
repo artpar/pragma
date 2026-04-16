@@ -67,4 +67,10 @@ var (
 	inputPromptStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "86"}).
 				Bold(true)
+
+	// inputPromptDimStyle is the streaming-state variant of the input prompt.
+	// Same cyan color but faint, giving visual feedback that the model is responding.
+	inputPromptDimStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "86"}).
+				Faint(true)
 )

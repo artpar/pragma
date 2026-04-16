@@ -251,7 +251,7 @@ func TestRenderConversationNoSeparators(t *testing.T) {
 	}
 	result := RenderConversation(msgs, md)
 	// No turn separators — clean flow like Pragma
-	if strings.Contains(result, HeavyHorizontal) {
+	if strings.Contains(result, "━") {
 		t.Errorf("expected no turn separator in conversation output, got %q", result)
 	}
 	if !strings.Contains(result, "Hi") || !strings.Contains(result, "Hello") {

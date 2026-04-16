@@ -79,6 +79,18 @@ func (c *inputComponent) SetWidth(width int) {
 	c.textarea.SetWidth(width)
 }
 
+// SetStreaming updates the visual state of the prompt glyph.
+// When streaming, the ❯ prompt is dimmed to indicate the model is responding.
+func (c *inputComponent) SetStreaming(v bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if v {
+		c.textarea.Prompt = inputPromptDimStyle.Render("❯ ")
+	} else {
+		c.textarea.Prompt = inputPromptStyle.Render("❯ ")
+	}
+}
+
 // Reset clears the input value and refocuses.
 func (c *inputComponent) Reset() {
 	observe.GlobalTrace("enter")

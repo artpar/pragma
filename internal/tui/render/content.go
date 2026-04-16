@@ -152,16 +152,25 @@ func RenderContentPart(part model.ContentPart, md *MarkdownRenderer, width int) 
 }
 
 // RenderThinking renders a thinking block with glyph prefix.
+// Caps output at 5 lines to avoid flooding the viewport.
+// TS reference uses binary show/hide (Ctrl+O toggle); pragma truncates instead
+// since expand/collapse is not yet implemented.
 func RenderThinking(tp model.ThinkingPart) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if tp.Redacted {
 		observe.GlobalTrace("if: tp.Redacted")
-		observe.GlobalTrace("return: thinkStyle.Render(ThinkGlyph + \" [thinking redacted]\")")
 		return thinkStyle.Render(ThinkGlyph + " [thinking redacted]")
 	}
-	observe.GlobalTrace("return: thinkStyle.Render(ThinkGlyph + \" \" + tp.Text)")
-	return thinkStyle.Render(ThinkGlyph + " " + tp.Text)
+	const maxLines = 5
+	lines := strings.Split(tp.Text, "\n")
+	if len(lines) <= maxLines {
+		return thinkStyle.Render(ThinkGlyph + " " + tp.Text)
+	}
+	visible := strings.Join(lines[:maxLines-1], "\n")
+	remaining := len(tp.Text) - len(visible)
+	return thinkStyle.Render(ThinkGlyph + " " + visible + "\n" +
+		fmt.Sprintf("(%d more chars)", remaining))
 }
 
 // RenderToolCall renders a tool call as ⏺ ToolName(primaryArg) inline.

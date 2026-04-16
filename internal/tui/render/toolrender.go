@@ -55,7 +55,7 @@ func RenderToolOutput(name string, input json.RawMessage, content string, isErro
 // renderBash renders Bash tool output.
 // Shows stdout content with tail truncation for long output.
 // The command itself is already shown in the tool call line (⏺ Bash(cmd)).
-func renderBash(input json.RawMessage, content string, isError bool, width int) string {
+func renderBash(_ json.RawMessage, content string, isError bool, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
@@ -223,7 +223,7 @@ func renderWrite(input json.RawMessage, content string, isError bool, width int)
 
 // renderGrep renders Grep tool search results.
 // Shows summary + file list.
-func renderGrep(input json.RawMessage, content string, isError bool, width int) string {
+func renderGrep(_ json.RawMessage, content string, isError bool, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -282,7 +282,7 @@ func renderGrep(input json.RawMessage, content string, isError bool, width int) 
 }
 
 // renderGlob renders Glob tool file listing results.
-func renderGlob(input json.RawMessage, content string, isError bool, width int) string {
+func renderGlob(_ json.RawMessage, content string, isError bool, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {

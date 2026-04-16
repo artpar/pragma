@@ -21,23 +21,15 @@ const (
 	// BracketPrefix is the full bracket with spacing, matching TS reference.
 	BracketPrefix = "  ⎿  "
 
-	// Bullet is the list/item indicator.
-	Bullet = "∙"
-
-	// BlockquoteBar is the left bar for blockquotes.
-	BlockquoteBar = "▎"
-
 	// DiamondOpen indicates a running agent/task.
 	DiamondOpen = "◇"
 
 	// DiamondFilled indicates a completed agent/task.
 	DiamondFilled = "◆"
 
-	// HeavyHorizontal is used for separators.
-	HeavyHorizontal = "━"
-
-	// ThinkGlyph is the thinking indicator.
-	ThinkGlyph = "✻"
+	// ThinkGlyph is the thinking indicator (∴ = U+2234 THEREFORE).
+	// Matches pragma TS reference AssistantThinkingMessage.tsx.
+	ThinkGlyph = "∴"
 
 	// ContentIndent is the indentation under a bracket.
 	// Matches the width of BracketPrefix so content aligns.

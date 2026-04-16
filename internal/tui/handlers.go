@@ -204,6 +204,7 @@ func (m Model) startEngineFromPrompt(prompt string) (tea.Model, tea.Cmd) {
 	m.viewport.GotoBottom()
 
 	m.streaming = true
+	m.input.SetStreaming(true)
 	m.toolbar.SetStatus("streaming...")
 	m.toolbar.IncrementTurn()
 
@@ -277,7 +278,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Interrupt current turn immediately.
 			return m.interruptTurn()
 		}
-		// Idle: 2-step exit ("press again" → quit).
+		// Idle: double-press to exit. First press shows warning, second quits.
+		// Input text is never cleared — preserves user work (see issue #5817).
 		if m.quitPending {
 			observe.GlobalTrace("return: m.quit()")
 			return m.quit()
@@ -420,6 +422,7 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 	m.viewport.GotoBottom()
 
 	m.streaming = true
+	m.input.SetStreaming(true)
 	m.toolbar.SetStatus("streaming...")
 	m.toolbar.IncrementTurn()
 
@@ -438,6 +441,7 @@ func (m Model) finishTurn() (Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	m.streaming = false
+	m.input.SetStreaming(false)
 	m.spinnerActive = false
 	m.eventCh = nil
 	m.toolbar.SetStatus("ready")
