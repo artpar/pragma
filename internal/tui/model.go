@@ -44,6 +44,7 @@ const (
 	segThinking
 	segTool      // raw tool result data, rendered on demand based on verbose
 	segLifecycle // lifecycle progress, updated in-place based on events
+	segAgent     // agent progress, updated in-place based on AgentProgressEvent (ADR-043)
 )
 
 // toolSegData holds raw tool result data for on-demand rendering.
@@ -85,6 +86,26 @@ type lifecycleSegData struct {
 	Error     string
 }
 
+// agentEntry tracks one agent's progress within a segAgent segment.
+type agentEntry struct {
+	AgentID     string
+	Description string
+	ToolCount   int
+	TokenCount  int
+	LastTool    string
+	Status      string // "initializing", "running", "completed", "error"
+	Background  bool
+	Error       string
+}
+
+// agentSegData holds progress for all agents in a tool batch.
+// Multiple agents are grouped into one segment because the orchestrator
+// executes them in the same batch (serial for Agent since Concurrent=false).
+type agentSegData struct {
+	Agents []*agentEntry  // ordered by first appearance
+	byID   map[string]int // AgentID → index in Agents
+}
+
 // segment is a typed chunk of viewport output. Text segments are pre-rendered;
 // thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
@@ -93,6 +114,7 @@ type segment struct {
 	redacted  bool             // only meaningful for segThinking
 	tool      *toolSegData     // only meaningful for segTool
 	lifecycle *lifecycleSegData // only meaningful for segLifecycle
+	agent     *agentSegData    // only meaningful for segAgent
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -338,6 +360,12 @@ func (m Model) viewportContent() string {
 				b.WriteString(render.RenderLifecycleProgress(rSteps, seg.lifecycle.Completed, seg.lifecycle.Error, m.verbose, m.width))
 				b.WriteString("\n")
 			}
+		case segAgent:
+			if seg.agent != nil {
+				entries := convertAgentEntries(seg.agent.Agents)
+				b.WriteString(render.RenderAgentProgress(entries, m.verbose, m.width))
+				b.WriteString("\n")
+			}
 		}
 	}
 	b.WriteString(m.streamBuf.String())
@@ -426,6 +454,55 @@ func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {
 	}
 }
 
+// updateAgentProgress finds or creates the active segAgent segment
+// and updates it in-place based on the agent progress event.
+func (m *Model) updateAgentProgress(e query.AgentProgressEvent) {
+	var data *agentSegData
+	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		if m.outputSegs[i].kind == segAgent && m.outputSegs[i].agent != nil {
+			data = m.outputSegs[i].agent
+			break
+		}
+	}
+	if data == nil {
+		data = &agentSegData{byID: make(map[string]int)}
+		m.outputSegs = append(m.outputSegs, segment{kind: segAgent, agent: data})
+	}
+
+	idx, ok := data.byID[e.AgentID]
+	if !ok {
+		idx = len(data.Agents)
+		data.Agents = append(data.Agents, &agentEntry{AgentID: e.AgentID})
+		data.byID[e.AgentID] = idx
+	}
+	entry := data.Agents[idx]
+	entry.Description = e.Description
+	entry.ToolCount = e.ToolCount
+	entry.TokenCount = e.TokenCount
+	entry.LastTool = e.LastTool
+	entry.Status = e.Status
+	entry.Background = e.Background
+	entry.Error = e.Error
+}
+
+// convertAgentEntries converts internal agentEntry slice to render types.
+func convertAgentEntries(agents []*agentEntry) []render.AgentProgressEntry {
+	result := make([]render.AgentProgressEntry, len(agents))
+	for i, a := range agents {
+		result[i] = render.AgentProgressEntry{
+			AgentID:     a.AgentID,
+			Description: a.Description,
+			ToolCount:   a.ToolCount,
+			TokenCount:  a.TokenCount,
+			LastTool:    a.LastTool,
+			Status:      a.Status,
+			Background:  a.Background,
+			Error:       a.Error,
+		}
+	}
+	return result
+}
+
 // segByteSize returns the estimated byte size of a single segment.
 func segByteSize(seg segment) int {
 	switch {
@@ -433,6 +510,8 @@ func segByteSize(seg segment) int {
 		return len(seg.tool.Content) + len(seg.tool.Input) + len(seg.tool.Display)
 	case seg.kind == segLifecycle && seg.lifecycle != nil:
 		return len(seg.lifecycle.Steps) * 50
+	case seg.kind == segAgent && seg.agent != nil:
+		return len(seg.agent.Agents) * 80
 	default:
 		return len(seg.content)
 	}

@@ -139,6 +139,27 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
+	case query.AgentProgressEvent:
+		observe.GlobalTrace("typecase: query.AgentProgressEvent")
+		m.outputSegs = m.flushStreamBuf()
+		m.updateAgentProgress(e)
+		switch e.Status {
+		case "initializing":
+			status := "agent: " + truncateToolbar(e.Description, 40) + " initializing…"
+			if e.Background {
+				status = "agent: " + truncateToolbar(e.Description, 40) + " (background)"
+			}
+			m.toolbar.SetStatus(status)
+		case "running":
+			if e.LastTool != "" {
+				m.toolbar.SetStatus("agent: " + truncateToolbar(e.Description, 30) + " — " + e.LastTool)
+			}
+		case "completed", "error":
+			m.toolbar.SetStatus("streaming...")
+		}
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
 	case query.ToolCallEvent:
 		observe.GlobalTrace("typecase: query.ToolCallEvent")
 		m.outputSegs = m.flushStreamBuf()
@@ -607,4 +628,13 @@ func saveSessionCmd(saveFn func()) tea.Cmd {
 		saveFn()
 		return sessionSavedMsg{}
 	}
+}
+
+// truncateToolbar truncates a string to max runes for toolbar display.
+func truncateToolbar(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-3]) + "..."
 }

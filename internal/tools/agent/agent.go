@@ -243,6 +243,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		Model:       in.Model,
 	})
 
+	// Extract progress reporter for real-time agent visibility (ADR-043).
+	// Same optional interface pattern as LifecycleRun (ADR-042).
+	var progressCh tool.ProgressReporter
+	if ps, ok := state.(tool.ProgressSource); ok {
+		progressCh = ps.Progress()
+	}
+
 	if in.Structure != "" {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Structure != \"\"")
 		graph, err := t.compileStructure(ctx, in.Structure, engine, subStore)
@@ -256,17 +263,18 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"compile structure: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("compile structure: %w", err)
 		}
-		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runGraphSync(ctx, tk.ID, engine, graph, in, wtPath, wtBranch, wtHeadCommit)")
-		return t.runGraphSync(ctx, tk.ID, engine, graph, in, wtPath, wtBranch, wtHeadCommit)
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runGraphSync(ctx, tk.ID, engine, graph, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)")
+		return t.runGraphSync(ctx, tk.ID, engine, graph, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)
 	}
 
 	if in.RunInBackground {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.RunInBackground")
+		emitAgentProgress(progressCh, tk.ID, subject, "initializing", 0, 0, "", true)
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)")
 		return t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)
 	}
-	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, wtPath, wtBranch, wtHeadCommit)")
-	return t.runSync(ctx, tk.ID, engine, in, wtPath, wtBranch, wtHeadCommit)
+	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)")
+	return t.runSync(ctx, tk.ID, engine, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)
 }
 
 // runSync runs the sub-agent synchronously and returns the result.
@@ -275,6 +283,8 @@ func (t *Tool) runSync(
 	taskID string,
 	engine *query.Engine,
 	in AgentInput,
+	progressCh tool.ProgressReporter,
+	subject string,
 	wtPath, wtBranch, wtHeadCommit string,
 ) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "agent", "Tool.runSync", "enter")
@@ -282,9 +292,14 @@ func (t *Tool) runSync(
 	startTime := time.Now()
 	events := engine.Run(ctx, in.Prompt)
 
+	emitAgentProgress(progressCh, taskID, subject, "initializing", 0, 0, "", false)
+
 	var result strings.Builder
 	var usage model.TokenUsage
 	var turnCount int
+	var toolCount int
+	var lastToolName string
+	var latestInputTokens, cumulativeOutputTokens int
 
 	for ev := range events {
 		observe.TraceCtx(ctx, "agent", "Tool.runSync", "range events")
@@ -292,6 +307,14 @@ func (t *Tool) runSync(
 		case query.TextEvent:
 			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.TextEvent")
 			result.WriteString(e.Text)
+		case query.ToolCallEvent:
+			lastToolName = e.Call.Name
+			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
+		case query.ToolResultEvent:
+			toolCount++
+			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
 		case query.TurnCompleteEvent:
 			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.TurnCompleteEvent")
 			turnCount++
@@ -299,8 +322,16 @@ func (t *Tool) runSync(
 			usage.OutputTokens += e.Response.Usage.OutputTokens
 			usage.CacheCreationInputTokens += e.Response.Usage.CacheCreationInputTokens
 			usage.CacheReadInputTokens += e.Response.Usage.CacheReadInputTokens
+			// Token counting matching TS: latest input (not cumulative) + cumulative output + cache
+			latestInputTokens = e.Response.Usage.InputTokens +
+				e.Response.Usage.CacheCreationInputTokens + e.Response.Usage.CacheReadInputTokens
+			cumulativeOutputTokens += e.Response.Usage.OutputTokens
+			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
 		case query.ErrorEvent:
 			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.ErrorEvent")
+			emitAgentProgress(progressCh, taskID, subject, "error", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false, e.Err.Error())
 			t.updateTask(taskID, func(tt *task.Task) {
 				tt.Status = task.TaskFailed
 				tt.Error = e.Err.Error()
@@ -319,6 +350,8 @@ func (t *Tool) runSync(
 	}
 
 	tokensUsed := usage.InputTokens + usage.OutputTokens
+	emitAgentProgress(progressCh, taskID, subject, "completed", toolCount,
+		latestInputTokens+cumulativeOutputTokens, lastToolName, false)
 
 	resultStr := result.String()
 	t.updateTask(taskID, func(tt *task.Task) {
@@ -578,6 +611,8 @@ func (t *Tool) runGraphSync(
 	engine *query.Engine,
 	graph *lifecycle.Graph,
 	in AgentInput,
+	progressCh tool.ProgressReporter,
+	subject string,
 	wtPath, wtBranch, wtHeadCommit string,
 ) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "enter")
@@ -586,9 +621,14 @@ func (t *Tool) runGraphSync(
 
 	events := engine.RunGraph(ctx, graph, in.Prompt)
 
+	emitAgentProgress(progressCh, taskID, subject, "initializing", 0, 0, "", false)
+
 	var result strings.Builder
 	var turnCount int
 	var usage model.TokenUsage
+	var toolCount int
+	var lastToolName string
+	var latestInputTokens, cumulativeOutputTokens int
 
 	for ev := range events {
 		observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "range events")
@@ -596,12 +636,30 @@ func (t *Tool) runGraphSync(
 		case query.TextEvent:
 			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.TextEvent")
 			result.WriteString(e.Text)
+		case query.ToolCallEvent:
+			lastToolName = e.Call.Name
+			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
+		case query.ToolResultEvent:
+			toolCount++
+			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
 		case query.TurnCompleteEvent:
 			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.TurnCompleteEvent")
 			turnCount++
 			usage = e.Response.Usage
+			latestInputTokens = e.Response.Usage.InputTokens +
+				e.Response.Usage.CacheCreationInputTokens + e.Response.Usage.CacheReadInputTokens
+			cumulativeOutputTokens += e.Response.Usage.OutputTokens
+			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
+		case query.LifecycleProgressEvent:
+			// Structured sub-agent lifecycle events are absorbed at agent level —
+			// don't forward raw lifecycle progress to avoid confusion with top-level lifecycle runs.
 		case query.ErrorEvent:
 			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.ErrorEvent")
+			emitAgentProgress(progressCh, taskID, subject, "error", toolCount,
+				latestInputTokens+cumulativeOutputTokens, lastToolName, false, e.Err.Error())
 			t.updateTask(taskID, func(tt *task.Task) {
 				tt.Status = task.TaskFailed
 				tt.Error = e.Err.Error()
@@ -616,6 +674,9 @@ func (t *Tool) runGraphSync(
 			return tool.InvokeResult{Content: fmt.Sprintf("Agent graph failed: %v", e.Err)}, nil
 		}
 	}
+
+	emitAgentProgress(progressCh, taskID, subject, "completed", toolCount,
+		latestInputTokens+cumulativeOutputTokens, lastToolName, false)
 
 	resultStr := result.String()
 	t.updateTask(taskID, func(tt *task.Task) {
@@ -643,6 +704,30 @@ func (t *Tool) runGraphSync(
 	data, _ := json.Marshal(ar)
 	observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
+}
+
+// emitAgentProgress sends an agent progress event if the channel is available.
+// No-op when progressCh is nil (ProgressSource not available).
+func emitAgentProgress(ch tool.ProgressReporter, agentID, desc, status string,
+	toolCount, tokenCount int, lastTool string, background bool, errMsg ...string) {
+	if ch == nil {
+		return
+	}
+	var errStr string
+	if len(errMsg) > 0 {
+		errStr = errMsg[0]
+	}
+	ch <- tool.ProgressEvent{
+		Kind:        "agent",
+		AgentID:     agentID,
+		Description: desc,
+		Status:      status,
+		ToolCount:   toolCount,
+		TokenCount:  tokenCount,
+		LastTool:    lastTool,
+		Background:  background,
+		Error:       errStr,
+	}
 }
 
 func excludeTool(names []string, exclude string) []string {

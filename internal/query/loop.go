@@ -252,9 +252,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ch <- ToolCallEvent{Call: tc}
 			}
 
-			// Create progress channel and wrap state for lifecycle progress visibility.
+			// Create progress channel and wrap state for tool progress visibility.
 			// The orchestrator runs in a goroutine so we can drain progress events
-			// concurrently, forwarding them to the TUI via LifecycleProgressEvent.
+			// concurrently, forwarding them to the TUI as typed LoopEvents.
+			// Dispatches on pe.Kind: "agent" → AgentProgressEvent, default → LifecycleProgressEvent.
 			progressCh := make(chan tool.ProgressEvent, 16)
 			wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh}
 
@@ -271,17 +272,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			for {
 				select {
 				case pe := <-progressCh:
-					ch <- LifecycleProgressEvent{
-						Step:     pe.Step,
-						Node:     pe.Node,
-						Nodes:    pe.Nodes,
-						Status:   pe.Status,
-						Duration: pe.Duration,
-						Error:    pe.Error,
-						FromNode: pe.FromNode,
-						ToNode:   pe.ToNode,
-						RouteKey: pe.RouteKey,
-					}
+					ch <- progressToLoopEvent(pe)
 				case d := <-doneCh:
 					execResult = d.result
 					// Drain remaining buffered progress events after orchestrator returns.
@@ -289,17 +280,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 					for {
 						select {
 						case pe := <-progressCh:
-							ch <- LifecycleProgressEvent{
-								Step:     pe.Step,
-								Node:     pe.Node,
-								Nodes:    pe.Nodes,
-								Status:   pe.Status,
-								Duration: pe.Duration,
-								Error:    pe.Error,
-								FromNode: pe.FromNode,
-								ToNode:   pe.ToNode,
-								RouteKey: pe.RouteKey,
-							}
+							ch <- progressToLoopEvent(pe)
 						default:
 							break drainLoop
 						}
@@ -347,6 +328,34 @@ type progressSnapshot struct {
 
 func (p *progressSnapshot) Progress() tool.ProgressReporter {
 	return p.progressCh
+}
+
+// progressToLoopEvent converts a tool.ProgressEvent to a typed LoopEvent.
+// Dispatches on Kind: "agent" → AgentProgressEvent, default → LifecycleProgressEvent.
+func progressToLoopEvent(pe tool.ProgressEvent) LoopEvent {
+	if pe.Kind == "agent" {
+		return AgentProgressEvent{
+			AgentID:     pe.AgentID,
+			Description: pe.Description,
+			ToolCount:   pe.ToolCount,
+			TokenCount:  pe.TokenCount,
+			LastTool:    pe.LastTool,
+			Status:      pe.Status,
+			Background:  pe.Background,
+			Error:       pe.Error,
+		}
+	}
+	return LifecycleProgressEvent{
+		Step:     pe.Step,
+		Node:     pe.Node,
+		Nodes:    pe.Nodes,
+		Status:   pe.Status,
+		Duration: pe.Duration,
+		Error:    pe.Error,
+		FromNode: pe.FromNode,
+		ToNode:   pe.ToNode,
+		RouteKey: pe.RouteKey,
+	}
 }
 
 // toolAccumulator collects streaming fragments for a single tool call.

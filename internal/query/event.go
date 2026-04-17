@@ -84,6 +84,23 @@ type LifecycleProgressEvent struct {
 
 func (LifecycleProgressEvent) loopEventSealed() {}
 
+// AgentProgressEvent carries intermediate agent execution progress.
+// Emitted during Agent tool execution so the TUI can show per-agent
+// tool count, token count, and current activity instead of a static spinner.
+// Addresses GitHub #11036, #30528, #27916, #3978.
+type AgentProgressEvent struct {
+	AgentID     string
+	Description string
+	ToolCount   int    // cumulative tool results received
+	TokenCount  int    // cumulative tokens (input + output + cache)
+	LastTool    string // name of last tool called
+	Status      string // "initializing", "running", "completed", "error"
+	Background  bool   // true for background agents
+	Error       string
+}
+
+func (AgentProgressEvent) loopEventSealed() {}
+
 // ErrorEvent signals an error that terminated the loop.
 type ErrorEvent struct {
 	Err error
