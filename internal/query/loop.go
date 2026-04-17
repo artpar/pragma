@@ -13,6 +13,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // continuationPrompt is sent when the model returns StopPauseTurn,
@@ -251,7 +252,61 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ch <- ToolCallEvent{Call: tc}
 			}
 
-			execResult := e.orchestrator.Execute(ctx, toolCalls, snap)
+			// Create progress channel and wrap state for lifecycle progress visibility.
+			// The orchestrator runs in a goroutine so we can drain progress events
+			// concurrently, forwarding them to the TUI via LifecycleProgressEvent.
+			progressCh := make(chan tool.ProgressEvent, 16)
+			wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh}
+
+			type execDone struct {
+				result tool.ExecuteResult
+			}
+			doneCh := make(chan execDone, 1)
+			go func() {
+				doneCh <- execDone{result: e.orchestrator.Execute(ctx, toolCalls, wrappedSnap)}
+			}()
+
+			var execResult tool.ExecuteResult
+		drainLoop:
+			for {
+				select {
+				case pe := <-progressCh:
+					ch <- LifecycleProgressEvent{
+						Step:     pe.Step,
+						Node:     pe.Node,
+						Nodes:    pe.Nodes,
+						Status:   pe.Status,
+						Duration: pe.Duration,
+						Error:    pe.Error,
+						FromNode: pe.FromNode,
+						ToNode:   pe.ToNode,
+						RouteKey: pe.RouteKey,
+					}
+				case d := <-doneCh:
+					execResult = d.result
+					// Drain remaining buffered progress events after orchestrator returns.
+					// Safe because: all Invoke() calls have returned, no more writes to progressCh.
+					for {
+						select {
+						case pe := <-progressCh:
+							ch <- LifecycleProgressEvent{
+								Step:     pe.Step,
+								Node:     pe.Node,
+								Nodes:    pe.Nodes,
+								Status:   pe.Status,
+								Duration: pe.Duration,
+								Error:    pe.Error,
+								FromNode: pe.FromNode,
+								ToNode:   pe.ToNode,
+								RouteKey: pe.RouteKey,
+							}
+						default:
+							break drainLoop
+						}
+					}
+				}
+			}
+
 			for i, r := range execResult.Results {
 				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i]}
 			}
@@ -281,6 +336,17 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	}
 
 	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
+}
+
+// progressSnapshot wraps a StateSnapshot with a ProgressReporter for tool progress.
+// Implements tool.ProgressSource via optional interface pattern (ADR-042).
+type progressSnapshot struct {
+	tool.StateSnapshot
+	progressCh chan tool.ProgressEvent
+}
+
+func (p *progressSnapshot) Progress() tool.ProgressReporter {
+	return p.progressCh
 }
 
 // toolAccumulator collects streaming fragments for a single tool call.

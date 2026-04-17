@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -39,9 +40,10 @@ type Config struct {
 type segmentKind int
 
 const (
-	segText     segmentKind = iota
+	segText      segmentKind = iota
 	segThinking
-	segTool // raw tool result data, rendered on demand based on verbose
+	segTool      // raw tool result data, rendered on demand based on verbose
+	segLifecycle // lifecycle progress, updated in-place based on events
 )
 
 // toolSegData holds raw tool result data for on-demand rendering.
@@ -54,13 +56,43 @@ type toolSegData struct {
 	Display string
 }
 
+// lifecycleNodeResult holds the outcome of a single node execution.
+type lifecycleNodeResult struct {
+	Duration time.Duration
+	Error    string
+}
+
+// lifecycleStep holds progress for a single superstep in a lifecycle graph.
+type lifecycleStep struct {
+	Step        int
+	Nodes       []string
+	Results     map[string]lifecycleNodeResult // node → result
+	Transitions []lifecycleTransition          // edges traversed after this step
+	Status      string                         // "running", "completed"
+}
+
+// lifecycleTransition records an edge traversal in the graph.
+type lifecycleTransition struct {
+	From     string
+	To       string
+	RouteKey string
+}
+
+// lifecycleSegData holds accumulated lifecycle progress for on-demand rendering.
+type lifecycleSegData struct {
+	Steps     []lifecycleStep
+	Completed bool
+	Error     string
+}
+
 // segment is a typed chunk of viewport output. Text segments are pre-rendered;
 // thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
-	kind     segmentKind
-	content  string       // segText: pre-rendered; segThinking: raw thinking text
-	redacted bool         // only meaningful for segThinking
-	tool     *toolSegData // only meaningful for segTool
+	kind      segmentKind
+	content   string           // segText: pre-rendered; segThinking: raw thinking text
+	redacted  bool             // only meaningful for segThinking
+	tool      *toolSegData     // only meaningful for segTool
+	lifecycle *lifecycleSegData // only meaningful for segLifecycle
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -300,6 +332,12 @@ func (m Model) viewportContent() string {
 				seg.tool.IsError, m.width, seg.tool.Display, m.verbose,
 			))
 			b.WriteString("\n")
+		case segLifecycle:
+			if seg.lifecycle != nil {
+				rSteps := convertLifecycleSteps(seg.lifecycle.Steps)
+				b.WriteString(render.RenderLifecycleProgress(rSteps, seg.lifecycle.Completed, seg.lifecycle.Error, m.verbose, m.width))
+				b.WriteString("\n")
+			}
 		}
 	}
 	b.WriteString(m.streamBuf.String())
@@ -337,17 +375,99 @@ func appendTool(segs []segment, data toolSegData) []segment {
 	return append(segs, segment{kind: segTool, tool: &data})
 }
 
+// updateLifecycleProgress finds or creates the active segLifecycle segment
+// and updates it in-place based on the lifecycle progress event.
+func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {
+	// Find the last segLifecycle segment, or create one.
+	var data *lifecycleSegData
+	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		if m.outputSegs[i].kind == segLifecycle && m.outputSegs[i].lifecycle != nil {
+			data = m.outputSegs[i].lifecycle
+			break
+		}
+	}
+	if data == nil {
+		data = &lifecycleSegData{}
+		m.outputSegs = append(m.outputSegs, segment{kind: segLifecycle, lifecycle: data})
+	}
+
+	switch e.Status {
+	case "step_started":
+		data.Steps = append(data.Steps, lifecycleStep{
+			Step:    e.Step,
+			Nodes:   e.Nodes,
+			Results: make(map[string]lifecycleNodeResult),
+			Status:  "running",
+		})
+	case "node_completed":
+		if len(data.Steps) > 0 {
+			step := &data.Steps[len(data.Steps)-1]
+			step.Results[e.Node] = lifecycleNodeResult{
+				Duration: e.Duration,
+				Error:    e.Error,
+			}
+			// Mark step completed when all nodes have results
+			if len(step.Results) == len(step.Nodes) {
+				step.Status = "completed"
+			}
+		}
+	case "transition":
+		if len(data.Steps) > 0 {
+			step := &data.Steps[len(data.Steps)-1]
+			step.Transitions = append(step.Transitions, lifecycleTransition{
+				From:     e.FromNode,
+				To:       e.ToNode,
+				RouteKey: e.RouteKey,
+			})
+		}
+	case "completed":
+		data.Completed = true
+		data.Error = e.Error
+	}
+}
+
+// segByteSize returns the estimated byte size of a single segment.
+func segByteSize(seg segment) int {
+	switch {
+	case seg.kind == segTool && seg.tool != nil:
+		return len(seg.tool.Content) + len(seg.tool.Input) + len(seg.tool.Display)
+	case seg.kind == segLifecycle && seg.lifecycle != nil:
+		return len(seg.lifecycle.Steps) * 50
+	default:
+		return len(seg.content)
+	}
+}
+
 // outputLen returns the total content length across all segments.
 func outputLen(segs []segment) int {
 	n := 0
 	for _, seg := range segs {
-		if seg.kind == segTool && seg.tool != nil {
-			n += len(seg.tool.Content) + len(seg.tool.Input) + len(seg.tool.Display)
-		} else {
-			n += len(seg.content)
-		}
+		n += segByteSize(seg)
 	}
 	return n
+}
+
+// convertLifecycleSteps converts internal lifecycleStep types to render package types.
+func convertLifecycleSteps(steps []lifecycleStep) []render.LifecycleStep {
+	out := make([]render.LifecycleStep, len(steps))
+	for i, s := range steps {
+		results := make(map[string]render.LifecycleNodeResult, len(s.Results))
+		for k, v := range s.Results {
+			results[k] = render.LifecycleNodeResult{Duration: v.Duration, Error: v.Error}
+		}
+		transitions := make([]render.LifecycleTransition, len(s.Transitions))
+		for j, t := range s.Transitions {
+			transitions[j] = render.LifecycleTransition{From: t.From, To: t.To, RouteKey: t.RouteKey}
+		}
+		out[i] = render.LifecycleStep{
+			Step:        s.Step,
+			Nodes:       s.Nodes,
+			Results:     results,
+			Transitions: transitions,
+			Status:      s.Status,
+		}
+	}
+	return out
 }
 
 // loadMessageSegments loads a single message into output segments.

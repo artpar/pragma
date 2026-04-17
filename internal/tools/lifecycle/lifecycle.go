@@ -98,7 +98,7 @@ func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permiss
 	return checker.Check(ctx, "LifecycleRun", "")
 }
 
-func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "lifecycle", "Tool.Invoke", "enter")
 	defer observe.TraceCtx(ctx, "lifecycle", "Tool.Invoke", "exit")
 
@@ -137,11 +137,45 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 
 	initialState := t.buildInitialState(in, snap)
 
-	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(t.Bus))
-	finalState, err := executor.Run(ctx, initialState)
-	observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: t.buildResult(finalState, err)")
+	// Get progress reporter from state if available (optional interface pattern).
+	var progressCh tool.ProgressReporter
+	if ps, ok := state.(tool.ProgressSource); ok {
+		progressCh = ps.Progress()
+	}
 
-	return t.buildResult(finalState, err)
+	// Use Stream() for real-time progress visibility in the TUI.
+	// EventBus events continue to be emitted by executeSuperstep for logging/replay.
+	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(t.Bus))
+	events := executor.Stream(ctx, initialState)
+
+	var finalState lifecycle.State
+	var runErr error
+	for ev := range events {
+		// Forward to TUI progress channel
+		if progressCh != nil {
+			pe := tool.ProgressEvent{
+				Step:     ev.Step,
+				Node:     ev.Node,
+				Nodes:    ev.Nodes,
+				Status:   ev.Type,
+				Duration: ev.Duration,
+				FromNode: ev.FromNode,
+				ToNode:   ev.ToNode,
+				RouteKey: ev.RouteKey,
+			}
+			if ev.Err != nil {
+				pe.Error = ev.Err.Error()
+			}
+			progressCh <- pe
+		}
+		if ev.Type == "completed" {
+			finalState = ev.State
+			runErr = ev.Err
+		}
+	}
+
+	observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: t.buildResult(finalState, runErr)")
+	return t.buildResult(finalState, runErr)
 }
 
 func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge.Infra) (*lifecycle.Graph, error) {

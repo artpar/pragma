@@ -41,6 +41,7 @@ var toolRenderers = map[string]ToolRenderer{
 	"Glob":             renderGlob,
 	"Agent":            renderAgent,
 	"AskUserQuestion":  renderAskResult,
+	"LifecycleRun":     renderLifecycleRun,
 }
 
 // RenderToolOutput dispatches to a tool-specific renderer or generic fallback.

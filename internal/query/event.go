@@ -1,6 +1,10 @@
 package query
 
-import "github.com/artpar/pragma/internal/model"
+import (
+	"time"
+
+	"github.com/artpar/pragma/internal/model"
+)
 
 // LoopEvent is the sealed interface for events emitted by Engine.Run().
 // These are query-local events consumed by the caller — distinct from
@@ -62,6 +66,23 @@ type CompactionDisabledEvent struct {
 }
 
 func (CompactionDisabledEvent) loopEventSealed() {}
+
+// LifecycleProgressEvent carries intermediate lifecycle graph progress.
+// Emitted during LifecycleRun tool execution so the TUI can show step-by-step
+// progress instead of a static spinner (addresses GitHub #11036, #30528).
+type LifecycleProgressEvent struct {
+	Step     int
+	Node     string
+	Nodes    []string      // pending nodes (step_started)
+	Status   string        // "step_started", "node_completed", "transition", "completed"
+	Duration time.Duration // node_completed only
+	Error    string        // node_completed / completed errors
+	FromNode string        // transition only
+	ToNode   string        // transition only
+	RouteKey string        // transition only
+}
+
+func (LifecycleProgressEvent) loopEventSealed() {}
 
 // ErrorEvent signals an error that terminated the loop.
 type ErrorEvent struct {

@@ -163,12 +163,36 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		bridge.KeyTools:     e.registry.ToolDefs(),
 	}
 
+	// Use Stream() for real-time lifecycle progress visibility in TUI.
 	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(e.bus))
-	finalState, err := executor.Run(ctx, initialState)
+	events := executor.Stream(ctx, initialState)
 
-	if err != nil {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: err != nil")
-		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", err)}
+	var finalState lifecycle.State
+	var runErr error
+	for ev := range events {
+		if ev.Err != nil {
+			errStr := ev.Err.Error()
+			ch <- LifecycleProgressEvent{
+				Step: ev.Step, Node: ev.Node, Nodes: ev.Nodes,
+				Status: ev.Type, Duration: ev.Duration, Error: errStr,
+				FromNode: ev.FromNode, ToNode: ev.ToNode, RouteKey: ev.RouteKey,
+			}
+		} else {
+			ch <- LifecycleProgressEvent{
+				Step: ev.Step, Node: ev.Node, Nodes: ev.Nodes,
+				Status: ev.Type, Duration: ev.Duration,
+				FromNode: ev.FromNode, ToNode: ev.ToNode, RouteKey: ev.RouteKey,
+			}
+		}
+		if ev.Type == "completed" {
+			finalState = ev.State
+			runErr = ev.Err
+		}
+	}
+
+	if runErr != nil {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: runErr != nil")
+		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", runErr)}
 		return
 	}
 

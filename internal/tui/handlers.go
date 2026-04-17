@@ -121,6 +121,24 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
+	case query.LifecycleProgressEvent:
+		observe.GlobalTrace("typecase: query.LifecycleProgressEvent")
+		m.outputSegs = m.flushStreamBuf()
+		m.updateLifecycleProgress(e)
+		// Update toolbar with current lifecycle status
+		switch e.Status {
+		case "step_started":
+			if len(e.Nodes) > 0 {
+				m.toolbar.SetStatus(fmt.Sprintf("lifecycle: step %d — %s", e.Step, strings.Join(e.Nodes, ", ")))
+			}
+		case "node_completed":
+			m.toolbar.SetStatus(fmt.Sprintf("lifecycle: %s completed", e.Node))
+		case "completed":
+			m.toolbar.SetStatus("streaming...")
+		}
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
 	case query.ToolCallEvent:
 		observe.GlobalTrace("typecase: query.ToolCallEvent")
 		m.outputSegs = m.flushStreamBuf()
@@ -527,7 +545,8 @@ func trimOutputSegs(segs []segment) []segment {
 	trimmed := 0
 	cutIdx := 0
 	for i, seg := range segs {
-		if trimmed+len(seg.content) > excess {
+		segSize := segByteSize(seg)
+		if trimmed+segSize > excess {
 			// Partial trim of this segment (only for text segments).
 			if seg.kind == segText {
 				remainder := excess - trimmed
@@ -541,7 +560,7 @@ func trimOutputSegs(segs []segment) []segment {
 			cutIdx = i
 			break
 		}
-		trimmed += len(seg.content)
+		trimmed += segSize
 		cutIdx = i + 1
 	}
 	return segs[cutIdx:]

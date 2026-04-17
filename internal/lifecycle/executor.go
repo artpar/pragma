@@ -76,7 +76,7 @@ func (e *Executor) Run(ctx context.Context, initial State) (State, error) {
 
 		e.emitStepStarted(step, pending)
 
-		updates, nodeErrors := e.executeSuperstep(ctx, step, pending, state)
+		updates, nodeErrors, _ := e.executeSuperstep(ctx, step, pending, state)
 
 		for node, err := range nodeErrors {
 			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "range nodeErrors")
@@ -136,18 +136,20 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 				return
 			}
 
-			ch <- ExecutionEvent{Type: "step_started", Step: step, Nodes: append([]string(nil), pending...), State: state.Snapshot()}
+			ch <- ExecutionEvent{Type: "step_started", Step: step, Nodes: append([]string(nil), pending...)}
 
-			updates, nodeErrors := e.executeSuperstep(ctx, step, pending, state)
+			updates, nodeErrors, nodeDurations := e.executeSuperstep(ctx, step, pending, state)
 
 			for node, err := range nodeErrors {
 				observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "range nodeErrors")
+				dur := nodeDurations[node]
 				if err != nil {
 					observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "if: err != nil")
-					ch <- ExecutionEvent{Type: "node_completed", Step: step, Node: node, Err: err}
+					ch <- ExecutionEvent{Type: "node_completed", Step: step, Node: node, Duration: dur, Err: err}
 					ch <- ExecutionEvent{Type: "completed", Step: step, Err: err}
 					return
 				}
+				ch <- ExecutionEvent{Type: "node_completed", Step: step, Node: node, Duration: dur}
 			}
 
 			for _, update := range updates {
@@ -164,7 +166,8 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 				}
 			}
 
-			pending = e.resolveNextNodes(step, pending, state)
+			nextPending := e.resolveNextNodesWithEvents(step, pending, state, ch)
+			pending = nextPending
 		}
 
 		var err error
@@ -179,12 +182,13 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 }
 
 // executeSuperstep runs all pending nodes in parallel.
-// Returns ordered updates and any per-node errors.
-func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []string, state State) ([]StateUpdate, map[string]error) {
+// Returns ordered updates, per-node errors, and per-node durations.
+func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []string, state State) ([]StateUpdate, map[string]error, map[string]time.Duration) {
 	observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "enter")
 	defer observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "exit")
 	updates := make([]StateUpdate, len(pending))
 	nodeErrors := make(map[string]error, len(pending))
+	nodeDurations := make(map[string]time.Duration, len(pending))
 
 	if len(pending) == 1 {
 		observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "if: len(pending) == 1")
@@ -193,6 +197,7 @@ func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []str
 		start := time.Now()
 		update, err := e.graph.nodes[node](ctx, state.Snapshot())
 		dur := time.Since(start)
+		nodeDurations[node] = dur
 
 		if err != nil {
 			observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "if: err != nil")
@@ -203,8 +208,8 @@ func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []str
 			updates[0] = update
 			e.emitNodeCompleted(step, node, dur, nil)
 		}
-		observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "return: updates, nodeErrors")
-		return updates, nodeErrors
+		observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "return: updates, nodeErrors, nodeDurations")
+		return updates, nodeErrors, nodeDurations
 	}
 
 	// Parallel execution via errgroup
@@ -222,6 +227,7 @@ func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []str
 
 			mu.Lock()
 			defer mu.Unlock()
+			nodeDurations[node] = dur
 
 			if err != nil {
 				nodeErrors[node] = err
@@ -235,8 +241,8 @@ func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []str
 	}
 
 	g.Wait()
-	observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "return: updates, nodeErrors")
-	return updates, nodeErrors
+	observe.TraceCtx(ctx, "lifecycle", "Executor.executeSuperstep", "return: updates, nodeErrors, nodeDurations")
+	return updates, nodeErrors, nodeDurations
 }
 
 // resolveNextNodes determines which nodes to execute next based on edges.
@@ -281,6 +287,56 @@ func (e *Executor) resolveNextNodes(step int, completed []string, state State) [
 			}
 		}
 
+	}
+	observe.GlobalTrace("return: next")
+
+	return next
+}
+
+// resolveNextNodesWithEvents determines which nodes to execute next,
+// emitting transition events both to the EventBus and the streaming channel.
+func (e *Executor) resolveNextNodesWithEvents(step int, completed []string, state State, ch chan<- ExecutionEvent) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	seen := make(map[string]bool)
+	var next []string
+
+	for _, node := range completed {
+		observe.GlobalTrace("range completed")
+
+		if targets, ok := e.graph.edges[node]; ok {
+			observe.GlobalTrace("if: ok")
+			for _, target := range targets {
+				observe.GlobalTrace("range targets")
+				e.emitTransition(step, node, target, "")
+				ch <- ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: target}
+				if !seen[target] {
+					observe.GlobalTrace("if: !seen[target]")
+					seen[target] = true
+					next = append(next, target)
+				}
+			}
+			continue
+		}
+
+		if ce, ok := e.graph.conditionalEdges[node]; ok {
+			observe.GlobalTrace("if: ok")
+			key := ce.Router(state)
+			target := ce.PathMap[key]
+			if target == "" {
+				observe.GlobalTrace("if: target == \"\"")
+				e.emitTransition(step, node, "END", key)
+				ch <- ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: "END", RouteKey: key}
+				continue
+			}
+			e.emitTransition(step, node, target, key)
+			ch <- ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: target, RouteKey: key}
+			if !seen[target] {
+				observe.GlobalTrace("if: !seen[target]")
+				seen[target] = true
+				next = append(next, target)
+			}
+		}
 	}
 	observe.GlobalTrace("return: next")
 
