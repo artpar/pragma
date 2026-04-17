@@ -250,7 +250,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		switch response.StopReason {
 		case model.StopEndTurn:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn")
-			if !lifecycleRunInvoked && !snap.PlanMode {
+			_, hasLifecycleRun := e.registry.Get("LifecycleRun")
+			if !lifecycleRunInvoked && !snap.PlanMode && hasLifecycleRun {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn: LifecycleRun not invoked, injecting correction")
 				correctionMsg := model.Message{
 					ID:        model.NewUUID(),
