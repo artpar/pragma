@@ -1,4 +1,5 @@
 # Binaries
+/pragma
 /gogent
 /gogent-instrument
 *.exe
