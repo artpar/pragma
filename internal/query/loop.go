@@ -104,18 +104,70 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			Thinking:    e.config.Thinking,
 		}
 
-		chunks, err := e.provider.Stream(ctx, params)
-		if err != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: err != nil")
-			ch <- ErrorEvent{Err: err}
-			return
-		}
+		// Stream with retry: exponential backoff for retryable errors.
+		// Matches TS withRetry: DEFAULT_MAX_RETRIES=10, MAX_529_RETRIES=3, BASE_DELAY_MS=500.
+		// Addresses GitHub #2047 (exponential backoff), #26699 (session stuck on rate limit),
+		// #23976 (input unresponsive), #3633/#35487 (repeated 529 errors).
+		const maxStreamRetries = 10
+		const maxConsecutiveOverloaded = 3
+		var consecutiveOverloaded int
+		var response model.Response
 
-		response, err := e.consumeStream(chunks, ch)
-		if err != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: err != nil")
-			ch <- ErrorEvent{Err: err}
-			return
+		for attempt := range maxStreamRetries + 1 {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("stream attempt %d/%d", attempt+1, maxStreamRetries+1))
+
+			var streamErr error
+			chunks, err := e.provider.Stream(ctx, params)
+			if err != nil {
+				streamErr = err
+			} else {
+				response, streamErr = e.consumeStream(chunks, ch)
+			}
+
+			if streamErr == nil {
+				break // success
+			}
+
+			classified := ClassifyStreamError(streamErr)
+
+			// Track consecutive overloaded errors (TS MAX_529_RETRIES = 3)
+			if classified.Kind == ErrorKindOverloaded {
+				consecutiveOverloaded++
+				if consecutiveOverloaded >= maxConsecutiveOverloaded {
+					observe.TraceCtx(ctx, "query", "Engine.runLoop", "consecutive overloaded limit reached")
+					ch <- ErrorEvent{Err: fmt.Errorf("repeated overloaded errors"), Kind: classified.Kind}
+					return
+				}
+			} else {
+				consecutiveOverloaded = 0
+			}
+
+			if !classified.Retryable || attempt >= maxStreamRetries {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("non-retryable or exhausted: %s", classified.Kind))
+				ch <- ErrorEvent{Err: classified.Err, Kind: classified.Kind, Guidance: classified.Guidance}
+				return
+			}
+
+			delay := classified.RetryAfter
+			if delay == 0 {
+				delay = retryDelay(attempt)
+			}
+
+			ch <- RetryEvent{
+				Attempt:     attempt + 1,
+				MaxAttempts: maxStreamRetries + 1,
+				Delay:       delay,
+				Kind:        classified.Kind,
+				ErrorMsg:    streamErr.Error(),
+			}
+
+			select {
+			case <-time.After(delay):
+				continue
+			case <-ctx.Done():
+				ch <- ErrorEvent{Err: fmt.Errorf("context cancelled during retry: %w", model.ErrContextCancelled)}
+				return
+			}
 		}
 
 		assistantMsg := model.Message{

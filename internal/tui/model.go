@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ const (
 	segLifecycle // lifecycle progress, updated in-place based on events
 	segAgent     // agent progress, updated in-place based on AgentProgressEvent (ADR-043)
 	segGroup     // collapsed read/search group, accumulates consecutive collapsible tools (ADR-044)
+	segError     // classified error with optional retry state, rendered on demand based on verbose
 )
 
 // toolSegData holds raw tool result data for on-demand rendering.
@@ -146,6 +148,18 @@ type groupSegData struct {
 	LatestHint  string          // last file path or "pattern" for display hint
 }
 
+// errorSegData holds classified error data for on-demand rendering.
+// Stored in segError segments; re-rendered when verbose toggles or countdown ticks.
+type errorSegData struct {
+	Kind        string // ErrorKind as string (render pkg doesn't import query/)
+	ErrorMsg    string // full error text (may be long)
+	Guidance    string // actionable hint
+	Attempt     int
+	MaxAttempts int
+	SecondsLeft int  // countdown (updated by tick)
+	Retrying    bool // true while waiting for retry delay
+}
+
 // segment is a typed chunk of viewport output. Text segments are pre-rendered;
 // thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
@@ -156,6 +170,7 @@ type segment struct {
 	lifecycle *lifecycleSegData // only meaningful for segLifecycle
 	agent     *agentSegData    // only meaningful for segAgent
 	group     *groupSegData    // only meaningful for segGroup (ADR-044)
+	errData   *errorSegData    // only meaningful for segError
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -201,6 +216,7 @@ type Model struct {
 	pendingInput     string           // queued message to submit after current turn completes
 	quitPending      bool             // true after idle Ctrl+C, waiting for second to quit
 	permQueue        []PermRequestMsg // queued permission requests when dialog is already visible
+	retryAttempt     int              // generation counter for stale countdown tick detection
 
 	// Layout
 	width  int
@@ -321,6 +337,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case retryCountdownMsg:
+		observe.GlobalTrace("typecase: retryCountdownMsg")
+		// Discard stale ticks from cancelled retry sequences.
+		if msg.Attempt != m.retryAttempt {
+			return m, nil
+		}
+		// Update the last active segError segment's countdown.
+		for i := len(m.outputSegs) - 1; i >= 0; i-- {
+			if m.outputSegs[i].kind == segError && m.outputSegs[i].errData != nil && m.outputSegs[i].errData.Retrying {
+				m.outputSegs[i].errData.SecondsLeft = msg.SecondsLeft
+				break
+			}
+		}
+		m.toolbar.SetStatus(fmt.Sprintf("retrying in %ds...", max(0, msg.SecondsLeft)))
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+		if msg.SecondsLeft > 0 {
+			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+				return retryCountdownMsg{SecondsLeft: msg.SecondsLeft - 1, Attempt: msg.Attempt}
+			})
+		}
+		return m, nil
 	}
 
 	if m.ask.active {
@@ -419,6 +458,19 @@ func (m Model) viewportContent() string {
 				b.WriteString(render.RenderToolGroup(data, m.verbose, m.width))
 				b.WriteString("\n")
 			}
+		case segError:
+			if seg.errData != nil {
+				b.WriteString(render.RenderError(render.ErrorData{
+					Kind:        seg.errData.Kind,
+					ErrorMsg:    seg.errData.ErrorMsg,
+					Guidance:    seg.errData.Guidance,
+					Attempt:     seg.errData.Attempt,
+					MaxAttempts: seg.errData.MaxAttempts,
+					SecondsLeft: seg.errData.SecondsLeft,
+					Retrying:    seg.errData.Retrying,
+				}, m.verbose, m.width))
+				b.WriteString("\n")
+			}
 		}
 	}
 	b.WriteString(m.streamBuf.String())
@@ -450,6 +502,12 @@ func appendThinking(segs []segment, text string, redacted bool) []segment {
 // Returns the updated slice — caller must assign.
 func appendTool(segs []segment, data toolSegData) []segment {
 	return append(segs, segment{kind: segTool, tool: &data})
+}
+
+// appendError appends a classified error to segments for on-demand rendering.
+// Returns the updated slice — caller must assign.
+func appendError(segs []segment, data errorSegData) []segment {
+	return append(segs, segment{kind: segError, errData: &data})
 }
 
 // updateLifecycleProgress finds or creates the active segLifecycle segment
@@ -668,6 +726,8 @@ func segByteSize(seg segment) int {
 			size += len(e.CallHeader) + len(e.Tool.Content) + len(e.Tool.Input)
 		}
 		return size
+	case seg.kind == segError && seg.errData != nil:
+		return len(seg.errData.ErrorMsg)
 	default:
 		return len(seg.content)
 	}

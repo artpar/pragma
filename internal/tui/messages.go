@@ -57,3 +57,10 @@ type sessionSavedMsg struct{}
 
 // quitTimeoutMsg signals that the 800ms Ctrl+C exit window has expired.
 type quitTimeoutMsg struct{}
+
+// retryCountdownMsg is sent by tea.Tick every second during retry delay.
+// Attempt is a generation counter — stale ticks from cancelled retries are discarded.
+type retryCountdownMsg struct {
+	SecondsLeft int
+	Attempt     int
+}

@@ -13,16 +13,18 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
 )
 
-// Sentinel errors for Anthropic API error categories.
+// Package-level aliases for shared provider sentinel errors.
+// Kept for backward compatibility within this package and its tests.
 var (
-	ErrRateLimit       = errors.New("anthropic: rate limit exceeded")
-	ErrOverloaded      = errors.New("anthropic: overloaded")
-	ErrServerError     = errors.New("anthropic: server error")
-	ErrAuthentication  = errors.New("anthropic: authentication failed")
-	ErrInvalidRequest  = errors.New("anthropic: invalid request")
-	ErrContextOverflow = errors.New("anthropic: context window exceeded")
+	ErrRateLimit       = provider.ErrRateLimit
+	ErrOverloaded      = provider.ErrOverloaded
+	ErrServerError     = provider.ErrServerError
+	ErrAuthentication  = provider.ErrAuthentication
+	ErrInvalidRequest  = provider.ErrInvalidRequest
+	ErrContextOverflow = provider.ErrContextOverflow
 )
 
 // classifiedError holds the result of classifying an API error.

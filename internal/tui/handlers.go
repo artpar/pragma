@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -263,15 +264,64 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		finished, pendingCmd := m.finishTurn()
 		return finished, tea.Batch(saveSessionCmd(m.sessionSave), pendingCmd)
 
+	case query.RetryEvent:
+		observe.GlobalTrace("typecase: query.RetryEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+
+		// Hidden retries: toolbar only, no viewport segment.
+		// Matches TS: retryAttempt < 4 returns null — hides attempts 1,2,3; shown from attempt 4.
+		const hiddenRetryThreshold = 4
+		if e.Attempt < hiddenRetryThreshold {
+			m.toolbar.SetStatus(fmt.Sprintf("retrying... (attempt %d/%d)", e.Attempt, e.MaxAttempts))
+			return m, waitForEvent(m.eventCh)
+		}
+
+		// Visible retries: create segError with countdown + start tea.Tick chain.
+		secondsLeft := int(math.Ceil(e.Delay.Seconds()))
+		m.retryAttempt = e.Attempt
+		data := errorSegData{
+			Kind:        string(e.Kind),
+			ErrorMsg:    e.ErrorMsg,
+			Attempt:     e.Attempt,
+			MaxAttempts: e.MaxAttempts,
+			SecondsLeft: secondsLeft,
+			Retrying:    true,
+		}
+		m.outputSegs = appendError(m.outputSegs, data)
+		m.toolbar.SetStatus(fmt.Sprintf("retrying in %ds... (attempt %d/%d)", secondsLeft, e.Attempt, e.MaxAttempts))
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
+		return m, tea.Batch(
+			waitForEvent(m.eventCh),
+			tea.Tick(time.Second, func(t time.Time) tea.Msg {
+				return retryCountdownMsg{SecondsLeft: secondsLeft - 1, Attempt: e.Attempt}
+			}),
+		)
+
 	case query.ErrorEvent:
 		observe.GlobalTrace("typecase: query.ErrorEvent")
 		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		m.spinnerActive = false
+		m.retryAttempt = 0 // clear retry state
+
 		if m.ctx.Err() != nil {
-			m.outputSegs = appendText(m.outputSegs, "\n" + thinkingStyle.Render("[interrupted]") + "\n\n")
+			// User interrupted — unchanged
+			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[interrupted]")+"\n\n")
+		} else if e.Kind != "" {
+			// Classified API error with optional guidance
+			data := errorSegData{
+				Kind:     string(e.Kind),
+				ErrorMsg: e.Err.Error(),
+				Guidance: e.Guidance,
+			}
+			m.outputSegs = appendError(m.outputSegs, data)
+			m.outputSegs = appendText(m.outputSegs, "\n")
 		} else {
-			m.outputSegs = appendText(m.outputSegs, "\n" + errorStyle.Render("Error: "+e.Err.Error()) + "\n\n")
+			// Legacy unclassified error
+			m.outputSegs = appendText(m.outputSegs, "\n"+errorStyle.Render("Error: "+e.Err.Error())+"\n\n")
 		}
 		finished, pendingCmd := m.finishTurn()
 		return finished, pendingCmd

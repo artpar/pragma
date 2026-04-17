@@ -107,9 +107,26 @@ type AgentProgressEvent struct {
 
 func (AgentProgressEvent) loopEventSealed() {}
 
+// RetryEvent signals a retryable error is being retried.
+// Emitted before the delay begins so the TUI can show a countdown.
+// Addresses GitHub #2047 (exponential backoff), #26699 (session stuck on rate limit).
+type RetryEvent struct {
+	Attempt     int           // 1-based attempt number that just failed
+	MaxAttempts int           // total allowed attempts (maxRetries+1)
+	Delay       time.Duration // delay until next attempt
+	Kind        ErrorKind     // rate_limit, overloaded, connection, server_error
+	ErrorMsg    string        // full error text for verbose display
+}
+
+func (RetryEvent) loopEventSealed() {}
+
 // ErrorEvent signals an error that terminated the loop.
+// Kind and Guidance are populated for classified API errors;
+// zero-value for legacy/non-API errors (backward compatible).
 type ErrorEvent struct {
-	Err error
+	Err      error
+	Kind     ErrorKind // empty for legacy/unclassified errors
+	Guidance string    // actionable hint, empty if none
 }
 
 func (ErrorEvent) loopEventSealed() {}
