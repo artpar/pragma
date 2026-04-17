@@ -67,6 +67,12 @@ type CompactionDisabledEvent struct {
 
 func (CompactionDisabledEvent) loopEventSealed() {}
 
+// CompactionStartedEvent signals that auto-compaction is starting.
+// The TUI should show a spinner/status to avoid the silent 10-20s gap (GitHub #30115, #48740).
+type CompactionStartedEvent struct{}
+
+func (CompactionStartedEvent) loopEventSealed() {}
+
 // LifecycleProgressEvent carries intermediate lifecycle graph progress.
 // Emitted during LifecycleRun tool execution so the TUI can show step-by-step
 // progress instead of a static spinner (addresses GitHub #11036, #30528).

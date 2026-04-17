@@ -59,7 +59,8 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Result.DisplayText != "" {
 			observe.GlobalTrace("if: msg.Result.DisplayText != \"\"")
-			m.outputSegs = appendText(m.outputSegs, msg.Result.DisplayText + "\n\n")
+			rendered := m.mdRenderer.Render(msg.Result.DisplayText)
+			m.outputSegs = appendText(m.outputSegs, rendered + "\n\n")
 		}
 		if msg.Result.InjectPrompt != "" {
 			observe.GlobalTrace("if: msg.Result.InjectPrompt != \"\"")
@@ -89,12 +90,33 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch e := msg.Event.(type) {
+	case query.CompactionStartedEvent:
+		observe.GlobalTrace("typecase: query.CompactionStartedEvent")
+		m.toolbar.SetStatus("compacting conversation...")
+
 	case query.CompactionEvent:
 		observe.GlobalTrace("typecase: query.CompactionEvent")
 		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
-		m.outputSegs = appendText(m.outputSegs, thinkingStyle.Render(
-			fmt.Sprintf("[auto-compacted: %d → %d tokens]", e.PreTokens, e.PostTokens)) + "\n")
+		// Match TS CompactBoundaryMessage.tsx: "✻ Conversation compacted (ctrl+o for history)"
+		// marginY={1} = blank line above and below for visual separation
+		m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(
+			render.TeardropAsterisk+" Conversation compacted (ctrl+o for history)")+"\n\n")
+		m.toolbar.SetStatus("streaming...")
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
+	case query.CompactionDisabledEvent:
+		observe.GlobalTrace("typecase: query.CompactionDisabledEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+		// errorStyle (bold red) + BlackCircle — matches TS agents_killed pattern for error-level
+		// system events. Intentionally more visible than dim compaction boundary.
+		// TS only logs this internally; we surface it to the user (GitHub #24179, #34278).
+		m.outputSegs = appendText(m.outputSegs, "\n"+errorStyle.Render(
+			fmt.Sprintf("%s Auto-compaction disabled after %d consecutive failures — context will not be compacted",
+				render.BlackCircle, e.ConsecutiveFailures))+"\n\n")
+		m.toolbar.SetStatus("streaming...")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 

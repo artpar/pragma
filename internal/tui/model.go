@@ -821,6 +821,9 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		snap := m.store.Snapshot()
 		if len(snap.Conversation.Messages) > 0 {
 			observe.GlobalTrace("if: len(snap.Conversation.Messages) > 0")
+			// Show resume indicator matching TS system message dim style
+			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(
+				render.TeardropAsterisk+" Resuming conversation")+"\n\n")
 			for _, msg := range snap.Conversation.Messages {
 				m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 			}

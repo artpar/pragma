@@ -31,6 +31,11 @@ const (
 	// Matches pragma TS reference AssistantThinkingMessage.tsx.
 	ThinkGlyph = "∴"
 
+	// TeardropAsterisk is the system message marker (✻ = U+273B).
+	// Used for compaction boundary, scheduled tasks, permission retry.
+	// Matches TS reference constants/figures.ts TEARDROP_ASTERISK.
+	TeardropAsterisk = "✻"
+
 	// ContentIndent is the indentation under a bracket.
 	// Matches the width of BracketPrefix so content aligns.
 	ContentIndent = "     "

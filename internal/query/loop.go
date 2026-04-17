@@ -165,6 +165,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			}
 			if e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig)")
+				ch <- CompactionStartedEvent{}
 				compResult, compErr := e.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
 				if compErr != nil && ctx.Err() == nil {
 					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compErr != nil && ctx.Err() == nil")
