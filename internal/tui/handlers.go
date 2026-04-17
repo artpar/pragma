@@ -91,6 +91,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	switch e := msg.Event.(type) {
 	case query.CompactionEvent:
 		observe.GlobalTrace("typecase: query.CompactionEvent")
+		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		m.outputSegs = appendText(m.outputSegs, thinkingStyle.Render(
 			fmt.Sprintf("[auto-compacted: %d → %d tokens]", e.PreTokens, e.PostTokens)) + "\n")
@@ -99,6 +100,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	case query.TextEvent:
 		observe.GlobalTrace("typecase: query.TextEvent")
+		m.closeActiveGroup()
 		m.streamBuf.WriteString(e.Text)
 
 		raw := m.streamBuf.String()
@@ -116,6 +118,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	case query.ThinkingEvent:
 		observe.GlobalTrace("typecase: query.ThinkingEvent")
+		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		m.outputSegs = appendThinking(m.outputSegs, e.Text, false)
 		m.viewport.SetContent(m.viewportContent())
@@ -123,6 +126,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	case query.LifecycleProgressEvent:
 		observe.GlobalTrace("typecase: query.LifecycleProgressEvent")
+		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		m.updateLifecycleProgress(e)
 		// Update toolbar with current lifecycle status
@@ -141,6 +145,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	case query.AgentProgressEvent:
 		observe.GlobalTrace("typecase: query.AgentProgressEvent")
+		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		m.updateAgentProgress(e)
 		switch e.Status {
@@ -163,8 +168,18 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	case query.ToolCallEvent:
 		observe.GlobalTrace("typecase: query.ToolCallEvent")
 		m.outputSegs = m.flushStreamBuf()
-		m.outputSegs = appendText(m.outputSegs, render.RenderToolCall(e.Call, m.width))
-		m.outputSegs = appendText(m.outputSegs, "\n")
+
+		category := isCollapsible(e.Call.Name)
+		if category != "" {
+			// Collapsible tool — absorb into group segment
+			callHeader := render.RenderToolCall(e.Call, m.width) + "\n"
+			m.addToGroup(callHeader, e.Call, category)
+		} else {
+			// Non-collapsible — close any active group, render normally
+			m.closeActiveGroup()
+			m.outputSegs = appendText(m.outputSegs, render.RenderToolCall(e.Call, m.width))
+			m.outputSegs = appendText(m.outputSegs, "\n")
+		}
 
 		m.activeToolCalls[e.Call.ID] = e.Call
 
@@ -182,24 +197,31 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 		call, ok := m.activeToolCalls[e.Result.ToolCallID]
 		if ok {
-			m.outputSegs = appendTool(m.outputSegs, toolSegData{
-				Name:    call.Name,
-				Input:   call.Input,
-				Content: e.Result.Content,
-				IsError: e.Result.IsError,
-				Display: e.Display,
-			})
 			delete(m.activeToolCalls, e.Result.ToolCallID)
+			if isCollapsible(call.Name) != "" {
+				// Fill result into active group
+				m.fillGroupResult(call, e.Result, e.Display)
+			} else {
+				m.outputSegs = appendTool(m.outputSegs, toolSegData{
+					Name:    call.Name,
+					Input:   call.Input,
+					Content: e.Result.Content,
+					IsError: e.Result.IsError,
+					Display: e.Display,
+				})
+				m.outputSegs = appendText(m.outputSegs, "\n")
+			}
 		} else {
 			m.outputSegs = appendText(m.outputSegs, render.WrapWithBracket(e.Result.Content, e.Result.IsError, m.width, false))
+			m.outputSegs = appendText(m.outputSegs, "\n")
 		}
-		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.SetStatus("streaming...")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
 	case query.TurnCompleteEvent:
 		observe.GlobalTrace("typecase: query.TurnCompleteEvent")
+		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		if e.StopReason == model.StopMaxTokens {
 			m.outputSegs = appendText(m.outputSegs, "\n" + thinkingStyle.Render("[response truncated — hit max_tokens limit]") + "\n")
@@ -216,6 +238,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	case query.ErrorEvent:
 		observe.GlobalTrace("typecase: query.ErrorEvent")
+		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		m.spinnerActive = false
 		if m.ctx.Err() != nil {

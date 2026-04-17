@@ -45,6 +45,7 @@ const (
 	segTool      // raw tool result data, rendered on demand based on verbose
 	segLifecycle // lifecycle progress, updated in-place based on events
 	segAgent     // agent progress, updated in-place based on AgentProgressEvent (ADR-043)
+	segGroup     // collapsed read/search group, accumulates consecutive collapsible tools (ADR-044)
 )
 
 // toolSegData holds raw tool result data for on-demand rendering.
@@ -106,6 +107,43 @@ type agentSegData struct {
 	byID   map[string]int // AgentID → index in Agents
 }
 
+// isCollapsible returns the category of a tool for grouping purposes.
+// Returns "" for non-collapsible tools that break groups.
+// Categories: "read" (Read), "search" (Grep, Glob), "silent" (ToolSearch — absorbed, no count).
+func isCollapsible(name string) string {
+	switch name {
+	case "Read":
+		return "read"
+	case "Grep":
+		return "search"
+	case "Glob":
+		return "search"
+	case "ToolSearch":
+		return "silent"
+	default:
+		return ""
+	}
+}
+
+// groupEntry holds one tool call + result pair within a collapsed group.
+type groupEntry struct {
+	CallHeader string      // pre-rendered "⏺ Read(file.go)\n"
+	Tool       toolSegData // tool result data (filled on ToolResultEvent)
+	Category   string      // "read", "search", "silent"
+	HasResult  bool        // false while waiting for ToolResultEvent
+}
+
+// groupSegData holds accumulated collapsible tool operations for on-demand rendering.
+// Consecutive Read/Grep/Glob calls are grouped into a single segGroup segment.
+// Non-verbose: shows summary badge. Verbose: shows individual tool calls with results.
+type groupSegData struct {
+	Entries     []groupEntry
+	SearchCount int             // Grep + Glob count
+	ReadPaths   map[string]bool // deduped Read file paths (for unique file count)
+	Active      bool            // true while still accumulating (streaming)
+	LatestHint  string          // last file path or "pattern" for display hint
+}
+
 // segment is a typed chunk of viewport output. Text segments are pre-rendered;
 // thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
@@ -115,6 +153,7 @@ type segment struct {
 	tool      *toolSegData     // only meaningful for segTool
 	lifecycle *lifecycleSegData // only meaningful for segLifecycle
 	agent     *agentSegData    // only meaningful for segAgent
+	group     *groupSegData    // only meaningful for segGroup (ADR-044)
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -366,6 +405,12 @@ func (m Model) viewportContent() string {
 				b.WriteString(render.RenderAgentProgress(entries, m.verbose, m.width))
 				b.WriteString("\n")
 			}
+		case segGroup:
+			if seg.group != nil {
+				data := convertGroupData(seg.group)
+				b.WriteString(render.RenderToolGroup(data, m.verbose, m.width))
+				b.WriteString("\n")
+			}
 		}
 	}
 	b.WriteString(m.streamBuf.String())
@@ -503,6 +548,107 @@ func convertAgentEntries(agents []*agentEntry) []render.AgentProgressEntry {
 	return result
 }
 
+// closeActiveGroup marks the last active segGroup as no longer accumulating.
+// Called before any group-breaking event (text, thinking, non-collapsible tool, turn complete, error).
+func (m *Model) closeActiveGroup() {
+	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		seg := &m.outputSegs[i]
+		if seg.kind == segGroup && seg.group != nil && seg.group.Active {
+			seg.group.Active = false
+			return
+		}
+	}
+}
+
+// addToGroup finds or creates the active segGroup and appends a new entry for a collapsible tool call.
+func (m *Model) addToGroup(callHeader string, call model.ToolCallPart, category string) {
+	var g *groupSegData
+	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		if m.outputSegs[i].kind == segGroup && m.outputSegs[i].group != nil && m.outputSegs[i].group.Active {
+			g = m.outputSegs[i].group
+			break
+		}
+	}
+	if g == nil {
+		g = &groupSegData{ReadPaths: make(map[string]bool), Active: true}
+		m.outputSegs = append(m.outputSegs, segment{kind: segGroup, group: g})
+	}
+	g.Entries = append(g.Entries, groupEntry{
+		CallHeader: callHeader,
+		Category:   category,
+		Tool:       toolSegData{Name: call.Name, Input: call.Input},
+	})
+}
+
+// fillGroupResult fills the result data into the last pending entry of the active group.
+func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResultPart, display string) {
+	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		seg := &m.outputSegs[i]
+		if seg.kind == segGroup && seg.group != nil && seg.group.Active {
+			g := seg.group
+			for j := len(g.Entries) - 1; j >= 0; j-- {
+				if !g.Entries[j].HasResult {
+					g.Entries[j].Tool.Content = result.Content
+					g.Entries[j].Tool.IsError = result.IsError
+					g.Entries[j].Tool.Display = display
+					g.Entries[j].HasResult = true
+					updateGroupCounts(g, &g.Entries[j], call.Input)
+					break
+				}
+			}
+			return
+		}
+	}
+}
+
+// updateGroupCounts increments the appropriate counter on a group based on the entry's category.
+func updateGroupCounts(g *groupSegData, entry *groupEntry, input json.RawMessage) {
+	switch entry.Category {
+	case "search":
+		g.SearchCount++
+		var p struct {
+			Pattern string `json:"pattern"`
+		}
+		json.Unmarshal(input, &p)
+		if p.Pattern != "" {
+			g.LatestHint = `"` + p.Pattern + `"`
+		}
+	case "read":
+		var p struct {
+			FilePath string `json:"file_path"`
+		}
+		json.Unmarshal(input, &p)
+		if p.FilePath != "" {
+			g.ReadPaths[p.FilePath] = true
+			g.LatestHint = p.FilePath
+		}
+	// "silent": no count, no hint
+	}
+}
+
+// convertGroupData converts internal groupSegData to render package types.
+func convertGroupData(g *groupSegData) render.GroupData {
+	entries := make([]render.GroupEntry, len(g.Entries))
+	for i, e := range g.Entries {
+		entries[i] = render.GroupEntry{
+			CallHeader: e.CallHeader,
+			Name:       e.Tool.Name,
+			Input:      e.Tool.Input,
+			Content:    e.Tool.Content,
+			IsError:    e.Tool.IsError,
+			Display:    e.Tool.Display,
+			HasResult:  e.HasResult,
+		}
+	}
+	return render.GroupData{
+		Entries:     entries,
+		SearchCount: g.SearchCount,
+		ReadCount:   len(g.ReadPaths),
+		Active:      g.Active,
+		LatestHint:  g.LatestHint,
+	}
+}
+
 // segByteSize returns the estimated byte size of a single segment.
 func segByteSize(seg segment) int {
 	switch {
@@ -512,6 +658,12 @@ func segByteSize(seg segment) int {
 		return len(seg.lifecycle.Steps) * 50
 	case seg.kind == segAgent && seg.agent != nil:
 		return len(seg.agent.Agents) * 80
+	case seg.kind == segGroup && seg.group != nil:
+		size := 0
+		for _, e := range seg.group.Entries {
+			size += len(e.CallHeader) + len(e.Tool.Content) + len(e.Tool.Input)
+		}
+		return size
 	default:
 		return len(seg.content)
 	}
@@ -551,6 +703,7 @@ func convertLifecycleSteps(steps []lifecycleStep) []render.LifecycleStep {
 
 // loadMessageSegments loads a single message into output segments.
 // Thinking parts become thinking segments; everything else becomes text.
+// Consecutive collapsible tools (Read, Grep, Glob) are grouped into segGroup segments.
 func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownRenderer) []segment {
 	if msg.Role == model.RoleUser {
 		rendered := render.RenderMessage(msg, md)
@@ -561,17 +714,52 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 	}
 	// Assistant messages: split thinking/tool parts into segments for on-demand rendering.
 	// Track last ToolCallPart to pair with its ToolResultPart into segTool segments.
+	// Consecutive collapsible tools accumulate into a groupSegData.
 	var lastCall *model.ToolCallPart
+	var activeGroup *groupSegData
+
+	flushGroup := func() {
+		if activeGroup != nil {
+			segs = append(segs, segment{kind: segGroup, group: activeGroup})
+			activeGroup = nil
+		}
+	}
+
 	for _, part := range msg.Content {
 		switch p := part.(type) {
 		case model.ThinkingPart:
+			flushGroup()
 			segs = appendThinking(segs, p.Text, p.Redacted)
 		case model.ToolCallPart:
-			segs = appendText(segs, render.RenderToolCall(p, 80)+"\n")
+			cat := isCollapsible(p.Name)
+			if cat != "" {
+				// Collapsible — start or extend group
+				if activeGroup == nil {
+					activeGroup = &groupSegData{ReadPaths: make(map[string]bool)}
+				}
+				activeGroup.Entries = append(activeGroup.Entries, groupEntry{
+					CallHeader: render.RenderToolCall(p, 80) + "\n",
+					Category:   cat,
+					Tool:       toolSegData{Name: p.Name, Input: p.Input},
+				})
+			} else {
+				// Non-collapsible — flush group, render normally
+				flushGroup()
+				segs = appendText(segs, render.RenderToolCall(p, 80)+"\n")
+			}
 			call := p
 			lastCall = &call
 		case model.ToolResultPart:
-			if lastCall != nil {
+			if lastCall != nil && activeGroup != nil && isCollapsible(lastCall.Name) != "" {
+				// Fill result into group's last entry
+				entry := &activeGroup.Entries[len(activeGroup.Entries)-1]
+				entry.Tool.Content = p.Content
+				entry.Tool.IsError = p.IsError
+				entry.HasResult = true
+				updateGroupCounts(activeGroup, entry, lastCall.Input)
+				lastCall = nil
+			} else if lastCall != nil {
+				flushGroup()
 				segs = appendTool(segs, toolSegData{
 					Name:    lastCall.Name,
 					Input:   lastCall.Input,
@@ -581,15 +769,18 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 				})
 				lastCall = nil
 			} else {
+				flushGroup()
 				segs = appendText(segs, render.RenderToolResultGeneric(p, 80)+"\n")
 			}
 		default:
+			flushGroup()
 			rendered := render.RenderContentPart(part, md, 80)
 			if rendered != "" {
 				segs = appendText(segs, rendered+"\n")
 			}
 		}
 	}
+	flushGroup()
 	segs = appendText(segs, "\n")
 	return segs
 }

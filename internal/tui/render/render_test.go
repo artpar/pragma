@@ -429,6 +429,121 @@ func TestRenderConversationNoSeparators(t *testing.T) {
 	}
 }
 
+func TestGenerateGroupSummary(t *testing.T) {
+	tests := []struct {
+		name     string
+		search   int
+		read     int
+		active   bool
+		expected string
+	}{
+		{"empty", 0, 0, false, ""},
+		{"single read completed", 0, 1, false, "Read 1 file"},
+		{"multiple reads completed", 0, 5, false, "Read 5 files"},
+		{"single search completed", 1, 0, false, "Searched for 1 pattern"},
+		{"multiple searches completed", 3, 0, false, "Searched for 3 patterns"},
+		{"search and read completed", 2, 3, false, "Searched for 2 patterns, read 3 files"},
+		{"single read active", 0, 1, true, "Reading 1 file\u2026"},
+		{"search and read active", 2, 3, true, "Searching for 2 patterns, reading 3 files\u2026"},
+		{"search active first capital", 1, 0, true, "Searching for 1 pattern\u2026"},
+		{"glob counts as search", 4, 0, false, "Searched for 4 patterns"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GenerateGroupSummary(tt.search, tt.read, tt.active)
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestRenderToolGroupCollapsed(t *testing.T) {
+	g := GroupData{
+		Entries: []GroupEntry{
+			{CallHeader: "⏺ Grep(pattern)\n", Name: "Grep", HasResult: true},
+			{CallHeader: "⏺ Read(file.go)\n", Name: "Read", HasResult: true},
+		},
+		SearchCount: 1,
+		ReadCount:   1,
+		Active:      false,
+	}
+	result := RenderToolGroup(g, false, 80)
+	plain := stripANSI(result)
+	if !strings.Contains(plain, "Searched for 1 pattern") {
+		t.Errorf("expected search summary in %q", plain)
+	}
+	if !strings.Contains(plain, "read 1 file") {
+		t.Errorf("expected read summary in %q", plain)
+	}
+	if !strings.Contains(plain, "ctrl+o to expand") {
+		t.Errorf("expected expand hint in %q", plain)
+	}
+}
+
+func TestRenderToolGroupVerbose(t *testing.T) {
+	readInput := json.RawMessage(`{"file_path":"/tmp/test.go"}`)
+	g := GroupData{
+		Entries: []GroupEntry{
+			{
+				CallHeader: "⏺ Read(test.go)\n",
+				Name:       "Read",
+				Input:      readInput,
+				Content:    "line1\nline2\nline3",
+				HasResult:  true,
+			},
+		},
+		ReadCount: 1,
+	}
+	result := RenderToolGroup(g, true, 80)
+	plain := stripANSI(result)
+	if !strings.Contains(plain, "Read(test.go)") {
+		t.Errorf("verbose should show tool call header, got %q", plain)
+	}
+	if !strings.Contains(plain, "Read 3 lines") {
+		t.Errorf("verbose should show tool result, got %q", plain)
+	}
+}
+
+func TestRenderToolGroupActiveWithHint(t *testing.T) {
+	g := GroupData{
+		Entries: []GroupEntry{
+			{CallHeader: "⏺ Read(main.go)\n", Name: "Read", HasResult: true},
+		},
+		ReadCount:  1,
+		Active:     true,
+		LatestHint: "main.go",
+	}
+	result := RenderToolGroup(g, false, 80)
+	plain := stripANSI(result)
+	if !strings.Contains(plain, "Reading 1 file\u2026") {
+		t.Errorf("active group should use present tense, got %q", plain)
+	}
+	if !strings.Contains(plain, "main.go") {
+		t.Errorf("active group should show hint, got %q", plain)
+	}
+	if !strings.Contains(plain, "ctrl+o to expand") {
+		t.Errorf("active group should also show expand hint, got %q", plain)
+	}
+}
+
+func TestRenderToolGroupEmptySilent(t *testing.T) {
+	// Group with only "silent" entries (ToolSearch) — should produce empty output
+	g := GroupData{
+		Entries: []GroupEntry{
+			{CallHeader: "⏺ ToolSearch(query)\n", Name: "ToolSearch", HasResult: true},
+		},
+		SearchCount: 0,
+		ReadCount:   0,
+		Active:      false,
+	}
+	result := RenderToolGroup(g, false, 80)
+	if result != "" {
+		t.Errorf("silent-only group should produce empty output, got %q", result)
+	}
+}
+
 func TestRenderContentPartImageAndDocument(t *testing.T) {
 	md := NewMarkdownRenderer(80)
 
