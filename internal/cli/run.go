@@ -276,6 +276,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		SlashDeps:    slashDeps,
 		HookMgr:      d.HookMgr,
 		TokenMonitor: d.TokenMonitor,
+		Metrics:      d.Metrics,
 		Workspace:    d.Cwd,
 	})
 

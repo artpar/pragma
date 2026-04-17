@@ -33,6 +33,7 @@ type Config struct {
 	SlashDeps    slash.Deps
 	HookMgr      *hook.Manager         // nil if no hooks configured
 	TokenMonitor *observe.TokenMonitor // nil if no token monitoring
+	Metrics      *observe.Metrics     // always non-nil (created in deps.go)
 	Workspace    string                // workspace directory basename
 }
 
@@ -167,6 +168,7 @@ type Model struct {
 	slashDeps    slash.Deps
 	hookMgr      *hook.Manager
 	tokenMonitor *observe.TokenMonitor
+	metrics      *observe.Metrics
 
 	// Components
 	viewport viewport.Model
@@ -228,6 +230,7 @@ func New(cfg Config) Model {
 		slashDeps:       cfg.SlashDeps,
 		hookMgr:         cfg.HookMgr,
 		tokenMonitor:    cfg.TokenMonitor,
+		metrics:         cfg.Metrics,
 		input:           newInputComponent(),
 		perm:            newPermissionDialog(),
 		toolbar:         newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace),

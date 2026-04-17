@@ -229,10 +229,15 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
 
+		// Single path: Metrics is always non-nil (created in deps.go).
+		// Budget comes from TokenMonitor if available.
+		snap := m.metrics.Snapshot()
+		cache := snap.TokenUsage.CacheCreationInputTokens + snap.TokenUsage.CacheReadInputTokens
+		budget := 0
 		if m.tokenMonitor != nil {
-			in, out := m.tokenMonitor.Usage()
-			m.toolbar.UpdateTokens(in, out, m.tokenMonitor.Budget())
+			budget = m.tokenMonitor.Budget()
 		}
+		m.toolbar.UpdateTokens(snap.TokenUsage.InputTokens, snap.TokenUsage.OutputTokens, cache, budget)
 		finished, pendingCmd := m.finishTurn()
 		return finished, tea.Batch(saveSessionCmd(m.sessionSave), pendingCmd)
 
@@ -275,7 +280,7 @@ func (m Model) startEngineFromPrompt(prompt string) (tea.Model, tea.Cmd) {
 	m.streaming = true
 	m.input.SetStreaming(true)
 	m.toolbar.SetStatus("streaming...")
-	m.toolbar.IncrementTurn()
+
 
 	m.cancel()
 	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
@@ -456,6 +461,7 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	if m.streaming {
 		observe.GlobalTrace("if: m.streaming — queuing message")
 		m.pendingInput = msg.Text
+		m.input.SetQueued(true)
 		label := msg.Text
 		if len(label) > 40 {
 			label = label[:37] + "..."
@@ -507,7 +513,7 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 	m.streaming = true
 	m.input.SetStreaming(true)
 	m.toolbar.SetStatus("streaming...")
-	m.toolbar.IncrementTurn()
+
 
 	m.cancel()
 	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
@@ -525,6 +531,7 @@ func (m Model) finishTurn() (Model, tea.Cmd) {
 	defer observe.GlobalTrace("exit")
 	m.streaming = false
 	m.input.SetStreaming(false)
+	m.input.SetQueued(false)
 	m.spinnerActive = false
 	m.eventCh = nil
 	m.toolbar.SetStatus("ready")
@@ -619,6 +626,9 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: m.sessionSave != nil")
 		m.sessionSave()
 	}
+	// Show session cost summary on exit (TS issues #27148, #9293)
+	m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(m.toolbar.CostSummary())+"\n")
+	m.viewport.SetContent(m.viewportContent())
 	observe.GlobalTrace("return: m, tea.Quit")
 	return m, tea.Quit
 }
