@@ -34,7 +34,8 @@ type Config struct {
 	HookMgr      *hook.Manager         // nil if no hooks configured
 	TokenMonitor *observe.TokenMonitor // nil if no token monitoring
 	Metrics      *observe.Metrics     // always non-nil (created in deps.go)
-	Workspace    string                // workspace directory basename
+	Workspace    string                // full workspace directory path (run.go passes d.Cwd)
+	Version      string                // build version (from buildinfo.Version)
 }
 
 // segmentKind distinguishes text (pre-rendered) from thinking/tool (rendered on demand).
@@ -169,6 +170,8 @@ type Model struct {
 	hookMgr      *hook.Manager
 	tokenMonitor *observe.TokenMonitor
 	metrics      *observe.Metrics
+	version      string // build version for welcome display
+	workspace    string // full workspace path for welcome display
 
 	// Components
 	viewport viewport.Model
@@ -231,6 +234,8 @@ func New(cfg Config) Model {
 		hookMgr:         cfg.HookMgr,
 		tokenMonitor:    cfg.TokenMonitor,
 		metrics:         cfg.Metrics,
+		version:         cfg.Version,
+		workspace:       cfg.Workspace,
 		input:           newInputComponent(),
 		perm:            newPermissionDialog(),
 		toolbar:         newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace),
@@ -420,10 +425,6 @@ func (m Model) viewportContent() string {
 	if m.spinnerActive {
 		observe.GlobalTrace("if: m.spinnerActive")
 		b.WriteString("\n" + m.spin.View() + " " + m.spinnerTool + "...")
-	}
-	if b.Len() == 0 {
-		observe.GlobalTrace("if: b.Len() == 0")
-		return welcomeMessage
 	}
 	observe.GlobalTrace("return: b.String()")
 	return b.String()
@@ -788,10 +789,6 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 	return segs
 }
 
-// welcomeMessage is shown in the viewport when the conversation is empty.
-var welcomeMessage = lipgloss.NewStyle().Faint(true).Render(
-	"\n  pragma\n  Type a message and press Enter · Alt+Enter for newlines · /help for commands\n",
-)
 
 // handleResize adjusts all components to the new terminal size.
 func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -813,6 +810,13 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: !m.ready")
 		m.viewport = viewport.New(m.width, vpHeight)
 		m.ready = true
+
+		// Welcome is always the first segment (matches TS LogoHeader pattern — ADR-044 note)
+		welcomeText := render.RenderWelcome(
+			m.version, m.toolbar.modelName, m.toolbar.provider,
+			m.workspace, m.width,
+		)
+		m.outputSegs = append(m.outputSegs, segment{kind: segText, content: welcomeText})
 
 		snap := m.store.Snapshot()
 		if len(snap.Conversation.Messages) > 0 {

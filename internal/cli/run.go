@@ -13,6 +13,7 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/background"
+	"github.com/artpar/pragma/internal/buildinfo"
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/hook"
@@ -278,6 +279,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		TokenMonitor: d.TokenMonitor,
 		Metrics:      d.Metrics,
 		Workspace:    d.Cwd,
+		Version:      buildinfo.Version,
 	})
 
 	program := tea.NewProgram(m, tea.WithAltScreen())
