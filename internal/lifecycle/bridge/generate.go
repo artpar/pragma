@@ -206,6 +206,11 @@ func GenerateGraph(ctx context.Context, prov provider.Provider, bus *observe.Eve
 		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "return: nil, fmt.Errorf(\"generated graph is invalid YAML: %w\\n\\nGenerated:\\n%s\", err,...")
 		return nil, fmt.Errorf("generated graph is invalid YAML: %w\n\nGenerated:\n%s", err, yamlText)
 	}
+	// Auto-fix LLM nodes that are missing stop_reason routing to tools.
+	// LLM-generated graphs frequently omit this, causing tool calls to be
+	// silently discarded.
+	definition.FixLLMToolRouting(def)
+
 	observe.TraceCtx(ctx, "bridge", "GenerateGraph", "return: def, nil")
 
 	return def, nil

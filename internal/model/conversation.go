@@ -134,7 +134,7 @@ func deepCopyContentPart(part ContentPart) ContentPart {
 			input = make(json.RawMessage, len(p.Input))
 			copy(input, p.Input)
 		}
-		return ToolCallPart{ID: p.ID, Name: p.Name, Input: input}
+		return ToolCallPart{ID: p.ID, Name: p.Name, Input: input, Signature: p.Signature}
 	case DocumentPart:
 		data := make([]byte, len(p.Data))
 		copy(data, p.Data)

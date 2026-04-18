@@ -177,19 +177,27 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", ev.Node, ev.Err)
 				return fmt.Errorf("lifecycle node %q failed at step %d: %w", ev.Node, ev.Step, ev.Err)
 			}
-			fmt.Fprintf(os.Stderr, "  ✓ %s\n", ev.Node)
+			if ev.Duration > 0 {
+				fmt.Fprintf(os.Stderr, "  ✓ %s (%s)\n", ev.Node, ev.Duration.Round(100*time.Millisecond))
+			} else {
+				fmt.Fprintf(os.Stderr, "  ✓ %s\n", ev.Node)
+			}
+		case "transition":
+			if ev.RouteKey != "" {
+				fmt.Fprintf(os.Stderr, "  → %s (route: %s)\n", ev.ToNode, ev.RouteKey)
+			}
 		case "completed":
 			if ev.Err != nil {
 				return fmt.Errorf("lifecycle execution failed: %w", ev.Err)
 			}
 			fmt.Fprintf(os.Stderr, "✓ Completed in %d steps\n", ev.Step)
 
-			// Print final assistant message
+			// Print final assistant message to stdout.
 			msgs := bridge.Messages(ev.State)
 			for i := len(msgs) - 1; i >= 0; i-- {
 				if msgs[i].Role == model.RoleAssistant {
 					for _, part := range msgs[i].Content {
-						if tp, ok := part.(model.TextPart); ok {
+						if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
 							fmt.Println(tp.Text)
 						}
 					}
@@ -250,3 +258,4 @@ func loadYAMLGraph(path string, infra bridge.Infra) (*lifecycle.Graph, error) {
 		opts,
 	)
 }
+

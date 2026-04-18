@@ -443,9 +443,10 @@ func progressToLoopEvent(pe tool.ProgressEvent) LoopEvent {
 
 // toolAccumulator collects streaming fragments for a single tool call.
 type toolAccumulator struct {
-	id       string
-	name     string
-	inputBuf strings.Builder
+	id        string
+	name      string
+	signature string
+	inputBuf  strings.Builder
 }
 
 // consumeStream reads all chunks from a streaming response, emitting TextEvent
@@ -505,7 +506,7 @@ func (e *Engine) consumeStream(
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"duplicate tool call ID %q\", tc.ID)")
 				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
 			}
-			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name}
+			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name, signature: tc.Signature}
 			toolOrder = append(toolOrder, tc.ID)
 		}
 
@@ -561,9 +562,10 @@ func (e *Engine) consumeStream(
 			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
 		}
 		parts = append(parts, model.ToolCallPart{
-			ID:    acc.id,
-			Name:  acc.name,
-			Input: raw,
+			ID:        acc.id,
+			Name:      acc.name,
+			Input:     raw,
+			Signature: acc.signature,
 		})
 	}
 	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")

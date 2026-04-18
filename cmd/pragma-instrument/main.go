@@ -64,7 +64,8 @@ func main() {
 	cfg.excludePkg["app"] = true     // DAG: app has no internal deps
 	cfg.excludePkg["config"] = true  // DAG: config has no internal deps
 	cfg.excludePkg["session"] = true // DAG: session → model, config only
-	cfg.excludePkg["util"] = true    // DAG: util has no internal deps
+	cfg.excludePkg["util"] = true      // DAG: util has no internal deps
+	cfg.excludePkg["selftrace"] = true // feedback loop: reads same log GlobalTrace writes (ADR-028)
 
 	args := flag.Args()
 	if len(args) == 0 {

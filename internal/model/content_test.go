@@ -31,6 +31,15 @@ func TestContentPartRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name: "ToolCallPart/with_signature",
+			part: ToolCallPart{
+				ID:        "call-sig",
+				Name:      "Glob",
+				Input:     json.RawMessage(`{"pattern":"*.go"}`),
+				Signature: "thought_sig_xyz",
+			},
+		},
+		{
 			name: "ToolResultPart",
 			part: ToolResultPart{
 				ToolCallID: "call-123",

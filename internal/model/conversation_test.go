@@ -168,6 +168,26 @@ func TestConversationForkDeepCopyToolCallInput(t *testing.T) {
 	}
 }
 
+func TestConversationForkDeepCopyToolCallSignature(t *testing.T) {
+	conv := NewConversation(SystemPrompt{}, "model", "prov", "/tmp")
+	conv.Append(Message{
+		ID:   "msg-1",
+		Role: RoleAssistant,
+		Content: []ContentPart{ToolCallPart{
+			ID: "tc-1", Name: "Glob",
+			Input:     json.RawMessage(`{"pattern":"*.go"}`),
+			Signature: "thought_sig_abc123",
+		}},
+		Timestamp: time.Now(),
+	})
+
+	forked := conv.Fork("fork-1")
+	forkedTc := forked.Messages[0].Content[0].(ToolCallPart)
+	if forkedTc.Signature != "thought_sig_abc123" {
+		t.Errorf("forked ToolCallPart.Signature = %q, want %q", forkedTc.Signature, "thought_sig_abc123")
+	}
+}
+
 func TestConversationAPIMessages(t *testing.T) {
 	conv := NewConversation(SystemPrompt{}, "model", "prov", "/tmp")
 

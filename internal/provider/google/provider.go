@@ -253,9 +253,12 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							argsJSON, _ := json.Marshal(fc.Args)
 							tc.Input = argsJSON
 						}
+						if len(part.ThoughtSignature) > 0 {
+							tc.Signature = string(part.ThoughtSignature)
+						}
 						accToolCalls = append(accToolCalls, tc)
 						ch <- provider.StreamChunk{
-							ToolCallStart: &model.ToolCallPart{ID: id, Name: fc.Name},
+							ToolCallStart: &model.ToolCallPart{ID: id, Name: fc.Name, Signature: tc.Signature},
 						}
 						if fc.Args != nil {
 							argsJSON, _ := json.Marshal(fc.Args)
@@ -482,7 +485,11 @@ func messagesToGenai(msgs []model.Message) []*genai.Content {
 				if len(part.Input) > 0 {
 					_ = json.Unmarshal(part.Input, &args)
 				}
-				parts = append(parts, genai.NewPartFromFunctionCall(part.Name, args))
+				p := genai.NewPartFromFunctionCall(part.Name, args)
+				if part.Signature != "" {
+					p.ThoughtSignature = []byte(part.Signature)
+				}
+				parts = append(parts, p)
 			case model.ToolResultPart:
 				observe.GlobalTrace("typecase: model.ToolResultPart")
 				name := toolNames[part.ToolCallID]
@@ -696,9 +703,11 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 					id = model.NewUUID()
 				}
 				argsJSON, _ := json.Marshal(fc.Args)
-				result.Content = append(result.Content, model.ToolCallPart{
-					ID: id, Name: fc.Name, Input: argsJSON,
-				})
+				tc := model.ToolCallPart{ID: id, Name: fc.Name, Input: argsJSON}
+				if len(part.ThoughtSignature) > 0 {
+					tc.Signature = string(part.ThoughtSignature)
+				}
+				result.Content = append(result.Content, tc)
 			}
 		}
 	}

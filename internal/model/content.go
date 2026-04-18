@@ -57,10 +57,14 @@ func (DocumentPart) PartType() ContentType { return ContentDocument }
 // ID is an internal UUID; provider adapters map to/from wire IDs.
 // Input is raw JSON — Anthropic sends objects, OpenAI sends strings,
 // the provider parses before emitting.
+// Signature is a provider-opaque token that must be echoed back in conversation
+// history (e.g., Gemini 3 thought signatures). Empty for providers that don't
+// use signatures.
 type ToolCallPart struct {
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	Signature string          `json:"signature,omitempty"`
 }
 
 func (ToolCallPart) contentPartSealed() {}
