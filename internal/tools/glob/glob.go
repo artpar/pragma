@@ -191,8 +191,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if len(matches) == 0 {
 		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "if: len(matches) == 0")
-		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: \"No files found\"}, nil")
-		return tool.InvokeResult{Content: "No files found"}, nil
+		observe.TraceCtx(ctx, "glob", "Tool.Invoke", "return: tool.InvokeResult{Content: \"No files found...\"}, nil")
+		return tool.InvokeResult{Content: "No files found. Try: broader pattern (** instead of specific dir), different extension, or use Grep to search file content instead."}, nil
 	}
 
 	// Build plain text output (filenames joined by newline, matching TS mapToolResultToToolResultBlockParam)
