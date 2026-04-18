@@ -697,6 +697,11 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 				result.Content = append(result.Content, model.TextPart{Text: part.Text})
 			case part.FunctionCall != nil:
 				observe.GlobalTrace("case: part.FunctionCall != nil")
+				// Skip malformed function calls — args are invalid JSON.
+				if cand.FinishReason == genai.FinishReasonMalformedFunctionCall {
+					observe.GlobalTrace("if: cand.FinishReason == genai.FinishReasonMalformedFunctionCall — skipping")
+					continue
+				}
 				fc := part.FunctionCall
 				id := fc.ID
 				if id == "" {
@@ -751,6 +756,9 @@ func stopReasonFromGenai(fr genai.FinishReason) model.StopReason {
 	case genai.FinishReasonMaxTokens:
 		observe.GlobalTrace("case: genai.FinishReasonMaxTokens")
 		return model.StopMaxTokens
+	case genai.FinishReasonMalformedFunctionCall:
+		observe.GlobalTrace("case: genai.FinishReasonMalformedFunctionCall")
+		return model.StopMalformedToolCall
 	default:
 		observe.GlobalTrace("default")
 		return model.StopError

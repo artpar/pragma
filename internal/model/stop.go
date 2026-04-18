@@ -10,4 +10,6 @@ const (
 	StopMaxTokens StopReason = "max_tokens"
 	StopPauseTurn StopReason = "pause_turn"
 	StopError     StopReason = "error"
+
+	StopMalformedToolCall StopReason = "malformed_tool_call"
 )

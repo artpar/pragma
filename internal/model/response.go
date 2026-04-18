@@ -47,7 +47,7 @@ func (r *Response) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("unmarshal response content: %w", err)
 	}
 	switch raw.StopReason {
-	case StopEndTurn, StopToolUse, StopMaxTokens, StopPauseTurn, StopError:
+	case StopEndTurn, StopToolUse, StopMaxTokens, StopPauseTurn, StopError, StopMalformedToolCall:
 		// valid
 	case "":
 		// Empty stop_reason from wire → treat as end_turn (GitHub #20660, #19195: null stop_reason causes hangs)

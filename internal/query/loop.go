@@ -71,6 +71,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	})
 
 	lifecycleRunInvoked := false
+	malformedRetries := 0
+	const maxMalformedRetries = 3
 	turnCount := 0
 	for turnCount < maxTurns {
 		observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("turn %d/%d", turnCount+1, maxTurns))
@@ -304,6 +306,35 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			})
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
+
+		case model.StopMalformedToolCall:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopMalformedToolCall")
+			malformedRetries++
+			if malformedRetries > maxMalformedRetries {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: malformedRetries > maxMalformedRetries")
+				ch <- ErrorEvent{Err: fmt.Errorf("exceeded %d malformed tool call retries", maxMalformedRetries)}
+				return
+			}
+			e.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warn",
+				Component:    "query",
+				ErrorType:    "malformed_tool_call",
+				ErrorMessage: fmt.Sprintf("provider returned malformed tool call, retrying (%d/%d)", malformedRetries, maxMalformedRetries),
+			})
+			// Assistant message already appended (text/thinking only, tool calls stripped).
+			// Inject guidance for the LLM to retry with valid JSON.
+			correctionMsg := model.Message{
+				ID:        model.NewUUID(),
+				Role:      model.RoleUser,
+				Content:   []model.ContentPart{model.TextPart{Text: fmt.Sprintf("Your previous tool call had malformed arguments and was discarded. Please retry with valid JSON arguments. (attempt %d/%d)", malformedRetries, maxMalformedRetries)}},
+				Timestamp: time.Now(),
+			}
+			e.store.Update(func(s *app.AppState) {
+				s.Conversation.Append(correctionMsg)
+			})
+			turnCount++
+			continue
 
 		case model.StopPauseTurn:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopPauseTurn")
@@ -550,23 +581,29 @@ func (e *Engine) consumeStream(
 		observe.GlobalTrace("if: textBuf.Len() > 0")
 		parts = append(parts, model.TextPart{Text: textBuf.String()})
 	}
-	for _, id := range toolOrder {
-		observe.GlobalTrace("range toolOrder")
-		acc := toolCalls[id]
-		raw := json.RawMessage(acc.inputBuf.String())
-		if len(raw) == 0 {
-			observe.GlobalTrace("if: len(raw) == 0")
-			raw = json.RawMessage("{}")
-		} else if !json.Valid(raw) {
-			observe.GlobalTrace("else-if: !json.Valid(raw)")
-			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
+	// When the provider signals malformed tool calls, drop all accumulated tool calls —
+	// the JSON args are invalid and would fail validation. Text/thinking parts are preserved.
+	if done.StopReason == model.StopMalformedToolCall {
+		observe.GlobalTrace("if: done.StopReason == model.StopMalformedToolCall — dropping tool calls")
+	} else {
+		for _, id := range toolOrder {
+			observe.GlobalTrace("range toolOrder")
+			acc := toolCalls[id]
+			raw := json.RawMessage(acc.inputBuf.String())
+			if len(raw) == 0 {
+				observe.GlobalTrace("if: len(raw) == 0")
+				raw = json.RawMessage("{}")
+			} else if !json.Valid(raw) {
+				observe.GlobalTrace("else-if: !json.Valid(raw)")
+				return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
+			}
+			parts = append(parts, model.ToolCallPart{
+				ID:        acc.id,
+				Name:      acc.name,
+				Input:     raw,
+				Signature: acc.signature,
+			})
 		}
-		parts = append(parts, model.ToolCallPart{
-			ID:        acc.id,
-			Name:      acc.name,
-			Input:     raw,
-			Signature: acc.signature,
-		})
 	}
 	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tdone.Model,\n\tContent:\tparts,\n\tStopReason:\tdone.StopR...")
 
