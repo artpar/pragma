@@ -563,6 +563,25 @@ func appendError(segs []segment, data errorSegData) []segment {
 	return append(segs, segment{kind: segError, errData: &data})
 }
 
+// hasProgressSegment returns true if a recent segLifecycle or segAgent segment
+// exists that already covers this tool's visual output. This prevents creating
+// a duplicate segTool when the progress segment is the authoritative display.
+func hasProgressSegment(segs []segment, toolName string) bool {
+	for i := len(segs) - 1; i >= 0; i-- {
+		switch {
+		case segs[i].kind == segLifecycle && segs[i].lifecycle != nil && toolName == "LifecycleRun":
+			return true
+		case segs[i].kind == segAgent && segs[i].agent != nil && toolName == "Agent":
+			return true
+		case segs[i].kind == segText:
+			continue
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // updateLifecycleProgress finds or creates the active segLifecycle segment
 // and updates it in-place based on the lifecycle progress event.
 func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {

@@ -177,6 +177,41 @@ func (r *Registry) ListRunningTeammates() []Task {
 	return result
 }
 
+// ListAllTeammates returns snapshots of all tasks that have an AgentName,
+// regardless of status. Running tasks sort first, then completed, then others.
+// Used by the /teams dialog to show full visibility including recently finished work.
+func (r *Registry) ListAllTeammates() []Task {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []Task
+	for _, t := range r.tasks {
+		if t.AgentName != "" {
+			result = append(result, t.snapshot())
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		ri, rj := statusRank(result[i].Status), statusRank(result[j].Status)
+		if ri != rj {
+			return ri < rj
+		}
+		return result[i].AgentName < result[j].AgentName
+	})
+	return result
+}
+
+func statusRank(s TaskStatus) int {
+	switch s {
+	case TaskRunning:
+		return 0
+	case TaskPending:
+		return 1
+	case TaskCompleted:
+		return 2
+	default:
+		return 3
+	}
+}
+
 // NotifyTask signals a task's Notify channel (non-blocking).
 // Used by SendMessage after appending to PendingMessages.
 func (r *Registry) NotifyTask(id string) {

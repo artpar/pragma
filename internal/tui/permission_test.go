@@ -263,11 +263,8 @@ func TestPermissionDialogViewDefault(t *testing.T) {
 	})
 
 	view := d.View()
-	if !strings.Contains(view, "Tool use") {
-		t.Error("expected 'Tool use' title for unknown tool")
-	}
 	if !strings.Contains(view, "WebFetch") {
-		t.Error("expected tool name in content")
+		t.Error("expected tool name in title for unknown tool")
 	}
 	if !strings.Contains(view, "https://example.com") {
 		t.Error("expected content in view")

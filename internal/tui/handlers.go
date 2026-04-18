@@ -69,8 +69,7 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			return m.startEngineFromPrompt(msg.Result.InjectPrompt)
 		}
 		if msg.Result.ShowTeamsDialog {
-			m.refreshTeammates()
-			m.teams.Show(m.teammateEntries, m.taskReg)
+			m.teams.Show(m.taskReg)
 		}
 	}
 	m.viewport.SetContent(m.viewportContent())
@@ -228,8 +227,10 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 				observe.GlobalTrace("if: isCollapsible(call.Name) != \"\"")
 
 				m.fillGroupResult(call, e.Result, e.Display)
+			} else if hasProgressSegment(m.outputSegs, call.Name) {
+				observe.GlobalTrace("else-if: hasProgressSegment — skip segTool")
 			} else {
-				observe.GlobalTrace("else: isCollapsible(call.Name) != \"\"")
+				observe.GlobalTrace("else: append segTool")
 				m.outputSegs = appendTool(m.outputSegs, toolSegData{
 					Name:    call.Name,
 					Input:   call.Input,

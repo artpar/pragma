@@ -42,15 +42,15 @@ type teamsDialog struct {
 	feedback string // transient feedback message ("Shutdown requested", etc.)
 }
 
-// Show activates the teams dialog with current teammate entries.
-func (d *teamsDialog) Show(entries []render.TeammateEntry, reg *task.Registry) {
+// Show activates the teams dialog, querying live data from the registry.
+func (d *teamsDialog) Show(reg *task.Registry) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	d.active = true
-	d.entries = entries
 	d.selected = 0
 	d.taskReg = reg
 	d.feedback = ""
+	d.Refresh()
 }
 
 // Dismiss closes the dialog.
@@ -63,11 +63,12 @@ func (d *teamsDialog) Dismiss() {
 }
 
 // Refresh updates entries from the task registry.
+// Uses ListAllTeammates to include completed teammates for full visibility.
 func (d *teamsDialog) Refresh() {
 	if d.taskReg == nil {
 		return
 	}
-	teammates := d.taskReg.ListRunningTeammates()
+	teammates := d.taskReg.ListAllTeammates()
 	d.entries = buildTeammateEntries(teammates)
 	if d.selected >= len(d.entries) {
 		d.selected = max(0, len(d.entries)-1)
@@ -194,6 +195,7 @@ func buildTeammateEntries(tasks []task.Task) []render.TeammateEntry {
 		entries[i] = render.TeammateEntry{
 			Name:              t.AgentName,
 			TaskID:            t.ID,
+			Status:            string(t.Status),
 			TokenCount:        t.TokensUsed,
 			IsIdle:            t.IsIdle,
 			IdleSince:         t.IdleSince,

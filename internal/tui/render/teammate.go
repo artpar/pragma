@@ -13,6 +13,7 @@ import (
 type TeammateEntry struct {
 	Name              string
 	TaskID            string
+	Status            string // task status: "running", "completed", "failed", "cancelled", "pending"
 	TokenCount        int
 	ToolCount         int
 	LastTool          string
@@ -135,6 +136,14 @@ func formatTeammateTokens(n int) string {
 // TeammateStatusText returns a plain status string for a teammate entry.
 // Used by the teams dialog for per-entry status display.
 func TeammateStatusText(e TeammateEntry) string {
+	switch e.Status {
+	case "completed":
+		return "done"
+	case "failed":
+		return "failed"
+	case "cancelled":
+		return "cancelled"
+	}
 	if e.ShutdownRequested {
 		return "stopping"
 	}
