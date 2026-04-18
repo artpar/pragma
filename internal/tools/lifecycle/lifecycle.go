@@ -140,19 +140,20 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	// Get progress reporter from state if available (optional interface pattern).
 	var progressCh tool.ProgressReporter
 	if ps, ok := state.(tool.ProgressSource); ok {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: ok")
 		progressCh = ps.Progress()
 	}
 
-	// Use Stream() for real-time progress visibility in the TUI.
-	// EventBus events continue to be emitted by executeSuperstep for logging/replay.
 	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(t.Bus))
 	events := executor.Stream(ctx, initialState)
 
 	var finalState lifecycle.State
 	var runErr error
 	for ev := range events {
-		// Forward to TUI progress channel
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "range events")
+
 		if progressCh != nil {
+			observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: progressCh != nil")
 			pe := tool.ProgressEvent{
 				Step:     ev.Step,
 				Node:     ev.Node,
@@ -164,11 +165,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				RouteKey: ev.RouteKey,
 			}
 			if ev.Err != nil {
+				observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: ev.Err != nil")
 				pe.Error = ev.Err.Error()
 			}
 			progressCh <- pe
 		}
 		if ev.Type == "completed" {
+			observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: ev.Type == \"completed\"")
 			finalState = ev.State
 			runErr = ev.Err
 		}

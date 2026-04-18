@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"github.com/artpar/pragma/internal/observe"
 	"strings"
 )
 
@@ -39,15 +40,21 @@ var errorKindLabel = map[string]string{
 //   - Retry countdown if retrying
 //   - Guidance line if present
 func RenderError(data ErrorData, verbose bool, width int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	label := errorKindLabel[data.Kind]
 	if label == "" {
+		observe.GlobalTrace("if: label == \"\"")
 		label = "Error"
 	}
 
 	if data.Retrying {
+		observe.GlobalTrace("if: data.Retrying")
+		observe.GlobalTrace("return: renderRetrying(data, label)")
 		return renderRetrying(data, label)
 	}
 	var b strings.Builder
+	observe.GlobalTrace("return: renderTerminal(&b, data, label, verbose)")
 	return renderTerminal(&b, data, label, verbose)
 }
 
@@ -57,22 +64,24 @@ func RenderError(data ErrorData, verbose bool, width int) string {
 //	⎿  Rate limit exceeded
 //	   Retrying in 8 seconds… (attempt 5/11)
 func renderRetrying(data ErrorData, label string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 
-	// Error kind label in red
 	b.WriteString(bracketErr.Render(BracketPrefix))
 	b.WriteString(errBold.Render(label))
 	b.WriteString("\n")
 
-	// Countdown line in dim
 	unit := "seconds"
 	if data.SecondsLeft == 1 {
+		observe.GlobalTrace("if: data.SecondsLeft == 1")
 		unit = "second"
 	}
 	countdown := fmt.Sprintf("Retrying in %d %s… (attempt %d/%d)",
 		max(0, data.SecondsLeft), unit, data.Attempt, data.MaxAttempts)
 	b.WriteString(bracketDim.Render(BracketPrefix))
 	b.WriteString(bracketDim.Render(countdown))
+	observe.GlobalTrace("return: b.String()")
 
 	return b.String()
 }
@@ -85,49 +94,56 @@ func renderRetrying(data ErrorData, label string) string {
 //	   (ctrl+o to expand)
 //	   Check your API key or run /doctor
 func renderTerminal(b *strings.Builder, data ErrorData, label string, verbose bool) string {
-	// Error kind label in red
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
 	b.WriteString(bracketErr.Render(BracketPrefix))
 	b.WriteString(errBold.Render(label))
 	b.WriteString("\n")
 
-	// Error message
 	msg := data.ErrorMsg
 	truncated := false
 	if !verbose && len(msg) > maxAPIErrorChars {
+		observe.GlobalTrace("if: !verbose && len(msg) > maxAPIErrorChars")
 		msg = msg[:maxAPIErrorChars] + "…"
 		truncated = true
 	}
 
 	if msg != "" {
+		observe.GlobalTrace("if: msg != \"\"")
 		lines := strings.Split(msg, "\n")
 		maxLines := len(lines)
 		if !verbose && maxLines > 10 {
+			observe.GlobalTrace("if: !verbose && maxLines > 10")
 			maxLines = 10
 			truncated = true
 		}
 		for i := 0; i < maxLines; i++ {
+			observe.GlobalTrace("for: i < maxLines")
 			b.WriteString(bracketErr.Render(BracketPrefix))
 			b.WriteString(bracketErr.Render(lines[i]))
 			b.WriteString("\n")
 		}
 		if !verbose && len(lines) > 10 {
+			observe.GlobalTrace("if: !verbose && len(lines) > 10")
 			b.WriteString(bracketDim.Render(BracketPrefix))
 			b.WriteString(bracketDim.Render(fmt.Sprintf("(+%d more lines)", len(lines)-10)))
 			b.WriteString("\n")
 		}
 	}
 
-	// Expand hint
 	if truncated {
+		observe.GlobalTrace("if: truncated")
 		appendExpandHint(b)
 		b.WriteString("\n")
 	}
 
-	// Guidance
 	if data.Guidance != "" {
+		observe.GlobalTrace("if: data.Guidance != \"\"")
 		b.WriteString(bracketDim.Render(BracketPrefix))
 		b.WriteString(bracketDim.Render(data.Guidance))
 	}
+	observe.GlobalTrace("return: b.String()")
 
 	return b.String()
 }

@@ -37,7 +37,6 @@ var (
 	errBold = lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.AdaptiveColor{Light: "124", Dark: "196"})
-
 )
 
 // primaryParams maps tool names to their primary input parameter.
@@ -70,10 +69,12 @@ func RenderMessage(msg model.Message, md *MarkdownRenderer) string {
 			observe.GlobalTrace("range msg.Content")
 			rendered := RenderContentPart(part, md, 80)
 			if rendered != "" {
+				observe.GlobalTrace("if: rendered != \"\"")
 				parts = append(parts, rendered)
 			}
 		}
 		if len(parts) == 0 {
+			observe.GlobalTrace("return: \"\"")
 			return ""
 		}
 		b.WriteString(userLabel.Render("❯") + " " + strings.Join(parts, "\n"))
@@ -83,7 +84,7 @@ func RenderMessage(msg model.Message, md *MarkdownRenderer) string {
 
 	case model.RoleAssistant:
 		observe.GlobalTrace("case: model.RoleAssistant")
-		// No "Assistant" label — content flows directly
+
 	}
 
 	for _, part := range msg.Content {
@@ -160,19 +161,24 @@ func RenderThinking(tp model.ThinkingPart, expanded bool) string {
 	defer observe.GlobalTrace("exit")
 	if tp.Redacted {
 		observe.GlobalTrace("if: tp.Redacted")
+		observe.GlobalTrace("return: thinkStyle.Render(ThinkGlyph + \" [thinking redacted]\")")
 		return thinkStyle.Render(ThinkGlyph + " [thinking redacted]")
 	}
 	if !expanded {
+		observe.GlobalTrace("if: !expanded")
+		observe.GlobalTrace("return: thinkStyle.Render(ThinkGlyph+\" Thinking\") +\n\t\" \" + lipgloss.NewStyle().Faint(...")
 		return thinkStyle.Render(ThinkGlyph+" Thinking") +
 			" " + lipgloss.NewStyle().Faint(true).Render("(ctrl+o to expand)")
 	}
-	// Expanded: header + full text indented 2 spaces (matches TS paddingLeft={2})
+
 	header := thinkStyle.Render(ThinkGlyph + " Thinking\u2026")
 	lines := strings.Split(tp.Text, "\n")
 	for i, line := range lines {
+		observe.GlobalTrace("range lines")
 		lines[i] = "  " + line
 	}
 	body := thinkStyle.Render(strings.Join(lines, "\n"))
+	observe.GlobalTrace("return: header + \"\\n\" + body")
 	return header + "\n" + body
 }
 
@@ -181,7 +187,6 @@ func RenderToolCall(tc model.ToolCallPart, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	// Build: ⏺ ToolName(primaryArg)
 	label := toolCall.Render(tc.Name)
 	arg := ""
 
@@ -202,7 +207,7 @@ func RenderToolCall(tc model.ToolCallPart, width int) string {
 			if val, ok := parsed[primaryKey]; ok {
 				observe.GlobalTrace("if: ok")
 				valStr := fmt.Sprintf("%v", val)
-				// Leave room for: "⏺ " + name + "(" + ")" = ~len(name)+4
+
 				maxLen := width - len(tc.Name) - 4
 				if maxLen > 10 && len(valStr) > maxLen {
 					observe.GlobalTrace("if: maxLen > 10 && len(valStr) > maxLen")
@@ -215,7 +220,8 @@ func RenderToolCall(tc model.ToolCallPart, width int) string {
 
 	line := BlackCircle + " " + label
 	if arg != "" {
-		line += toolParam.Render("("+arg+")")
+		observe.GlobalTrace("if: arg != \"\"")
+		line += toolParam.Render("(" + arg + ")")
 	}
 	observe.GlobalTrace("return: line + \"\\n\"")
 	return line + "\n"
@@ -226,6 +232,7 @@ func RenderToolCall(tc model.ToolCallPart, width int) string {
 func RenderToolResultGeneric(tr model.ToolResultPart, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: WrapWithBracket(tr.Content, tr.IsError, width, false)")
 	return WrapWithBracket(tr.Content, tr.IsError, width, false)
 }
 
@@ -236,9 +243,13 @@ func WrapWithBracket(content string, isError bool, width int, verbose bool) stri
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if content == "" {
+		observe.GlobalTrace("if: content == \"\"")
 		if isError {
+			observe.GlobalTrace("if: isError")
+			observe.GlobalTrace("return: bracketErr.Render(BracketPrefix + \"(error)\")")
 			return bracketErr.Render(BracketPrefix + "(error)")
 		}
+		observe.GlobalTrace("return: bracketDim.Render(BracketPrefix + \"(no output)\")")
 		return bracketDim.Render(BracketPrefix + "(no output)")
 	}
 
@@ -247,24 +258,30 @@ func WrapWithBracket(content string, isError bool, width int, verbose bool) stri
 	var b strings.Builder
 	bracket := bracketDim
 	if isError {
+		observe.GlobalTrace("if: isError")
 		bracket = bracketErr
 	}
 
 	maxLines := 15
 	if verbose {
-		maxLines = 200 // size guard for verbose mode
+		observe.GlobalTrace("if: verbose")
+		maxLines = 200
 	}
 	truncated := false
 	if len(lines) > maxLines {
+		observe.GlobalTrace("if: len(lines) > maxLines")
 		truncated = true
 		lines = lines[:maxLines]
 	}
 
 	for i, line := range lines {
+		observe.GlobalTrace("range lines")
 		if i == 0 {
+			observe.GlobalTrace("if: i == 0")
 			b.WriteString(bracket.Render(BracketPrefix))
 			b.WriteString(truncateLine(line, width-len(BracketPrefix)))
 		} else {
+			observe.GlobalTrace("else: i == 0")
 			b.WriteString(ContentIndent)
 			b.WriteString(truncateLine(line, width-len(ContentIndent)))
 		}
@@ -272,14 +289,17 @@ func WrapWithBracket(content string, isError bool, width int, verbose bool) stri
 	}
 
 	if truncated {
+		observe.GlobalTrace("if: truncated")
 		remaining := len(strings.Split(content, "\n")) - maxLines
 		b.WriteString(ContentIndent)
 		b.WriteString(bracketDim.Render(fmt.Sprintf("(+%d more lines)", remaining)))
 		b.WriteString("\n")
 		if !verbose {
+			observe.GlobalTrace("if: !verbose")
 			appendExpandHint(&b)
 		}
 	}
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
 }

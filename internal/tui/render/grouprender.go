@@ -3,6 +3,7 @@ package render
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/artpar/pragma/internal/observe"
 	"strings"
 )
 
@@ -29,32 +30,46 @@ type GroupData struct {
 // RenderToolGroup renders a collapsed read/search group.
 // Non-verbose: compact summary badge. Verbose: individual tool calls with results.
 func RenderToolGroup(g GroupData, verbose bool, width int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if verbose {
+		observe.GlobalTrace("if: verbose")
+		observe.GlobalTrace("return: renderGroupVerbose(g, width)")
 		return renderGroupVerbose(g, width)
 	}
+	observe.GlobalTrace("return: renderGroupCollapsed(g, width)")
 	return renderGroupCollapsed(g, width)
 }
 
 // renderGroupVerbose renders each tool call and result individually.
 func renderGroupVerbose(g GroupData, width int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 	for _, e := range g.Entries {
+		observe.GlobalTrace("range g.Entries")
 		b.WriteString(e.CallHeader)
 		if e.HasResult {
+			observe.GlobalTrace("if: e.HasResult")
 			b.WriteString(RenderToolOutput(e.Name, e.Input, e.Content, e.IsError, width, e.Display, true))
 			b.WriteString("\n")
 		}
 	}
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderGroupCollapsed renders the compact summary badge.
 func renderGroupCollapsed(g GroupData, width int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 
 	summary := GenerateGroupSummary(g.SearchCount, g.ReadCount, g.Active)
 	if summary == "" {
-		// All counts zero (e.g., only "silent" entries like ToolSearch) — show nothing
+		observe.GlobalTrace("if: summary == \"\"")
+		observe.GlobalTrace("return: \"\"")
+
 		return ""
 	}
 
@@ -62,15 +77,15 @@ func renderGroupCollapsed(g GroupData, width int) string {
 	b.WriteString(dimText.Render(summary))
 	b.WriteString("\n")
 
-	// Show latest display hint when group is active (matching TS latestDisplayHint behavior)
 	if g.Active && g.LatestHint != "" {
+		observe.GlobalTrace("if: g.Active && g.LatestHint != \"\"")
 		b.WriteString(ContentIndent)
 		b.WriteString(dimText.Render(g.LatestHint))
 		b.WriteString("\n")
 	}
 
-	// CtrlOToExpand shown unconditionally (matching TS CollapsedReadSearchContent.tsx line 459)
 	appendExpandHint(&b)
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -79,24 +94,34 @@ func renderGroupCollapsed(g GroupData, width int) string {
 // Matches TS getSearchReadSummaryText: proper tense, capitalization, grammar.
 // Active: present tense + trailing "…" (U+2026). Completed: past tense.
 func GenerateGroupSummary(searchCount, readCount int, active bool) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var parts []string
 
 	if searchCount > 0 {
+		observe.GlobalTrace("if: searchCount > 0")
 		noun := "pattern"
 		if searchCount > 1 {
+			observe.GlobalTrace("if: searchCount > 1")
 			noun = "patterns"
 		}
 		var verb string
 		if active {
+			observe.GlobalTrace("if: active")
 			if len(parts) == 0 {
+				observe.GlobalTrace("if: len(parts) == 0")
 				verb = "Searching for"
 			} else {
+				observe.GlobalTrace("else: len(parts) == 0")
 				verb = "searching for"
 			}
 		} else {
+			observe.GlobalTrace("else: active")
 			if len(parts) == 0 {
+				observe.GlobalTrace("if: len(parts) == 0")
 				verb = "Searched for"
 			} else {
+				observe.GlobalTrace("else: len(parts) == 0")
 				verb = "searched for"
 			}
 		}
@@ -104,21 +129,29 @@ func GenerateGroupSummary(searchCount, readCount int, active bool) string {
 	}
 
 	if readCount > 0 {
+		observe.GlobalTrace("if: readCount > 0")
 		noun := "file"
 		if readCount > 1 {
+			observe.GlobalTrace("if: readCount > 1")
 			noun = "files"
 		}
 		var verb string
 		if active {
+			observe.GlobalTrace("if: active")
 			if len(parts) == 0 {
+				observe.GlobalTrace("if: len(parts) == 0")
 				verb = "Reading"
 			} else {
+				observe.GlobalTrace("else: len(parts) == 0")
 				verb = "reading"
 			}
 		} else {
+			observe.GlobalTrace("else: active")
 			if len(parts) == 0 {
+				observe.GlobalTrace("if: len(parts) == 0")
 				verb = "Read"
 			} else {
+				observe.GlobalTrace("else: len(parts) == 0")
 				verb = "read"
 			}
 		}
@@ -126,12 +159,16 @@ func GenerateGroupSummary(searchCount, readCount int, active bool) string {
 	}
 
 	if len(parts) == 0 {
+		observe.GlobalTrace("if: len(parts) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
 	text := strings.Join(parts, ", ")
 	if active {
-		text += "\u2026" // U+2026 horizontal ellipsis, matching TS reference
+		observe.GlobalTrace("if: active")
+		text += "\u2026"
 	}
+	observe.GlobalTrace("return: text")
 	return text
 }

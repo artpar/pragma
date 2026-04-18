@@ -383,7 +383,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			fn()
 		}
 	}
-	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tProv:\t\tprov,\n\tChecker:\tchecker,\n\tStore:\t\tstor...")
+	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t\tprov,\n\tChecker:...")
 
 	return &Deps{
 		Cfg:          cfg,
@@ -613,7 +613,7 @@ func pickAvailableProvider(defaultProv string, creds config.Credentials) (select
 
 	if len(available) == 0 {
 		observe.GlobalTrace("if: len(available) == 0")
-		observe.GlobalTrace("return: selectedProvider{}, fmt.Errorf(\"API key required: set --api-key, add to ~/.go...")
+		observe.GlobalTrace("return: selectedProvider{}, fmt.Errorf(\"API key required: set --api-key, add to ~/.pr...")
 		return selectedProvider{}, fmt.Errorf("API key required: set --api-key, add to ~/.pragma/credentials.yml, or set %s", envVarForProvider(defaultProv))
 	}
 

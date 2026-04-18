@@ -34,6 +34,7 @@ type permissionDialog struct {
 func newPermissionDialog() permissionDialog {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: permissionDialog{}")
 	return permissionDialog{}
 }
 
@@ -52,30 +53,39 @@ func (d *permissionDialog) Update(msg tea.Msg) tea.Cmd {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !d.active {
+		observe.GlobalTrace("if: !d.active")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	switch keyMsg.String() {
 	case "up", "k":
+		observe.GlobalTrace("case: \"up\", \"k\"")
 		d.selected--
 		if d.selected < 0 {
 			d.selected = permOptCount - 1
 		}
 	case "down", "j":
+		observe.GlobalTrace("case: \"down\", \"j\"")
 		d.selected++
 		if d.selected >= permOptCount {
 			d.selected = 0
 		}
 	case "enter":
+		observe.GlobalTrace("case: \"enter\"")
 		return d.confirm()
 	case "esc":
+		observe.GlobalTrace("case: \"esc\"")
 		return d.deny()
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -92,10 +102,13 @@ func (d *permissionDialog) confirm() tea.Cmd {
 
 	switch d.selected {
 	case permOptAllow:
+		observe.GlobalTrace("case: permOptAllow")
 		decision = permission.DecisionAllow
 	case permOptDeny:
+		observe.GlobalTrace("case: permOptDeny")
 		decision = permission.DecisionDeny
 	case permOptAlwaysAllow:
+		observe.GlobalTrace("case: permOptAlwaysAllow")
 		decision = permission.DecisionAllow
 		rule = &permission.Rule{
 			ToolName: req.ToolName,
@@ -106,6 +119,7 @@ func (d *permissionDialog) confirm() tea.Cmd {
 	}
 
 	resp := PermResponseMsg{Decision: decision, Rule: rule}
+	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	return func() tea.Msg {
 		req.Response <- resp
 		return resp
@@ -121,6 +135,7 @@ func (d *permissionDialog) deny() tea.Cmd {
 	d.request = nil
 
 	resp := PermResponseMsg{Decision: permission.DecisionDeny}
+	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	return func() tea.Msg {
 		req.Response <- resp
 		return resp
@@ -139,11 +154,17 @@ type toolPreview struct {
 // parseToolPreview extracts display-relevant fields from tool input JSON.
 // Returns zero values on parse failure (graceful degradation).
 func parseToolPreview(toolName string, input json.RawMessage) toolPreview {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(input) == 0 {
+		observe.GlobalTrace("if: len(input) == 0")
+		observe.GlobalTrace("return: toolPreview{}")
 		return toolPreview{}
 	}
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(input, &raw) != nil {
+		observe.GlobalTrace("if: json.Unmarshal(input, &raw) != nil")
+		observe.GlobalTrace("return: toolPreview{}")
 		return toolPreview{}
 	}
 	var p toolPreview
@@ -160,15 +181,19 @@ func parseToolPreview(toolName string, input json.RawMessage) toolPreview {
 	}
 	switch toolName {
 	case "Edit":
+		observe.GlobalTrace("case: \"Edit\"")
 		p.FilePath = getString("file_path")
 		p.OldString = getString("old_string")
 		p.NewString = getString("new_string")
 	case "Write":
+		observe.GlobalTrace("case: \"Write\"")
 		p.FilePath = getString("file_path")
 		p.Content = getString("content")
 	case "Bash":
+		observe.GlobalTrace("case: \"Bash\"")
 		p.Command = getString("command")
 	}
+	observe.GlobalTrace("return: p")
 	return p
 }
 
@@ -177,6 +202,8 @@ func (d permissionDialog) View() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !d.active || d.request == nil {
+		observe.GlobalTrace("if: !d.active || d.request == nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
@@ -184,73 +211,90 @@ func (d permissionDialog) View() string {
 
 	var b strings.Builder
 
-	// Title + subtitle (matching TS PermissionRequestTitle)
 	title, subtitle := permDialogTitle(d.request.ToolName, preview)
 	b.WriteString(permTitleStyle.Render(title))
 	if subtitle != "" {
+		observe.GlobalTrace("if: subtitle != \"\"")
 		b.WriteString("\n")
 		b.WriteString(permSubtitleStyle.Render(subtitle))
 	}
 	b.WriteString("\n")
 
-	// Content area (tool-specific preview)
 	content := permDialogContent(d.request, preview)
 	if content != "" {
+		observe.GlobalTrace("if: content != \"\"")
 		b.WriteString("\n")
 		b.WriteString(content)
 		b.WriteString("\n")
 	}
 
-	// Options
 	b.WriteString("\n")
 	for i, label := range permOptionLabels {
+		observe.GlobalTrace("range permOptionLabels")
 		cursor := "  "
 		style := permUnselectedStyle
 		if i == d.selected {
+			observe.GlobalTrace("if: i == d.selected")
 			cursor = "> "
 			style = permSelectedStyle
 		}
 		b.WriteString(cursor + style.Render(label) + "\n")
 	}
 
-	// Footer
 	b.WriteString("\n")
 	b.WriteString(permUnselectedStyle.Render("[↑↓] navigate  [Enter] confirm  [Esc] deny"))
+	observe.GlobalTrace("return: permDialogBorderStyle.Render(b.String())")
 
 	return permDialogBorderStyle.Render(b.String())
 }
 
 // permDialogTitle returns the title and subtitle for a permission dialog.
 func permDialogTitle(toolName string, preview toolPreview) (string, string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch toolName {
 	case "Edit":
+		observe.GlobalTrace("case: \"Edit\"")
 		return "Edit file", preview.FilePath
 	case "Write":
+		observe.GlobalTrace("case: \"Write\"")
 		return "Write file", preview.FilePath
 	case "Bash":
+		observe.GlobalTrace("case: \"Bash\"")
 		return "Run command", ""
 	default:
+		observe.GlobalTrace("default")
 		return "Tool use", ""
 	}
 }
 
 // permDialogContent renders the tool-specific content area.
 func permDialogContent(req *PermRequestMsg, preview toolPreview) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch req.ToolName {
 	case "Edit":
+		observe.GlobalTrace("case: \"Edit\"")
 		return renderEditPreview(preview)
 	case "Write":
+		observe.GlobalTrace("case: \"Write\"")
 		return renderWritePreview(preview)
 	case "Bash":
+		observe.GlobalTrace("case: \"Bash\"")
 		return renderBashPreview(preview)
 	default:
+		observe.GlobalTrace("default")
 		return renderDefaultPreview(req)
 	}
 }
 
 // renderEditPreview renders old_string → new_string diff for Edit tool.
 func renderEditPreview(p toolPreview) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if p.OldString == "" && p.NewString == "" {
+		observe.GlobalTrace("if: p.OldString == \"\" && p.NewString == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	var b strings.Builder
@@ -265,38 +309,48 @@ func renderEditPreview(p toolPreview) string {
 	maxOld := len(oldLines)
 	maxNew := len(newLines)
 	if truncated {
+		observe.GlobalTrace("if: truncated")
 		maxOld = min(len(oldLines), maxLines/2)
 		maxNew = min(len(newLines), maxLines-maxOld)
 	}
 
 	for i := 0; i < maxOld; i++ {
+		observe.GlobalTrace("for: i < maxOld")
 		b.WriteString("  ")
 		b.WriteString(permDiffRemove.Render("- " + oldLines[i]))
 		b.WriteString("\n")
 	}
 	if maxOld < len(oldLines) {
+		observe.GlobalTrace("if: maxOld < len(oldLines)")
 		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("  ... (+%d lines)", len(oldLines)-maxOld)) + "\n")
 	}
 	for i := 0; i < maxNew; i++ {
+		observe.GlobalTrace("for: i < maxNew")
 		b.WriteString("  ")
 		b.WriteString(permDiffAdd.Render("+ " + newLines[i]))
 		b.WriteString("\n")
 	}
 	if maxNew < len(newLines) {
+		observe.GlobalTrace("if: maxNew < len(newLines)")
 		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("  ... (+%d lines)", len(newLines)-maxNew)) + "\n")
 	}
 
-	// Trim trailing newline
 	result := b.String()
 	if strings.HasSuffix(result, "\n") {
+		observe.GlobalTrace("if: strings.HasSuffix(result, \"\\n\")")
 		result = result[:len(result)-1]
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }
 
 // renderWritePreview renders a content preview for Write tool.
 func renderWritePreview(p toolPreview) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if p.Content == "" {
+		observe.GlobalTrace("if: p.Content == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	lines := strings.Split(p.Content, "\n")
@@ -305,61 +359,79 @@ func renderWritePreview(p toolPreview) string {
 
 	var b strings.Builder
 	for i := 0; i < show; i++ {
+		observe.GlobalTrace("for: i < show")
 		b.WriteString("  ")
 		b.WriteString(permDiffAdd.Render("+ " + lines[i]))
 		b.WriteString("\n")
 	}
 	if len(lines) > maxLines {
+		observe.GlobalTrace("if: len(lines) > maxLines")
 		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("(+%d more lines)", len(lines)-maxLines)) + "\n")
 	}
 
 	result := b.String()
 	if strings.HasSuffix(result, "\n") {
+		observe.GlobalTrace("if: strings.HasSuffix(result, \"\\n\")")
 		result = result[:len(result)-1]
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }
 
 // renderBashPreview renders the command for Bash tool.
 func renderBashPreview(p toolPreview) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if p.Command == "" {
+		observe.GlobalTrace("if: p.Command == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
-	// Truncate very long commands (#48248)
+
 	lines := strings.Split(p.Command, "\n")
 	const maxLines = 5
 	show := min(len(lines), maxLines)
 	var b strings.Builder
 	for i := 0; i < show; i++ {
+		observe.GlobalTrace("for: i < show")
 		b.WriteString("  ")
 		b.WriteString(permCommandStyle.Render(lines[i]))
 		b.WriteString("\n")
 	}
 	if len(lines) > maxLines {
+		observe.GlobalTrace("if: len(lines) > maxLines")
 		b.WriteString("  " + permUnselectedStyle.Render(fmt.Sprintf("... (+%d lines)", len(lines)-maxLines)) + "\n")
 	}
 	result := b.String()
 	if strings.HasSuffix(result, "\n") {
+		observe.GlobalTrace("if: strings.HasSuffix(result, \"\\n\")")
 		result = result[:len(result)-1]
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }
 
 // renderDefaultPreview renders the fallback content for unknown tools.
 func renderDefaultPreview(req *PermRequestMsg) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("  Tool:    %s\n", req.ToolName))
 	content := req.Content
-	// Truncate to 3 lines (matching TS truncateToLines(description, 3))
+
 	if lines := strings.Split(content, "\n"); len(lines) > 3 {
+		observe.GlobalTrace("if: len(lines) > 3")
 		content = strings.Join(lines[:3], "\n") + "..."
 	}
 	if len([]rune(content)) > 200 {
+		observe.GlobalTrace("if: len([]rune(content)) > 200")
 		content = string([]rune(content)[:197]) + "..."
 	}
 	b.WriteString(fmt.Sprintf("  Content: %s", content))
 	if req.Reason != "" {
+		observe.GlobalTrace("if: req.Reason != \"\"")
 		b.WriteString(fmt.Sprintf("\n  Reason:  %s", req.Reason))
 	}
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }

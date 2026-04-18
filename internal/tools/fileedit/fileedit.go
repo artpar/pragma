@@ -147,6 +147,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				return tool.InvokeResult{}, err
 			}
 			display := util.GenerateEditDiff("", in.OldString, in.NewString, in.FilePath, false, 3)
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: result, Display: display}, nil")
 			return tool.InvokeResult{Content: result, Display: display}, nil
 		}
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", err)")
@@ -182,6 +183,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			_ = t.LSP.SaveFile(ctx, filePath)
 		}
 		display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, false, 3)
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
 			Display: display,
@@ -212,7 +214,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		updated = strings.Replace(content, in.OldString, in.NewString, 1)
 	}
 
-	// Generate unified diff for TUI display (before writing, using pre-edit content)
 	display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, in.ReplaceAll, 3)
 
 	if err := os.WriteFile(filePath, []byte(updated), 0644); err != nil {
@@ -229,11 +230,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if in.ReplaceAll && count > 1 {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.ReplaceAll && count > 1")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated. All %...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count),
 			Display: display,
 		}, nil
 	}
+	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
 		Display: display,

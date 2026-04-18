@@ -90,12 +90,14 @@ type Tool struct {
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"AskUserQuestion\"")
 	return "AskUserQuestion"
 }
 
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: askDescription")
 	return askDescription
 }
 
@@ -124,18 +126,21 @@ Usage notes:
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: inputSchema")
 	return inputSchema
 }
 
 func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: false}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: false}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "exit")
+	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "return: checker.Check(ctx, \"AskUserQuestion\", \"\")")
 	return checker.Check(ctx, "AskUserQuestion", "")
 }
 
@@ -145,20 +150,25 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 
 	var in askInput
 	if err := json.Unmarshal(input, &in); err != nil {
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 
 	// Build the request from structured or legacy input
 	var req tool.AskRequest
 	if len(in.Questions) > 0 {
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: len(in.Questions) > 0")
 		req.Questions = make([]tool.AskQuestion, len(in.Questions))
 		for i, q := range in.Questions {
+			observe.TraceCtx(ctx, "ask", "Tool.Invoke", "range in.Questions")
 			req.Questions[i] = tool.AskQuestion{
 				Question:    q.Question,
 				Header:      q.Header,
 				MultiSelect: q.MultiSelect,
 			}
 			for _, opt := range q.Options {
+				observe.TraceCtx(ctx, "ask", "Tool.Invoke", "range q.Options")
 				req.Questions[i].Options = append(req.Questions[i].Options, tool.AskOption{
 					Label:       opt.Label,
 					Description: opt.Description,
@@ -166,6 +176,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 			}
 		}
 	} else if in.Question != "" {
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "else-if: in.Question != \"\"")
 		req.Question = in.Question
 	} else {
 		return tool.InvokeResult{}, fmt.Errorf("either 'question' or 'questions' is required")
@@ -173,11 +184,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 
 	resp, err := t.Asker.Ask(ctx, req)
 	if err != nil {
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"ask user: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("ask user: %w", err)
 	}
 
-	// Format response for LLM
 	content := formatResponse(req, resp)
+	observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 	return tool.InvokeResult{Content: content}, nil
 }
 
@@ -186,25 +199,36 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 // Structured questions return the TS-compatible format:
 // "User has answered your questions: "Q1"="A1", "Q2"="A2". You can now continue..."
 func formatResponse(req tool.AskRequest, resp tool.AskResponse) string {
-	// Legacy plain-text: return the single answer directly
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
 	if len(req.Questions) == 0 {
+		observe.GlobalTrace("if: len(req.Questions) == 0")
 		for _, v := range resp.Answers {
+			observe.GlobalTrace("range resp.Answers")
+			observe.GlobalTrace("return: v")
 			return v
 		}
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
 	// Structured: format matching TS mapToolResultToToolResultBlockParam
 	var parts []string
 	for _, q := range req.Questions {
+		observe.GlobalTrace("range req.Questions")
 		answer := resp.Answers[q.Question]
 		if answer == "" {
+			observe.GlobalTrace("if: answer == \"\"")
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%q=%q", q.Question, answer))
 	}
 	if len(parts) == 0 {
+		observe.GlobalTrace("if: len(parts) == 0")
+		observe.GlobalTrace("return: \"User did not answer the questions.\"")
 		return "User did not answer the questions."
 	}
+	observe.GlobalTrace("return: \"User has answered your questions: \" + strings.Join(parts, \", \") + \". You can...")
 	return "User has answered your questions: " + strings.Join(parts, ", ") + ". You can now continue with the user's answers in mind."
 }

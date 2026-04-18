@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/artpar/pragma/internal/observe"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -27,48 +28,61 @@ var (
 // Matches TS AgentProgressLine + renderGroupedAgentToolUse.
 // Non-verbose: per-agent line with metrics + status. Verbose: same (no extra detail for agents).
 func RenderAgentProgress(agents []AgentProgressEntry, verbose bool, width int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(agents) == 0 {
+		observe.GlobalTrace("if: len(agents) == 0")
+		observe.GlobalTrace("return: ContentIndent + lifecycleDim.Render(\"Agent: initializing…\")")
 		return ContentIndent + lifecycleDim.Render("Agent: initializing…")
 	}
 
 	var b strings.Builder
 
-	// Header for multiple agents (matching TS renderGroupedAgentToolUse)
 	if len(agents) > 1 {
+		observe.GlobalTrace("if: len(agents) > 1")
 		allBackground := true
 		allComplete := true
 		for _, a := range agents {
+			observe.GlobalTrace("range agents")
 			if a.Status != "completed" && a.Status != "error" {
+				observe.GlobalTrace("if: a.Status != \"completed\" && a.Status != \"error\"")
 				allComplete = false
 			}
 			if !a.Background {
+				observe.GlobalTrace("if: !a.Background")
 				allBackground = false
 			}
 		}
 
 		b.WriteString(ContentIndent)
 		if allComplete {
+			observe.GlobalTrace("if: allComplete")
 			if allBackground {
+				observe.GlobalTrace("if: allBackground")
 				b.WriteString(fmt.Sprintf("%s background agents launched", agentBold.Render(fmt.Sprintf("%d", len(agents)))))
 			} else {
+				observe.GlobalTrace("else: allBackground")
 				b.WriteString(fmt.Sprintf("%s agents finished", agentBold.Render(fmt.Sprintf("%d", len(agents)))))
 			}
 		} else {
+			observe.GlobalTrace("else: allComplete")
 			b.WriteString(fmt.Sprintf("Running %s agents…", agentBold.Render(fmt.Sprintf("%d", len(agents)))))
 		}
 
 		if !allBackground && !verbose {
+			observe.GlobalTrace("if: !allBackground && !verbose")
 			b.WriteString(" ")
 			b.WriteString(lifecycleDim.Render("(ctrl+o to expand)"))
 		}
 		b.WriteString("\n")
 	}
 
-	// Per-agent lines
 	for i, a := range agents {
+		observe.GlobalTrace("range agents")
 		isLast := i == len(agents)-1
 		renderAgentLine(&b, a, isLast, len(agents) > 1)
 	}
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -79,9 +93,12 @@ func RenderAgentProgress(agents []AgentProgressEntry, verbose bool, width int) s
 //	├─ Agent (description) · N tool uses · M tokens
 //	│  ⎿  Initializing… / lastTool / Done
 func renderAgentLine(b *strings.Builder, a AgentProgressEntry, isLast bool, hasMultiple bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	treeChar := "├─"
 	contChar := "│ "
 	if isLast {
+		observe.GlobalTrace("if: isLast")
 		treeChar = "└─"
 		contChar = "  "
 	}
@@ -89,42 +106,47 @@ func renderAgentLine(b *strings.Builder, a AgentProgressEntry, isLast bool, hasM
 	isResolved := a.Status == "completed" || a.Status == "error"
 	isBackgrounded := a.Background && isResolved
 
-	// Line 1: tree glyph + agent type + description + metrics
 	b.WriteString(ContentIndent)
 	if hasMultiple {
+		observe.GlobalTrace("if: hasMultiple")
 		b.WriteString(lifecycleDim.Render(treeChar))
 		b.WriteString(" ")
 	}
 
-	// Agent type + description — dim when not resolved (matching TS dimColor={!isResolved})
 	label := "Agent"
 	if a.Description != "" {
+		observe.GlobalTrace("if: a.Description != \"\"")
 		label += " (" + truncate(a.Description, 50) + ")"
 	}
 
-	// Metrics — hidden for background agents (matching TS !isBackgrounded)
 	metrics := ""
 	if !isBackgrounded {
+		observe.GlobalTrace("if: !isBackgrounded")
 		metrics = fmt.Sprintf(" · %d tool %s", a.ToolCount, pluralize(a.ToolCount, "use", "uses"))
 		if a.TokenCount > 0 {
+			observe.GlobalTrace("if: a.TokenCount > 0")
 			metrics += " · " + formatTokenCount(a.TokenCount) + " tokens"
 		}
 	}
 
 	if !isResolved {
+		observe.GlobalTrace("if: !isResolved")
 		b.WriteString(lifecycleDim.Render(label + metrics))
 	} else {
+		observe.GlobalTrace("else: !isResolved")
 		b.WriteString(label + metrics)
 	}
 	b.WriteString("\n")
 
-	// Line 2: status line — hidden for backgrounded agents (matching TS !isBackgrounded)
 	if !isBackgrounded {
+		observe.GlobalTrace("if: !isBackgrounded")
 		if hasMultiple {
+			observe.GlobalTrace("if: hasMultiple")
 			b.WriteString(ContentIndent)
 			b.WriteString(lifecycleDim.Render(contChar))
 			b.WriteString(" ")
 		} else {
+			observe.GlobalTrace("else: hasMultiple")
 			b.WriteString(ContentIndent)
 		}
 		b.WriteString(lifecycleDim.Render("⎿  "))
@@ -136,41 +158,64 @@ func renderAgentLine(b *strings.Builder, a AgentProgressEntry, isLast bool, hasM
 // agentStatusText returns the status text for an agent entry.
 // Matches TS getStatusText logic.
 func agentStatusText(a AgentProgressEntry) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if a.Status != "completed" && a.Status != "error" {
+		observe.GlobalTrace("if: a.Status != \"completed\" && a.Status != \"error\"")
 		if a.LastTool != "" {
+			observe.GlobalTrace("if: a.LastTool != \"\"")
+			observe.GlobalTrace("return: a.LastTool")
 			return a.LastTool
 		}
+		observe.GlobalTrace("return: \"Initializing…\"")
 		return "Initializing…"
 	}
 	if a.Background {
+		observe.GlobalTrace("if: a.Background")
+		observe.GlobalTrace("return: \"Running in the background\"")
 		return "Running in the background"
 	}
 	if a.Status == "error" && a.Error != "" {
+		observe.GlobalTrace("if: a.Status == \"error\" && a.Error != \"\"")
 		msg := a.Error
 		if len(msg) > 60 {
+			observe.GlobalTrace("if: len(msg) > 60")
 			msg = msg[:57] + "..."
 		}
+		observe.GlobalTrace("return: \"Error: \" + msg")
 		return "Error: " + msg
 	}
+	observe.GlobalTrace("return: \"Done\"")
 	return "Done"
 }
 
 // formatTokenCount formats a token count for display.
 // e.g., 1234 → "1,234", 1234567 → "1.2M" (matching TS formatNumber).
 func formatTokenCount(n int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if n >= 1_000_000 {
+		observe.GlobalTrace("if: n >= 1_000_000")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%.1fM\", float64(n)/1_000_000)")
 		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 	}
 	if n >= 1000 {
+		observe.GlobalTrace("if: n >= 1000")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%d,%03d\", n/1000, n%1000)")
 		return fmt.Sprintf("%d,%03d", n/1000, n%1000)
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"%d\", n)")
 	return fmt.Sprintf("%d", n)
 }
 
 func pluralize(n int, singular, plural string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if n == 1 {
+		observe.GlobalTrace("if: n == 1")
+		observe.GlobalTrace("return: singular")
 		return singular
 	}
+	observe.GlobalTrace("return: plural")
 	return plural
 }
-

@@ -25,6 +25,7 @@ func newInputComponent() inputComponent {
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
 	ta.Focus()
+	observe.GlobalTrace("return: inputComponent{\n\ttextarea: ta,\n}")
 
 	return inputComponent{
 		textarea: ta,
@@ -69,6 +70,7 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 func (c inputComponent) View() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: c.textarea.View()")
 	return c.textarea.View()
 }
 
@@ -85,8 +87,10 @@ func (c *inputComponent) SetStreaming(v bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if v {
+		observe.GlobalTrace("if: v")
 		c.textarea.Prompt = inputPromptDimStyle.Render("❯ ")
 	} else {
+		observe.GlobalTrace("else: v")
 		c.textarea.Prompt = inputPromptStyle.Render("❯ ")
 	}
 }
@@ -97,8 +101,10 @@ func (c *inputComponent) SetQueued(queued bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if queued {
+		observe.GlobalTrace("if: queued")
 		c.textarea.Placeholder = "Message queued — will send when ready"
 	} else {
+		observe.GlobalTrace("else: queued")
 		c.textarea.Placeholder = ""
 	}
 }

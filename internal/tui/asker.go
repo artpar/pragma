@@ -41,6 +41,7 @@ func (a *InteractiveAsker) Ask(ctx context.Context, req tool.AskRequest) (tool.A
 
 	if a.program == nil {
 		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "if: a.program == nil")
+		observe.TraceCtx(ctx, "tui", "InteractiveAsker.Ask", "return: tool.AskResponse{}, errors.New(\"AskUserQuestion requires interactive mode\")")
 		return tool.AskResponse{}, errors.New("AskUserQuestion requires interactive mode")
 	}
 
@@ -67,5 +68,6 @@ type NonInteractiveAsker struct{}
 func (a *NonInteractiveAsker) Ask(_ context.Context, _ tool.AskRequest) (tool.AskResponse, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.AskResponse{}, errors.New(\"AskUserQuestion requires interactive mode\")")
 	return tool.AskResponse{}, errors.New("AskUserQuestion requires interactive mode")
 }
