@@ -73,6 +73,10 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			m.teams.Show(m.taskReg)
 		}
 	}
+	// Sync toolbar model from store (covers /model switch).
+	if snap := m.store.Snapshot(); snap.Model != "" {
+		m.toolbar.SetModel(snap.Model)
+	}
 	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
 	observe.GlobalTrace("return: m, nil")

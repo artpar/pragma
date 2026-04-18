@@ -369,10 +369,12 @@ func (o *Orchestrator) executeSingle(
 	}
 
 	o.bus.Emit(observe.ToolExecutionStarted{
-		EventHeader: observe.NewEventHeader("ToolExecutionStarted", traceID, spanID, parentSpan),
-		ToolCallID:  call.ID,
-		ToolName:    call.Name,
-		Concurrent:  concurrent,
+		EventHeader:    observe.NewEventHeader("ToolExecutionStarted", traceID, spanID, parentSpan),
+		ToolCallID:     call.ID,
+		ToolName:       call.Name,
+		Concurrent:     concurrent,
+		Input:          call.Input,
+		InputSizeBytes: len(call.Input),
 	})
 
 	start := time.Now()

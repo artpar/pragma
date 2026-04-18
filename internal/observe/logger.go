@@ -118,7 +118,7 @@ func eventDetail(event Event) string {
 	case APIRetryScheduled:
 		return fmt.Sprintf("attempt=%d delay=%dms reason=%s", e.Attempt, e.DelayMs, e.Reason)
 	case ToolExecutionStarted:
-		return fmt.Sprintf("tool=%s call=%s", e.ToolName, e.ToolCallID)
+		return fmt.Sprintf("tool=%s call=%s input_bytes=%d", e.ToolName, e.ToolCallID, e.InputSizeBytes)
 	case ToolExecutionCompleted:
 		return fmt.Sprintf("tool=%s dur=%dms error=%v", e.ToolName, e.DurationMs, e.IsError)
 	case ToolExecutionFailed:

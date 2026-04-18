@@ -862,7 +862,7 @@ All events embed `EventHeader` and implement the sealed interface.
 | `ToolCallReceived` | `ToolCallID, ToolName, InputSizeBytes` | Tool use block parsed from response |
 | `ToolPermissionChecked` | `ToolCallID, ToolName, Decision string, Rule string, Source string` | Permission evaluated |
 | `ToolPermissionPrompted` | `ToolCallID, ToolName, UserDecision string, DurationMs` | User prompted, response recorded |
-| `ToolExecutionStarted` | `ToolCallID, ToolName, Concurrent bool` | Execution begins |
+| `ToolExecutionStarted` | `ToolCallID, ToolName, Concurrent bool, Input json.RawMessage, InputSizeBytes int` | Execution begins |
 | `ToolExecutionCompleted` | `ToolCallID, ToolName, DurationMs, OutputSizeBytes, IsError bool` | Execution ends |
 | `ToolExecutionFailed` | `ToolCallID, ToolName, ErrorType, ErrorMessage` | Tool threw error |
 | `ToolBatchStarted` | `ConcurrentCount, SerialCount, TotalCount` | Orchestrator begins batch |
@@ -1793,7 +1793,7 @@ All events embed `EventHeader` and implement the sealed interface.
 | `ToolCallReceived` | `ToolCallID, ToolName, InputSizeBytes` | Tool use block parsed from response |
 | `ToolPermissionChecked` | `ToolCallID, ToolName, Decision string, Rule string, Source string` | Permission evaluated |
 | `ToolPermissionPrompted` | `ToolCallID, ToolName, UserDecision string, DurationMs` | User prompted, response recorded |
-| `ToolExecutionStarted` | `ToolCallID, ToolName, Concurrent bool` | Execution begins |
+| `ToolExecutionStarted` | `ToolCallID, ToolName, Concurrent bool, Input json.RawMessage, InputSizeBytes int` | Execution begins |
 | `ToolExecutionCompleted` | `ToolCallID, ToolName, DurationMs, OutputSizeBytes, IsError bool` | Execution ends |
 | `ToolExecutionFailed` | `ToolCallID, ToolName, ErrorType, ErrorMessage` | Tool threw error |
 | `ToolBatchStarted` | `ConcurrentCount, SerialCount, TotalCount` | Orchestrator begins batch |

@@ -125,9 +125,11 @@ func (ToolPermissionPrompted) eventSealed() {}
 
 type ToolExecutionStarted struct {
 	EventHeader
-	ToolCallID string `json:"tool_call_id"`
-	ToolName   string `json:"tool_name"`
-	Concurrent bool   `json:"concurrent"`
+	ToolCallID     string          `json:"tool_call_id"`
+	ToolName       string          `json:"tool_name"`
+	Concurrent     bool            `json:"concurrent"`
+	Input          json.RawMessage `json:"input,omitempty"`
+	InputSizeBytes int             `json:"input_size_bytes"`
 }
 
 func (ToolExecutionStarted) eventSealed() {}

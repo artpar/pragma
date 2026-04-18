@@ -111,6 +111,11 @@ func (t toolbar) styleTokenStr(s string, pct float64) string {
 	}
 }
 
+// SetModel updates the displayed model name (e.g. after /model switch).
+func (t *toolbar) SetModel(name string) {
+	t.modelName = name
+}
+
 // SetStatus updates the status text.
 func (t *toolbar) SetStatus(status string) {
 	observe.GlobalTrace("enter")
