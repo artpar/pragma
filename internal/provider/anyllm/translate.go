@@ -308,7 +308,7 @@ func StopReasonFromAnyLLM(fr string) model.StopReason {
 		return model.StopMaxTokens
 	case providers.FinishReasonContentFilter:
 		observe.GlobalTrace("case: providers.FinishReasonContentFilter")
-		return model.StopError
+		return model.StopContentFiltered
 	default:
 		observe.GlobalTrace("default")
 		return model.StopEndTurn

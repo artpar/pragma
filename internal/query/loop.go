@@ -336,6 +336,18 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			turnCount++
 			continue
 
+		case model.StopContentFiltered:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopContentFiltered")
+			e.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warn",
+				Component:    "query",
+				ErrorType:    "content_filtered",
+				ErrorMessage: fmt.Sprintf("model %q response was blocked by content filter — text preserved, tool calls dropped", resolvedModel),
+			})
+			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+			return
+
 		case model.StopPauseTurn:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopPauseTurn")
 			turnCount++
@@ -414,6 +426,18 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			})
 			turnCount++
 			continue
+
+		case model.StopError:
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopError")
+			e.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "error",
+				Component:    "query",
+				ErrorType:    "provider_error",
+				ErrorMessage: fmt.Sprintf("model %q returned an error stop reason", resolvedModel),
+			})
+			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+			return
 
 		default:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "default")
@@ -583,8 +607,8 @@ func (e *Engine) consumeStream(
 	}
 	// When the provider signals malformed tool calls, drop all accumulated tool calls —
 	// the JSON args are invalid and would fail validation. Text/thinking parts are preserved.
-	if done.StopReason == model.StopMalformedToolCall {
-		observe.GlobalTrace("if: done.StopReason == model.StopMalformedToolCall — dropping tool calls")
+	if done.StopReason == model.StopMalformedToolCall || done.StopReason == model.StopContentFiltered {
+		observe.GlobalTrace("if: done.StopReason == model.StopMalformedToolCall || StopContentFiltered — dropping tool calls")
 	} else {
 		for _, id := range toolOrder {
 			observe.GlobalTrace("range toolOrder")

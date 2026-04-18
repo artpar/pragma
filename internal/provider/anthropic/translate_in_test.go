@@ -119,7 +119,7 @@ func TestStopReasonFromWire(t *testing.T) {
 		{sdk.StopReasonMaxTokens, model.StopMaxTokens},
 		{sdk.StopReasonStopSequence, model.StopEndTurn},
 		{sdk.StopReasonPauseTurn, model.StopPauseTurn},
-		{sdk.StopReasonRefusal, model.StopError},
+		{sdk.StopReasonRefusal, model.StopContentFiltered},
 		{"unknown", model.StopError},
 	}
 	for _, tt := range tests {

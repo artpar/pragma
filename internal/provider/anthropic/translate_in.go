@@ -119,7 +119,7 @@ func stopReasonFromWire(sr sdk.StopReason) model.StopReason {
 		return model.StopPauseTurn
 	case sdk.StopReasonRefusal:
 		observe.GlobalTrace("case: sdk.StopReasonRefusal")
-		return model.StopError
+		return model.StopContentFiltered
 	default:
 		observe.GlobalTrace("default")
 		return model.StopError

@@ -12,4 +12,5 @@ const (
 	StopError     StopReason = "error"
 
 	StopMalformedToolCall StopReason = "malformed_tool_call"
+	StopContentFiltered  StopReason = "content_filtered"
 )

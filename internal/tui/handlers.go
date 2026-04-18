@@ -255,6 +255,9 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		if e.StopReason == model.StopMaxTokens {
 			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[response truncated — hit max_tokens limit]")+"\n")
 		}
+		if e.StopReason == model.StopContentFiltered {
+			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[response blocked by content filter — you can rephrase and try again]")+"\n")
+		}
 		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
 

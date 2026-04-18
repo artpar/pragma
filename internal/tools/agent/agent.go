@@ -116,11 +116,18 @@ The Agent tool launches specialized agents (subprocesses) that autonomously hand
 
 When using the Agent tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.
 
-When NOT to use the Agent tool:
-- If you want to read a specific file path, use the Read tool or the Glob tool instead of the Agent tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use the Glob tool instead, to find the match more quickly
-- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Agent tool, to find the match more quickly
-- Other tasks that are not related to the agent descriptions above
+## When to use Agent
+
+Use Agent when work benefits from autonomous exploration, parallel execution, or isolated context:
+- **Multi-file investigation**: understanding how a feature works across the codebase, tracing call chains, reading 5+ files to build understanding
+- **Parallel subtasks**: launch multiple agents concurrently for independent pieces of work (e.g., "fix tests in pkg A" + "fix tests in pkg B" + "update docs")
+- **Research and analysis**: exploring unfamiliar code, finding all usages of a pattern, auditing for issues across the codebase
+- **Isolated changes**: use worktree isolation for risky refactors that might need to be discarded
+- **Delegated implementation**: when you have a clear task specification and want autonomous execution without consuming main context
+
+When NOT to use Agent:
+- For reading a specific known file — use Read directly
+- For a single targeted search — use Grep or Glob directly
 
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do

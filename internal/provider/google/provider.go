@@ -697,9 +697,10 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 				result.Content = append(result.Content, model.TextPart{Text: part.Text})
 			case part.FunctionCall != nil:
 				observe.GlobalTrace("case: part.FunctionCall != nil")
-				// Skip malformed function calls — args are invalid JSON.
-				if cand.FinishReason == genai.FinishReasonMalformedFunctionCall {
-					observe.GlobalTrace("if: cand.FinishReason == genai.FinishReasonMalformedFunctionCall — skipping")
+				// Skip tool calls when the response is malformed or content-filtered —
+				// args may be invalid JSON or the response was truncated by safety filters.
+				if cand.FinishReason == genai.FinishReasonMalformedFunctionCall || isContentFilteredFinishReason(cand.FinishReason) {
+					observe.GlobalTrace("if: malformed or content-filtered — skipping tool call")
 					continue
 				}
 				fc := part.FunctionCall
@@ -750,8 +751,8 @@ func stopReasonFromGenai(fr genai.FinishReason) model.StopReason {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch fr {
-	case genai.FinishReasonStop:
-		observe.GlobalTrace("case: genai.FinishReasonStop")
+	case genai.FinishReasonStop, genai.FinishReasonUnspecified:
+		observe.GlobalTrace("case: genai.FinishReasonStop/Unspecified")
 		return model.StopEndTurn
 	case genai.FinishReasonMaxTokens:
 		observe.GlobalTrace("case: genai.FinishReasonMaxTokens")
@@ -759,9 +760,29 @@ func stopReasonFromGenai(fr genai.FinishReason) model.StopReason {
 	case genai.FinishReasonMalformedFunctionCall:
 		observe.GlobalTrace("case: genai.FinishReasonMalformedFunctionCall")
 		return model.StopMalformedToolCall
+	case genai.FinishReasonSafety, genai.FinishReasonRecitation,
+		genai.FinishReasonBlocklist, genai.FinishReasonProhibitedContent,
+		genai.FinishReasonSPII, genai.FinishReasonImageSafety,
+		genai.FinishReasonImageProhibitedContent,
+		genai.FinishReasonImageRecitation, genai.FinishReasonImageOther:
+		observe.GlobalTrace("case: content filtered — " + string(fr))
+		return model.StopContentFiltered
 	default:
 		observe.GlobalTrace("default")
 		return model.StopError
+	}
+}
+
+func isContentFilteredFinishReason(fr genai.FinishReason) bool {
+	switch fr {
+	case genai.FinishReasonSafety, genai.FinishReasonRecitation,
+		genai.FinishReasonBlocklist, genai.FinishReasonProhibitedContent,
+		genai.FinishReasonSPII, genai.FinishReasonImageSafety,
+		genai.FinishReasonImageProhibitedContent,
+		genai.FinishReasonImageRecitation, genai.FinishReasonImageOther:
+		return true
+	default:
+		return false
 	}
 }
 

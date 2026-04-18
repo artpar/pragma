@@ -827,9 +827,21 @@ func TestStopReasonFromGenai(t *testing.T) {
 		want  model.StopReason
 	}{
 		{genai.FinishReasonStop, model.StopEndTurn},
+		{genai.FinishReasonUnspecified, model.StopEndTurn},
 		{genai.FinishReasonMaxTokens, model.StopMaxTokens},
-		{genai.FinishReason("SAFETY"), model.StopError},
-		{genai.FinishReason(""), model.StopError},
+		{genai.FinishReasonMalformedFunctionCall, model.StopMalformedToolCall},
+		{genai.FinishReasonSafety, model.StopContentFiltered},
+		{genai.FinishReasonRecitation, model.StopContentFiltered},
+		{genai.FinishReasonBlocklist, model.StopContentFiltered},
+		{genai.FinishReasonProhibitedContent, model.StopContentFiltered},
+		{genai.FinishReasonSPII, model.StopContentFiltered},
+		{genai.FinishReasonImageSafety, model.StopContentFiltered},
+		{genai.FinishReasonImageProhibitedContent, model.StopContentFiltered},
+		{genai.FinishReasonImageRecitation, model.StopContentFiltered},
+		{genai.FinishReasonImageOther, model.StopContentFiltered},
+		{genai.FinishReasonLanguage, model.StopError},
+		{genai.FinishReasonOther, model.StopError},
+		{genai.FinishReasonUnexpectedToolCall, model.StopError},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.input), func(t *testing.T) {
