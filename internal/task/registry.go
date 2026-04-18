@@ -42,6 +42,7 @@ func (r *Registry) Create(subject, description string) Task {
 		Status:      TaskPending,
 		CreatedAt:   now,
 		UpdatedAt:   now,
+		Notify:      make(chan struct{}, 1),
 	}
 
 	r.mu.Lock()
@@ -157,4 +158,119 @@ func (r *Registry) Cancel(id string) error {
 	t.UpdatedAt = time.Now()
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+// ListRunningTeammates returns snapshots of running tasks that have an AgentName,
+// sorted alphabetically by name. Matches TS getRunningTeammatesSorted().
+func (r *Registry) ListRunningTeammates() []Task {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []Task
+	for _, t := range r.tasks {
+		if t.Status == TaskRunning && t.AgentName != "" {
+			result = append(result, t.snapshot())
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].AgentName < result[j].AgentName
+	})
+	return result
+}
+
+// NotifyTask signals a task's Notify channel (non-blocking).
+// Used by SendMessage after appending to PendingMessages.
+func (r *Registry) NotifyTask(id string) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.tasks[id]
+	if !ok || t.Notify == nil {
+		return
+	}
+	select {
+	case t.Notify <- struct{}{}:
+	default:
+	}
+}
+
+// DrainPendingMessages atomically reads and clears PendingMessages for a task.
+// Returns nil if task not found or no messages pending.
+func (r *Registry) DrainPendingMessages(id string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.tasks[id]
+	if !ok || len(t.PendingMessages) == 0 {
+		return nil
+	}
+	msgs := t.PendingMessages
+	t.PendingMessages = nil
+	return msgs
+}
+
+// Shutdown requests graceful shutdown of a teammate task.
+// Sets ShutdownRequested, signals Notify, waits up to timeout for completion.
+// If timeout expires, force-cancels the task.
+func (r *Registry) Shutdown(id string, timeout time.Duration) error {
+	r.mu.Lock()
+	t, ok := r.tasks[id]
+	if !ok {
+		r.mu.Unlock()
+		return fmt.Errorf("task %q not found", id)
+	}
+	if t.Status != TaskRunning && t.Status != TaskPending {
+		r.mu.Unlock()
+		return fmt.Errorf("task %q is %s, cannot shutdown", id, t.Status)
+	}
+	t.ShutdownRequested = true
+	t.UpdatedAt = time.Now()
+	// Signal the teammate loop
+	if t.Notify != nil {
+		select {
+		case t.Notify <- struct{}{}:
+		default:
+		}
+	}
+	r.mu.Unlock()
+
+	// Wait for graceful completion
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-deadline:
+			// Force cancel
+			return r.Cancel(id)
+		case <-ticker.C:
+			snap, exists := r.Get(id)
+			if !exists {
+				return nil
+			}
+			if snap.Status == TaskCompleted || snap.Status == TaskFailed || snap.Status == TaskCancelled {
+				return nil
+			}
+		}
+	}
+}
+
+// GetNotifyChannel returns the Notify channel for a task, or nil if not found.
+// Used by teammate loop to select on message arrival.
+func (r *Registry) GetNotifyChannel(id string) <-chan struct{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.tasks[id]
+	if !ok || t.Notify == nil {
+		return nil
+	}
+	return t.Notify
+}
+
+// IsShutdownRequested checks if a task has been requested to shut down.
+func (r *Registry) IsShutdownRequested(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.tasks[id]
+	if !ok {
+		return false
+	}
+	return t.ShutdownRequested
 }

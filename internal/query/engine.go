@@ -13,6 +13,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
 )
 
@@ -27,6 +28,7 @@ type EngineConfig struct {
 	MaxTurns    int // 0 means use DefaultMaxTurns
 	Temperature *float64
 	Thinking    *provider.ThinkingConfig
+	TaskID      string // when set with TaskRegistry, enables PendingMessages drain between turns
 }
 
 // Engine orchestrates the agentic loop: stream from provider, accumulate response,
@@ -48,6 +50,9 @@ type Engine struct {
 
 	// Hooks — nil means no hook manager configured.
 	hookMgr *hook.Manager
+
+	// Task registry — when set with config.TaskID, enables PendingMessages drain.
+	taskRegistry *task.Registry
 }
 
 // CompactionDeps holds optional compaction dependencies.
@@ -95,6 +100,17 @@ func (e *Engine) SetHookManager(mgr *hook.Manager) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	e.hookMgr = mgr
+}
+
+// SetTaskRegistry configures the task registry and task ID for PendingMessages drain.
+// Both must be set for the engine to drain pending messages between turns.
+func (e *Engine) SetTaskRegistry(reg *task.Registry) {
+	e.taskRegistry = reg
+}
+
+// SetTaskID sets the task ID for PendingMessages drain.
+func (e *Engine) SetTaskID(id string) {
+	e.config.TaskID = id
 }
 
 // SetCompaction configures auto-compaction after engine creation.
@@ -163,14 +179,15 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		bridge.KeyTools:     e.registry.ToolDefs(),
 	}
 
-	// Use Stream() for real-time lifecycle progress visibility in TUI.
 	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(e.bus))
 	events := executor.Stream(ctx, initialState)
 
 	var finalState lifecycle.State
 	var runErr error
 	for ev := range events {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "range events")
 		if ev.Err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ev.Err != nil")
 			errStr := ev.Err.Error()
 			ch <- LifecycleProgressEvent{
 				Step: ev.Step, Node: ev.Node, Nodes: ev.Nodes,
@@ -178,6 +195,7 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 				FromNode: ev.FromNode, ToNode: ev.ToNode, RouteKey: ev.RouteKey,
 			}
 		} else {
+			observe.TraceCtx(ctx, "query", "Engine.runGraph", "else: ev.Err != nil")
 			ch <- LifecycleProgressEvent{
 				Step: ev.Step, Node: ev.Node, Nodes: ev.Nodes,
 				Status: ev.Type, Duration: ev.Duration,
@@ -185,6 +203,7 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 			}
 		}
 		if ev.Type == "completed" {
+			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ev.Type == \"completed\"")
 			finalState = ev.State
 			runErr = ev.Err
 		}

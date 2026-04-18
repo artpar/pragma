@@ -135,6 +135,7 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to deliver message: %v\", err)}...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to deliver message: %v", err)}, nil
 	}
+	t.Tasks.NotifyTask(tk.ID)
 
 	result := struct {
 		Success bool   `json:"success"`

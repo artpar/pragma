@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestRegistryCreateAndGet(t *testing.T) {
@@ -101,6 +102,182 @@ func TestRegistryCancelNotFound(t *testing.T) {
 	err := reg.Cancel("nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent task")
+	}
+}
+
+func TestNotifyChannel(t *testing.T) {
+	reg := NewRegistry(nil)
+	tk := reg.Create("test", "")
+
+	// Notify should be available
+	ch := reg.GetNotifyChannel(tk.ID)
+	if ch == nil {
+		t.Fatal("expected non-nil notify channel")
+	}
+
+	// NotifyTask should signal the channel
+	reg.NotifyTask(tk.ID)
+	select {
+	case <-ch:
+		// good
+	default:
+		t.Error("expected notification on channel")
+	}
+
+	// Double notify should not block (buffered channel)
+	reg.NotifyTask(tk.ID)
+	reg.NotifyTask(tk.ID) // should not panic or block
+}
+
+func TestDrainPendingMessages(t *testing.T) {
+	reg := NewRegistry(nil)
+	tk := reg.Create("test", "")
+
+	// No messages initially
+	msgs := reg.DrainPendingMessages(tk.ID)
+	if msgs != nil {
+		t.Errorf("expected nil, got %v", msgs)
+	}
+
+	// Add messages
+	reg.Update(tk.ID, func(tt *Task) {
+		tt.PendingMessages = append(tt.PendingMessages, "hello", "world")
+	})
+
+	// Drain should return and clear
+	msgs = reg.DrainPendingMessages(tk.ID)
+	if len(msgs) != 2 || msgs[0] != "hello" || msgs[1] != "world" {
+		t.Errorf("got %v, want [hello world]", msgs)
+	}
+
+	// Should be empty now
+	msgs = reg.DrainPendingMessages(tk.ID)
+	if msgs != nil {
+		t.Errorf("expected nil after drain, got %v", msgs)
+	}
+}
+
+func TestListRunningTeammates(t *testing.T) {
+	reg := NewRegistry(nil)
+
+	// Create tasks with various states
+	tk1 := reg.Create("worker", "")
+	reg.Update(tk1.ID, func(tt *Task) {
+		tt.Status = TaskRunning
+		tt.AgentName = "charlie"
+	})
+
+	tk2 := reg.Create("reviewer", "")
+	reg.Update(tk2.ID, func(tt *Task) {
+		tt.Status = TaskRunning
+		tt.AgentName = "alice"
+	})
+
+	// Not a teammate (no AgentName)
+	tk3 := reg.Create("background", "")
+	reg.Update(tk3.ID, func(tt *Task) {
+		tt.Status = TaskRunning
+	})
+
+	// Completed teammate
+	tk4 := reg.Create("done", "")
+	reg.Update(tk4.ID, func(tt *Task) {
+		tt.Status = TaskCompleted
+		tt.AgentName = "bob"
+	})
+
+	teammates := reg.ListRunningTeammates()
+	if len(teammates) != 2 {
+		t.Fatalf("got %d teammates, want 2", len(teammates))
+	}
+	// Should be sorted alphabetically
+	if teammates[0].AgentName != "alice" {
+		t.Errorf("first teammate: got %q, want alice", teammates[0].AgentName)
+	}
+	if teammates[1].AgentName != "charlie" {
+		t.Errorf("second teammate: got %q, want charlie", teammates[1].AgentName)
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	reg := NewRegistry(nil)
+	tk := reg.Create("teammate", "")
+
+	_, cancelFn := context.WithCancel(context.Background())
+	reg.Update(tk.ID, func(tt *Task) {
+		tt.Status = TaskRunning
+		tt.AgentName = "test-mate"
+		tt.Cancel = cancelFn
+	})
+
+	// Simulate teammate completing on shutdown request
+	go func() {
+		// Wait for shutdown signal
+		ch := reg.GetNotifyChannel(tk.ID)
+		<-ch
+		if reg.IsShutdownRequested(tk.ID) {
+			reg.Update(tk.ID, func(tt *Task) {
+				tt.Status = TaskCompleted
+			})
+		}
+	}()
+
+	err := reg.Shutdown(tk.ID, 5*time.Second)
+	if err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	got, _ := reg.Get(tk.ID)
+	if got.Status != TaskCompleted {
+		t.Errorf("status: got %s, want completed", got.Status)
+	}
+}
+
+func TestShutdownTimeout(t *testing.T) {
+	reg := NewRegistry(nil)
+	tk := reg.Create("stuck-teammate", "")
+
+	ctx, cancelFn := context.WithCancel(context.Background())
+	reg.Update(tk.ID, func(tt *Task) {
+		tt.Status = TaskRunning
+		tt.AgentName = "stuck"
+		tt.Cancel = cancelFn
+	})
+
+	// Don't respond to shutdown — should force cancel after timeout
+	err := reg.Shutdown(tk.ID, 200*time.Millisecond)
+	if err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	got, _ := reg.Get(tk.ID)
+	if got.Status != TaskCancelled {
+		t.Errorf("status: got %s, want cancelled", got.Status)
+	}
+
+	// Context should be cancelled
+	select {
+	case <-ctx.Done():
+		// good
+	default:
+		t.Error("context not cancelled after timeout")
+	}
+}
+
+func TestIsShutdownRequested(t *testing.T) {
+	reg := NewRegistry(nil)
+	tk := reg.Create("test", "")
+
+	if reg.IsShutdownRequested(tk.ID) {
+		t.Error("should not be shutdown requested initially")
+	}
+
+	reg.Update(tk.ID, func(tt *Task) {
+		tt.ShutdownRequested = true
+	})
+
+	if !reg.IsShutdownRequested(tk.ID) {
+		t.Error("should be shutdown requested after setting")
 	}
 }
 

@@ -80,11 +80,27 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			return
 		}
 
+		// Drain pending messages injected by SendMessage (teammate communication).
+		if e.taskRegistry != nil && e.config.TaskID != "" {
+			if msgs := e.taskRegistry.DrainPendingMessages(e.config.TaskID); len(msgs) > 0 {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("draining %d pending messages", len(msgs)))
+				injectedMsg := model.Message{
+					ID:        model.NewUUID(),
+					Role:      model.RoleUser,
+					Content:   []model.ContentPart{model.TextPart{Text: "Messages from teammates:\n" + strings.Join(msgs, "\n")}},
+					Timestamp: time.Now(),
+				}
+				e.store.Update(func(s *app.AppState) {
+					s.Conversation.Append(injectedMsg)
+				})
+			}
+		}
+
 		snap := e.store.Snapshot()
 
-		// Resolve model: AppState override > engine config default
 		resolvedModel := e.config.Model
 		if snap.Model != "" {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: snap.Model != \"\"")
 			resolvedModel = snap.Model
 		}
 
@@ -119,19 +135,22 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			var streamErr error
 			chunks, err := e.provider.Stream(ctx, params)
 			if err != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: err != nil")
 				streamErr = err
 			} else {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: err != nil")
 				response, streamErr = e.consumeStream(chunks, ch)
 			}
 
 			if streamErr == nil {
-				break // success
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: streamErr == nil")
+				break
 			}
 
 			classified := ClassifyStreamError(streamErr)
 
-			// Track consecutive overloaded errors (TS MAX_529_RETRIES = 3)
 			if classified.Kind == ErrorKindOverloaded {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: classified.Kind == ErrorKindOverloaded")
 				consecutiveOverloaded++
 				if consecutiveOverloaded >= maxConsecutiveOverloaded {
 					observe.TraceCtx(ctx, "query", "Engine.runLoop", "consecutive overloaded limit reached")
@@ -139,6 +158,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 					return
 				}
 			} else {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: classified.Kind == ErrorKindOverloaded")
 				consecutiveOverloaded = 0
 			}
 
@@ -150,6 +170,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 			delay := classified.RetryAfter
 			if delay == 0 {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: delay == 0")
 				delay = retryDelay(attempt)
 			}
 
@@ -163,8 +184,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 			select {
 			case <-time.After(delay):
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "select: <-time.After(delay)")
 				continue
 			case <-ctx.Done():
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "select: <-ctx.Done()")
 				ch <- ErrorEvent{Err: fmt.Errorf("context cancelled during retry: %w", model.ErrContextCancelled)}
 				return
 			}
@@ -210,9 +233,11 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: countErr != nil, falling back to heuristic")
 					tokenCount = compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
 				} else {
+					observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: countErr != nil")
 					tokenCount = precise
 				}
 			} else {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: ok")
 				tokenCount = compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
 			}
 			if e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
@@ -301,15 +326,12 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			toolCalls := extractToolCalls(response.Content)
 			for _, tc := range toolCalls {
 				if tc.Name == "LifecycleRun" {
+					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: tc.Name == \"LifecycleRun\"")
 					lifecycleRunInvoked = true
 				}
 				ch <- ToolCallEvent{Call: tc}
 			}
 
-			// Create progress channel and wrap state for tool progress visibility.
-			// The orchestrator runs in a goroutine so we can drain progress events
-			// concurrently, forwarding them to the TUI as typed LoopEvents.
-			// Dispatches on pe.Kind: "agent" → AgentProgressEvent, default → LifecycleProgressEvent.
 			progressCh := make(chan tool.ProgressEvent, 16)
 			wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh}
 
@@ -329,8 +351,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 					ch <- progressToLoopEvent(pe)
 				case d := <-doneCh:
 					execResult = d.result
-					// Drain remaining buffered progress events after orchestrator returns.
-					// Safe because: all Invoke() calls have returned, no more writes to progressCh.
+
 					for {
 						select {
 						case pe := <-progressCh:
@@ -381,13 +402,20 @@ type progressSnapshot struct {
 }
 
 func (p *progressSnapshot) Progress() tool.ProgressReporter {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: p.progressCh")
 	return p.progressCh
 }
 
 // progressToLoopEvent converts a tool.ProgressEvent to a typed LoopEvent.
 // Dispatches on Kind: "agent" → AgentProgressEvent, default → LifecycleProgressEvent.
 func progressToLoopEvent(pe tool.ProgressEvent) LoopEvent {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if pe.Kind == "agent" {
+		observe.GlobalTrace("if: pe.Kind == \"agent\"")
+		observe.GlobalTrace("return: AgentProgressEvent{\n\tAgentID:\tpe.AgentID,\n\tDescription:\tpe.Description,\n\tTool...")
 		return AgentProgressEvent{
 			AgentID:     pe.AgentID,
 			Description: pe.Description,
@@ -399,6 +427,7 @@ func progressToLoopEvent(pe tool.ProgressEvent) LoopEvent {
 			Error:       pe.Error,
 		}
 	}
+	observe.GlobalTrace("return: LifecycleProgressEvent{\n\tStep:\t\tpe.Step,\n\tNode:\t\tpe.Node,\n\tNodes:\t\tpe.Nodes,\n...")
 	return LifecycleProgressEvent{
 		Step:     pe.Step,
 		Node:     pe.Node,
