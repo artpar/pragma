@@ -7,7 +7,7 @@ import (
 )
 
 func TestCostTrackerRecord(t *testing.T) {
-	ct := NewCostTracker()
+	ct := NewCostTracker(0)
 	usage := TokenUsage{InputTokens: 1000, OutputTokens: 500}
 	pricing := Pricing{InputPerMToken: 3.0, OutputPerMToken: 15.0}
 
@@ -29,7 +29,7 @@ func TestCostTrackerRecord(t *testing.T) {
 }
 
 func TestCostTrackerWithCacheTokens(t *testing.T) {
-	ct := NewCostTracker()
+	ct := NewCostTracker(0)
 	usage := TokenUsage{
 		InputTokens:              1000,
 		OutputTokens:             500,
@@ -57,7 +57,7 @@ func TestCostTrackerWithCacheTokens(t *testing.T) {
 }
 
 func TestCostTrackerConcurrent(t *testing.T) {
-	ct := NewCostTracker()
+	ct := NewCostTracker(0)
 	usage := TokenUsage{InputTokens: 100, OutputTokens: 50}
 	pricing := Pricing{InputPerMToken: 1.0, OutputPerMToken: 1.0}
 
@@ -86,7 +86,7 @@ func TestCostTrackerConcurrent(t *testing.T) {
 }
 
 func TestCostTrackerSnapshotIsCopy(t *testing.T) {
-	ct := NewCostTracker()
+	ct := NewCostTracker(0)
 	usage := TokenUsage{InputTokens: 100, OutputTokens: 50}
 	pricing := Pricing{InputPerMToken: 1.0, OutputPerMToken: 1.0}
 

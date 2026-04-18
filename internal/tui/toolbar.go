@@ -32,16 +32,19 @@ type toolbar struct {
 	teammateCount    int       // number of running teammates
 }
 
-func newToolbar(modelName, provider, workspace string) toolbar {
+func newToolbar(modelName, provider, workspace string, startTime time.Time) toolbar {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if startTime.IsZero() {
+		startTime = time.Now()
+	}
 	observe.GlobalTrace("return: toolbar{\n\tmodelName:\tmodelName,\n\tprovider:\tprovider,\n\tworkspace:\tfilepath.Bas...")
 	return toolbar{
 		modelName: modelName,
 		provider:  provider,
 		workspace: filepath.Base(workspace),
 		status:    "ready",
-		startTime: time.Now(),
+		startTime: startTime,
 	}
 }
 

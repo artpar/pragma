@@ -133,7 +133,7 @@ func newTestEngine(prov provider.Provider, tools ...tool.Descriptor) (*Engine, *
 		Provider:     "test",
 		MaxTokens:    4096,
 	})
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 
 	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
 		Model:     "test-model",
@@ -450,7 +450,7 @@ func TestRun_PauseTurnExceedsTurns(t *testing.T) {
 		Provider:     "test",
 		MaxTokens:    4096,
 	})
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 
 	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
 		Model:     "test-model",
@@ -504,7 +504,7 @@ func TestRun_ModelFromAppState(t *testing.T) {
 		Provider:     "test",
 		MaxTokens:    4096,
 	})
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 
 	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
 		Model:     "config-model",
@@ -544,7 +544,7 @@ func TestRun_ModelFallsBackToConfig(t *testing.T) {
 		Provider:     "test",
 		MaxTokens:    4096,
 	})
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 
 	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
 		Model:     "config-model",

@@ -81,7 +81,7 @@ func TestTeammate_SpawnAndMessage(t *testing.T) {
 		checker := &allowAllTestChecker{}
 		prompter := &permission.NonInteractivePrompter{}
 		orch := tool.NewOrchestrator(reg, checker, prompter, bus)
-		ct := model.NewCostTracker()
+		ct := model.NewCostTracker(0)
 		engine := query.NewEngine(prov, reg, orch, subStore, ct, bus, query.EngineConfig{
 			Model:     "test",
 			MaxTokens: 4096,

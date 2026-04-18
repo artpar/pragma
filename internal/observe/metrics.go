@@ -47,8 +47,17 @@ type MetricsSnapshot struct {
 	ToolStats         map[string]ToolStat
 }
 
-func NewMetrics() *Metrics {
+// MetricsSeed provides initial values for resuming a session.
+// Zero value is valid for fresh sessions.
+type MetricsSeed struct {
+	TokenUsage model.TokenUsage
+	TurnCount  int
+}
+
+func NewMetrics(seed MetricsSeed) *Metrics {
 	return &Metrics{
+		tokenUsage:    seed.TokenUsage,
+		turnCount:     seed.TurnCount,
 		toolCalls:     make(map[string]int),
 		toolDurations: make(map[string]int64),
 		toolErrors:    make(map[string]int),

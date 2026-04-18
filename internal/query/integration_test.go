@@ -56,7 +56,7 @@ func TestPipelineIntegration(t *testing.T) {
 		Provider:     "test-provider",
 		MaxTokens:    4096,
 	})
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 
 	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
 		Model:     "test-model",
@@ -228,7 +228,7 @@ func TestPipelineToolUseIntegration(t *testing.T) {
 		Provider:     "test",
 		MaxTokens:    4096,
 	})
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 
 	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
 		Model:     "test-model",

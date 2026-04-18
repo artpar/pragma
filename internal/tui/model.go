@@ -39,6 +39,7 @@ type Config struct {
 	Workspace    string                // full workspace directory path (run.go passes d.Cwd)
 	Version      string                // build version (from buildinfo.Version)
 	TaskReg      *task.Registry        // task registry for teammate visibility
+	SessionStart time.Time             // original session start (for resume elapsed time)
 }
 
 // segmentKind distinguishes text (pre-rendered) from thinking/tool (rendered on demand).
@@ -254,6 +255,18 @@ func New(cfg Config) Model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"})
 	observe.GlobalTrace("return: Model{\n\tengine:\t\t\tcfg.Engine,\n\tstore:\t\t\tcfg.Store,\n\tcostTracker:\t\tcfg.CostTra...")
 
+	tb := newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace, cfg.SessionStart)
+
+	// Seed toolbar with restored state (no-op for fresh sessions where values are zero).
+	tb.UpdateCost(cfg.CostTracker.TotalUSD())
+	msnap := cfg.Metrics.Snapshot()
+	cache := msnap.TokenUsage.CacheCreationInputTokens + msnap.TokenUsage.CacheReadInputTokens
+	budget := 0
+	if cfg.TokenMonitor != nil {
+		budget = cfg.TokenMonitor.Budget()
+	}
+	tb.UpdateTokens(msnap.TokenUsage.InputTokens, msnap.TokenUsage.OutputTokens, cache, budget, msnap.LatestContextFill)
+
 	return Model{
 		engine:          cfg.Engine,
 		store:           cfg.Store,
@@ -269,7 +282,7 @@ func New(cfg Config) Model {
 		taskReg:         cfg.TaskReg,
 		input:           newInputComponent(),
 		perm:            newPermissionDialog(),
-		toolbar:         newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace),
+		toolbar:         tb,
 		spin:            s,
 		mdRenderer:      render.NewMarkdownRenderer(80),
 		activeToolCalls: make(map[string]model.ToolCallPart),

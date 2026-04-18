@@ -12,6 +12,7 @@ type Session struct {
 	Summary        string             `json:"summary,omitempty"`
 	CostUSD        float64            `json:"cost_usd,omitempty"`
 	TurnCount      int                `json:"turn_count"`
+	TokenUsage     model.TokenUsage   `json:"token_usage,omitzero"`
 	SystemOverride string             `json:"system_override,omitempty"`
 	GitRemote      string             `json:"git_remote,omitempty"`
 }

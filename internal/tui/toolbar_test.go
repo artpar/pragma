@@ -7,7 +7,7 @@ import (
 )
 
 func TestToolbarView(t *testing.T) {
-	tb := newToolbar("claude-sonnet-4", "anthropic", "/home/user/pragma")
+	tb := newToolbar("claude-sonnet-4", "anthropic", "/home/user/pragma", time.Now())
 
 	view := tb.View(80)
 	if !strings.Contains(view, "claude-sonnet-4") {
@@ -29,7 +29,7 @@ func TestToolbarView(t *testing.T) {
 }
 
 func TestToolbarUpdates(t *testing.T) {
-	tb := newToolbar("llama-3.3", "groq", "/tmp/myproject")
+	tb := newToolbar("llama-3.3", "groq", "/tmp/myproject", time.Now())
 
 	tb.UpdateCost(0.0042)
 	tb.SetStatus("streaming...")
@@ -44,7 +44,7 @@ func TestToolbarUpdates(t *testing.T) {
 }
 
 func TestToolbarTokenDisplay(t *testing.T) {
-	tb := newToolbar("test-model", "test", "/workspace")
+	tb := newToolbar("test-model", "test", "/workspace", time.Now())
 	tb.UpdateTokens(1500, 2300, 0, 200000, 1500)
 
 	view := tb.View(120)
@@ -61,7 +61,7 @@ func TestToolbarTokenDisplay(t *testing.T) {
 }
 
 func TestToolbarCacheTokens(t *testing.T) {
-	tb := newToolbar("test-model", "test", "/workspace")
+	tb := newToolbar("test-model", "test", "/workspace", time.Now())
 	tb.UpdateTokens(1500, 2300, 500, 200000, 2000)
 
 	view := tb.View(120)
@@ -71,7 +71,7 @@ func TestToolbarCacheTokens(t *testing.T) {
 }
 
 func TestToolbarContextPctUsesLatestFill(t *testing.T) {
-	tb := newToolbar("test-model", "test", "/workspace")
+	tb := newToolbar("test-model", "test", "/workspace", time.Now())
 	// latestContextFill=5000, ctx=100000 → 5%
 	// Cumulative input/cache are irrelevant for context % — only latest fill matters
 	tb.UpdateTokens(50000, 5000, 30000, 100000, 5000)
@@ -156,7 +156,7 @@ func TestFormatCost(t *testing.T) {
 }
 
 func TestToolbarCostSummary(t *testing.T) {
-	tb := newToolbar("test", "test", "/workspace")
+	tb := newToolbar("test", "test", "/workspace", time.Now())
 	tb.UpdateTokens(1500, 2300, 500, 200000, 2000)
 	tb.UpdateCost(0.0042)
 

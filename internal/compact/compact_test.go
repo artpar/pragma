@@ -66,7 +66,7 @@ func TestCompactSuccess(t *testing.T) {
 	}
 
 	bus := observe.NewEventBus(64)
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	svc := NewService(prov, bus, ct, "claude-haiku")
 
 	msgs := buildTestMessages(6)
@@ -105,7 +105,7 @@ func TestCompactSuccess(t *testing.T) {
 
 func TestCompactTooFewMessages(t *testing.T) {
 	bus := observe.NewEventBus(64)
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	svc := NewService(&replayProvider{}, bus, ct, "claude-haiku")
 
 	_, err := svc.Compact(context.Background(), buildTestMessages(3), model.SystemPrompt{}, "")
@@ -124,7 +124,7 @@ func TestCompactEmptySummary(t *testing.T) {
 	}
 
 	bus := observe.NewEventBus(64)
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	svc := NewService(prov, bus, ct, "claude-haiku")
 
 	_, err := svc.Compact(context.Background(), buildTestMessages(6), model.SystemPrompt{}, "")
@@ -140,7 +140,7 @@ func TestCompactAPIError(t *testing.T) {
 	}
 
 	bus := observe.NewEventBus(64)
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	svc := NewService(prov, bus, ct, "claude-haiku")
 
 	_, err := svc.Compact(context.Background(), buildTestMessages(6), model.SystemPrompt{}, "")
@@ -165,7 +165,7 @@ func TestCompactGrew(t *testing.T) {
 	}
 
 	bus := observe.NewEventBus(64)
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	svc := NewService(prov, bus, ct, "claude-haiku")
 
 	// Use short messages so the summary is guaranteed to be bigger
@@ -188,7 +188,7 @@ func TestCompactWithCustomInstructions(t *testing.T) {
 	}
 
 	bus := observe.NewEventBus(64)
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	svc := NewService(prov, bus, ct, "claude-haiku")
 
 	_, err := svc.Compact(context.Background(), buildTestMessages(6), model.SystemPrompt{}, "Focus on test results")

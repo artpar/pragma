@@ -37,7 +37,7 @@ func metricsRun(_ *cobra.Command, args []string) error {
 		return nil
 	}
 
-	m := observe.NewMetrics()
+	m := observe.NewMetrics(observe.MetricsSeed{})
 	for _, ev := range events {
 		m.HandleEvent(ev)
 	}

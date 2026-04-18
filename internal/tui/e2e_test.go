@@ -11,6 +11,7 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/slash"
 )
 
@@ -22,7 +23,8 @@ func newTestModel() Model {
 		Model:        "test-model",
 		Provider:     "test",
 	})
-	costTracker := model.NewCostTracker()
+	costTracker := model.NewCostTracker(0)
+	metrics := observe.NewMetrics(observe.MetricsSeed{})
 	slashCmds := slash.NewRegistry()
 	slashDeps := slash.Deps{
 		Store:       store,
@@ -34,6 +36,7 @@ func newTestModel() Model {
 	return New(Config{
 		Store:       store,
 		CostTracker: costTracker,
+		Metrics:     metrics,
 		ModelName:   "test-model",
 		Provider:    "test",
 		SlashCmds:   slashCmds,

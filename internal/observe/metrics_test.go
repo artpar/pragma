@@ -8,7 +8,7 @@ import (
 )
 
 func TestMetricsAPIRequestCompleted(t *testing.T) {
-	m := NewMetrics()
+	m := NewMetrics(MetricsSeed{})
 	m.HandleEvent(APIRequestCompleted{
 		EventHeader: NewEventHeader("APIRequestCompleted", "t1", "s1", ""),
 		StopReason:  model.StopEndTurn,
@@ -33,7 +33,7 @@ func TestMetricsAPIRequestCompleted(t *testing.T) {
 }
 
 func TestMetricsToolExecution(t *testing.T) {
-	m := NewMetrics()
+	m := NewMetrics(MetricsSeed{})
 	m.HandleEvent(ToolExecutionCompleted{
 		EventHeader: NewEventHeader("ToolExecutionCompleted", "t1", "s1", ""),
 		ToolCallID:  "tc-1",
@@ -59,7 +59,7 @@ func TestMetricsToolExecution(t *testing.T) {
 }
 
 func TestMetricsConcurrentSnapshot(t *testing.T) {
-	m := NewMetrics()
+	m := NewMetrics(MetricsSeed{})
 	var wg sync.WaitGroup
 
 	// Concurrent writes
@@ -92,7 +92,7 @@ func TestMetricsConcurrentSnapshot(t *testing.T) {
 }
 
 func TestMetricsSessionDuration(t *testing.T) {
-	m := NewMetrics()
+	m := NewMetrics(MetricsSeed{})
 
 	m.HandleEvent(SessionStarted{
 		EventHeader: NewEventHeader("SessionStarted", "t1", "s1", ""),

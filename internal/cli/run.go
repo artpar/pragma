@@ -239,7 +239,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	compDeps, compactor := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
 
-	sessionSaveFn := func() { SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd) }
+	sessionSaveFn := func() { SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd) }
 
 	slashCmds := slash.NewRegistry()
 
@@ -295,6 +295,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		Workspace:    d.Cwd,
 		Version:      buildinfo.Version,
 		TaskReg:      d.TaskReg,
+		SessionStart: d.SessionStart,
 	})
 
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
@@ -464,7 +465,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			}
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
-			SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
+			SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd)
 			return e.Err
 		}
 	}
@@ -477,7 +478,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}
 
-	SaveSession(d.Store, d.CostTracker, d.Cfg.SystemPrompt, d.Cwd)
+	SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd)
 
 	if d.Cfg.Verbose {
 		observe.GlobalTrace("if: d.Cfg.Verbose")
@@ -555,7 +556,7 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 }
 
 // SaveSession persists the current conversation to disk.
-func SaveSession(store *app.StateStore, costTracker *model.CostTracker, systemOverride, cwd string) {
+func SaveSession(store *app.StateStore, costTracker *model.CostTracker, metrics *observe.Metrics, systemOverride, cwd string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	sessionStore, err := session.NewStore()
@@ -599,11 +600,13 @@ func SaveSession(store *app.StateStore, costTracker *model.CostTracker, systemOv
 		}
 	}
 
+	msnap := metrics.Snapshot()
 	sess := session.Session{
 		Conversation:   snap.Conversation,
 		Summary:        summary,
 		CostUSD:        costTracker.TotalUSD(),
 		TurnCount:      turnCount,
+		TokenUsage:     msnap.TokenUsage,
 		SystemOverride: systemOverride,
 		GitRemote:      sysprompt.GitRemoteURL(cwd),
 	}

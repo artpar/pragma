@@ -43,7 +43,7 @@ func TestHandleClear(t *testing.T) {
 }
 
 func TestHandleCost(t *testing.T) {
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	ct.Record("claude-haiku", "anthropic", model.TokenUsage{
 		InputTokens:  1000,
 		OutputTokens: 500,
@@ -75,7 +75,7 @@ func TestHandleCost(t *testing.T) {
 }
 
 func TestHandleCostEmpty(t *testing.T) {
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	deps := Deps{CostTracker: ct}
 
 	result, err := handleCost(context.Background(), "", deps)

@@ -256,7 +256,7 @@ func (h *Harness) build() {
 		Provider:     "test",
 		MaxTokens:    4096,
 	})
-	h.ct = model.NewCostTracker()
+	h.ct = model.NewCostTracker(0)
 
 	h.engine = query.NewEngine(h.provider, h.registry, orch, h.store, h.ct, h.bus, query.EngineConfig{
 		Model:     "test-model",

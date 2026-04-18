@@ -39,8 +39,8 @@ type CostTracker struct {
 	totalUSD float64
 }
 
-func NewCostTracker() *CostTracker {
-	return &CostTracker{}
+func NewCostTracker(initialCost float64) *CostTracker {
+	return &CostTracker{totalUSD: initialCost}
 }
 
 // Record adds a cost entry calculated from usage and pricing.

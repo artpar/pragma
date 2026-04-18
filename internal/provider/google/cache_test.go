@@ -508,7 +508,7 @@ func TestApplyCacheEstimationThreshold(t *testing.T) {
 
 // simulateTurnCost calculates the cost of a single turn using CostTracker.
 func simulateTurnCost(pricing model.Pricing, inputTokens, outputTokens, cacheCreate, cacheRead int) float64 {
-	ct := model.NewCostTracker()
+	ct := model.NewCostTracker(0)
 	ct.Record("model", "google", model.TokenUsage{
 		InputTokens:              inputTokens,
 		OutputTokens:             outputTokens,

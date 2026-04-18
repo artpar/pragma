@@ -54,6 +54,7 @@ type Deps struct {
 	TokenMonitor *observe.TokenMonitor
 	LogFilePath  string
 	Cwd          string
+	SessionStart time.Time
 	Cleanup      func()
 }
 
@@ -150,8 +151,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 	}
 
-	metrics := observe.NewMetrics()
-	bus.Subscribe(metrics)
 	auditor := observe.NewAuditor()
 	bus.Subscribe(auditor)
 	tokenMon := observe.NewTokenMonitor(bus, 200_000)
@@ -227,6 +226,10 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	// Conversation (new or resumed)
 	var conv model.Conversation
+	var resumedCost float64
+	var resumedTokens model.TokenUsage
+	var resumedTurnCount int
+	var sessionStart time.Time
 	resumeID, _ := cmd.Flags().GetString("resume")
 
 	continueFlag, _ := cmd.Flags().GetBool("continue")
@@ -288,6 +291,10 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			observe.GlobalTrace("else: sess.SystemOverride != \"\"")
 			conv.System = sysPrompt
 		}
+		resumedCost = sess.CostUSD
+		resumedTokens = sess.TokenUsage
+		resumedTurnCount = sess.TurnCount
+		sessionStart = sess.Conversation.CreatedAt
 		if cfg.Verbose {
 			observe.GlobalTrace("if: cfg.Verbose")
 			fmt.Fprintf(os.Stderr, "resumed session %s (%d messages)\n", resumeID, len(conv.Messages))
@@ -295,7 +302,12 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	} else {
 		observe.GlobalTrace("else: resumeID != \"\"")
 		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)
+		sessionStart = conv.CreatedAt
 	}
+
+	// Create metrics with resumed values (zero for fresh sessions).
+	metrics := observe.NewMetrics(observe.MetricsSeed{TokenUsage: resumedTokens, TurnCount: resumedTurnCount})
+	bus.Subscribe(metrics)
 
 	store := app.NewStateStore(app.AppState{
 		Conversation: conv,
@@ -319,7 +331,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("else: homeErr == nil")
 		cronSched = cron.NewScheduler(bus, nil)
 	}
-	costTracker := model.NewCostTracker()
+	costTracker := model.NewCostTracker(resumedCost)
 	engineCfg := query.EngineConfig{
 		Model:       cfg.Model,
 		MaxTokens:   cfg.MaxTokens,
@@ -405,6 +417,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		TokenMonitor: tokenMon,
 		LogFilePath:  logFilePath,
 		Cwd:          cwd,
+		SessionStart: sessionStart,
 		Cleanup:      compositeCleanup,
 	}, nil
 }
