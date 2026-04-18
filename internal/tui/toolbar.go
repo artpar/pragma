@@ -18,17 +18,17 @@ import (
 //
 //	⏺ model · provider · 5m · $0.0042 · 1.5k in / 2.3k out / 500 cache (12% ctx)    ready
 type toolbar struct {
-	modelName      string
-	provider       string
-	workspace      string
-	totalCost      float64
-	status         string
-	inputTokens    int
-	outputTokens   int
-	cacheTokens    int // combined cache creation + cache read
-	contextSize    int
-	startTime      time.Time // session start for elapsed display
-	teammateCount  int       // number of running teammates
+	modelName     string
+	provider      string
+	workspace     string
+	totalCost     float64
+	status        string
+	inputTokens   int
+	outputTokens  int
+	cacheTokens   int // combined cache creation + cache read
+	contextSize   int
+	startTime     time.Time // session start for elapsed display
+	teammateCount int       // number of running teammates
 }
 
 func newToolbar(modelName, provider, workspace string) toolbar {
@@ -79,6 +79,7 @@ func (t toolbar) View(width int) string {
 	}
 
 	if t.teammateCount > 0 {
+		observe.GlobalTrace("if: t.teammateCount > 0")
 		tmStyle := lipgloss.NewStyle().Faint(true)
 		left += tmStyle.Render(fmt.Sprintf(" · %d teammates", t.teammateCount))
 	}

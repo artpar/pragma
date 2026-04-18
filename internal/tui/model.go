@@ -198,8 +198,8 @@ type Model struct {
 	workspace    string // full workspace path for welcome display
 
 	// Task registry for teammate visibility
-	taskReg          *task.Registry
-	teammateEntries  []render.TeammateEntry
+	taskReg         *task.Registry
+	teammateEntries []render.TeammateEntry
 
 	// Components
 	viewport viewport.Model
@@ -506,14 +506,16 @@ func (m Model) viewportContent() string {
 	if m.spinnerActive {
 		observe.GlobalTrace("if: m.spinnerActive")
 		b.WriteString("\n" + m.spin.View() + " " + m.spinnerTool + "...")
-		// Render teammate spinner tree below spinner when teammates are running.
+
 		if len(m.teammateEntries) > 0 {
+			observe.GlobalTrace("if: len(m.teammateEntries) > 0")
 			b.WriteString("\n")
 			b.WriteString(render.RenderTeammateTree(m.teammateEntries, m.verbose, m.width))
 		}
 	}
-	// Teams dialog overlay.
+
 	if m.teams.active {
+		observe.GlobalTrace("if: m.teams.active")
 		b.WriteString("\n")
 		b.WriteString(m.teams.View(m.width))
 	}
@@ -567,18 +569,26 @@ func appendError(segs []segment, data errorSegData) []segment {
 // exists that already covers this tool's visual output. This prevents creating
 // a duplicate segTool when the progress segment is the authoritative display.
 func hasProgressSegment(segs []segment, toolName string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for i := len(segs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		switch {
 		case segs[i].kind == segLifecycle && segs[i].lifecycle != nil && toolName == "LifecycleRun":
+			observe.GlobalTrace("case: segs[i].kind == segLifecycle && segs[i].lifecycle != nil && toolName == \"Life...")
 			return true
 		case segs[i].kind == segAgent && segs[i].agent != nil && toolName == "Agent":
+			observe.GlobalTrace("case: segs[i].kind == segAgent && segs[i].agent != nil && toolName == \"Agent\"")
 			return true
 		case segs[i].kind == segText:
+			observe.GlobalTrace("case: segs[i].kind == segText")
 			continue
 		default:
+			observe.GlobalTrace("default")
 			return false
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
@@ -1048,7 +1058,10 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 // refreshTeammates polls the task registry for running teammates and updates
 // the cached entries + toolbar count. Called on every spinner tick.
 func (m *Model) refreshTeammates() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.taskReg == nil {
+		observe.GlobalTrace("if: m.taskReg == nil")
 		return
 	}
 	tasks := m.taskReg.ListRunningTeammates()

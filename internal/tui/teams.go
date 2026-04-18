@@ -65,12 +65,16 @@ func (d *teamsDialog) Dismiss() {
 // Refresh updates entries from the task registry.
 // Uses ListAllTeammates to include completed teammates for full visibility.
 func (d *teamsDialog) Refresh() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d.taskReg == nil {
+		observe.GlobalTrace("if: d.taskReg == nil")
 		return
 	}
 	teammates := d.taskReg.ListAllTeammates()
 	d.entries = buildTeammateEntries(teammates)
 	if d.selected >= len(d.entries) {
+		observe.GlobalTrace("if: d.selected >= len(d.entries)")
 		d.selected = max(0, len(d.entries)-1)
 	}
 }
@@ -80,45 +84,60 @@ func (d *teamsDialog) Update(msg tea.Msg) tea.Cmd {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !d.active {
+		observe.GlobalTrace("if: !d.active")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 
 	switch keyMsg.String() {
 	case "esc":
+		observe.GlobalTrace("case: \"esc\"")
 		d.Dismiss()
 		return nil
 	case "up", "k":
+		observe.GlobalTrace("case: \"up\", \"k\"")
 		if len(d.entries) > 0 {
 			d.selected--
 			if d.selected < 0 {
+				observe.GlobalTrace("if: d.selected < 0")
 				d.selected = len(d.entries) - 1
 			}
 			d.feedback = ""
 		}
 	case "down", "j":
+		observe.GlobalTrace("case: \"down\", \"j\"")
 		if len(d.entries) > 0 {
 			d.selected++
 			if d.selected >= len(d.entries) {
+				observe.GlobalTrace("if: d.selected >= len(d.entries)")
 				d.selected = 0
 			}
 			d.feedback = ""
 		}
 	case "s":
+		observe.GlobalTrace("case: \"s\"")
 		d.shutdownSelected()
 	case "K":
+		observe.GlobalTrace("case: \"K\"")
 		d.killSelected()
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 // shutdownSelected requests graceful shutdown for the selected teammate.
 func (d *teamsDialog) shutdownSelected() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d.selected >= len(d.entries) || d.taskReg == nil {
+		observe.GlobalTrace("if: d.selected >= len(d.entries) || d.taskReg == nil")
 		return
 	}
 	e := d.entries[d.selected]
@@ -132,7 +151,10 @@ func (d *teamsDialog) shutdownSelected() {
 
 // killSelected force-cancels the selected teammate.
 func (d *teamsDialog) killSelected() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d.selected >= len(d.entries) || d.taskReg == nil {
+		observe.GlobalTrace("if: d.selected >= len(d.entries) || d.taskReg == nil")
 		return
 	}
 	e := d.entries[d.selected]
@@ -146,6 +168,8 @@ func (d *teamsDialog) View(width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !d.active {
+		observe.GlobalTrace("if: !d.active")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
@@ -154,15 +178,20 @@ func (d *teamsDialog) View(width int) string {
 	b.WriteString("\n\n")
 
 	if len(d.entries) == 0 {
+		observe.GlobalTrace("if: len(d.entries) == 0")
 		b.WriteString("No active teammates.\n")
 	} else {
+		observe.GlobalTrace("else: len(d.entries) == 0")
 		for i, e := range d.entries {
+			observe.GlobalTrace("range d.entries")
 			prefix := "  "
 			if i == d.selected {
+				observe.GlobalTrace("if: i == d.selected")
 				prefix = teamsSelected.Render("❯ ")
 			}
 			name := e.Name
 			if i == d.selected {
+				observe.GlobalTrace("if: i == d.selected")
 				name = teamsSelected.Render(name)
 			}
 			status := render.TeammateStatusText(e)
@@ -173,6 +202,7 @@ func (d *teamsDialog) View(width int) string {
 	}
 
 	if d.feedback != "" {
+		observe.GlobalTrace("if: d.feedback != \"\"")
 		b.WriteByte('\n')
 		b.WriteString(teamsFeedback.Render(d.feedback))
 		b.WriteByte('\n')
@@ -183,15 +213,20 @@ func (d *teamsDialog) View(width int) string {
 
 	innerWidth := width - 8
 	if innerWidth < 40 {
+		observe.GlobalTrace("if: innerWidth < 40")
 		innerWidth = 40
 	}
+	observe.GlobalTrace("return: teamsBorder.Width(innerWidth).Render(b.String())")
 	return teamsBorder.Width(innerWidth).Render(b.String())
 }
 
 // buildTeammateEntries converts task snapshots to TeammateEntry slice.
 func buildTeammateEntries(tasks []task.Task) []render.TeammateEntry {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	entries := make([]render.TeammateEntry, len(tasks))
 	for i, t := range tasks {
+		observe.GlobalTrace("range tasks")
 		entries[i] = render.TeammateEntry{
 			Name:              t.AgentName,
 			TaskID:            t.ID,
@@ -202,5 +237,6 @@ func buildTeammateEntries(tasks []task.Task) []render.TeammateEntry {
 			ShutdownRequested: t.ShutdownRequested,
 		}
 	}
+	observe.GlobalTrace("return: entries")
 	return entries
 }

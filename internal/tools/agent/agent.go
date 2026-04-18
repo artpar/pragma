@@ -243,8 +243,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	engine, subStore := t.EngineFactory(forkedConv, scopedTools, in.Model)
 
-	// Wire task registry for teammate message drain (GOGENT-58).
 	if in.Teammate {
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Teammate")
 		engine.SetTaskRegistry(t.Tasks)
 		engine.SetTaskID(tk.ID)
 	}
@@ -292,9 +292,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if in.Teammate {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Teammate")
 		if subject == "" {
+			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: subject == \"\"")
 			subject = "teammate"
 		}
 		emitAgentProgress(progressCh, tk.ID, subject, "initializing", 0, 0, "", true)
+		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runTeammate(tk.ID, engine, in, progressCh, subject)")
 		return t.runTeammate(tk.ID, engine, in, progressCh, subject)
 	}
 
@@ -528,6 +530,8 @@ func (t *Tool) runTeammate(
 	progressCh tool.ProgressReporter,
 	subject string,
 ) (tool.InvokeResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	childCtx, cancelFn := context.WithCancel(context.Background())
 	t.updateTask(taskID, func(tt *task.Task) {
 		tt.Cancel = cancelFn
@@ -541,17 +545,14 @@ func (t *Tool) runTeammate(
 		var totalUsage model.TokenUsage
 		var totalToolCount int
 
-		// Phase 1: Execute initial prompt.
 		t.drainTeammateEvents(childCtx, engine.Run(childCtx, in.Prompt), taskID, subject, progressCh, &totalUsage, &totalToolCount)
 
-		// Mark idle after initial prompt completes; persist cumulative tokens.
 		t.updateTask(taskID, func(tt *task.Task) {
 			tt.IsIdle = true
 			tt.IdleSince = time.Now()
 			tt.TokensUsed = totalUsage.InputTokens + totalUsage.OutputTokens
 		})
 
-		// Phase 2: Wait for messages or shutdown.
 	waitLoop:
 		for {
 			if t.Tasks.IsShutdownRequested(taskID) {
@@ -570,7 +571,7 @@ func (t *Tool) runTeammate(
 				}
 				msgs := t.Tasks.DrainPendingMessages(taskID)
 				if len(msgs) > 0 {
-					// Mark active while processing.
+
 					t.updateTask(taskID, func(tt *task.Task) {
 						tt.IsIdle = false
 						tt.IdleSince = time.Time{}
@@ -579,7 +580,7 @@ func (t *Tool) runTeammate(
 					emitAgentProgress(progressCh, taskID, subject, "running", totalToolCount,
 						int(totalUsage.InputTokens+totalUsage.OutputTokens), "processing message", false)
 					t.drainTeammateEvents(childCtx, engine.Run(childCtx, joined), taskID, subject, progressCh, &totalUsage, &totalToolCount)
-					// Mark idle again after processing; persist cumulative tokens.
+
 					t.updateTask(taskID, func(tt *task.Task) {
 						tt.IsIdle = true
 						tt.IdleSince = time.Now()
@@ -589,7 +590,6 @@ func (t *Tool) runTeammate(
 			}
 		}
 
-		// Graceful shutdown
 		t.updateTask(taskID, func(tt *task.Task) {
 			tt.Status = task.TaskCompleted
 			tt.TokensUsed = totalUsage.InputTokens + totalUsage.OutputTokens
@@ -611,6 +611,7 @@ func (t *Tool) runTeammate(
 		TaskID:  taskID,
 	}
 	data, _ := json.Marshal(ar)
+	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
@@ -623,18 +624,25 @@ func (t *Tool) drainTeammateEvents(
 	usage *model.TokenUsage,
 	toolCount *int,
 ) {
+	observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "enter")
+	defer observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "exit")
 	var lastToolName string
 	for ev := range events {
+		observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "range events")
 		switch e := ev.(type) {
 		case query.TextEvent:
-			// Text output from teammate — accumulated in conversation
+			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.TextEvent")
+
 		case query.ToolCallEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.ToolCallEvent")
 			lastToolName = e.Call.Name
 			emitAgentProgress(progressCh, taskID, subject, "running", *toolCount,
 				int(usage.InputTokens+usage.OutputTokens), lastToolName, false)
 		case query.ToolResultEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.ToolResultEvent")
 			*toolCount++
 		case query.TurnCompleteEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.TurnCompleteEvent")
 			usage.InputTokens += e.Response.Usage.InputTokens
 			usage.OutputTokens += e.Response.Usage.OutputTokens
 			usage.CacheCreationInputTokens += e.Response.Usage.CacheCreationInputTokens
@@ -642,6 +650,7 @@ func (t *Tool) drainTeammateEvents(
 			emitAgentProgress(progressCh, taskID, subject, "running", *toolCount,
 				int(usage.InputTokens+usage.OutputTokens), lastToolName, false)
 		case query.ErrorEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.ErrorEvent")
 			t.Bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 				Severity:     "error",

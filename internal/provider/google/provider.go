@@ -697,8 +697,7 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 				result.Content = append(result.Content, model.TextPart{Text: part.Text})
 			case part.FunctionCall != nil:
 				observe.GlobalTrace("case: part.FunctionCall != nil")
-				// Skip tool calls when the response is malformed or content-filtered —
-				// args may be invalid JSON or the response was truncated by safety filters.
+
 				if cand.FinishReason == genai.FinishReasonMalformedFunctionCall || isContentFilteredFinishReason(cand.FinishReason) {
 					observe.GlobalTrace("if: malformed or content-filtered — skipping tool call")
 					continue
@@ -774,14 +773,18 @@ func stopReasonFromGenai(fr genai.FinishReason) model.StopReason {
 }
 
 func isContentFilteredFinishReason(fr genai.FinishReason) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch fr {
 	case genai.FinishReasonSafety, genai.FinishReasonRecitation,
 		genai.FinishReasonBlocklist, genai.FinishReasonProhibitedContent,
 		genai.FinishReasonSPII, genai.FinishReasonImageSafety,
 		genai.FinishReasonImageProhibitedContent,
 		genai.FinishReasonImageRecitation, genai.FinishReasonImageOther:
+		observe.GlobalTrace("case: genai.FinishReasonSafety, genai.FinishReasonRecitation, genai.FinishReasonBlo...")
 		return true
 	default:
+		observe.GlobalTrace("default")
 		return false
 	}
 }

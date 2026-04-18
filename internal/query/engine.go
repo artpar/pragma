@@ -105,11 +105,15 @@ func (e *Engine) SetHookManager(mgr *hook.Manager) {
 // SetTaskRegistry configures the task registry and task ID for PendingMessages drain.
 // Both must be set for the engine to drain pending messages between turns.
 func (e *Engine) SetTaskRegistry(reg *task.Registry) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	e.taskRegistry = reg
 }
 
 // SetTaskID sets the task ID for PendingMessages drain.
 func (e *Engine) SetTaskID(id string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	e.config.TaskID = id
 }
 

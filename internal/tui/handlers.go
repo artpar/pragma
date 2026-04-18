@@ -69,6 +69,7 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			return m.startEngineFromPrompt(msg.Result.InjectPrompt)
 		}
 		if msg.Result.ShowTeamsDialog {
+			observe.GlobalTrace("if: msg.Result.ShowTeamsDialog")
 			m.teams.Show(m.taskReg)
 		}
 	}
@@ -428,10 +429,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Teams dialog intercepts all keys when active (except Ctrl+C which always interrupts).
 	if m.teams.active && msg.Type != tea.KeyCtrlC {
+		observe.GlobalTrace("if: m.teams.active && msg.Type != tea.KeyCtrlC")
 		m.teams.Update(msg)
 		m.viewport.SetContent(m.viewportContent())
+		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
 

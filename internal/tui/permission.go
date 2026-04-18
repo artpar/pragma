@@ -420,20 +420,26 @@ func renderDefaultPreview(req *PermRequestMsg) string {
 	var b strings.Builder
 
 	if req.Content != "" {
+		observe.GlobalTrace("if: req.Content != \"\"")
 		content := req.Content
 		if lines := strings.Split(content, "\n"); len(lines) > 3 {
+			observe.GlobalTrace("if: len(lines) > 3")
 			content = strings.Join(lines[:3], "\n") + "..."
 		}
 		if len([]rune(content)) > 200 {
+			observe.GlobalTrace("if: len([]rune(content)) > 200")
 			content = string([]rune(content)[:197]) + "..."
 		}
 		b.WriteString(fmt.Sprintf("  %s", content))
 	} else if len(req.ToolInput) > 0 {
+		observe.GlobalTrace("else-if: len(req.ToolInput) > 0")
 		b.WriteString(renderInputFields(req.ToolInput))
 	}
 
 	if req.Reason != "" {
+		observe.GlobalTrace("if: req.Reason != \"\"")
 		if b.Len() > 0 {
+			observe.GlobalTrace("if: b.Len() > 0")
 			b.WriteString("\n")
 		}
 		b.WriteString(fmt.Sprintf("  %s", permUnselectedStyle.Render(req.Reason)))
@@ -445,8 +451,12 @@ func renderDefaultPreview(req *PermRequestMsg) string {
 // renderInputFields extracts top-level string fields from tool input JSON
 // and renders them as indented key: "value" lines (max 3 fields, 80-char values).
 func renderInputFields(input json.RawMessage) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(input, &raw) != nil {
+		observe.GlobalTrace("if: json.Unmarshal(input, &raw) != nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	var b strings.Builder
@@ -454,17 +464,22 @@ func renderInputFields(input json.RawMessage) string {
 	const maxFields = 3
 	const maxValueLen = 80
 	for key, val := range raw {
+		observe.GlobalTrace("range raw")
 		if shown >= maxFields {
+			observe.GlobalTrace("if: shown >= maxFields")
 			break
 		}
 		var s string
 		if json.Unmarshal(val, &s) != nil {
+			observe.GlobalTrace("if: json.Unmarshal(val, &s) != nil")
 			continue
 		}
 		if s == "" {
+			observe.GlobalTrace("if: s == \"\"")
 			continue
 		}
 		if len([]rune(s)) > maxValueLen {
+			observe.GlobalTrace("if: len([]rune(s)) > maxValueLen")
 			s = string([]rune(s)[:maxValueLen-3]) + "..."
 		}
 		b.WriteString(fmt.Sprintf("  %s: %q\n", key, s))
@@ -472,7 +487,9 @@ func renderInputFields(input json.RawMessage) string {
 	}
 	result := b.String()
 	if strings.HasSuffix(result, "\n") {
+		observe.GlobalTrace("if: strings.HasSuffix(result, \"\\n\")")
 		result = result[:len(result)-1]
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }

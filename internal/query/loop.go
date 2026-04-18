@@ -82,8 +82,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			return
 		}
 
-		// Drain pending messages injected by SendMessage (teammate communication).
 		if e.taskRegistry != nil && e.config.TaskID != "" {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.taskRegistry != nil && e.config.TaskID != \"\"")
 			if msgs := e.taskRegistry.DrainPendingMessages(e.config.TaskID); len(msgs) > 0 {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("draining %d pending messages", len(msgs)))
 				injectedMsg := model.Message{
@@ -322,8 +322,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ErrorType:    "malformed_tool_call",
 				ErrorMessage: fmt.Sprintf("provider returned malformed tool call, retrying (%d/%d)", malformedRetries, maxMalformedRetries),
 			})
-			// Assistant message already appended (text/thinking only, tool calls stripped).
-			// Inject guidance for the LLM to retry with valid JSON.
+
 			correctionMsg := model.Message{
 				ID:        model.NewUUID(),
 				Role:      model.RoleUser,
@@ -605,11 +604,11 @@ func (e *Engine) consumeStream(
 		observe.GlobalTrace("if: textBuf.Len() > 0")
 		parts = append(parts, model.TextPart{Text: textBuf.String()})
 	}
-	// When the provider signals malformed tool calls, drop all accumulated tool calls —
-	// the JSON args are invalid and would fail validation. Text/thinking parts are preserved.
+
 	if done.StopReason == model.StopMalformedToolCall || done.StopReason == model.StopContentFiltered {
 		observe.GlobalTrace("if: done.StopReason == model.StopMalformedToolCall || StopContentFiltered — dropping tool calls")
 	} else {
+		observe.GlobalTrace("else: done.StopReason == model.StopMalformedToolCall || done.StopReason == model.St...")
 		for _, id := range toolOrder {
 			observe.GlobalTrace("range toolOrder")
 			acc := toolCalls[id]

@@ -240,16 +240,17 @@ func (t *Tool) buildInitialState(in lifecycleInput, snap app.AppState) lifecycle
 	}
 	observe.GlobalTrace("return: lifecycle.State{\n\tbridge.KeyMessages:\t[]model.Message{userMsg},\n\tbridge.KeySy...")
 
-	// Exclude LifecycleRun from sub-graph tools to prevent infinite recursion.
-	// The LLM inside a lifecycle graph must not spawn nested lifecycle graphs.
 	allDefs := t.Registry.ToolDefs()
 	filteredDefs := make([]model.ToolDef, 0, len(allDefs))
 	for _, td := range allDefs {
+		observe.GlobalTrace("range allDefs")
 		if td.Name == "LifecycleRun" {
+			observe.GlobalTrace("if: td.Name == \"LifecycleRun\"")
 			continue
 		}
 		filteredDefs = append(filteredDefs, td)
 	}
+	observe.GlobalTrace("return: lifecycle.State{\n\tbridge.KeyMessages:\t[]model.Message{userMsg},\n\tbridge.KeySy...")
 
 	return lifecycle.State{
 		bridge.KeyMessages:  []model.Message{userMsg},

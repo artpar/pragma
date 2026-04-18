@@ -163,17 +163,22 @@ func (r *Registry) Cancel(id string) error {
 // ListRunningTeammates returns snapshots of running tasks that have an AgentName,
 // sorted alphabetically by name. Matches TS getRunningTeammatesSorted().
 func (r *Registry) ListRunningTeammates() []Task {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []Task
 	for _, t := range r.tasks {
+		observe.GlobalTrace("range r.tasks")
 		if t.Status == TaskRunning && t.AgentName != "" {
+			observe.GlobalTrace("if: t.Status == TaskRunning && t.AgentName != \"\"")
 			result = append(result, t.snapshot())
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].AgentName < result[j].AgentName
 	})
+	observe.GlobalTrace("return: result")
 	return result
 }
 
@@ -181,11 +186,15 @@ func (r *Registry) ListRunningTeammates() []Task {
 // regardless of status. Running tasks sort first, then completed, then others.
 // Used by the /teams dialog to show full visibility including recently finished work.
 func (r *Registry) ListAllTeammates() []Task {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []Task
 	for _, t := range r.tasks {
+		observe.GlobalTrace("range r.tasks")
 		if t.AgentName != "" {
+			observe.GlobalTrace("if: t.AgentName != \"\"")
 			result = append(result, t.snapshot())
 		}
 	}
@@ -196,18 +205,25 @@ func (r *Registry) ListAllTeammates() []Task {
 		}
 		return result[i].AgentName < result[j].AgentName
 	})
+	observe.GlobalTrace("return: result")
 	return result
 }
 
 func statusRank(s TaskStatus) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch s {
 	case TaskRunning:
+		observe.GlobalTrace("case: TaskRunning")
 		return 0
 	case TaskPending:
+		observe.GlobalTrace("case: TaskPending")
 		return 1
 	case TaskCompleted:
+		observe.GlobalTrace("case: TaskCompleted")
 		return 2
 	default:
+		observe.GlobalTrace("default")
 		return 3
 	}
 }
@@ -215,29 +231,39 @@ func statusRank(s TaskStatus) int {
 // NotifyTask signals a task's Notify channel (non-blocking).
 // Used by SendMessage after appending to PendingMessages.
 func (r *Registry) NotifyTask(id string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tasks[id]
 	if !ok || t.Notify == nil {
+		observe.GlobalTrace("if: !ok || t.Notify == nil")
 		return
 	}
 	select {
 	case t.Notify <- struct{}{}:
+		observe.GlobalTrace("select: t.Notify <- struct{}{}")
 	default:
+		observe.GlobalTrace("select: default")
 	}
 }
 
 // DrainPendingMessages atomically reads and clears PendingMessages for a task.
 // Returns nil if task not found or no messages pending.
 func (r *Registry) DrainPendingMessages(id string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	t, ok := r.tasks[id]
 	if !ok || len(t.PendingMessages) == 0 {
+		observe.GlobalTrace("if: !ok || len(t.PendingMessages) == 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	msgs := t.PendingMessages
 	t.PendingMessages = nil
+	observe.GlobalTrace("return: msgs")
 	return msgs
 }
 
@@ -245,42 +271,55 @@ func (r *Registry) DrainPendingMessages(id string) []string {
 // Sets ShutdownRequested, signals Notify, waits up to timeout for completion.
 // If timeout expires, force-cancels the task.
 func (r *Registry) Shutdown(id string, timeout time.Duration) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.Lock()
 	t, ok := r.tasks[id]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
 		r.mu.Unlock()
+		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
 		return fmt.Errorf("task %q not found", id)
 	}
 	if t.Status != TaskRunning && t.Status != TaskPending {
+		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
 		r.mu.Unlock()
+		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot shutdown\", id, t.Status)")
 		return fmt.Errorf("task %q is %s, cannot shutdown", id, t.Status)
 	}
 	t.ShutdownRequested = true
 	t.UpdatedAt = time.Now()
-	// Signal the teammate loop
+
 	if t.Notify != nil {
+		observe.GlobalTrace("if: t.Notify != nil")
 		select {
 		case t.Notify <- struct{}{}:
+			observe.GlobalTrace("select: t.Notify <- struct{}{}")
 		default:
+			observe.GlobalTrace("select: default")
 		}
 	}
 	r.mu.Unlock()
 
-	// Wait for graceful completion
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		observe.GlobalTrace("for: true")
 		select {
 		case <-deadline:
-			// Force cancel
+			observe.GlobalTrace("select: <-deadline")
+
 			return r.Cancel(id)
 		case <-ticker.C:
+			observe.GlobalTrace("select: <-ticker.C")
 			snap, exists := r.Get(id)
 			if !exists {
+				observe.GlobalTrace("return: nil")
 				return nil
 			}
 			if snap.Status == TaskCompleted || snap.Status == TaskFailed || snap.Status == TaskCancelled {
+				observe.GlobalTrace("return: nil")
 				return nil
 			}
 		}
@@ -290,22 +329,32 @@ func (r *Registry) Shutdown(id string, timeout time.Duration) error {
 // GetNotifyChannel returns the Notify channel for a task, or nil if not found.
 // Used by teammate loop to select on message arrival.
 func (r *Registry) GetNotifyChannel(id string) <-chan struct{} {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tasks[id]
 	if !ok || t.Notify == nil {
+		observe.GlobalTrace("if: !ok || t.Notify == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: t.Notify")
 	return t.Notify
 }
 
 // IsShutdownRequested checks if a task has been requested to shut down.
 func (r *Registry) IsShutdownRequested(id string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tasks[id]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: false")
 		return false
 	}
+	observe.GlobalTrace("return: t.ShutdownRequested")
 	return t.ShutdownRequested
 }
