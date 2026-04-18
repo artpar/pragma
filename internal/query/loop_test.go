@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
 )
 
@@ -557,5 +559,66 @@ func TestRun_ModelFallsBackToConfig(t *testing.T) {
 
 	if gotModel != "config-model" {
 		t.Errorf("provider received model %q, want %q (from config fallback)", gotModel, "config-model")
+	}
+}
+
+func TestRunLoop_PendingMessages(t *testing.T) {
+	// Pre-load a pending message into the task registry before running the engine.
+	// The engine should drain it at the top of the first turn and inject it as a
+	// user message with the "Messages from teammates:" prefix.
+	taskBus := observe.NewEventBus(16)
+	taskReg := task.NewRegistry(taskBus)
+	tk := taskReg.Create("test-teammate", "integration test")
+	_ = taskReg.Update(tk.ID, func(tt *task.Task) {
+		tt.Status = task.TaskRunning
+		tt.AgentName = "test-teammate"
+		tt.PendingMessages = append(tt.PendingMessages, "Hello from another agent")
+	})
+
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{textChunks("Got it!", model.StopEndTurn)},
+	}
+	engine, _ := newTestEngine(prov)
+	engine.SetTaskRegistry(taskReg)
+	engine.SetTaskID(tk.ID)
+
+	events := drain(engine.Run(context.Background(), "Start"))
+
+	// Verify the engine completed without errors.
+	var gotComplete bool
+	for _, ev := range events {
+		switch ev.(type) {
+		case TurnCompleteEvent:
+			gotComplete = true
+		case ErrorEvent:
+			t.Fatalf("unexpected error: %v", ev.(ErrorEvent).Err)
+		}
+	}
+	if !gotComplete {
+		t.Fatal("expected TurnCompleteEvent")
+	}
+
+	// Verify the injected message appears in the conversation.
+	snap := engine.store.Snapshot()
+	msgs := snap.Conversation.APIMessages()
+	var found bool
+	for _, m := range msgs {
+		for _, part := range m.Content {
+			if tp, ok := part.(model.TextPart); ok {
+				if strings.Contains(tp.Text, "Messages from teammates:") &&
+					strings.Contains(tp.Text, "Hello from another agent") {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("expected injected teammate message in conversation, but not found")
+	}
+
+	// Verify messages were drained (no pending messages left).
+	drained := taskReg.DrainPendingMessages(tk.ID)
+	if len(drained) != 0 {
+		t.Errorf("expected 0 pending messages after drain, got %d", len(drained))
 	}
 }

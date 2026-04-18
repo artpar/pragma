@@ -535,6 +535,13 @@ func (t *Tool) runTeammate(
 		// Phase 1: Execute initial prompt.
 		t.drainTeammateEvents(childCtx, engine.Run(childCtx, in.Prompt), taskID, subject, progressCh, &totalUsage, &totalToolCount)
 
+		// Mark idle after initial prompt completes; persist cumulative tokens.
+		t.updateTask(taskID, func(tt *task.Task) {
+			tt.IsIdle = true
+			tt.IdleSince = time.Now()
+			tt.TokensUsed = totalUsage.InputTokens + totalUsage.OutputTokens
+		})
+
 		// Phase 2: Wait for messages or shutdown.
 	waitLoop:
 		for {
@@ -554,10 +561,21 @@ func (t *Tool) runTeammate(
 				}
 				msgs := t.Tasks.DrainPendingMessages(taskID)
 				if len(msgs) > 0 {
+					// Mark active while processing.
+					t.updateTask(taskID, func(tt *task.Task) {
+						tt.IsIdle = false
+						tt.IdleSince = time.Time{}
+					})
 					joined := strings.Join(msgs, "\n")
 					emitAgentProgress(progressCh, taskID, subject, "running", totalToolCount,
 						int(totalUsage.InputTokens+totalUsage.OutputTokens), "processing message", false)
 					t.drainTeammateEvents(childCtx, engine.Run(childCtx, joined), taskID, subject, progressCh, &totalUsage, &totalToolCount)
+					// Mark idle again after processing; persist cumulative tokens.
+					t.updateTask(taskID, func(tt *task.Task) {
+						tt.IsIdle = true
+						tt.IdleSince = time.Now()
+						tt.TokensUsed = totalUsage.InputTokens + totalUsage.OutputTokens
+					})
 				}
 			}
 		}

@@ -33,6 +33,8 @@ type Task struct {
 	AgentName         string             `json:"agent_name,omitempty"` // for name-based lookup by SendMessage
 	Notify            chan struct{}       `json:"-"`                    // signaled when PendingMessages updated; buffered(1)
 	ShutdownRequested bool               `json:"-"`                    // set by Shutdown(); teammate loop checks this
+	IsIdle            bool               `json:"-"`                    // true when teammate is waiting for messages
+	IdleSince         time.Time          `json:"-"`                    // when teammate became idle (zero = not idle)
 }
 
 // snapshot returns a deep copy of the Task safe for reading outside the registry lock.

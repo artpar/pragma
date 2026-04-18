@@ -18,21 +18,23 @@ import (
 //
 //	⏺ model · provider · 5m · $0.0042 · 1.5k in / 2.3k out / 500 cache (12% ctx)    ready
 type toolbar struct {
-	modelName    string
-	provider     string
-	workspace    string
-	totalCost    float64
-	status       string
-	inputTokens  int
-	outputTokens int
-	cacheTokens  int       // combined cache creation + cache read
-	contextSize  int
-	startTime    time.Time // session start for elapsed display
+	modelName      string
+	provider       string
+	workspace      string
+	totalCost      float64
+	status         string
+	inputTokens    int
+	outputTokens   int
+	cacheTokens    int // combined cache creation + cache read
+	contextSize    int
+	startTime      time.Time // session start for elapsed display
+	teammateCount  int       // number of running teammates
 }
 
 func newToolbar(modelName, provider, workspace string) toolbar {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: toolbar{\n\tmodelName:\tmodelName,\n\tprovider:\tprovider,\n\tworkspace:\tfilepath.Bas...")
 	return toolbar{
 		modelName: modelName,
 		provider:  provider,
@@ -47,10 +49,8 @@ func (t toolbar) View(width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	// Left section: model · provider · duration · cost · tokens
 	left := fmt.Sprintf(" %s %s · %s", render.BlackCircle, t.modelName, t.provider)
 
-	// Workspace only at wide terminals (between provider and duration)
 	if width >= 100 && t.workspace != "" {
 		observe.GlobalTrace("if: width >= 100 && t.workspace != \"\"")
 		left += " · " + t.workspace
@@ -61,7 +61,7 @@ func (t toolbar) View(width int) string {
 
 	if width >= 60 && t.contextSize > 0 {
 		observe.GlobalTrace("if: width >= 60 && t.contextSize > 0")
-		// Context pct: (input + cache) / contextSize — excludes output tokens (TS #28167)
+
 		contextTokens := t.inputTokens + t.cacheTokens
 		pct := float64(contextTokens) / float64(t.contextSize) * 100
 
@@ -69,6 +69,7 @@ func (t toolbar) View(width int) string {
 			formatTokens(t.inputTokens),
 			formatTokens(t.outputTokens))
 		if t.cacheTokens > 0 {
+			observe.GlobalTrace("if: t.cacheTokens > 0")
 			tokenStr += " / " + formatTokens(t.cacheTokens) + " cache"
 		}
 		tokenStr += fmt.Sprintf(" (%d%% ctx)", int(pct))
@@ -77,11 +78,17 @@ func (t toolbar) View(width int) string {
 		left += tokenStyled
 	}
 
+	if t.teammateCount > 0 {
+		tmStyle := lipgloss.NewStyle().Faint(true)
+		left += tmStyle.Render(fmt.Sprintf(" · %d teammates", t.teammateCount))
+	}
+
 	right := fmt.Sprintf(" %s ", t.status)
 	styledRight := statusActiveStyle.Render(right)
 
 	gap := max(width-lipgloss.Width(left)-len(right), 0)
 	bar := left + strings.Repeat(" ", gap) + styledRight
+	observe.GlobalTrace("return: statusBarStyle.Render(bar)")
 
 	return statusBarStyle.Render(bar)
 }
@@ -129,19 +136,23 @@ func (t *toolbar) UpdateTokens(input, output, cache, contextSize int) {
 
 // CostSummary returns a one-line session summary for display on exit.
 func (t toolbar) CostSummary() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	summary := fmt.Sprintf("Session cost: %s · Duration: %s · Tokens: %s in / %s out",
 		formatCost(t.totalCost),
 		formatDuration(time.Since(t.startTime)),
 		formatTokens(t.inputTokens),
 		formatTokens(t.outputTokens))
 	if t.cacheTokens > 0 {
+		observe.GlobalTrace("if: t.cacheTokens > 0")
 		summary += " / " + formatTokens(t.cacheTokens) + " cache"
 	}
+	observe.GlobalTrace("return: summary")
 	return summary
 }
 
 // formatTokens formats a token count for display.
-// Matches TS formatTokens = formatNumber(count).replace('.0', '').toLowerCase():
+// Matches TS formatTokens = formatNumber(count).replace('.0', ”).toLowerCase():
 // 900 → "900", 1000 → "1k", 1500 → "1.5k", 1000000 → "1m"
 func formatTokens(n int) string {
 	observe.GlobalTrace("enter")
@@ -149,22 +160,30 @@ func formatTokens(n int) string {
 	if n >= 1_000_000 {
 		observe.GlobalTrace("if: n >= 1_000_000")
 		s := fmt.Sprintf("%.1fm", float64(n)/1_000_000)
+		observe.GlobalTrace("return: stripTrailingZeroDecimal(s)")
 		return stripTrailingZeroDecimal(s)
 	}
 	if n >= 1_000 {
 		observe.GlobalTrace("if: n >= 1_000")
 		s := fmt.Sprintf("%.1fk", float64(n)/1_000)
+		observe.GlobalTrace("return: stripTrailingZeroDecimal(s)")
 		return stripTrailingZeroDecimal(s)
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"%d\", n)")
 	return fmt.Sprintf("%d", n)
 }
 
 // stripTrailingZeroDecimal removes ".0" before the suffix letter.
 // "1.0k" → "1k", "1.5k" → "1.5k", "1.0m" → "1m"
 func stripTrailingZeroDecimal(s string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(s) >= 4 && s[len(s)-3:len(s)-1] == ".0" {
+		observe.GlobalTrace("if: len(s) >= 4 && s[len(s)-3:len(s)-1] == \".0\"")
+		observe.GlobalTrace("return: s[:len(s)-3] + s[len(s)-1:]")
 		return s[:len(s)-3] + s[len(s)-1:]
 	}
+	observe.GlobalTrace("return: s")
 	return s
 }
 
@@ -172,8 +191,12 @@ func stripTrailingZeroDecimal(s string) string {
 // Matches TS utils/format.ts (default options):
 // <60s → "Ns", <60m → "Nm Ns", <24h → "Nh Nm Ns", >=24h → "Nd Nh Nm"
 func formatDuration(d time.Duration) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	totalSec := int(d.Seconds())
 	if totalSec < 60 {
+		observe.GlobalTrace("if: totalSec < 60")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%ds\", totalSec)")
 		return fmt.Sprintf("%ds", totalSec)
 	}
 
@@ -183,23 +206,35 @@ func formatDuration(d time.Duration) string {
 	seconds := totalSec % 60
 
 	if days > 0 {
+		observe.GlobalTrace("if: days > 0")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%dd %dh %dm\", days, hours, minutes)")
 		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
 	}
 	if hours > 0 {
+		observe.GlobalTrace("if: hours > 0")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%dh %dm %ds\", hours, minutes, seconds)")
 		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
 	}
 	if seconds > 0 {
+		observe.GlobalTrace("if: seconds > 0")
+		observe.GlobalTrace("return: fmt.Sprintf(\"%dm %ds\", minutes, seconds)")
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"%dm\", minutes)")
 	return fmt.Sprintf("%dm", minutes)
 }
 
 // formatCost formats a USD cost for display.
 // Matches TS cost-tracker.ts: ≤$0.50 → 4 decimals, >$0.50 → 2 decimals.
 func formatCost(cost float64) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if cost > 0.5 {
+		observe.GlobalTrace("if: cost > 0.5")
 		rounded := math.Round(cost*100) / 100
+		observe.GlobalTrace("return: fmt.Sprintf(\"$%.2f\", rounded)")
 		return fmt.Sprintf("$%.2f", rounded)
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"$%.4f\", cost)")
 	return fmt.Sprintf("$%.4f", cost)
 }

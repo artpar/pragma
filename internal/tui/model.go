@@ -18,6 +18,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/slash"
+	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tui/render"
 )
 
@@ -34,16 +35,17 @@ type Config struct {
 	SlashDeps    slash.Deps
 	HookMgr      *hook.Manager         // nil if no hooks configured
 	TokenMonitor *observe.TokenMonitor // nil if no token monitoring
-	Metrics      *observe.Metrics     // always non-nil (created in deps.go)
+	Metrics      *observe.Metrics      // always non-nil (created in deps.go)
 	Workspace    string                // full workspace directory path (run.go passes d.Cwd)
 	Version      string                // build version (from buildinfo.Version)
+	TaskReg      *task.Registry        // task registry for teammate visibility
 }
 
 // segmentKind distinguishes text (pre-rendered) from thinking/tool (rendered on demand).
 type segmentKind int
 
 const (
-	segText      segmentKind = iota
+	segText segmentKind = iota
 	segThinking
 	segTool      // raw tool result data, rendered on demand based on verbose
 	segLifecycle // lifecycle progress, updated in-place based on events
@@ -115,16 +117,23 @@ type agentSegData struct {
 // Returns "" for non-collapsible tools that break groups.
 // Categories: "read" (Read), "search" (Grep, Glob), "silent" (ToolSearch — absorbed, no count).
 func isCollapsible(name string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch name {
 	case "Read":
+		observe.GlobalTrace("case: \"Read\"")
 		return "read"
 	case "Grep":
+		observe.GlobalTrace("case: \"Grep\"")
 		return "search"
 	case "Glob":
+		observe.GlobalTrace("case: \"Glob\"")
 		return "search"
 	case "ToolSearch":
+		observe.GlobalTrace("case: \"ToolSearch\"")
 		return "silent"
 	default:
+		observe.GlobalTrace("default")
 		return ""
 	}
 }
@@ -164,13 +173,13 @@ type errorSegData struct {
 // thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
 	kind      segmentKind
-	content   string           // segText: pre-rendered; segThinking: raw thinking text
-	redacted  bool             // only meaningful for segThinking
-	tool      *toolSegData     // only meaningful for segTool
+	content   string            // segText: pre-rendered; segThinking: raw thinking text
+	redacted  bool              // only meaningful for segThinking
+	tool      *toolSegData      // only meaningful for segTool
 	lifecycle *lifecycleSegData // only meaningful for segLifecycle
-	agent     *agentSegData    // only meaningful for segAgent
-	group     *groupSegData    // only meaningful for segGroup (ADR-044)
-	errData   *errorSegData    // only meaningful for segError
+	agent     *agentSegData     // only meaningful for segAgent
+	group     *groupSegData     // only meaningful for segGroup (ADR-044)
+	errData   *errorSegData     // only meaningful for segError
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -188,11 +197,16 @@ type Model struct {
 	version      string // build version for welcome display
 	workspace    string // full workspace path for welcome display
 
+	// Task registry for teammate visibility
+	taskReg          *task.Registry
+	teammateEntries  []render.TeammateEntry
+
 	// Components
 	viewport viewport.Model
 	input    inputComponent
 	perm     permissionDialog
 	ask      askDialog
+	teams    teamsDialog
 	toolbar  toolbar
 	spin     spinner.Model
 
@@ -205,18 +219,18 @@ type Model struct {
 	spinnerTool   string
 
 	// Streaming state
-	outputSegs       []segment        // typed segments for viewport content
-	verbose bool             // Ctrl+O toggles verbose mode: thinking expanded + tool results full output
-	streamBuf        *strings.Builder // current streaming text (not yet finalized)
-	eventCh          <-chan query.LoopEvent
-	streaming        bool
-	parentCtx        context.Context // original parent context — never overwritten
-	ctx              context.Context
-	cancel           context.CancelFunc
-	pendingInput     string           // queued message to submit after current turn completes
-	quitPending      bool             // true after idle Ctrl+C, waiting for second to quit
-	permQueue        []PermRequestMsg // queued permission requests when dialog is already visible
-	retryAttempt     int              // generation counter for stale countdown tick detection
+	outputSegs   []segment        // typed segments for viewport content
+	verbose      bool             // Ctrl+O toggles verbose mode: thinking expanded + tool results full output
+	streamBuf    *strings.Builder // current streaming text (not yet finalized)
+	eventCh      <-chan query.LoopEvent
+	streaming    bool
+	parentCtx    context.Context // original parent context — never overwritten
+	ctx          context.Context
+	cancel       context.CancelFunc
+	pendingInput string           // queued message to submit after current turn completes
+	quitPending  bool             // true after idle Ctrl+C, waiting for second to quit
+	permQueue    []PermRequestMsg // queued permission requests when dialog is already visible
+	retryAttempt int              // generation counter for stale countdown tick detection
 
 	// Layout
 	width  int
@@ -252,6 +266,7 @@ func New(cfg Config) Model {
 		metrics:         cfg.Metrics,
 		version:         cfg.Version,
 		workspace:       cfg.Workspace,
+		taskReg:         cfg.TaskReg,
 		input:           newInputComponent(),
 		perm:            newPermissionDialog(),
 		toolbar:         newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace),
@@ -316,6 +331,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
 
+			m.refreshTeammates()
 			m.viewport.SetContent(m.viewportContent())
 			observe.GlobalTrace("return: m, cmd")
 			return m, cmd
@@ -331,8 +347,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.quitPending {
 			m.quitPending = false
 			if m.streaming {
+				observe.GlobalTrace("if: m.streaming")
 				m.toolbar.SetStatus("streaming...")
 			} else {
+				observe.GlobalTrace("else: m.streaming")
 				m.toolbar.SetStatus("ready")
 			}
 		}
@@ -340,13 +358,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case retryCountdownMsg:
 		observe.GlobalTrace("typecase: retryCountdownMsg")
-		// Discard stale ticks from cancelled retry sequences.
+
 		if msg.Attempt != m.retryAttempt {
+			observe.GlobalTrace("return: m, nil")
 			return m, nil
 		}
-		// Update the last active segError segment's countdown.
+
 		for i := len(m.outputSegs) - 1; i >= 0; i-- {
 			if m.outputSegs[i].kind == segError && m.outputSegs[i].errData != nil && m.outputSegs[i].errData.Retrying {
+				observe.GlobalTrace("if: m.outputSegs[i].kind == segError && m.outputSegs[i].errData != nil && m.outpu...")
 				m.outputSegs[i].errData.SecondsLeft = msg.SecondsLeft
 				break
 			}
@@ -355,6 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 		if msg.SecondsLeft > 0 {
+			observe.GlobalTrace("return: m, tea.Tick(time.Second, func(t time.Time) tea.Msg {\n\treturn retryCountdownMs...")
 			return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
 				return retryCountdownMsg{SecondsLeft: msg.SecondsLeft - 1, Attempt: msg.Attempt}
 			})
@@ -395,7 +416,7 @@ func (m Model) View() string {
 	var b strings.Builder
 
 	b.WriteString(m.viewport.View())
-	// \n terminates the last viewport line; sep fills the next line
+
 	b.WriteString("\n" + sep + "\n")
 
 	if m.perm.active {
@@ -411,7 +432,7 @@ func (m Model) View() string {
 	}
 
 	b.WriteString(m.input.View())
-	// \n terminates the last input line; sep fills the next line
+
 	b.WriteString("\n" + sep + "\n")
 	b.WriteString(m.toolbar.View(m.width))
 	observe.GlobalTrace("return: b.String()")
@@ -427,38 +448,46 @@ func (m Model) viewportContent() string {
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 	for _, seg := range m.outputSegs {
+		observe.GlobalTrace("range m.outputSegs")
 		switch seg.kind {
 		case segText:
+			observe.GlobalTrace("case: segText")
 			b.WriteString(seg.content)
 		case segThinking:
+			observe.GlobalTrace("case: segThinking")
 			b.WriteString(render.RenderThinking(model.ThinkingPart{
 				Text: seg.content, Redacted: seg.redacted,
 			}, m.verbose) + "\n")
 		case segTool:
+			observe.GlobalTrace("case: segTool")
 			b.WriteString(render.RenderToolOutput(
 				seg.tool.Name, seg.tool.Input, seg.tool.Content,
 				seg.tool.IsError, m.width, seg.tool.Display, m.verbose,
 			))
 			b.WriteString("\n")
 		case segLifecycle:
+			observe.GlobalTrace("case: segLifecycle")
 			if seg.lifecycle != nil {
 				rSteps := convertLifecycleSteps(seg.lifecycle.Steps)
 				b.WriteString(render.RenderLifecycleProgress(rSteps, seg.lifecycle.Completed, seg.lifecycle.Error, m.verbose, m.width))
 				b.WriteString("\n")
 			}
 		case segAgent:
+			observe.GlobalTrace("case: segAgent")
 			if seg.agent != nil {
 				entries := convertAgentEntries(seg.agent.Agents)
 				b.WriteString(render.RenderAgentProgress(entries, m.verbose, m.width))
 				b.WriteString("\n")
 			}
 		case segGroup:
+			observe.GlobalTrace("case: segGroup")
 			if seg.group != nil {
 				data := convertGroupData(seg.group)
 				b.WriteString(render.RenderToolGroup(data, m.verbose, m.width))
 				b.WriteString("\n")
 			}
 		case segError:
+			observe.GlobalTrace("case: segError")
 			if seg.errData != nil {
 				b.WriteString(render.RenderError(render.ErrorData{
 					Kind:        seg.errData.Kind,
@@ -477,6 +506,16 @@ func (m Model) viewportContent() string {
 	if m.spinnerActive {
 		observe.GlobalTrace("if: m.spinnerActive")
 		b.WriteString("\n" + m.spin.View() + " " + m.spinnerTool + "...")
+		// Render teammate spinner tree below spinner when teammates are running.
+		if len(m.teammateEntries) > 0 {
+			b.WriteString("\n")
+			b.WriteString(render.RenderTeammateTree(m.teammateEntries, m.verbose, m.width))
+		}
+	}
+	// Teams dialog overlay.
+	if m.teams.active {
+		b.WriteString("\n")
+		b.WriteString(m.teams.View(m.width))
 	}
 	observe.GlobalTrace("return: b.String()")
 	return b.String()
@@ -485,49 +524,69 @@ func (m Model) viewportContent() string {
 // appendText appends pre-rendered text to segments, merging into last text segment.
 // Returns the updated slice — caller must assign: m.outputSegs = appendText(m.outputSegs, s)
 func appendText(segs []segment, s string) []segment {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if n := len(segs); n > 0 && segs[n-1].kind == segText {
+		observe.GlobalTrace("if: n > 0 && segs[n-1].kind == segText")
 		segs[n-1].content += s
+		observe.GlobalTrace("return: segs")
 		return segs
 	}
+	observe.GlobalTrace("return: append(segs, segment{kind: segText, content: s})")
 	return append(segs, segment{kind: segText, content: s})
 }
 
 // appendThinking appends a raw thinking block to segments.
 // Returns the updated slice — caller must assign.
 func appendThinking(segs []segment, text string, redacted bool) []segment {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: append(segs, segment{kind: segThinking, content: text, redacted: redacted})")
 	return append(segs, segment{kind: segThinking, content: text, redacted: redacted})
 }
 
 // appendTool appends a raw tool result to segments for on-demand rendering.
 // Returns the updated slice — caller must assign.
 func appendTool(segs []segment, data toolSegData) []segment {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: append(segs, segment{kind: segTool, tool: &data})")
 	return append(segs, segment{kind: segTool, tool: &data})
 }
 
 // appendError appends a classified error to segments for on-demand rendering.
 // Returns the updated slice — caller must assign.
 func appendError(segs []segment, data errorSegData) []segment {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: append(segs, segment{kind: segError, errData: &data})")
 	return append(segs, segment{kind: segError, errData: &data})
 }
 
 // updateLifecycleProgress finds or creates the active segLifecycle segment
 // and updates it in-place based on the lifecycle progress event.
 func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	// Find the last segLifecycle segment, or create one.
 	var data *lifecycleSegData
 	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		if m.outputSegs[i].kind == segLifecycle && m.outputSegs[i].lifecycle != nil {
+			observe.GlobalTrace("if: m.outputSegs[i].kind == segLifecycle && m.outputSegs[i].lifecycle != nil")
 			data = m.outputSegs[i].lifecycle
 			break
 		}
 	}
 	if data == nil {
+		observe.GlobalTrace("if: data == nil")
 		data = &lifecycleSegData{}
 		m.outputSegs = append(m.outputSegs, segment{kind: segLifecycle, lifecycle: data})
 	}
 
 	switch e.Status {
 	case "step_started":
+		observe.GlobalTrace("case: \"step_started\"")
 		data.Steps = append(data.Steps, lifecycleStep{
 			Step:    e.Step,
 			Nodes:   e.Nodes,
@@ -535,18 +594,21 @@ func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {
 			Status:  "running",
 		})
 	case "node_completed":
+		observe.GlobalTrace("case: \"node_completed\"")
 		if len(data.Steps) > 0 {
 			step := &data.Steps[len(data.Steps)-1]
 			step.Results[e.Node] = lifecycleNodeResult{
 				Duration: e.Duration,
 				Error:    e.Error,
 			}
-			// Mark step completed when all nodes have results
+
 			if len(step.Results) == len(step.Nodes) {
+				observe.GlobalTrace("if: len(step.Results) == len(step.Nodes)")
 				step.Status = "completed"
 			}
 		}
 	case "transition":
+		observe.GlobalTrace("case: \"transition\"")
 		if len(data.Steps) > 0 {
 			step := &data.Steps[len(data.Steps)-1]
 			step.Transitions = append(step.Transitions, lifecycleTransition{
@@ -556,6 +618,7 @@ func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {
 			})
 		}
 	case "completed":
+		observe.GlobalTrace("case: \"completed\"")
 		data.Completed = true
 		data.Error = e.Error
 	}
@@ -564,20 +627,26 @@ func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {
 // updateAgentProgress finds or creates the active segAgent segment
 // and updates it in-place based on the agent progress event.
 func (m *Model) updateAgentProgress(e query.AgentProgressEvent) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var data *agentSegData
 	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		if m.outputSegs[i].kind == segAgent && m.outputSegs[i].agent != nil {
+			observe.GlobalTrace("if: m.outputSegs[i].kind == segAgent && m.outputSegs[i].agent != nil")
 			data = m.outputSegs[i].agent
 			break
 		}
 	}
 	if data == nil {
+		observe.GlobalTrace("if: data == nil")
 		data = &agentSegData{byID: make(map[string]int)}
 		m.outputSegs = append(m.outputSegs, segment{kind: segAgent, agent: data})
 	}
 
 	idx, ok := data.byID[e.AgentID]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
 		idx = len(data.Agents)
 		data.Agents = append(data.Agents, &agentEntry{AgentID: e.AgentID})
 		data.byID[e.AgentID] = idx
@@ -594,8 +663,11 @@ func (m *Model) updateAgentProgress(e query.AgentProgressEvent) {
 
 // convertAgentEntries converts internal agentEntry slice to render types.
 func convertAgentEntries(agents []*agentEntry) []render.AgentProgressEntry {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	result := make([]render.AgentProgressEntry, len(agents))
 	for i, a := range agents {
+		observe.GlobalTrace("range agents")
 		result[i] = render.AgentProgressEntry{
 			AgentID:     a.AgentID,
 			Description: a.Description,
@@ -607,15 +679,20 @@ func convertAgentEntries(agents []*agentEntry) []render.AgentProgressEntry {
 			Error:       a.Error,
 		}
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }
 
 // closeActiveGroup marks the last active segGroup as no longer accumulating.
 // Called before any group-breaking event (text, thinking, non-collapsible tool, turn complete, error).
 func (m *Model) closeActiveGroup() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		seg := &m.outputSegs[i]
 		if seg.kind == segGroup && seg.group != nil && seg.group.Active {
+			observe.GlobalTrace("if: seg.kind == segGroup && seg.group != nil && seg.group.Active")
 			seg.group.Active = false
 			return
 		}
@@ -624,14 +701,19 @@ func (m *Model) closeActiveGroup() {
 
 // addToGroup finds or creates the active segGroup and appends a new entry for a collapsible tool call.
 func (m *Model) addToGroup(callHeader string, call model.ToolCallPart, category string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var g *groupSegData
 	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		if m.outputSegs[i].kind == segGroup && m.outputSegs[i].group != nil && m.outputSegs[i].group.Active {
+			observe.GlobalTrace("if: m.outputSegs[i].kind == segGroup && m.outputSegs[i].group != nil && m.outputS...")
 			g = m.outputSegs[i].group
 			break
 		}
 	}
 	if g == nil {
+		observe.GlobalTrace("if: g == nil")
 		g = &groupSegData{ReadPaths: make(map[string]bool), Active: true}
 		m.outputSegs = append(m.outputSegs, segment{kind: segGroup, group: g})
 	}
@@ -644,12 +726,18 @@ func (m *Model) addToGroup(callHeader string, call model.ToolCallPart, category 
 
 // fillGroupResult fills the result data into the last pending entry of the active group.
 func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResultPart, display string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for i := len(m.outputSegs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		seg := &m.outputSegs[i]
 		if seg.kind == segGroup && seg.group != nil && seg.group.Active {
+			observe.GlobalTrace("if: seg.kind == segGroup && seg.group != nil && seg.group.Active")
 			g := seg.group
 			for j := len(g.Entries) - 1; j >= 0; j-- {
+				observe.GlobalTrace("for: j >= 0")
 				if !g.Entries[j].HasResult {
+					observe.GlobalTrace("if: !g.Entries[j].HasResult")
 					g.Entries[j].Tool.Content = result.Content
 					g.Entries[j].Tool.IsError = result.IsError
 					g.Entries[j].Tool.Display = display
@@ -665,8 +753,11 @@ func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResult
 
 // updateGroupCounts increments the appropriate counter on a group based on the entry's category.
 func updateGroupCounts(g *groupSegData, entry *groupEntry, input json.RawMessage) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch entry.Category {
 	case "search":
+		observe.GlobalTrace("case: \"search\"")
 		g.SearchCount++
 		var p struct {
 			Pattern string `json:"pattern"`
@@ -676,6 +767,7 @@ func updateGroupCounts(g *groupSegData, entry *groupEntry, input json.RawMessage
 			g.LatestHint = `"` + p.Pattern + `"`
 		}
 	case "read":
+		observe.GlobalTrace("case: \"read\"")
 		var p struct {
 			FilePath string `json:"file_path"`
 		}
@@ -684,14 +776,17 @@ func updateGroupCounts(g *groupSegData, entry *groupEntry, input json.RawMessage
 			g.ReadPaths[p.FilePath] = true
 			g.LatestHint = p.FilePath
 		}
-	// "silent": no count, no hint
+
 	}
 }
 
 // convertGroupData converts internal groupSegData to render package types.
 func convertGroupData(g *groupSegData) render.GroupData {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	entries := make([]render.GroupEntry, len(g.Entries))
 	for i, e := range g.Entries {
+		observe.GlobalTrace("range g.Entries")
 		entries[i] = render.GroupEntry{
 			CallHeader: e.CallHeader,
 			Name:       e.Tool.Name,
@@ -702,6 +797,7 @@ func convertGroupData(g *groupSegData) render.GroupData {
 			HasResult:  e.HasResult,
 		}
 	}
+	observe.GlobalTrace("return: render.GroupData{\n\tEntries:\tentries,\n\tSearchCount:\tg.SearchCount,\n\tReadCount:...")
 	return render.GroupData{
 		Entries:     entries,
 		SearchCount: g.SearchCount,
@@ -713,45 +809,62 @@ func convertGroupData(g *groupSegData) render.GroupData {
 
 // segByteSize returns the estimated byte size of a single segment.
 func segByteSize(seg segment) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch {
 	case seg.kind == segTool && seg.tool != nil:
+		observe.GlobalTrace("case: seg.kind == segTool && seg.tool != nil")
 		return len(seg.tool.Content) + len(seg.tool.Input) + len(seg.tool.Display)
 	case seg.kind == segLifecycle && seg.lifecycle != nil:
+		observe.GlobalTrace("case: seg.kind == segLifecycle && seg.lifecycle != nil")
 		return len(seg.lifecycle.Steps) * 50
 	case seg.kind == segAgent && seg.agent != nil:
+		observe.GlobalTrace("case: seg.kind == segAgent && seg.agent != nil")
 		return len(seg.agent.Agents) * 80
 	case seg.kind == segGroup && seg.group != nil:
+		observe.GlobalTrace("case: seg.kind == segGroup && seg.group != nil")
 		size := 0
 		for _, e := range seg.group.Entries {
 			size += len(e.CallHeader) + len(e.Tool.Content) + len(e.Tool.Input)
 		}
 		return size
 	case seg.kind == segError && seg.errData != nil:
+		observe.GlobalTrace("case: seg.kind == segError && seg.errData != nil")
 		return len(seg.errData.ErrorMsg)
 	default:
+		observe.GlobalTrace("default")
 		return len(seg.content)
 	}
 }
 
 // outputLen returns the total content length across all segments.
 func outputLen(segs []segment) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	n := 0
 	for _, seg := range segs {
+		observe.GlobalTrace("range segs")
 		n += segByteSize(seg)
 	}
+	observe.GlobalTrace("return: n")
 	return n
 }
 
 // convertLifecycleSteps converts internal lifecycleStep types to render package types.
 func convertLifecycleSteps(steps []lifecycleStep) []render.LifecycleStep {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := make([]render.LifecycleStep, len(steps))
 	for i, s := range steps {
+		observe.GlobalTrace("range steps")
 		results := make(map[string]render.LifecycleNodeResult, len(s.Results))
 		for k, v := range s.Results {
+			observe.GlobalTrace("range s.Results")
 			results[k] = render.LifecycleNodeResult{Duration: v.Duration, Error: v.Error}
 		}
 		transitions := make([]render.LifecycleTransition, len(s.Transitions))
 		for j, t := range s.Transitions {
+			observe.GlobalTrace("range s.Transitions")
 			transitions[j] = render.LifecycleTransition{From: t.From, To: t.To, RouteKey: t.RouteKey}
 		}
 		out[i] = render.LifecycleStep{
@@ -762,6 +875,7 @@ func convertLifecycleSteps(steps []lifecycleStep) []render.LifecycleStep {
 			Status:      s.Status,
 		}
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -769,11 +883,16 @@ func convertLifecycleSteps(steps []lifecycleStep) []render.LifecycleStep {
 // Thinking parts become thinking segments; everything else becomes text.
 // Consecutive collapsible tools (Read, Grep, Glob) are grouped into segGroup segments.
 func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownRenderer) []segment {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if msg.Role == model.RoleUser {
+		observe.GlobalTrace("if: msg.Role == model.RoleUser")
 		rendered := render.RenderMessage(msg, md)
 		if rendered != "" {
+			observe.GlobalTrace("if: rendered != \"\"")
 			segs = appendText(segs, rendered)
 		}
+		observe.GlobalTrace("return: segs")
 		return segs
 	}
 	// Assistant messages: split thinking/tool parts into segments for on-demand rendering.
@@ -790,15 +909,19 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 	}
 
 	for _, part := range msg.Content {
+		observe.GlobalTrace("range msg.Content")
 		switch p := part.(type) {
 		case model.ThinkingPart:
+			observe.GlobalTrace("typecase: model.ThinkingPart")
 			flushGroup()
 			segs = appendThinking(segs, p.Text, p.Redacted)
 		case model.ToolCallPart:
+			observe.GlobalTrace("typecase: model.ToolCallPart")
 			cat := isCollapsible(p.Name)
 			if cat != "" {
-				// Collapsible — start or extend group
+
 				if activeGroup == nil {
+					observe.GlobalTrace("if: activeGroup == nil")
 					activeGroup = &groupSegData{ReadPaths: make(map[string]bool)}
 				}
 				activeGroup.Entries = append(activeGroup.Entries, groupEntry{
@@ -807,15 +930,16 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 					Tool:       toolSegData{Name: p.Name, Input: p.Input},
 				})
 			} else {
-				// Non-collapsible — flush group, render normally
+
 				flushGroup()
 				segs = appendText(segs, render.RenderToolCall(p, 80)+"\n")
 			}
 			call := p
 			lastCall = &call
 		case model.ToolResultPart:
+			observe.GlobalTrace("typecase: model.ToolResultPart")
 			if lastCall != nil && activeGroup != nil && isCollapsible(lastCall.Name) != "" {
-				// Fill result into group's last entry
+
 				entry := &activeGroup.Entries[len(activeGroup.Entries)-1]
 				entry.Tool.Content = p.Content
 				entry.Tool.IsError = p.IsError
@@ -829,7 +953,7 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 					Input:   lastCall.Input,
 					Content: p.Content,
 					IsError: p.IsError,
-					Display: "", // Display is TUI-only, not persisted
+					Display: "",
 				})
 				lastCall = nil
 			} else {
@@ -837,6 +961,7 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 				segs = appendText(segs, render.RenderToolResultGeneric(p, 80)+"\n")
 			}
 		default:
+			observe.GlobalTrace("typedefault")
 			flushGroup()
 			rendered := render.RenderContentPart(part, md, 80)
 			if rendered != "" {
@@ -846,9 +971,9 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 	}
 	flushGroup()
 	segs = appendText(segs, "\n")
+	observe.GlobalTrace("return: segs")
 	return segs
 }
-
 
 // handleResize adjusts all components to the new terminal size.
 func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -859,7 +984,7 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 	inputHeight := 3
 	toolbarHeight := 1
-	separatorHeight := 2 // two ─ separator lines (above input, above toolbar)
+	separatorHeight := 2
 	headerHeight := inputHeight + toolbarHeight + separatorHeight
 
 	vpHeight := max(m.height-headerHeight, 1)
@@ -871,7 +996,6 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		m.viewport = viewport.New(m.width, vpHeight)
 		m.ready = true
 
-		// Welcome is always the first segment (matches TS LogoHeader pattern — ADR-044 note)
 		welcomeText := render.RenderWelcome(
 			m.version, m.toolbar.modelName, m.toolbar.provider,
 			m.workspace, m.width,
@@ -881,10 +1005,11 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		snap := m.store.Snapshot()
 		if len(snap.Conversation.Messages) > 0 {
 			observe.GlobalTrace("if: len(snap.Conversation.Messages) > 0")
-			// Show resume indicator matching TS system message dim style
+
 			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(
 				render.TeardropAsterisk+" Resuming conversation")+"\n\n")
 			for _, msg := range snap.Conversation.Messages {
+				observe.GlobalTrace("range snap.Conversation.Messages")
 				m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 			}
 		}
@@ -899,4 +1024,15 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.input.SetWidth(m.width)
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
+}
+
+// refreshTeammates polls the task registry for running teammates and updates
+// the cached entries + toolbar count. Called on every spinner tick.
+func (m *Model) refreshTeammates() {
+	if m.taskReg == nil {
+		return
+	}
+	tasks := m.taskReg.ListRunningTeammates()
+	m.teammateEntries = buildTeammateEntries(tasks)
+	m.toolbar.teammateCount = len(m.teammateEntries)
 }

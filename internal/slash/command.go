@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/task"
 )
 
 // ErrUnknownCommand is returned when no command matches the given name.
@@ -23,6 +24,7 @@ type Result struct {
 	ClearConversation bool   // true for /clear — TUI should reset display
 	Quit              bool   // true for /exit — TUI should exit
 	InjectPrompt      string // if set, TUI feeds this as a user message to the engine
+	ShowTeamsDialog   bool   // true for /teams — TUI opens interactive teams dialog
 }
 
 // Handler is the function signature for a slash command handler.
@@ -38,6 +40,7 @@ type Deps struct {
 	ModelName   string
 	Provider    string
 	Cwd         string // working directory for shell execution
+	TaskReg     *task.Registry
 	// Commands is set internally by Registry.Execute — not for external callers.
 	Commands []Command
 }

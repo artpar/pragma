@@ -263,6 +263,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		ModelName:   d.Cfg.Model,
 		Provider:    d.Cfg.Provider,
 		Cwd:         d.Cwd,
+		TaskReg:     d.TaskReg,
 	}
 
 	m := tui.New(tui.Config{
@@ -280,6 +281,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		Metrics:      d.Metrics,
 		Workspace:    d.Cwd,
 		Version:      buildinfo.Version,
+		TaskReg:      d.TaskReg,
 	})
 
 	program := tea.NewProgram(m, tea.WithAltScreen())

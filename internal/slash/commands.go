@@ -108,6 +108,13 @@ func registerBuiltins(r *Registry) {
 		Type:        TypePrompt,
 		CLIUse:      "init",
 	})
+	r.Register(Command{
+		Name:        "teams",
+		Aliases:     []string{"teammates"},
+		Description: "Manage active teammates",
+		Handle:      handleTeams,
+		Type:        TypeLocal,
+	})
 }
 
 func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) {
