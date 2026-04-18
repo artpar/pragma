@@ -18,9 +18,10 @@ import (
 )
 
 type lifecycleInput struct {
-	Structure string `json:"structure" desc:"Natural language description of the execution structure"`
-	Prompt    string `json:"prompt" desc:"The task to execute within the lifecycle graph"`
-	System    string `json:"system,omitempty" desc:"Optional system prompt override"`
+	Structure   string `json:"structure" desc:"Natural language description of the execution structure"`
+	Prompt      string `json:"prompt" desc:"The task to execute within the lifecycle graph"`
+	Description string `json:"description,omitempty" desc:"Alias for prompt"`
+	System      string `json:"system,omitempty" desc:"Optional system prompt override"`
 }
 
 var inputSchema = json.RawMessage(`{
@@ -108,10 +109,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
+	if in.Prompt == "" && in.Description != "" {
+		in.Prompt = in.Description
+	}
 	if in.Prompt == "" {
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.Prompt == \"\"")
-		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
-		return tool.InvokeResult{}, fmt.Errorf("prompt is required")
+		return tool.InvokeResult{}, fmt.Errorf("prompt is required (hint: you sent 'description' — use 'prompt' instead)")
 	}
 	if in.Structure == "" {
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.Structure == \"\"")

@@ -297,7 +297,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		TaskReg:      d.TaskReg,
 	})
 
-	program := tea.NewProgram(m, tea.WithAltScreen())
+	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	prompter.SetProgram(program)
 	asker.SetProgram(program)
 

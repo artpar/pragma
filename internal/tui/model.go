@@ -301,6 +301,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("typecase: tea.KeyMsg")
 		return m.handleKey(msg)
 
+	case tea.MouseMsg:
+		observe.GlobalTrace("typecase: tea.MouseMsg")
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
+
 	case InputSubmittedMsg:
 		observe.GlobalTrace("typecase: InputSubmittedMsg")
 		return m.handleInputSubmitted(msg)

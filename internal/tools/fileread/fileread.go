@@ -117,7 +117,7 @@ Usage:
 - The file_path parameter must be an absolute path, not a relative path
 - By default, it reads up to 2000 lines starting from the beginning of the file
 - When you already know which part of the file you need, only read that part. This can be important for larger files.
-- Results are returned using cat -n format, with line numbers starting at 1
+- Results are returned with line numbers starting at 1, formatted as: line_number→content (the → arrow separates the line number from the actual file content)
 - This tool allows gogent to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as gogent is a multimodal LLM.
 - This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
@@ -322,13 +322,13 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 	selectedLines := lines[startLine-1 : endLine]
 	numLines := len(selectedLines)
 
-	// Add line numbers (cat -n format)
+	// Add line numbers (number→content format)
 	var sb strings.Builder
 	maxLineNumWidth := len(fmt.Sprintf("%d", endLine))
 	for i, line := range selectedLines {
 		observe.GlobalTrace("range selectedLines")
 		lineNum := startLine + i
-		sb.WriteString(fmt.Sprintf("%*d\t%s\n", maxLineNumWidth, lineNum, line))
+		sb.WriteString(fmt.Sprintf("%*d→%s\n", maxLineNumWidth, lineNum, line))
 	}
 
 	result := sb.String()

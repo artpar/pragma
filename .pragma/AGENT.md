@@ -38,3 +38,13 @@ Go port of Pragma. Provider-agnostic: works with Anthropic, Google Gemini, OpenA
 - No mocks — tests use real implementations (replay provider for recorded responses)
 - No stubs or TODO placeholders — every function does real work or doesn't exist
 - No file > 500 lines, no package > 2000 lines (excluding tests)
+
+## Auto-instrumentation (DO NOT manually add or modify)
+
+All `observe.GlobalTrace(...)` and `observe.TraceCtx(...)` calls are **auto-generated** by `cmd/pragma-instrument/`. They are injected by an AST rewriter at every branch point. You must NEVER:
+- Add `observe.GlobalTrace` or `observe.TraceCtx` calls manually
+- Modify existing trace calls
+- Copy the trace call pattern into new or edited code
+- Treat these calls as "code style" to follow
+
+If a function you edit already has trace calls, leave them as-is. New code you write should NOT include them — the instrumenter will add them on the next build.

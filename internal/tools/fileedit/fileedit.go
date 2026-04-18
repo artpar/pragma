@@ -72,7 +72,7 @@ const editDescription = `Performs exact string replacements in files.
 
 Usage:
 - You must use your Read tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
+- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the → arrow. The line number prefix format is: spaces + line number + →. Everything after the → is the actual file content to match. Never include the line number or → in old_string or new_string.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
 - The edit will FAIL if ` + "`old_string`" + ` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use ` + "`replace_all`" + ` to change every instance of ` + "`old_string`" + `.
@@ -194,8 +194,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if count == 0 {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count == 0")
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.\\nString...")
-		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.\nString: %s", in.OldString)
+		// Diagnose the mismatch: check if tab/space normalization would match.
+		hint := diagnoseWhitespaceMismatch(content, in.OldString)
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file...\")")
+		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s\nString: %s", hint, in.OldString)
 	}
 
 	if count > 1 && !in.ReplaceAll {
@@ -265,4 +267,32 @@ func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
 	}
 	observe.GlobalTrace("return: \"\", fmt.Errorf(\"file does not exist: %s. Make sure the path is correct.\", in....")
 	return "", fmt.Errorf("file does not exist: %s. Make sure the path is correct.", in.FilePath)
+}
+
+// diagnoseWhitespaceMismatch checks whether a tab↔space conversion would
+// produce a match and returns a diagnostic hint for the error message.
+// Returns empty string when no whitespace mismatch is detected.
+func diagnoseWhitespaceMismatch(content, oldString string) string {
+	hasTabs := strings.Contains(oldString, "\t")
+	hasLeadingSpaces := false
+	for _, line := range strings.Split(oldString, "\n") {
+		if len(line) > 0 && line[0] == ' ' {
+			hasLeadingSpaces = true
+			break
+		}
+	}
+	if !hasTabs && !hasLeadingSpaces {
+		return ""
+	}
+	// Try normalizing: tabs→spaces (common tab width 4)
+	tabToSpaces := strings.ReplaceAll(oldString, "\t", "    ")
+	if strings.Contains(content, tabToSpaces) {
+		return "\nHint: the file uses spaces for indentation but old_string contains tabs. Replace tabs with spaces and retry."
+	}
+	// Try normalizing: spaces→tabs
+	spacesToTab := strings.ReplaceAll(oldString, "    ", "\t")
+	if strings.Contains(content, spacesToTab) {
+		return "\nHint: the file uses tabs for indentation but old_string contains spaces. Replace leading spaces with tabs and retry."
+	}
+	return ""
 }

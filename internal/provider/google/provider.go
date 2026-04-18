@@ -215,13 +215,11 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 				observe.TraceCtx(ctx, "google", "Provider.Stream", "range resp.Candidates")
 				if cand.Content == nil {
 					observe.TraceCtx(ctx, "google", "Provider.Stream", "if: cand.Content == nil")
+					reason := ""
+					if cand.FinishReason != "" {
+						reason = string(cand.FinishReason)
+					}
 					if p.bus != nil {
-						observe.TraceCtx(ctx, "google", "Provider.Stream", "if: p.bus != nil")
-						reason := ""
-						if cand.FinishReason != "" {
-							observe.TraceCtx(ctx, "google", "Provider.Stream", "if: cand.FinishReason != \"\"")
-							reason = string(cand.FinishReason)
-						}
 						p.bus.Emit(observe.ErrorOccurred{
 							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 							Severity:     "warn",
@@ -229,6 +227,12 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							ErrorType:    "nil_candidate_content",
 							ErrorMessage: "candidate has nil Content, finish_reason=" + reason,
 						})
+					}
+					if reason == "MALFORMED_FUNCTION_CALL" {
+						ch <- provider.StreamChunk{
+							Error: fmt.Errorf("%w: MALFORMED_FUNCTION_CALL (retryable)", provider.ErrServerError),
+						}
+						return
 					}
 					continue
 				}

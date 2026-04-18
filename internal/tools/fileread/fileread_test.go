@@ -29,10 +29,10 @@ func TestFileReadTool_BasicRead(t *testing.T) {
 	}
 
 	// Should have line numbers
-	if !strings.Contains(result.Content,"1\tline one") {
+	if !strings.Contains(result.Content, "1→line one") {
 		t.Errorf("expected line-numbered content, got: %s", result.Content)
 	}
-	if !strings.Contains(result.Content,"3\tline three") {
+	if !strings.Contains(result.Content, "3→line three") {
 		t.Errorf("expected line 3, got: %s", result.Content)
 	}
 }
