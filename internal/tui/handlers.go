@@ -271,7 +271,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		if m.tokenMonitor != nil {
 			budget = m.tokenMonitor.Budget()
 		}
-		m.toolbar.UpdateTokens(snap.TokenUsage.InputTokens, snap.TokenUsage.OutputTokens, cache, budget)
+		m.toolbar.UpdateTokens(snap.TokenUsage.InputTokens, snap.TokenUsage.OutputTokens, cache, budget, snap.LatestContextFill)
 		finished, pendingCmd := m.finishTurn()
 		return finished, tea.Batch(saveSessionCmd(m.sessionSave), pendingCmd)
 

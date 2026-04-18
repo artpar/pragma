@@ -39,6 +39,12 @@ type TokenCounter interface {
 	CountTokens(ctx context.Context, params RequestParams) (int, error)
 }
 
+// ModelLister is an optional interface providers can implement to expose available models.
+// Used by /model slash command for listing and validation.
+type ModelLister interface {
+	ListModels() []string
+}
+
 // RequestParams carries all data needed for an LLM request, in internal types.
 type RequestParams struct {
 	Model       string             `json:"model"`

@@ -70,6 +70,11 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 	return model.Pricing{}, false
 }
 
+// ListModels returns sorted IDs of all known Groq models.
+func (p *Provider) ListModels() []string {
+	return ListModels()
+}
+
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

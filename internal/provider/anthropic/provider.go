@@ -121,6 +121,11 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 	return model.Pricing{}, false
 }
 
+// ListModels returns sorted IDs of all known Anthropic models.
+func (p *Provider) ListModels() []string {
+	return ListModels()
+}
+
 // ContextWindow returns the context window size in tokens for the given model.
 // Parses [Xm] suffix for extended context variants (GitHub issue #41984, #39467).
 // E.g., "claude-sonnet-4-20250514[1m]" returns 1,000,000.

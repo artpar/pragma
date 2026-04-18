@@ -77,6 +77,16 @@ var registry = map[string]ModelInfo{
 	},
 }
 
+// ListModels returns the sorted IDs of all known Groq models.
+func ListModels() []string {
+	ids := make([]string, 0, len(registry))
+	for id := range registry {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 // LookupModel finds a model by exact ID or prefix match.
 // Prefix match is sorted alphabetically for determinism.
 func LookupModel(modelID string) (ModelInfo, bool) {

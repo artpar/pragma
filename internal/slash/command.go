@@ -43,6 +43,11 @@ type Deps struct {
 	TaskReg     *task.Registry
 	// Commands is set internally by Registry.Execute — not for external callers.
 	Commands []Command
+
+	// Model switching support — nil-safe (graceful degradation when unavailable).
+	ModelLister       func() []string                  // returns available model names for current provider
+	ContextWindowFunc func(modelID string) (int, bool) // validates model + returns context window
+	OnModelChanged    func(modelID string)             // callback: update budget + compaction on model switch
 }
 
 // CommandType distinguishes how a command is executed.

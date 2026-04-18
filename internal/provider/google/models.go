@@ -19,10 +19,11 @@ type ModelInfo struct {
 	SupportsThinking bool
 }
 
-// Source: https://ai.google.dev/gemini-api/docs/pricing.md.txt (2026-04-12)
-// Source: https://ai.google.dev/gemini-api/docs/models (2026-04-12)
-// Source: https://ai.google.dev/gemini-api/docs/gemini-3 (2026-04-12)
+// Source: https://ai.google.dev/gemini-api/docs/pricing (2026-04-18)
+// Source: https://ai.google.dev/gemini-api/docs/models (2026-04-18)
 var registry = map[string]ModelInfo{
+
+	// --- Gemini 3 series ---
 
 	"gemini-3.1-pro-preview": {
 		ID:               "gemini-3.1-pro-preview",
@@ -46,11 +47,13 @@ var registry = map[string]ModelInfo{
 		ID:               "gemini-3.1-flash-lite-preview",
 		MaxContext:       1_048_576,
 		MaxOutput:        65_536,
-		Pricing:          model.Pricing{InputPerMToken: 0.0, OutputPerMToken: 0.0},
+		Pricing:          model.Pricing{InputPerMToken: 0.25, OutputPerMToken: 1.50, CacheReadPerMToken: 0.025},
 		SupportsVision:   true,
 		SupportsToolUse:  true,
 		SupportsThinking: true,
 	},
+
+	// --- Gemini 2.5 series ---
 
 	"gemini-2.5-pro": {
 		ID:               "gemini-2.5-pro",
@@ -70,15 +73,26 @@ var registry = map[string]ModelInfo{
 		SupportsToolUse:  true,
 		SupportsThinking: true,
 	},
-
-	"gemini-2.0-flash": {
-		ID:              "gemini-2.0-flash",
-		MaxContext:      1_048_576,
-		MaxOutput:       8_192,
-		Pricing:         model.Pricing{InputPerMToken: 0.10, OutputPerMToken: 0.40, CacheReadPerMToken: 0.025},
-		SupportsVision:  true,
-		SupportsToolUse: true,
+	"gemini-2.5-flash-lite": {
+		ID:               "gemini-2.5-flash-lite",
+		MaxContext:       1_048_576,
+		MaxOutput:        65_536,
+		Pricing:          model.Pricing{InputPerMToken: 0.10, OutputPerMToken: 0.40, CacheReadPerMToken: 0.01},
+		SupportsVision:   true,
+		SupportsToolUse:  true,
+		SupportsThinking: false,
 	},
+
+}
+
+// ListModels returns the sorted IDs of all known Google models.
+func ListModels() []string {
+	ids := make([]string, 0, len(registry))
+	for id := range registry {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // LookupModel finds a model by exact ID or prefix match.

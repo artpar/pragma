@@ -11,6 +11,7 @@ import (
 type Metrics struct {
 	mu                sync.RWMutex
 	tokenUsage        model.TokenUsage
+	latestContextFill int // latest request's InputTokens + CacheReadInputTokens (actual context window fill)
 	turnCount         int
 	toolCalls         map[string]int
 	toolDurations     map[string]int64
@@ -34,6 +35,7 @@ type ToolStat struct {
 // MetricsSnapshot is a point-in-time copy of metrics for display.
 type MetricsSnapshot struct {
 	TokenUsage        model.TokenUsage
+	LatestContextFill int // latest request's context window fill (InputTokens + CacheReadInputTokens)
 	TurnCount         int
 	ToolCallCount     int
 	ToolErrorCount    int
@@ -65,6 +67,10 @@ func (m *Metrics) HandleEvent(event Event) {
 		m.tokenUsage.OutputTokens += e.Usage.OutputTokens
 		m.tokenUsage.CacheCreationInputTokens += e.Usage.CacheCreationInputTokens
 		m.tokenUsage.CacheReadInputTokens += e.Usage.CacheReadInputTokens
+		// Latest (not cumulative) — actual context window fill for this request.
+		// Each request sends the full conversation, so the latest request's total
+		// input is how full the context window is right now.
+		m.latestContextFill = e.Usage.InputTokens + e.Usage.CacheReadInputTokens
 	case APIRequestFailed:
 		m.apiErrors++
 	case ToolExecutionCompleted:
@@ -133,6 +139,7 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 
 	return MetricsSnapshot{
 		TokenUsage:        m.tokenUsage,
+		LatestContextFill: m.latestContextFill,
 		TurnCount:         m.turnCount,
 		ToolCallCount:     totalToolCalls,
 		ToolErrorCount:    totalToolErrors,

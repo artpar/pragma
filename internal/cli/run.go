@@ -20,6 +20,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/skill"
@@ -264,6 +265,18 @@ func RunInteractive(cmd *cobra.Command) error {
 		Provider:    d.Cfg.Provider,
 		Cwd:         d.Cwd,
 		TaskReg:     d.TaskReg,
+		ModelLister: func() []string {
+			if ml, ok := d.Prov.(provider.ModelLister); ok {
+				return ml.ListModels()
+			}
+			return nil
+		},
+		ContextWindowFunc: d.Prov.ContextWindow,
+		OnModelChanged: func(modelID string) {
+			if cw, ok := d.Prov.ContextWindow(modelID); ok {
+				d.TokenMonitor.SetBudget(cw)
+			}
+		},
 	}
 
 	m := tui.New(tui.Config{

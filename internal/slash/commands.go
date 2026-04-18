@@ -239,28 +239,63 @@ func handleHelp(_ context.Context, _ string, deps Deps) (Result, error) {
 }
 
 func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
 	args = strings.TrimSpace(args)
+
 	if args == "" {
-		observe.GlobalTrace("if: args == \"\"")
+		// Show current model + list available
 		snap := deps.Store.Snapshot()
 		modelName := snap.Model
 		if modelName == "" {
-			observe.GlobalTrace("if: modelName == \"\"")
 			modelName = deps.ModelName
 		}
-		observe.GlobalTrace("return: Result{DisplayText: current model}, nil")
-		observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Current model: %s (provider: %s)\", modelName...")
-		return Result{DisplayText: fmt.Sprintf("Current model: %s (provider: %s)", modelName, deps.Provider)}, nil
+		var b strings.Builder
+		fmt.Fprintf(&b, "Current model: %s (provider: %s)", modelName, deps.Provider)
+		if deps.ModelLister != nil {
+			if models := deps.ModelLister(); len(models) > 0 {
+				b.WriteString("\n\nAvailable models:")
+				for _, m := range models {
+					marker := "  "
+					if m == modelName {
+						marker = "* "
+					}
+					b.WriteString("\n  " + marker + m)
+				}
+			}
+		}
+		return Result{DisplayText: b.String()}, nil
+	}
+
+	// Validate model against provider's known models
+	if deps.ContextWindowFunc != nil {
+		if _, ok := deps.ContextWindowFunc(args); !ok {
+			var b strings.Builder
+			fmt.Fprintf(&b, "Unknown model: %s", args)
+			if deps.ModelLister != nil {
+				if models := deps.ModelLister(); len(models) > 0 {
+					b.WriteString("\n\nAvailable models:")
+					for _, m := range models {
+						b.WriteString("\n  " + m)
+					}
+				}
+			}
+			return Result{DisplayText: b.String()}, nil
+		}
 	}
 
 	deps.Store.Update(func(s *app.AppState) {
 		s.Model = args
 	})
-	observe.GlobalTrace("return: Result{DisplayText: model switched}, nil")
-	observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Model switched to: %s (takes effect on next ...")
-	return Result{DisplayText: fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)}, nil
+	if deps.OnModelChanged != nil {
+		deps.OnModelChanged(args)
+	}
+
+	msg := fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)
+	if deps.ContextWindowFunc != nil {
+		if cw, ok := deps.ContextWindowFunc(args); ok {
+			msg = fmt.Sprintf("Model switched to: %s (context: %dk, takes effect on next turn)", args, cw/1000)
+		}
+	}
+	return Result{DisplayText: msg}, nil
 }
 
 func handleExit(_ context.Context, _ string, deps Deps) (Result, error) {

@@ -26,9 +26,10 @@ type toolbar struct {
 	inputTokens   int
 	outputTokens  int
 	cacheTokens   int // combined cache creation + cache read
-	contextSize   int
-	startTime     time.Time // session start for elapsed display
-	teammateCount int       // number of running teammates
+	contextSize      int
+	latestContextFill int // latest request's actual context window fill
+	startTime        time.Time // session start for elapsed display
+	teammateCount    int       // number of running teammates
 }
 
 func newToolbar(modelName, provider, workspace string) toolbar {
@@ -62,8 +63,7 @@ func (t toolbar) View(width int) string {
 	if width >= 60 && t.contextSize > 0 {
 		observe.GlobalTrace("if: width >= 60 && t.contextSize > 0")
 
-		contextTokens := t.inputTokens + t.cacheTokens
-		pct := float64(contextTokens) / float64(t.contextSize) * 100
+		pct := float64(t.latestContextFill) / float64(t.contextSize) * 100
 
 		tokenStr := fmt.Sprintf(" · %s in / %s out",
 			formatTokens(t.inputTokens),
@@ -126,13 +126,16 @@ func (t *toolbar) UpdateCost(cost float64) {
 }
 
 // UpdateTokens updates the token display values.
-func (t *toolbar) UpdateTokens(input, output, cache, contextSize int) {
+// latestContextFill is the most recent API request's InputTokens + CacheReadInputTokens,
+// representing how full the context window actually is right now.
+func (t *toolbar) UpdateTokens(input, output, cache, contextSize, latestContextFill int) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	t.inputTokens = input
 	t.outputTokens = output
 	t.cacheTokens = cache
 	t.contextSize = contextSize
+	t.latestContextFill = latestContextFill
 }
 
 // CostSummary returns a one-line session summary for display on exit.

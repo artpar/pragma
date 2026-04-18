@@ -45,7 +45,7 @@ func TestToolbarUpdates(t *testing.T) {
 
 func TestToolbarTokenDisplay(t *testing.T) {
 	tb := newToolbar("test-model", "test", "/workspace")
-	tb.UpdateTokens(1500, 2300, 0, 200000)
+	tb.UpdateTokens(1500, 2300, 0, 200000, 1500)
 
 	view := tb.View(120)
 	if !strings.Contains(view, "1.5k in") {
@@ -62,7 +62,7 @@ func TestToolbarTokenDisplay(t *testing.T) {
 
 func TestToolbarCacheTokens(t *testing.T) {
 	tb := newToolbar("test-model", "test", "/workspace")
-	tb.UpdateTokens(1500, 2300, 500, 200000)
+	tb.UpdateTokens(1500, 2300, 500, 200000, 2000)
 
 	view := tb.View(120)
 	if !strings.Contains(view, "500 cache") {
@@ -70,22 +70,22 @@ func TestToolbarCacheTokens(t *testing.T) {
 	}
 }
 
-func TestToolbarContextPctExcludesOutput(t *testing.T) {
+func TestToolbarContextPctUsesLatestFill(t *testing.T) {
 	tb := newToolbar("test-model", "test", "/workspace")
-	// input=5000, output=5000, cache=0, ctx=100000
-	// Context pct should be (5000+0)/100000 = 5%, NOT (5000+5000)/100000 = 10%
-	tb.UpdateTokens(5000, 5000, 0, 100000)
+	// latestContextFill=5000, ctx=100000 → 5%
+	// Cumulative input/cache are irrelevant for context % — only latest fill matters
+	tb.UpdateTokens(50000, 5000, 30000, 100000, 5000)
 
 	view := tb.View(120)
 	if !strings.Contains(view, "5% ctx") {
-		t.Errorf("expected '5%% ctx' (excludes output), got %q", view)
+		t.Errorf("expected '5%% ctx' (from latestContextFill), got %q", view)
 	}
 
-	// With cache: (5000+2000)/100000 = 7%
-	tb.UpdateTokens(5000, 5000, 2000, 100000)
+	// latestContextFill=7000 → 7%
+	tb.UpdateTokens(60000, 5000, 35000, 100000, 7000)
 	view = tb.View(120)
 	if !strings.Contains(view, "7% ctx") {
-		t.Errorf("expected '7%% ctx' (input+cache), got %q", view)
+		t.Errorf("expected '7%% ctx' (from latestContextFill), got %q", view)
 	}
 }
 
@@ -157,7 +157,7 @@ func TestFormatCost(t *testing.T) {
 
 func TestToolbarCostSummary(t *testing.T) {
 	tb := newToolbar("test", "test", "/workspace")
-	tb.UpdateTokens(1500, 2300, 500, 200000)
+	tb.UpdateTokens(1500, 2300, 500, 200000, 2000)
 	tb.UpdateCost(0.0042)
 
 	summary := tb.CostSummary()

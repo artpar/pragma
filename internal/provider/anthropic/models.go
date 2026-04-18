@@ -108,6 +108,16 @@ var registry = map[string]ModelInfo{
 	},
 }
 
+// ListModels returns the sorted IDs of all known Anthropic models.
+func ListModels() []string {
+	ids := make([]string, 0, len(registry))
+	for id := range registry {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
 // LookupModel returns the ModelInfo for a model ID, resolving aliases.
 // Returns false if the model is not known.
 func LookupModel(modelID string) (ModelInfo, bool) {

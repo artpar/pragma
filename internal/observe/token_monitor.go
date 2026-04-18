@@ -9,14 +9,13 @@ import (
 // percentages of the context window budget. Uses actual model context window
 // size (not hardcoded) to avoid GitHub bugs #34332 and #39467.
 type TokenMonitor struct {
-	bus      *EventBus
-	budget   int // actual context window tokens for this model
-	mu       sync.Mutex
-	cumInput int
-	cumOut   int
-	warned50 bool
-	warned80 bool
-	warned95 bool
+	bus        *EventBus
+	budget     int // actual context window tokens for this model
+	mu         sync.Mutex
+	latestFill int // latest request's context fill (InputTokens + CacheReadInputTokens)
+	warned50   bool
+	warned80   bool
+	warned95   bool
 }
 
 // NewTokenMonitor creates a monitor with a default budget.
@@ -32,13 +31,6 @@ func (m *TokenMonitor) SetBudget(tokens int) {
 	m.budget = tokens
 }
 
-// Usage returns cumulative input and output token counts.
-func (m *TokenMonitor) Usage() (input, output int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.cumInput, m.cumOut
-}
-
 // Budget returns the context window budget in tokens.
 func (m *TokenMonitor) Budget() int {
 	m.mu.Lock()
@@ -47,6 +39,8 @@ func (m *TokenMonitor) Budget() int {
 }
 
 // HandleEvent implements Subscriber. Tracks APIRequestCompleted events.
+// Uses the latest request's context fill (not cumulative) because each request
+// sends the full conversation — the latest fill IS the current context usage.
 func (m *TokenMonitor) HandleEvent(event Event) {
 	completed, ok := event.(APIRequestCompleted)
 	if !ok {
@@ -56,32 +50,30 @@ func (m *TokenMonitor) HandleEvent(event Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.cumInput += completed.Usage.InputTokens
-	m.cumOut += completed.Usage.OutputTokens
+	m.latestFill = completed.Usage.InputTokens + completed.Usage.CacheReadInputTokens
 
-	total := m.cumInput + m.cumOut
 	if m.budget <= 0 {
 		return
 	}
 
-	pct := float64(total) / float64(m.budget) * 100
+	pct := float64(m.latestFill) / float64(m.budget) * 100
 
 	// Check thresholds in ascending order — each fires independently so
 	// a jump from 40% to 97% emits all three warnings, not just 95%.
 	if pct >= 50 && !m.warned50 {
 		m.warned50 = true
 		m.emitWarning("info",
-			fmt.Sprintf("Token usage at 50%% of context window (%d/%d tokens).", total, m.budget))
+			fmt.Sprintf("Token usage at 50%% of context window (%d/%d tokens).", m.latestFill, m.budget))
 	}
 	if pct >= 80 && !m.warned80 {
 		m.warned80 = true
 		m.emitWarning("warning",
-			fmt.Sprintf("Token usage at 80%% of context window (%d/%d tokens).", total, m.budget))
+			fmt.Sprintf("Token usage at 80%% of context window (%d/%d tokens).", m.latestFill, m.budget))
 	}
 	if pct >= 95 && !m.warned95 {
 		m.warned95 = true
 		m.emitWarning("error",
-			fmt.Sprintf("Token usage at 95%% of context window (%d/%d tokens). Consider running /compact to free space.", total, m.budget))
+			fmt.Sprintf("Token usage at 95%% of context window (%d/%d tokens). Consider running /compact to free space.", m.latestFill, m.budget))
 	}
 }
 

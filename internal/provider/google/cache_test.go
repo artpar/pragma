@@ -613,7 +613,7 @@ func TestCostSavingsAllModels(t *testing.T) {
 	models := []string{
 		"gemini-2.5-pro",
 		"gemini-2.5-flash",
-		"gemini-2.0-flash",
+		"gemini-2.5-flash-lite",
 		"gemini-3.1-pro-preview",
 		"gemini-3-flash-preview",
 	}
@@ -667,7 +667,7 @@ func TestCacheReadPricingMatchesDocs(t *testing.T) {
 		{"gemini-3-flash-preview", 0.05},
 		{"gemini-2.5-pro", 0.125},
 		{"gemini-2.5-flash", 0.03},
-		{"gemini-2.0-flash", 0.025},
+		{"gemini-2.5-flash-lite", 0.01},
 	}
 	for _, tt := range tests {
 		t.Run(tt.modelID, func(t *testing.T) {
@@ -880,13 +880,19 @@ func TestCacheBreakEvenTurn(t *testing.T) {
 // Model pricing — comprehensive checks
 // =============================================================================
 
-func TestModelPricingFreeTierNoCachePricing(t *testing.T) {
+func TestModelPricingFlashLiteCacheRead(t *testing.T) {
 	info, ok := LookupModel("gemini-3.1-flash-lite-preview")
 	if !ok {
 		t.Fatal("model not found")
 	}
-	if info.Pricing.CacheCreatePerMToken != 0 || info.Pricing.CacheReadPerMToken != 0 {
-		t.Error("free tier should have zero cache pricing")
+	// Google charges hourly storage for caches, not per-token creation
+	if info.Pricing.CacheCreatePerMToken != 0 {
+		t.Errorf("CacheCreate should be 0, got %f", info.Pricing.CacheCreatePerMToken)
+	}
+	// Cache read pricing should be cheaper than input
+	if info.Pricing.CacheReadPerMToken >= info.Pricing.InputPerMToken {
+		t.Errorf("CacheRead (%f) should be cheaper than Input (%f)",
+			info.Pricing.CacheReadPerMToken, info.Pricing.InputPerMToken)
 	}
 }
 
@@ -997,7 +1003,7 @@ func TestBuildRequestResponseSchemaWithBannedFields(t *testing.T) {
 // =============================================================================
 
 func TestCostComparisonTable(t *testing.T) {
-	models := []string{"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-3.1-pro-preview"}
+	models := []string{"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-pro-preview"}
 	turns := []int{5, 10, 25, 50}
 
 	t.Logf("\n%-25s %5s %12s %12s %8s", "Model", "Turns", "No-Cache", "Cached", "Savings")
