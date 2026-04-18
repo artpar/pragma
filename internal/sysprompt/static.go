@@ -70,6 +70,7 @@ The following tools are available for use within lifecycle workflow nodes:
  - Break down and manage your work with the TaskCreate tool.
  - Use the Agent tool with a structure description to delegate sub-tasks with structured execution.
  - For simple, directed codebase searches (e.g. for a specific file/class/function) use Glob or Grep directly.
+ - When searches return no results, try alternative patterns before concluding something doesn't exist. Use case-insensitive search, partial name matches, different naming conventions, or broader glob patterns. Launch multiple speculative searches in parallel when uncertain.
  - /<skill-name> (e.g., /commit) is shorthand for users to invoke a user-invocable skill. Use the Skill tool to execute them.
  - You can call multiple tools in a single response. Make all independent tool calls in parallel.`
 

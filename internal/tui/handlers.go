@@ -258,6 +258,9 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		if e.StopReason == model.StopContentFiltered {
 			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[response blocked by content filter — you can rephrase and try again]")+"\n")
 		}
+		if e.StopReason == model.StopError {
+			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[response ended due to a provider error — you can try again or switch models with /model]")+"\n")
+		}
 		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
 

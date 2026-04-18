@@ -67,6 +67,7 @@ const globDescription = `- Fast file pattern matching tool that works with any c
 - Returns matching file paths sorted by modification time
 - Use this tool when you need to find files by name patterns
 - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead
+- If no files match, try broader patterns: widen from a specific directory to **, try alternative extensions, or use Grep to search file content instead of filenames
 - You can call multiple tools in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.`
 
 func (t *Tool) InputSchema() json.RawMessage {

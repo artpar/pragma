@@ -87,6 +87,12 @@ const grepDescription = `A powerful search tool built on ripgrep
   - Use Agent tool for open-ended searches requiring multiple rounds
   - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use ` + "`interface\\{\\}`" + ` to find ` + "`interface{}`" + ` in Go code)
   - Multiline matching: By default patterns match within single lines only. For cross-line patterns like ` + "`struct \\{[\\s\\S]*?field`" + `, use ` + "`multiline: true`" + `
+
+  Search resilience:
+  - If a pattern returns no results, try alternatives before concluding the code doesn't exist: use -i for case-insensitive search, broaden the regex, try different naming conventions (camelCase, snake_case, PascalCase, kebab-case)
+  - When searching for a function or type, try partial names — search for the suffix or a distinctive substring rather than the full qualified name
+  - Use files_with_matches mode first to confirm matching files exist, then content mode with context lines to read the matches
+  - Launch multiple speculative Grep calls in parallel when you're uncertain about the exact pattern
 `
 
 func (t *Tool) InputSchema() json.RawMessage {
