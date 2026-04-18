@@ -311,7 +311,7 @@ func StopReasonFromAnyLLM(fr string) model.StopReason {
 		return model.StopContentFiltered
 	default:
 		observe.GlobalTrace("default")
-		return model.StopEndTurn
+		return model.StopError
 	}
 }
 
