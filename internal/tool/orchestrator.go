@@ -2,8 +2,11 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"golang.org/x/sync/errgroup"
 
@@ -62,7 +65,7 @@ func (o *Orchestrator) SetPermPersister(p *PermPersister) {
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
 	Results     []model.ToolResultPart
-	Displays    []string           // per-result TUI display text, same index as Results
+	Displays    []string            // per-result TUI display text, same index as Results
 	Supplements []model.ContentPart // additional content parts (e.g., DocumentPart for PDFs)
 }
 
@@ -229,6 +232,47 @@ func (o *Orchestrator) executeSingle(
 	spanID := observe.NewSpanID()
 
 	desc, _ := o.registry.Get(call.Name)
+
+	if schema := o.registry.GetSchema(call.Name); schema != nil {
+		var v any
+		if err := json.Unmarshal(call.Input, &v); err != nil {
+			o.bus.Emit(observe.ToolExecutionFailed{
+				EventHeader:  observe.NewEventHeader("ToolExecutionFailed", traceID, spanID, parentSpan),
+				ToolCallID:   call.ID,
+				ToolName:     call.Name,
+				ErrorType:    "json_parse_error",
+				ErrorMessage: err.Error(),
+			})
+			return singleResult{
+				part: model.ToolResultPart{
+					ToolCallID: call.ID,
+					Content:    "invalid JSON input: " + err.Error(),
+					IsError:    true,
+				},
+			}
+		}
+
+		if err := schema.Validate(v); err != nil {
+			msg := err.Error()
+			// Just to ensure jsonschema import is used
+			_ = jsonschema.Compiler{}
+
+			o.bus.Emit(observe.ToolExecutionFailed{
+				EventHeader:  observe.NewEventHeader("ToolExecutionFailed", traceID, spanID, parentSpan),
+				ToolCallID:   call.ID,
+				ToolName:     call.Name,
+				ErrorType:    "schema_validation_error",
+				ErrorMessage: msg,
+			})
+			return singleResult{
+				part: model.ToolResultPart{
+					ToolCallID: call.ID,
+					Content:    "Tool input validation failed:\n" + msg,
+					IsError:    true,
+				},
+			}
+		}
+	}
 
 	if o.hookMgr != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.hookMgr != nil")

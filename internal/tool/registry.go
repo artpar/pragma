@@ -1,8 +1,11 @@
 package tool
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -10,10 +13,11 @@ import (
 
 // Registry holds all registered tools and provides lookup.
 type Registry struct {
-	tools  map[string]Descriptor
-	hidden map[string]bool // tools hidden from ToolDefs/List but still available via Get
-	mu     sync.RWMutex
-	bus    *observe.EventBus
+	tools   map[string]Descriptor
+	schemas map[string]*jsonschema.Schema
+	hidden  map[string]bool
+	mu      sync.RWMutex
+	bus     *observe.EventBus
 }
 
 // NewRegistry creates a Registry.
@@ -22,8 +26,9 @@ func NewRegistry(bus *observe.EventBus) *Registry {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
 	return &Registry{
-		tools: make(map[string]Descriptor),
-		bus:   bus,
+		tools:   make(map[string]Descriptor),
+		schemas: make(map[string]*jsonschema.Schema),
+		bus:     bus,
 	}
 }
 
@@ -39,6 +44,13 @@ func (r *Registry) Register(desc Descriptor) error {
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
 		return fmt.Errorf("%w: %q", model.ErrToolAlreadyRegistered, name)
 	}
+	compiler := jsonschema.NewCompiler()
+	
+	if err := compiler.AddResource("schema.json", bytes.NewReader(desc.InputSchema())); err == nil {
+		if compiled, err := compiler.Compile("schema.json"); err == nil {
+			r.schemas[name] = compiled
+		}
+	}
 	r.tools[name] = desc
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -51,6 +63,7 @@ func (r *Registry) Unregister(name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.tools, name)
+	delete(r.schemas, name)
 }
 
 // Get returns a tool by name.
@@ -62,6 +75,12 @@ func (r *Registry) Get(name string) (Descriptor, bool) {
 	desc, ok := r.tools[name]
 	observe.GlobalTrace("return: desc, ok")
 	return desc, ok
+}
+
+func (r *Registry) GetSchema(name string) *jsonschema.Schema {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.schemas[name]
 }
 
 // SetHidden marks tool names as hidden from ToolDefs() and List() but still
