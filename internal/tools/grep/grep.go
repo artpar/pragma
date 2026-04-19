@@ -349,7 +349,7 @@ func buildContentResult(lines []string, headLimit, offset int, workDir string) s
 	out := strings.Join(result, "\n")
 	if out == "" {
 		observe.GlobalTrace("if: out == \"\"")
-		out = "No matches found. Try: case-insensitive (-i), partial name, different naming convention, or broader pattern."
+		out = "IMPORTANT: No matches were found for this pattern. Do NOT fabricate results. Try: case-insensitive (-i), partial name, different naming convention, or broader pattern."
 	}
 
 	if appliedLimit != nil {
@@ -399,7 +399,7 @@ func buildCountResult(lines []string, headLimit, offset int, workDir string) str
 	out := strings.Join(countLines, "\n")
 	if out == "" {
 		observe.GlobalTrace("if: out == \"\"")
-		out = "No matches found. Try: case-insensitive (-i), partial name, different naming convention, or broader pattern."
+		out = "IMPORTANT: No matches were found for this pattern. Do NOT fabricate results. Try: case-insensitive (-i), partial name, different naming convention, or broader pattern."
 	}
 
 	occurrences := "occurrences"
@@ -435,7 +435,7 @@ func buildFilesResult(lines []string, headLimit, offset int, workDir string) str
 	if len(lines) == 0 {
 		observe.GlobalTrace("if: len(lines) == 0")
 		observe.GlobalTrace("return: \"No files found. Try: ...\"")
-		return "No files found. Try: case-insensitive (-i), partial name, different naming convention, or broader pattern."
+		return "IMPORTANT: No files were found matching this pattern. Do NOT fabricate results. Try: case-insensitive (-i), partial name, different naming convention, or broader pattern."
 	}
 
 	// Stat each file for mtime, sort newest first

@@ -77,6 +77,11 @@ func (t *AutoTracker) RecordFailure() bool {
 	return t.consecutiveFailures >= MaxConsecutiveFailures
 }
 
+// FailureCount returns the current consecutive failure count.
+func (t *AutoTracker) FailureCount() int {
+	return t.consecutiveFailures
+}
+
 // IncrementTurn advances the turn counter for cooldown tracking.
 func (t *AutoTracker) IncrementTurn() {
 	observe.GlobalTrace("enter")

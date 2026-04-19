@@ -465,6 +465,9 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			}
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
+			if e.Guidance != "" {
+				fmt.Fprintf(os.Stderr, "Hint: %s\n", e.Guidance)
+			}
 			SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd)
 			return e.Err
 		}
@@ -732,6 +735,9 @@ func ConsumeEngineEvents(events <-chan query.LoopEvent, verbose bool) error {
 			fmt.Println()
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
+			if e.Guidance != "" {
+				fmt.Fprintf(os.Stderr, "Hint: %s\n", e.Guidance)
+			}
 			return e.Err
 		}
 	}

@@ -59,6 +59,16 @@ type CompactionEvent struct {
 
 func (CompactionEvent) loopEventSealed() {}
 
+// CompactionFailedEvent signals that a single auto-compaction attempt failed.
+// Emitted before the circuit breaker check so the TUI can show per-attempt warnings.
+type CompactionFailedEvent struct {
+	Attempt  int    // 1-based failure count
+	MaxRetry int    // circuit breaker threshold
+	ErrorMsg string // compaction error message
+}
+
+func (CompactionFailedEvent) loopEventSealed() {}
+
 // CompactionDisabledEvent signals that auto-compaction circuit breaker tripped.
 // The TUI should display a warning — tokens will grow unboundedly (GitHub #24677, #9579).
 type CompactionDisabledEvent struct {

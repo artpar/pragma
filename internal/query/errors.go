@@ -21,6 +21,7 @@ const (
 	ErrorKindContextOverflow ErrorKind = "context_overflow"
 	ErrorKindConnection      ErrorKind = "connection"
 	ErrorKindServerError     ErrorKind = "server_error"
+	ErrorKindInvalidRequest  ErrorKind = "invalid_request"
 	ErrorKindUnknown         ErrorKind = "unknown"
 )
 
@@ -42,13 +43,13 @@ func ClassifyStreamError(err error) ClassifiedError {
 
 	if errors.Is(err, provider.ErrRateLimit) {
 		observe.GlobalTrace("if: errors.Is(err, provider.ErrRateLimit)")
-		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindRateLimit, Retryable: true}")
-		return ClassifiedError{Err: err, Kind: ErrorKindRateLimit, Retryable: true}
+		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindRateLimit, Retryable: true, Guidance: ...}")
+		return ClassifiedError{Err: err, Kind: ErrorKindRateLimit, Retryable: true, Guidance: "Rate limited — retrying automatically. If persistent, check your API plan tier"}
 	}
 	if errors.Is(err, provider.ErrOverloaded) {
 		observe.GlobalTrace("if: errors.Is(err, provider.ErrOverloaded)")
-		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindOverloaded, Retryable: true}")
-		return ClassifiedError{Err: err, Kind: ErrorKindOverloaded, Retryable: true}
+		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindOverloaded, Retryable: true, Guidance: ...}")
+		return ClassifiedError{Err: err, Kind: ErrorKindOverloaded, Retryable: true, Guidance: "Provider overloaded — retrying. Try again later if persistent"}
 	}
 	if errors.Is(err, provider.ErrAuthentication) {
 		observe.GlobalTrace("if: errors.Is(err, provider.ErrAuthentication)")
@@ -70,13 +71,13 @@ func ClassifyStreamError(err error) ClassifiedError {
 	}
 	if errors.Is(err, provider.ErrServerError) {
 		observe.GlobalTrace("if: errors.Is(err, provider.ErrServerError)")
-		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindServerError, Retryable: true}")
-		return ClassifiedError{Err: err, Kind: ErrorKindServerError, Retryable: true}
+		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindServerError, Retryable: true, Guidance: ...}")
+		return ClassifiedError{Err: err, Kind: ErrorKindServerError, Retryable: true, Guidance: "Provider server error — retrying. Check provider status page if persistent"}
 	}
 	if errors.Is(err, provider.ErrInvalidRequest) {
 		observe.GlobalTrace("if: errors.Is(err, provider.ErrInvalidRequest)")
-		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindUnknown}")
-		return ClassifiedError{Err: err, Kind: ErrorKindUnknown}
+		observe.GlobalTrace("return: ClassifiedError{Err: err, Kind: ErrorKindInvalidRequest, Guidance: ...}")
+		return ClassifiedError{Err: err, Kind: ErrorKindInvalidRequest, Guidance: "Check model name with /model. Run /doctor to verify provider configuration"}
 	}
 
 	msg := strings.ToLower(err.Error())
@@ -91,10 +92,10 @@ func classifyByString(err error, msg string) ClassifiedError {
 	switch {
 	case strings.Contains(msg, "429") || strings.Contains(msg, "rate limit"):
 		observe.GlobalTrace("case: strings.Contains(msg, \"429\") || strings.Contains(msg, \"rate limit\")")
-		return ClassifiedError{Err: err, Kind: ErrorKindRateLimit, Retryable: true}
+		return ClassifiedError{Err: err, Kind: ErrorKindRateLimit, Retryable: true, Guidance: "Rate limited — retrying automatically. If persistent, check your API plan tier"}
 	case strings.Contains(msg, "529") || strings.Contains(msg, "overloaded"):
 		observe.GlobalTrace("case: strings.Contains(msg, \"529\") || strings.Contains(msg, \"overloaded\")")
-		return ClassifiedError{Err: err, Kind: ErrorKindOverloaded, Retryable: true}
+		return ClassifiedError{Err: err, Kind: ErrorKindOverloaded, Retryable: true, Guidance: "Provider overloaded — retrying. Try again later if persistent"}
 	case strings.Contains(msg, "401") || strings.Contains(msg, "403") || strings.Contains(msg, "authentication") || strings.Contains(msg, "unauthorized"):
 		observe.GlobalTrace("case: strings.Contains(msg, \"401\") || strings.Contains(msg, \"403\") || strings.Conta...")
 		return ClassifiedError{Err: err, Kind: ErrorKindAuthentication, Guidance: "Check your API key or run /doctor"}
@@ -103,10 +104,13 @@ func classifyByString(err error, msg string) ClassifiedError {
 		return ClassifiedError{Err: err, Kind: ErrorKindContextOverflow, Guidance: "Run /compact to reduce context size"}
 	case strings.Contains(msg, "connection") || strings.Contains(msg, "dns") || strings.Contains(msg, "eof") || strings.Contains(msg, "econnreset"):
 		observe.GlobalTrace("case: strings.Contains(msg, \"connection\") || strings.Contains(msg, \"dns\") || string...")
-		return ClassifiedError{Err: err, Kind: ErrorKindConnection, Retryable: true}
+		return ClassifiedError{Err: err, Kind: ErrorKindConnection, Retryable: true, Guidance: "Check internet connection and proxy settings"}
 	case strings.Contains(msg, "500") || strings.Contains(msg, "502") || strings.Contains(msg, "503") || strings.Contains(msg, "server error"):
 		observe.GlobalTrace("case: strings.Contains(msg, \"500\") || strings.Contains(msg, \"502\") || strings.Conta...")
-		return ClassifiedError{Err: err, Kind: ErrorKindServerError, Retryable: true}
+		return ClassifiedError{Err: err, Kind: ErrorKindServerError, Retryable: true, Guidance: "Provider server error — retrying. Check provider status page if persistent"}
+	case strings.Contains(msg, "not_found") || strings.Contains(msg, "404") || strings.Contains(msg, "invalid model") || strings.Contains(msg, "model not found"):
+		observe.GlobalTrace("case: strings.Contains(msg, \"not_found\") || strings.Contains(msg, \"404\") || ...")
+		return ClassifiedError{Err: err, Kind: ErrorKindInvalidRequest, Guidance: "Check model name with /model. Run /doctor to verify provider configuration"}
 	default:
 		observe.GlobalTrace("default")
 		return ClassifiedError{Err: err, Kind: ErrorKindUnknown}

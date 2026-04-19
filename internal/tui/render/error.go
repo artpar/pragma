@@ -30,6 +30,7 @@ var errorKindLabel = map[string]string{
 	"context_overflow": "Context too long",
 	"connection":       "Connection error",
 	"server_error":     "Server error",
+	"invalid_request":  "Invalid request",
 	"unknown":          "Error",
 }
 

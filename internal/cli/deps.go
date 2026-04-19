@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -87,6 +88,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: cfg.Model == \"\"")
 		cfg.Model = DefaultModelFor(cfg.Provider)
 	}
+	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
 	if cfg.MaxTokens == 0 {
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
@@ -178,6 +180,14 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	if cw, ok := prov.ContextWindow(cfg.Model); ok {
 		observe.GlobalTrace("if: ok")
 		tokenMon.SetBudget(cw)
+	} else if os.Getenv("PRAGMA_CUSTOM_MODEL") == "" {
+		observe.GlobalTrace("else-if: model not in registry, warn")
+		fmt.Fprintf(os.Stderr, "Warning: model %q not in known registry for %s provider. It may still work if your provider supports it.\n", cfg.Model, cfg.Provider)
+		if ml, ok := prov.(provider.ModelLister); ok {
+			if models := ml.ListModels(); len(models) > 0 {
+				fmt.Fprintf(os.Stderr, "Known models: %s\nRun /model to see available options.\n", strings.Join(models, ", "))
+			}
+		}
 	}
 
 	permEntries, permMode, _ := config.LoadPermissions(cwd)
@@ -564,6 +574,37 @@ func SecondaryModelFor(providerName string) string {
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
 	}
+}
+
+// modelAliases maps short user-friendly names to full model IDs per provider.
+// Avoids GitHub issues #18873, #16387, #6169, #5349 where short names
+// like "haiku" or "sonnet" get sent raw to APIs causing 404 errors.
+var modelAliases = map[string]map[string]string{
+	"anthropic": {
+		"sonnet": "claude-sonnet-4-6-20250514",
+		"opus":   "claude-opus-4-6-20250610",
+		"haiku":  "claude-haiku-4-5-20251001",
+	},
+	"google": {
+		"flash": "gemini-2.5-flash",
+		"pro":   "gemini-2.5-pro",
+	},
+}
+
+// resolveModelAlias resolves short model aliases to full model IDs.
+// If the input is not a known alias, it is returned unchanged.
+func resolveModelAlias(providerName, modelInput string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	lower := strings.ToLower(strings.TrimSpace(modelInput))
+	if aliases, ok := modelAliases[providerName]; ok {
+		if resolved, ok := aliases[lower]; ok {
+			observe.GlobalTrace("resolved alias " + lower + " → " + resolved)
+			return resolved
+		}
+	}
+	observe.GlobalTrace("return: modelInput (no alias)")
+	return modelInput
 }
 
 // resolveBaseURL checks env var first, then credentials.yml.

@@ -256,6 +256,11 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compErr != nil && ctx.Err() == nil")
 
 					tripped := e.autoTracker.RecordFailure()
+					ch <- CompactionFailedEvent{
+						Attempt:  e.autoTracker.FailureCount(),
+						MaxRetry: compact.MaxConsecutiveFailures,
+						ErrorMsg: compErr.Error(),
+					}
 					if tripped {
 						observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: tripped")
 						e.bus.Emit(observe.ErrorOccurred{

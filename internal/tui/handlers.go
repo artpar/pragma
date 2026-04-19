@@ -127,6 +127,13 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
+	case query.CompactionFailedEvent:
+		observe.GlobalTrace("typecase: query.CompactionFailedEvent")
+		m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(
+			fmt.Sprintf("[auto-compaction failed (attempt %d/%d)]", e.Attempt, e.MaxRetry))+"\n")
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
 	case query.CompactionDisabledEvent:
 		observe.GlobalTrace("typecase: query.CompactionDisabledEvent")
 		m.closeActiveGroup()
