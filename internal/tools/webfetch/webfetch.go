@@ -359,7 +359,7 @@ func resolveAndCheckSSRF(hostname string) (string, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"DNS resolution failed for %s: %v\", hostname, err)")
-		return "", fmt.Errorf("DNS resolution failed for %s: %v", hostname, err)
+		return "", fmt.Errorf("DNS resolution failed for %s: %w", hostname, err)
 	}
 	var firstValid string
 	for _, ipStr := range ips {

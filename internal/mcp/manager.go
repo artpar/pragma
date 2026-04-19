@@ -87,6 +87,7 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 				}
 				m.mu.Lock()
 				m.clients[ns.name] = client
+				m.configs[ns.name] = ns.config
 				m.mu.Unlock()
 			}(ns)
 		}
