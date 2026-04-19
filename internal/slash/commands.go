@@ -116,6 +116,30 @@ func registerBuiltins(r *Registry) {
 		Handle:      handleTeams,
 		Type:        TypeLocal,
 	})
+
+	r.Register(Command{
+		Name:        "config",
+		Description: "Show effective configuration and sources",
+		Handle:      handleConfig,
+		Type:        TypeLocal,
+		CLIUse:      "config",
+	})
+	r.Register(Command{
+		Name:        "skills",
+		Aliases:     []string{"skill"},
+		Description: "List available skills or show skill details",
+		Handle:      handleSkills,
+		Type:        TypeLocal,
+		CLIUse:      "skills [name]",
+	})
+	r.Register(Command{
+		Name:        "resume",
+		Aliases:     []string{"sessions"},
+		Description: "Resume a previous session",
+		Handle:      handleResume,
+		Type:        TypeLocal,
+		CLIUse:      "resume [session-id]",
+	})
 }
 
 func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) {

@@ -82,6 +82,29 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			}
 			m.modelDlg.Show(models, currentModel)
 		}
+		if msg.Result.ShowResumeDialog {
+			observe.GlobalTrace("if: msg.Result.ShowResumeDialog")
+			if m.slashDeps.SessionStore != nil {
+				summaries, err := m.slashDeps.SessionStore.List()
+				if err == nil && len(summaries) > 0 {
+					entries := make([]SessionEntry, len(summaries))
+					for i, s := range summaries {
+						entries[i] = SessionEntry{
+							ID:        s.ID,
+							Summary:   s.Summary,
+							WorkDir:   s.WorkDir,
+							TurnCount: s.TurnCount,
+							UpdatedAt: s.UpdatedAt,
+						}
+					}
+					m.resumeDlg.Show(entries, m.workspace)
+				}
+			}
+		}
+		if msg.Result.ResumeSessionID != "" {
+			observe.GlobalTrace("if: msg.Result.ResumeSessionID != \"\"")
+			m.loadResumedSession(msg.Result.ResumeSessionID)
+		}
 	}
 
 	if snap := m.store.Snapshot(); snap.Model != "" {
@@ -483,6 +506,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.resumeDlg.active && msg.Type != tea.KeyCtrlC {
+		observe.GlobalTrace("if: m.resumeDlg.active && msg.Type != tea.KeyCtrlC")
+		if selectedID := m.resumeDlg.Update(msg); selectedID != "" {
+			observe.GlobalTrace("if: selectedID != \"\" — session chosen")
+			m.loadResumedSession(selectedID)
+		}
+		m.viewport.SetContent(m.viewportContent())
+		observe.GlobalTrace("return: m, nil")
+		return m, nil
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		observe.GlobalTrace("case: tea.KeyCtrlC")
@@ -832,4 +866,50 @@ func truncateToolbar(s string, max int) string {
 	}
 	observe.GlobalTrace("return: string(runes[:max-3]) + \"...\"")
 	return string(runes[:max-3]) + "..."
+}
+
+// loadResumedSession loads a session by ID and replaces the current conversation.
+func (m *Model) loadResumedSession(sessionID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	if m.slashDeps.SessionStore == nil {
+		m.outputSegs = appendText(m.outputSegs, "\n  Session store not available.\n\n")
+		return
+	}
+
+	sess, err := m.slashDeps.SessionStore.Load(sessionID)
+	if err != nil {
+		m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Error loading session: %s\n\n", err))
+		return
+	}
+
+	// Replace conversation in the state store
+	m.store.Update(func(s *app.AppState) {
+		s.Conversation = sess.Conversation
+		if sess.Conversation.Model != "" {
+			s.Model = sess.Conversation.Model
+		}
+	})
+
+	// Update toolbar
+	if sess.Conversation.Model != "" {
+		m.toolbar.SetModel(sess.Conversation.Model)
+	}
+
+	// Reload viewport segments from the resumed conversation's messages
+	m.outputSegs = nil
+	for _, msg := range sess.Conversation.Messages {
+		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
+	}
+
+	shortID := sessionID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	summary := sess.Summary
+	if summary == "" {
+		summary = "(no summary)"
+	}
+	m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Resumed session %s — %s — %d turns\n\n", shortID, summary, sess.TurnCount))
 }

@@ -12,6 +12,8 @@ import (
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/session"
+	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/task"
 )
 
@@ -26,6 +28,8 @@ type Result struct {
 	InjectPrompt      string // if set, TUI feeds this as a user message to the engine
 	ShowTeamsDialog   bool   // true for /teams — TUI opens interactive teams dialog
 	ShowModelDialog   bool   // true for /model with no args — TUI opens model picker
+	ShowResumeDialog  bool   // true for /resume with no args — TUI opens session picker
+	ResumeSessionID   string // if set, TUI loads this session into conversation
 }
 
 // Handler is the function signature for a slash command handler.
@@ -49,6 +53,10 @@ type Deps struct {
 	ModelLister       func() []string                  // returns available model names for current provider
 	ContextWindowFunc func(modelID string) (int, bool) // validates model + returns context window
 	OnModelChanged    func(modelID string)             // callback: update budget + compaction on model switch
+
+	// Session + skill support — nil-safe.
+	SessionStore *session.Store
+	SkillLoader  *skill.Loader
 }
 
 // CommandType distinguishes how a command is executed.

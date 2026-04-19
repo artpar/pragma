@@ -255,6 +255,9 @@ func RunInteractive(cmd *cobra.Command) error {
 		}
 	}
 
+	// Session store for slash commands
+	sessStore, _ := session.NewStore()
+
 	slashDeps := slash.Deps{
 		Store:       d.Store,
 		CostTracker: d.CostTracker,
@@ -277,6 +280,8 @@ func RunInteractive(cmd *cobra.Command) error {
 				d.TokenMonitor.SetBudget(cw)
 			}
 		},
+		SessionStore: sessStore,
+		SkillLoader:  skillLoader,
 	}
 
 	m := tui.New(tui.Config{

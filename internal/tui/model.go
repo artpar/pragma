@@ -208,8 +208,9 @@ type Model struct {
 	perm     permissionDialog
 	ask      askDialog
 	teams    teamsDialog
-	modelDlg modelDialog
-	toolbar  toolbar
+	modelDlg  modelDialog
+	resumeDlg resumeDialog
+	toolbar   toolbar
 	spin     spinner.Model
 
 	// Rendering
@@ -545,6 +546,12 @@ func (m Model) viewportContent() string {
 		observe.GlobalTrace("if: m.modelDlg.active")
 		b.WriteString("\n")
 		b.WriteString(m.modelDlg.View(m.width))
+	}
+
+	if m.resumeDlg.active {
+		observe.GlobalTrace("if: m.resumeDlg.active")
+		b.WriteString("\n")
+		b.WriteString(m.resumeDlg.View(m.width))
 	}
 	observe.GlobalTrace("return: b.String()")
 	return b.String()

@@ -12,6 +12,8 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/session"
+	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/tui"
 )
@@ -105,13 +107,18 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	compDeps, _ := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
 
+	sessStore, _ := session.NewStore()
+	skillLoader := skill.NewLoader(d.Cwd)
+
 	slashDeps := slash.Deps{
-		Store:       d.Store,
-		CostTracker: d.CostTracker,
-		Bus:         d.Bus,
-		ModelName:   d.Cfg.Model,
-		Provider:    d.Cfg.Provider,
-		Cwd:         d.Cwd,
+		Store:        d.Store,
+		CostTracker:  d.CostTracker,
+		Bus:          d.Bus,
+		ModelName:    d.Cfg.Model,
+		Provider:     d.Cfg.Provider,
+		Cwd:          d.Cwd,
+		SessionStore: sessStore,
+		SkillLoader:  skillLoader,
 	}
 
 	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
@@ -195,13 +202,17 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 			defer d.Cleanup()
 		}
 		d.Bus.Subscribe(d.StderrLogger)
+		ss, _ := session.NewStore()
+		sl := skill.NewLoader(d.Cwd)
 		slashDeps := slash.Deps{
-			Store:       d.Store,
-			CostTracker: d.CostTracker,
-			Bus:         d.Bus,
-			ModelName:   d.Cfg.Model,
-			Provider:    d.Cfg.Provider,
-			Cwd:         d.Cwd,
+			Store:        d.Store,
+			CostTracker:  d.CostTracker,
+			Bus:          d.Bus,
+			ModelName:    d.Cfg.Model,
+			Provider:     d.Cfg.Provider,
+			Cwd:          d.Cwd,
+			SessionStore: ss,
+			SkillLoader:  sl,
 		}
 		result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
 		if err != nil {
@@ -228,10 +239,14 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 		cfg.Provider = p
 	}
 
+	ss2, _ := session.NewStore()
+	sl2 := skill.NewLoader(cwd)
 	slashDeps := slash.Deps{
-		ModelName: cfg.Model,
-		Provider:  cfg.Provider,
-		Cwd:       cwd,
+		ModelName:    cfg.Model,
+		Provider:     cfg.Provider,
+		Cwd:          cwd,
+		SessionStore: ss2,
+		SkillLoader:  sl2,
 	}
 
 	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
