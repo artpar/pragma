@@ -19,6 +19,7 @@ type sendInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["to", "message"],
 	"properties": {
 		"to": {

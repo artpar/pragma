@@ -25,6 +25,7 @@ type lspInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["operation", "file_path"],
 	"properties": {
 		"operation": {

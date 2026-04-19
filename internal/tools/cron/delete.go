@@ -17,6 +17,7 @@ type deleteInput struct {
 
 var deleteSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["id"],
 	"properties": {
 		"id": {

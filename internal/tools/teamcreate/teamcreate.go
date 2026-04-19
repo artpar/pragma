@@ -22,6 +22,7 @@ type teamCreateInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["team_name"],
 	"properties": {
 		"team_name": {

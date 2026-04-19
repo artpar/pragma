@@ -22,6 +22,7 @@ type FileWriteInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["file_path", "content"],
 	"properties": {
 		"file_path": {

@@ -25,6 +25,7 @@ type readInput struct {
 
 var readInputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["server", "uri"],
 	"properties": {
 		"server": {

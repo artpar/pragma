@@ -17,6 +17,7 @@ type taskOutputInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["task_id"],
 	"properties": {
 		"task_id": {

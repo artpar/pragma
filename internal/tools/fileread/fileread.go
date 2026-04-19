@@ -72,6 +72,7 @@ type FileReadInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["file_path"],
 	"properties": {
 		"file_path": {

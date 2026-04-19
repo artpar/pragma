@@ -30,6 +30,7 @@ type askInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {
 		"question": {
 			"type": "string",
@@ -42,6 +43,7 @@ var inputSchema = json.RawMessage(`{
 			"maxItems": 4,
 			"items": {
 				"type": "object",
+	"additionalProperties": false,
 				"required": ["question", "header", "options"],
 				"properties": {
 					"question": {
@@ -59,6 +61,7 @@ var inputSchema = json.RawMessage(`{
 						"maxItems": 4,
 						"items": {
 							"type": "object",
+	"additionalProperties": false,
 							"required": ["label"],
 							"properties": {
 								"label": {

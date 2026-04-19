@@ -26,6 +26,7 @@ type lifecycleInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["prompt", "structure"],
 	"properties": {
 		"structure": {

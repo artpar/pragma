@@ -20,6 +20,7 @@ type createInput struct {
 
 var createSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["cron", "prompt"],
 	"properties": {
 		"cron": {

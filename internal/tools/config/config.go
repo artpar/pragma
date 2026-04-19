@@ -23,6 +23,7 @@ type ConfigInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["setting"],
 	"properties": {
 		"setting": {

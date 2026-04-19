@@ -25,6 +25,7 @@ type NotebookEditInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["notebook_path", "new_source"],
 	"properties": {
 		"notebook_path": {

@@ -21,6 +21,7 @@ type remoteInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["action"],
 	"properties": {
 		"action": {
@@ -34,6 +35,7 @@ var inputSchema = json.RawMessage(`{
 		},
 		"body": {
 			"type": "object",
+	"additionalProperties": false,
 			"description": "JSON body for create and update actions"
 		}
 	}

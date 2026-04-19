@@ -17,6 +17,7 @@ type TaskListInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {
 		"status": {
 			"type": "string",

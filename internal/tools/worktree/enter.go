@@ -21,6 +21,7 @@ type enterInput struct {
 
 var enterSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {
 		"slug": {
 			"type": "string",

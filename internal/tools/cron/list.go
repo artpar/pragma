@@ -12,6 +12,7 @@ import (
 
 var listSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {}
 }`)
 

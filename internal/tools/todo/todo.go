@@ -22,6 +22,7 @@ type todoItemInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["todos"],
 	"properties": {
 		"todos": {
@@ -29,6 +30,7 @@ var inputSchema = json.RawMessage(`{
 			"description": "The complete list of todos to set (replaces existing)",
 			"items": {
 				"type": "object",
+	"additionalProperties": false,
 				"required": ["content", "status"],
 				"properties": {
 					"content": {

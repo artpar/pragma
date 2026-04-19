@@ -36,6 +36,7 @@ type WebFetchInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["url", "prompt"],
 	"properties": {
 		"url": {

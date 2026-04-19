@@ -37,6 +37,7 @@ type AgentInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["prompt"],
 	"properties": {
 		"prompt": {

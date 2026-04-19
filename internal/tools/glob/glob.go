@@ -32,6 +32,7 @@ type GlobInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["pattern"],
 	"properties": {
 		"pattern": {

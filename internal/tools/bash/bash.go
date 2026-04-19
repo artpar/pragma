@@ -29,6 +29,7 @@ type BashInput struct {
 var inputSchema = json.RawMessage(`{
 	"type": "object",
 	"additionalProperties": false,
+	"additionalProperties": false,
 	"required": ["command"],
 	"properties": {
 		"command": {

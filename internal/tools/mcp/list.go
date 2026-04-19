@@ -18,6 +18,7 @@ type listInput struct {
 
 var listInputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {
 		"server": {
 			"type": "string",

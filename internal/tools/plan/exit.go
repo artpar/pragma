@@ -12,6 +12,7 @@ import (
 
 var exitInputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {}
 }`)
 

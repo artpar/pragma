@@ -27,6 +27,7 @@ var PrimitiveToolNames = map[string]bool{
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["operations"],
 	"properties": {
 		"operations": {
@@ -34,6 +35,7 @@ var inputSchema = json.RawMessage(`{
 			"description": "Sequence of tool operations to execute",
 			"items": {
 				"type": "object",
+	"additionalProperties": false,
 				"required": ["tool", "input"],
 				"properties": {
 					"tool": {
@@ -42,6 +44,7 @@ var inputSchema = json.RawMessage(`{
 					},
 					"input": {
 						"type": "object",
+	"additionalProperties": false,
 						"description": "Input parameters for the tool"
 					}
 				}

@@ -41,6 +41,7 @@ type GrepInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["pattern"],
 	"properties": {
 		"pattern": {"type": "string", "description": "The regular expression pattern to search for in file contents"},

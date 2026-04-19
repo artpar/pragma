@@ -15,6 +15,7 @@ import (
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {}
 }`)
 

@@ -12,6 +12,7 @@ import (
 
 var enterInputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {}
 }`)
 

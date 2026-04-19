@@ -20,6 +20,7 @@ type toolSearchInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["query"],
 	"properties": {
 		"query": {

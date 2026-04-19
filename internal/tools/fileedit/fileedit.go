@@ -28,6 +28,7 @@ type FileEditInput struct {
 var inputSchema = json.RawMessage(`{
 	"type": "object",
 	"additionalProperties": false,
+	"additionalProperties": false,
 	"required": ["file_path", "old_string", "new_string"],
 	"properties": {
 		"file_path": {

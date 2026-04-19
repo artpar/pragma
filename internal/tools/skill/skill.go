@@ -23,6 +23,7 @@ type SkillInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["skill"],
 	"properties": {
 		"skill": {

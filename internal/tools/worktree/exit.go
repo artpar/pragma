@@ -20,6 +20,7 @@ type exitInput struct {
 
 var exitSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["worktree_path"],
 	"properties": {
 		"worktree_path": {

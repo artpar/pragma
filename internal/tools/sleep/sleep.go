@@ -17,6 +17,7 @@ type sleepInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["seconds"],
 	"properties": {
 		"seconds": {

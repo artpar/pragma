@@ -31,6 +31,7 @@ type selfTraceInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"properties": {
 		"topic": {
 			"type": "string",

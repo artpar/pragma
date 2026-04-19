@@ -23,6 +23,7 @@ type BriefInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["message"],
 	"properties": {
 		"message": {

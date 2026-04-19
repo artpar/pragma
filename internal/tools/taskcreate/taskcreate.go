@@ -18,6 +18,7 @@ type TaskCreateInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["subject", "description"],
 	"properties": {
 		"subject": {

@@ -12,7 +12,8 @@ import (
 	"github.com/artpar/pragma/internal/tool"
 )
 
-var inputSchema = json.RawMessage(`{"type": "object", "properties": {}}`)
+var inputSchema = json.RawMessage(`{"type": "object",
+	"additionalProperties": false, "properties": {}}`)
 
 // Tool is a pseudo-tool injected when an MCP server requires OAuth authentication.
 // When invoked, it starts an OAuth PKCE flow and returns the authorization URL.

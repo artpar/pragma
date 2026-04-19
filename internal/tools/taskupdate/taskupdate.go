@@ -20,6 +20,7 @@ type TaskUpdateInput struct {
 
 var inputSchema = json.RawMessage(`{
 	"type": "object",
+	"additionalProperties": false,
 	"required": ["id"],
 	"properties": {
 		"id": {
