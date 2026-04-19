@@ -87,6 +87,6 @@ func (t *EnterTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSna
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: \"Entered plan mode. Only read-only tools are now...")
 
 	return tool.InvokeResult{
-		Content: "Entered plan mode. Only read-only tools are now available. Use ExitPlanMode when ready to execute.",
+		Content: "Entered plan mode. Only read-only tools are now available. Explore the codebase, design your approach, then call ExitPlanMode — the user will review your plan before execution begins.",
 	}, nil
 }

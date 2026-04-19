@@ -35,7 +35,7 @@ func TestEnterPlanMode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result.Content != "Entered plan mode. Only read-only tools are now available. Use ExitPlanMode when ready to execute." {
+		if result.Content != "Entered plan mode. Only read-only tools are now available. Explore the codebase, design your approach, then call ExitPlanMode — the user will review your plan before execution begins." {
 			t.Fatalf("unexpected content: %s", result.Content)
 		}
 

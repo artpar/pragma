@@ -44,16 +44,27 @@ var inputSchema = json.RawMessage(`{
 	}
 }`)
 
-const toolDescription = `Execute a task using a structured workflow.
+const toolDescription = `Execute a task using a structured workflow with evaluation gates, retry logic, or multi-perspective analysis.
 
-Describe the execution structure you want in natural language, and the system compiles it into an executable workflow graph. You do not need to know the graph format — just describe the steps, evaluation gates, and retry logic you need.
+This is an advanced tool for tasks that specifically need structured control flow. For most tasks, use tools directly or delegate via the Agent tool.
+
+Use LifecycleRun when the task specifically needs:
+- Retry with reflection: "fix the code, run tests, if tests fail reflect on what went wrong and retry up to 3 times"
+- Multi-perspective analysis: "analyze from a security perspective, then from a performance perspective, then merge findings"
+- Evaluation gates: "attempt a fix, verify it works before moving on"
+
+Do NOT use for:
+- Simple questions, file reads, or single tool calls — respond directly
+- Multi-file investigation or research — use the Agent tool
+- Straightforward implementation — use tools directly
+
+Describe the execution structure in natural language and the system compiles it into an executable workflow graph.
 
 Structure examples:
 - "tool-calling loop" — LLM calls tools in a loop until done
-- "plan the refactoring steps first, then execute each step with tools, then verify the result"
-- "try fixing the code, run the tests, if tests fail reflect on what went wrong and retry up to 3 times"
-- "analyze from a security perspective, then from a performance perspective, then merge the findings"
-- "attempt the task with tools, evaluate if it succeeded, if not reflect and try a different approach"`
+- "plan steps first, execute each with tools, verify the result"
+- "try fixing, run tests, if fail reflect and retry up to 3 times"
+- "analyze from security perspective, then performance, then merge findings"`
 
 // Tool implements the LifecycleRun tool for executing structured workflows.
 type Tool struct {

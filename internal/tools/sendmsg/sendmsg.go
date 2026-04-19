@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -127,6 +128,16 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		observe.GlobalTrace("if: tk.Status != task.TaskRunning && tk.Status != task.TaskPending")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent %q is %s, not running. Cannot d...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent %q is %s, not running. Cannot deliver message.", in.To, tk.Status)}, nil
+	}
+
+	// Check if the agent is dead (heartbeat expired). Tasks that never
+	// heartbeated (LastHeartbeat is zero) are still initializing — skip check.
+	if !tk.LastHeartbeat.IsZero() && time.Since(tk.LastHeartbeat) > task.DeadAgentTimeout {
+		_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
+			tt.Status = task.TaskFailed
+			tt.Error = fmt.Sprintf("agent unresponsive (no heartbeat for %s)", task.DeadAgentTimeout)
+		})
+		return tool.InvokeResult{Content: fmt.Sprintf("Agent %q appears to be dead (no heartbeat for %s). Message not delivered.", in.To, task.DeadAgentTimeout)}, nil
 	}
 
 	if err := t.Tasks.Update(tk.ID, func(tt *task.Task) {

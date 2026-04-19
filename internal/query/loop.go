@@ -13,6 +13,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
 )
 
@@ -81,8 +82,14 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			return
 		}
 
+		// Main session: sweep dead sub-agents each turn so TaskList stays accurate.
+		if e.taskRegistry != nil && e.config.TaskID == "" {
+			e.taskRegistry.ReapDead(task.DeadAgentTimeout)
+		}
+
 		if e.taskRegistry != nil && e.config.TaskID != "" {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.taskRegistry != nil && e.config.TaskID != \"\"")
+			e.taskRegistry.Heartbeat(e.config.TaskID)
 			if msgs := e.taskRegistry.DrainPendingMessages(e.config.TaskID); len(msgs) > 0 {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("draining %d pending messages", len(msgs)))
 				injectedMsg := model.Message{

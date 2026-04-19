@@ -358,3 +358,40 @@ func (r *Registry) IsShutdownRequested(id string) bool {
 	observe.GlobalTrace("return: t.ShutdownRequested")
 	return t.ShutdownRequested
 }
+
+// Heartbeat updates the LastHeartbeat time for a running task.
+// Called by the engine loop each iteration when running as a sub-agent.
+func (r *Registry) Heartbeat(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.tasks[id]
+	if !ok || t.Status != TaskRunning {
+		return
+	}
+	t.LastHeartbeat = time.Now()
+}
+
+// ReapDead marks running tasks as failed if their last heartbeat is older
+// than timeout. Returns the IDs of reaped tasks. Tasks that never heartbeated
+// (LastHeartbeat is zero) are not reaped — they may still be initializing.
+func (r *Registry) ReapDead(timeout time.Duration) []string {
+	now := time.Now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var reaped []string
+	for id, t := range r.tasks {
+		if t.Status != TaskRunning {
+			continue
+		}
+		if t.LastHeartbeat.IsZero() {
+			continue
+		}
+		if now.Sub(t.LastHeartbeat) > timeout {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("agent unresponsive (no heartbeat for %s)", timeout)
+			t.UpdatedAt = now
+			reaped = append(reaped, id)
+		}
+	}
+	return reaped
+}

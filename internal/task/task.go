@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+// DeadAgentTimeout is how long since the last heartbeat before an agent is
+// considered dead. Used by both ReapDead (proactive sweep) and SendMessage
+// (lazy detection). Tasks that never heartbeated are not checked.
+const DeadAgentTimeout = 5 * time.Minute
+
 // TaskStatus represents the lifecycle state of a task.
 type TaskStatus string
 
@@ -35,6 +40,7 @@ type Task struct {
 	ShutdownRequested bool               `json:"-"`                    // set by Shutdown(); teammate loop checks this
 	IsIdle            bool               `json:"-"`                    // true when teammate is waiting for messages
 	IdleSince         time.Time          `json:"-"`                    // when teammate became idle (zero = not idle)
+	LastHeartbeat     time.Time          `json:"-"`                    // updated each engine loop iteration; zero = never heartbeated
 }
 
 // snapshot returns a deep copy of the Task safe for reading outside the registry lock.
