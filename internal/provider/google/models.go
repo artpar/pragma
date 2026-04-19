@@ -23,8 +23,6 @@ type ModelInfo struct {
 // Source: https://ai.google.dev/gemini-api/docs/models (2026-04-18)
 var registry = map[string]ModelInfo{
 
-	// --- Gemini 3 series ---
-
 	"gemini-3.1-pro-preview": {
 		ID:               "gemini-3.1-pro-preview",
 		MaxContext:       1_048_576,
@@ -53,8 +51,6 @@ var registry = map[string]ModelInfo{
 		SupportsThinking: true,
 	},
 
-	// --- Gemini 2.5 series ---
-
 	"gemini-2.5-pro": {
 		ID:               "gemini-2.5-pro",
 		MaxContext:       1_048_576,
@@ -82,16 +78,19 @@ var registry = map[string]ModelInfo{
 		SupportsToolUse:  true,
 		SupportsThinking: false,
 	},
-
 }
 
 // ListModels returns the sorted IDs of all known Google models.
 func ListModels() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	ids := make([]string, 0, len(registry))
 	for id := range registry {
+		observe.GlobalTrace("range registry")
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	observe.GlobalTrace("return: ids")
 	return ids
 }
 

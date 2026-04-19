@@ -18,24 +18,25 @@ import (
 //
 //	⏺ model · provider · 5m · $0.0042 · 1.5k in / 2.3k out / 500 cache (12% ctx)    ready
 type toolbar struct {
-	modelName     string
-	provider      string
-	workspace     string
-	totalCost     float64
-	status        string
-	inputTokens   int
-	outputTokens  int
-	cacheTokens   int // combined cache creation + cache read
-	contextSize      int
-	latestContextFill int // latest request's actual context window fill
-	startTime        time.Time // session start for elapsed display
-	teammateCount    int       // number of running teammates
+	modelName         string
+	provider          string
+	workspace         string
+	totalCost         float64
+	status            string
+	inputTokens       int
+	outputTokens      int
+	cacheTokens       int // combined cache creation + cache read
+	contextSize       int
+	latestContextFill int       // latest request's actual context window fill
+	startTime         time.Time // session start for elapsed display
+	teammateCount     int       // number of running teammates
 }
 
 func newToolbar(modelName, provider, workspace string, startTime time.Time) toolbar {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if startTime.IsZero() {
+		observe.GlobalTrace("if: startTime.IsZero()")
 		startTime = time.Now()
 	}
 	observe.GlobalTrace("return: toolbar{\n\tmodelName:\tmodelName,\n\tprovider:\tprovider,\n\tworkspace:\tfilepath.Bas...")
@@ -116,6 +117,8 @@ func (t toolbar) styleTokenStr(s string, pct float64) string {
 
 // SetModel updates the displayed model name (e.g. after /model switch).
 func (t *toolbar) SetModel(name string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	t.modelName = name
 }
 

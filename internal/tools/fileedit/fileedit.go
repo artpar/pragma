@@ -194,9 +194,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if count == 0 {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count == 0")
-		// Diagnose the mismatch: check if tab/space normalization would match.
+
 		hint := diagnoseWhitespaceMismatch(content, in.OldString)
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file...\")")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.%s\\nStri...")
 		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s\nString: %s", hint, in.OldString)
 	}
 
@@ -273,26 +274,37 @@ func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
 // produce a match and returns a diagnostic hint for the error message.
 // Returns empty string when no whitespace mismatch is detected.
 func diagnoseWhitespaceMismatch(content, oldString string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	hasTabs := strings.Contains(oldString, "\t")
 	hasLeadingSpaces := false
 	for _, line := range strings.Split(oldString, "\n") {
+		observe.GlobalTrace("range strings.Split(oldString, \"\\n\")")
 		if len(line) > 0 && line[0] == ' ' {
+			observe.GlobalTrace("if: len(line) > 0 && line[0] == ' '")
 			hasLeadingSpaces = true
 			break
 		}
 	}
 	if !hasTabs && !hasLeadingSpaces {
+		observe.GlobalTrace("if: !hasTabs && !hasLeadingSpaces")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
-	// Try normalizing: tabs→spaces (common tab width 4)
+
 	tabToSpaces := strings.ReplaceAll(oldString, "\t", "    ")
 	if strings.Contains(content, tabToSpaces) {
+		observe.GlobalTrace("if: strings.Contains(content, tabToSpaces)")
+		observe.GlobalTrace("return: \"\\nHint: the file uses spaces for indentation but old_string contains tabs. R...")
 		return "\nHint: the file uses spaces for indentation but old_string contains tabs. Replace tabs with spaces and retry."
 	}
-	// Try normalizing: spaces→tabs
+
 	spacesToTab := strings.ReplaceAll(oldString, "    ", "\t")
 	if strings.Contains(content, spacesToTab) {
+		observe.GlobalTrace("if: strings.Contains(content, spacesToTab)")
+		observe.GlobalTrace("return: \"\\nHint: the file uses tabs for indentation but old_string contains spaces. R...")
 		return "\nHint: the file uses tabs for indentation but old_string contains spaces. Replace leading spaces with tabs and retry."
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }

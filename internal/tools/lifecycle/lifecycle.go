@@ -110,10 +110,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 	if in.Prompt == "" && in.Description != "" {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.Prompt == \"\" && in.Description != \"\"")
 		in.Prompt = in.Description
 	}
 	if in.Prompt == "" {
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.Prompt == \"\"")
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required (hint: you sent 'descript...")
 		return tool.InvokeResult{}, fmt.Errorf("prompt is required (hint: you sent 'description' — use 'prompt' instead)")
 	}
 	if in.Structure == "" {

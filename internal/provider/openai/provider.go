@@ -97,6 +97,9 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 
 // ListModels returns sorted IDs of all known OpenAI models.
 func (p *Provider) ListModels() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ListModels()")
 	return ListModels()
 }
 
@@ -169,8 +172,8 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 		var toolCallIDs []string // ordered list of tool call IDs
 		seenToolCalls := make(map[string]bool)
 		var accText strings.Builder
-		accToolInputs := make(map[string]*strings.Builder) // id -> accumulated JSON
-		accToolNames := make(map[string]string)            // id -> tool name
+		accToolInputs := make(map[string]*strings.Builder)
+		accToolNames := make(map[string]string)
 
 		for chunk := range chunks {
 			observe.TraceCtx(ctx, "openai", "Provider.Stream", "range chunks")
@@ -215,6 +218,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							observe.TraceCtx(ctx, "openai", "Provider.Stream", "warn: tool call input delta has no ID, falling back to last tool call")
 						}
 						if b, ok := accToolInputs[id]; ok {
+							observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: ok")
 							b.WriteString(tc.Function.Arguments)
 						}
 						ch <- provider.StreamChunk{
@@ -234,11 +238,14 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					}
 					var accContent []model.ContentPart
 					if accText.Len() > 0 {
+						observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: accText.Len() > 0")
 						accContent = append(accContent, model.TextPart{Text: accText.String()})
 					}
 					for _, id := range toolCallIDs {
+						observe.TraceCtx(ctx, "openai", "Provider.Stream", "range toolCallIDs")
 						tc := model.ToolCallPart{ID: id, Name: accToolNames[id]}
 						if b, ok := accToolInputs[id]; ok {
+							observe.TraceCtx(ctx, "openai", "Provider.Stream", "if: ok")
 							tc.Input = json.RawMessage(b.String())
 						}
 						accContent = append(accContent, tc)

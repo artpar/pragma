@@ -119,6 +119,9 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 
 // ListModels returns sorted IDs of all known Google models.
 func (p *Provider) ListModels() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ListModels()")
 	return ListModels()
 }
 
@@ -217,9 +220,11 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					observe.TraceCtx(ctx, "google", "Provider.Stream", "if: cand.Content == nil")
 					reason := ""
 					if cand.FinishReason != "" {
+						observe.TraceCtx(ctx, "google", "Provider.Stream", "if: cand.FinishReason != \"\"")
 						reason = string(cand.FinishReason)
 					}
 					if p.bus != nil {
+						observe.TraceCtx(ctx, "google", "Provider.Stream", "if: p.bus != nil")
 						p.bus.Emit(observe.ErrorOccurred{
 							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 							Severity:     "warn",
@@ -229,6 +234,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						})
 					}
 					if reason == "MALFORMED_FUNCTION_CALL" {
+						observe.TraceCtx(ctx, "google", "Provider.Stream", "if: reason == \"MALFORMED_FUNCTION_CALL\"")
 						ch <- provider.StreamChunk{
 							Error: fmt.Errorf("%w: MALFORMED_FUNCTION_CALL (retryable)", provider.ErrServerError),
 						}

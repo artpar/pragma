@@ -79,11 +79,15 @@ var registry = map[string]ModelInfo{
 
 // ListModels returns the sorted IDs of all known Groq models.
 func ListModels() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	ids := make([]string, 0, len(registry))
 	for id := range registry {
+		observe.GlobalTrace("range registry")
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	observe.GlobalTrace("return: ids")
 	return ids
 }
 

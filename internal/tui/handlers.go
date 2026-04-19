@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -72,9 +73,19 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			observe.GlobalTrace("if: msg.Result.ShowTeamsDialog")
 			m.teams.Show(m.taskReg)
 		}
+		if msg.Result.ShowModelDialog {
+			observe.GlobalTrace("if: msg.Result.ShowModelDialog")
+			var models []string
+			currentModel := m.toolbar.modelName
+			if m.slashDeps.ModelLister != nil {
+				models = m.slashDeps.ModelLister()
+			}
+			m.modelDlg.Show(models, currentModel)
+		}
 	}
-	// Sync toolbar model from store (covers /model switch).
+
 	if snap := m.store.Snapshot(); snap.Model != "" {
+		observe.GlobalTrace("if: snap.Model != \"\"")
 		m.toolbar.SetModel(snap.Model)
 	}
 	m.viewport.SetContent(m.viewportContent())
@@ -436,6 +447,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.teams.active && msg.Type != tea.KeyCtrlC {
 		observe.GlobalTrace("if: m.teams.active && msg.Type != tea.KeyCtrlC")
 		m.teams.Update(msg)
+		m.viewport.SetContent(m.viewportContent())
+		observe.GlobalTrace("return: m, nil")
+		return m, nil
+	}
+
+	if m.modelDlg.active && msg.Type != tea.KeyCtrlC {
+		observe.GlobalTrace("if: m.modelDlg.active && msg.Type != tea.KeyCtrlC")
+		if selected := m.modelDlg.Update(msg); selected != "" {
+			observe.GlobalTrace("if: selected != \"\" — model chosen: " + selected)
+			m.slashDeps.Store.Update(func(s *app.AppState) {
+				s.Model = selected
+			})
+			if m.slashDeps.OnModelChanged != nil {
+				m.slashDeps.OnModelChanged(selected)
+			}
+			m.toolbar.SetModel(selected)
+			confirmMsg := fmt.Sprintf("Model switched to: %s", selected)
+			if m.slashDeps.ContextWindowFunc != nil {
+				if cw, ok := m.slashDeps.ContextWindowFunc(selected); ok {
+					confirmMsg = fmt.Sprintf("Model switched to: %s (context: %dk, takes effect on next turn)", selected, cw/1000)
+				}
+			}
+			m.outputSegs = appendText(m.outputSegs, "\n  "+confirmMsg+"\n\n")
+		}
 		m.viewport.SetContent(m.viewportContent())
 		observe.GlobalTrace("return: m, nil")
 		return m, nil

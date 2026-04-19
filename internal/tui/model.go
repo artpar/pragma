@@ -208,6 +208,7 @@ type Model struct {
 	perm     permissionDialog
 	ask      askDialog
 	teams    teamsDialog
+	modelDlg modelDialog
 	toolbar  toolbar
 	spin     spinner.Model
 
@@ -257,15 +258,16 @@ func New(cfg Config) Model {
 
 	tb := newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace, cfg.SessionStart)
 
-	// Seed toolbar with restored state (no-op for fresh sessions where values are zero).
 	tb.UpdateCost(cfg.CostTracker.TotalUSD())
 	msnap := cfg.Metrics.Snapshot()
 	cache := msnap.TokenUsage.CacheCreationInputTokens + msnap.TokenUsage.CacheReadInputTokens
 	budget := 0
 	if cfg.TokenMonitor != nil {
+		observe.GlobalTrace("if: cfg.TokenMonitor != nil")
 		budget = cfg.TokenMonitor.Budget()
 	}
 	tb.UpdateTokens(msnap.TokenUsage.InputTokens, msnap.TokenUsage.OutputTokens, cache, budget, msnap.LatestContextFill)
+	observe.GlobalTrace("return: Model{\n\tengine:\t\t\tcfg.Engine,\n\tstore:\t\t\tcfg.Store,\n\tcostTracker:\t\tcfg.CostTra...")
 
 	return Model{
 		engine:          cfg.Engine,
@@ -537,6 +539,12 @@ func (m Model) viewportContent() string {
 		observe.GlobalTrace("if: m.teams.active")
 		b.WriteString("\n")
 		b.WriteString(m.teams.View(m.width))
+	}
+
+	if m.modelDlg.active {
+		observe.GlobalTrace("if: m.modelDlg.active")
+		b.WriteString("\n")
+		b.WriteString(m.modelDlg.View(m.width))
 	}
 	observe.GlobalTrace("return: b.String()")
 	return b.String()

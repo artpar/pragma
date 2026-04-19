@@ -54,6 +54,7 @@ func registerBuiltins(r *Registry) {
 	})
 	r.Register(Command{
 		Name:        "model",
+		Aliases:     []string{"models"},
 		Description: "Show or switch the active model",
 		Handle:      handleModel,
 		Type:        TypeLocal,
@@ -239,45 +240,52 @@ func handleHelp(_ context.Context, _ string, deps Deps) (Result, error) {
 }
 
 func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	args = strings.TrimSpace(args)
 
 	if args == "" {
-		// Show current model + list available
+		observe.GlobalTrace("if: args == \"\"")
+
+		// If model lister is available and has models, open interactive picker.
+		if deps.ModelLister != nil {
+			observe.GlobalTrace("if: deps.ModelLister != nil")
+			if models := deps.ModelLister(); len(models) > 0 {
+				observe.GlobalTrace("if: len(models) > 0 — ShowModelDialog")
+				return Result{ShowModelDialog: true}, nil
+			}
+		}
+
+		// Fallback: no model lister or no models — show text.
 		snap := deps.Store.Snapshot()
 		modelName := snap.Model
 		if modelName == "" {
+			observe.GlobalTrace("if: modelName == \"\"")
 			modelName = deps.ModelName
 		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "Current model: %s (provider: %s)", modelName, deps.Provider)
-		if deps.ModelLister != nil {
-			if models := deps.ModelLister(); len(models) > 0 {
-				b.WriteString("\n\nAvailable models:")
-				for _, m := range models {
-					marker := "  "
-					if m == modelName {
-						marker = "* "
-					}
-					b.WriteString("\n  " + marker + m)
-				}
-			}
-		}
-		return Result{DisplayText: b.String()}, nil
+		msg := fmt.Sprintf("Current model: %s (provider: %s)", modelName, deps.Provider)
+		observe.GlobalTrace("return: Result{DisplayText: msg}, nil")
+		return Result{DisplayText: msg}, nil
 	}
 
-	// Validate model against provider's known models
 	if deps.ContextWindowFunc != nil {
+		observe.GlobalTrace("if: deps.ContextWindowFunc != nil")
 		if _, ok := deps.ContextWindowFunc(args); !ok {
+			observe.GlobalTrace("if: !ok")
 			var b strings.Builder
 			fmt.Fprintf(&b, "Unknown model: %s", args)
 			if deps.ModelLister != nil {
+				observe.GlobalTrace("if: deps.ModelLister != nil")
 				if models := deps.ModelLister(); len(models) > 0 {
+					observe.GlobalTrace("if: len(models) > 0")
 					b.WriteString("\n\nAvailable models:")
 					for _, m := range models {
+						observe.GlobalTrace("range models")
 						b.WriteString("\n  " + m)
 					}
 				}
 			}
+			observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
 			return Result{DisplayText: b.String()}, nil
 		}
 	}
@@ -286,15 +294,19 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		s.Model = args
 	})
 	if deps.OnModelChanged != nil {
+		observe.GlobalTrace("if: deps.OnModelChanged != nil")
 		deps.OnModelChanged(args)
 	}
 
 	msg := fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)
 	if deps.ContextWindowFunc != nil {
+		observe.GlobalTrace("if: deps.ContextWindowFunc != nil")
 		if cw, ok := deps.ContextWindowFunc(args); ok {
+			observe.GlobalTrace("if: ok")
 			msg = fmt.Sprintf("Model switched to: %s (context: %dk, takes effect on next turn)", args, cw/1000)
 		}
 	}
+	observe.GlobalTrace("return: Result{DisplayText: msg}, nil")
 	return Result{DisplayText: msg}, nil
 }
 

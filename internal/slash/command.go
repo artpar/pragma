@@ -25,6 +25,7 @@ type Result struct {
 	Quit              bool   // true for /exit — TUI should exit
 	InjectPrompt      string // if set, TUI feeds this as a user message to the engine
 	ShowTeamsDialog   bool   // true for /teams — TUI opens interactive teams dialog
+	ShowModelDialog   bool   // true for /model with no args — TUI opens model picker
 }
 
 // Handler is the function signature for a slash command handler.

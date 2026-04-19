@@ -72,6 +72,9 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 
 // ListModels returns sorted IDs of all known Groq models.
 func (p *Provider) ListModels() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ListModels()")
 	return ListModels()
 }
 
@@ -185,9 +188,10 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						if id == "" && len(toolCallIDs) > 0 {
 							observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: id == \"\" && len(toolCallIDs) > 0")
 							id = toolCallIDs[len(toolCallIDs)-1]
-						observe.TraceCtx(ctx, "groq", "Provider.Stream", "warn: tool call input delta has no ID, falling back to last tool call")
+							observe.TraceCtx(ctx, "groq", "Provider.Stream", "warn: tool call input delta has no ID, falling back to last tool call")
 						}
 						if b, ok := accToolInputs[id]; ok {
+							observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: ok")
 							b.WriteString(tc.Function.Arguments)
 						}
 						ch <- provider.StreamChunk{
@@ -207,11 +211,14 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					}
 					var accContent []model.ContentPart
 					if accText.Len() > 0 {
+						observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: accText.Len() > 0")
 						accContent = append(accContent, model.TextPart{Text: accText.String()})
 					}
 					for _, id := range toolCallIDs {
+						observe.TraceCtx(ctx, "groq", "Provider.Stream", "range toolCallIDs")
 						tc := model.ToolCallPart{ID: id, Name: accToolNames[id]}
 						if b, ok := accToolInputs[id]; ok {
+							observe.TraceCtx(ctx, "groq", "Provider.Stream", "if: ok")
 							tc.Input = json.RawMessage(b.String())
 						}
 						accContent = append(accContent, tc)

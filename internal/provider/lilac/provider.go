@@ -99,6 +99,9 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 
 // ListModels returns sorted IDs of all known Lilac models.
 func (p *Provider) ListModels() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ListModels()")
 	return ListModels()
 }
 
