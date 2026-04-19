@@ -25,6 +25,7 @@ func NewRegistry(bus *observe.EventBus) *Registry {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Registry{\n\ttools:\tmake(map[string]Descriptor),\n\tbus:\tbus,\n}")
+	observe.GlobalTrace("return: &Registry{\n\ttools:\t\tmake(map[string]Descriptor),\n\tschemas:\tmake(map[string]*j...")
 	return &Registry{
 		tools:   make(map[string]Descriptor),
 		schemas: make(map[string]*jsonschema.Schema),
@@ -45,9 +46,11 @@ func (r *Registry) Register(desc Descriptor) error {
 		return fmt.Errorf("%w: %q", model.ErrToolAlreadyRegistered, name)
 	}
 	compiler := jsonschema.NewCompiler()
-	
+
 	if err := compiler.AddResource("schema.json", bytes.NewReader(desc.InputSchema())); err == nil {
+		observe.GlobalTrace("if: err == nil")
 		if compiled, err := compiler.Compile("schema.json"); err == nil {
+			observe.GlobalTrace("if: err == nil")
 			r.schemas[name] = compiled
 		}
 	}
@@ -78,8 +81,11 @@ func (r *Registry) Get(name string) (Descriptor, bool) {
 }
 
 func (r *Registry) GetSchema(name string) *jsonschema.Schema {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	observe.GlobalTrace("return: r.schemas[name]")
 	return r.schemas[name]
 }
 

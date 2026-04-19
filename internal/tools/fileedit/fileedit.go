@@ -28,7 +28,6 @@ type FileEditInput struct {
 var inputSchema = json.RawMessage(`{
 	"type": "object",
 	"additionalProperties": false,
-	"additionalProperties": false,
 	"required": ["file_path", "old_string", "new_string"],
 	"properties": {
 		"file_path": {
@@ -125,9 +124,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	filePath := util.ExpandPath(in.FilePath, state.WorkDir())
 
+	if in.OldString == "" && in.NewString == "" {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == \"\" && in.NewString == \"\"")
+		return tool.InvokeResult{}, fmt.Errorf("missing required fields 'old_string' and 'new_string': Edit requires 'file_path', 'old_string' (text to find), and 'new_string' (replacement). Do not use 'operations' or other formats")
+	}
+
 	if in.OldString == in.NewString {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == in.NewString")
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"no changes to make: old_string and new_strin...")
 		return tool.InvokeResult{}, fmt.Errorf("no changes to make: old_string and new_string are exactly the same")
 	}
 

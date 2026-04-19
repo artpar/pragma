@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/artpar/pragma/internal/hook"
@@ -234,8 +232,10 @@ func (o *Orchestrator) executeSingle(
 	desc, _ := o.registry.Get(call.Name)
 
 	if schema := o.registry.GetSchema(call.Name); schema != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: schema != nil")
 		var v any
 		if err := json.Unmarshal(call.Input, &v); err != nil {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: err != nil")
 			o.bus.Emit(observe.ToolExecutionFailed{
 				EventHeader:  observe.NewEventHeader("ToolExecutionFailed", traceID, spanID, parentSpan),
 				ToolCallID:   call.ID,
@@ -243,6 +243,7 @@ func (o *Orchestrator) executeSingle(
 				ErrorType:    "json_parse_error",
 				ErrorMessage: err.Error(),
 			})
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
 					ToolCallID: call.ID,
@@ -253,10 +254,8 @@ func (o *Orchestrator) executeSingle(
 		}
 
 		if err := schema.Validate(v); err != nil {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: err != nil")
 			msg := err.Error()
-			// Just to ensure jsonschema import is used
-			_ = jsonschema.Compiler{}
-
 			o.bus.Emit(observe.ToolExecutionFailed{
 				EventHeader:  observe.NewEventHeader("ToolExecutionFailed", traceID, spanID, parentSpan),
 				ToolCallID:   call.ID,
@@ -264,6 +263,7 @@ func (o *Orchestrator) executeSingle(
 				ErrorType:    "schema_validation_error",
 				ErrorMessage: msg,
 			})
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
 					ToolCallID: call.ID,

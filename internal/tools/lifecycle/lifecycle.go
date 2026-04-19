@@ -267,6 +267,14 @@ func (t *Tool) buildInitialState(in lifecycleInput, snap app.AppState) lifecycle
 	}
 }
 
+// toolCallRecord captures one actual tool invocation for verification.
+type toolCallRecord struct {
+	Name    string `json:"name"`
+	Input   string `json:"input"`
+	Output  string `json:"output"`
+	IsError bool   `json:"is_error,omitempty"`
+}
+
 func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.InvokeResult, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -279,6 +287,7 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 		errMsg = runErr.Error()
 	}
 
+	// Extract the LLM's narrative (last assistant text).
 	var resultText string
 	msgs := bridge.Messages(finalState)
 	for i := len(msgs) - 1; i >= 0; i-- {
@@ -301,15 +310,90 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 		}
 	}
 
+	// Extract actual tool call receipts from conversation history.
+	// This is verified data — what tools actually ran and their real results.
+	var toolCalls []toolCallRecord
+	modifiedSet := make(map[string]bool)
+	readSet := make(map[string]bool)
+
+	for mi := 0; mi < len(msgs); mi++ {
+		observe.GlobalTrace("for: mi < len(msgs)")
+		msg := msgs[mi]
+		if msg.Role != model.RoleAssistant {
+			observe.GlobalTrace("if: msg.Role != model.RoleAssistant")
+			continue
+		}
+
+		// Collect tool calls from this assistant message.
+		var calls []model.ToolCallPart
+		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
+			if tc, ok := part.(model.ToolCallPart); ok {
+				observe.GlobalTrace("if: ok (ToolCallPart)")
+				calls = append(calls, tc)
+			}
+		}
+		if len(calls) == 0 {
+			observe.GlobalTrace("if: len(calls) == 0")
+			continue
+		}
+
+		// Find matching results in the next user message.
+		resultMap := make(map[string]model.ToolResultPart)
+		if mi+1 < len(msgs) && msgs[mi+1].Role == model.RoleUser {
+			observe.GlobalTrace("if: mi+1 < len(msgs) && msgs[mi+1].Role == model.RoleUser")
+			for _, part := range msgs[mi+1].Content {
+				observe.GlobalTrace("range msgs[mi+1].Content")
+				if tr, ok := part.(model.ToolResultPart); ok {
+					observe.GlobalTrace("if: ok (ToolResultPart)")
+					resultMap[tr.ToolCallID] = tr
+				}
+			}
+		}
+
+		for _, tc := range calls {
+			observe.GlobalTrace("range calls")
+			rec := toolCallRecord{
+				Name:  tc.Name,
+				Input: truncate(string(tc.Input), 500),
+			}
+			if tr, ok := resultMap[tc.ID]; ok {
+				observe.GlobalTrace("if: ok (result matched)")
+				rec.Output = truncate(tr.Content, 500)
+				rec.IsError = tr.IsError
+
+				// Only track files for successful tool calls.
+				if !tr.IsError {
+					observe.GlobalTrace("if: !tr.IsError")
+					trackFiles(tc, modifiedSet, readSet)
+				}
+			}
+			toolCalls = append(toolCalls, rec)
+		}
+	}
+
+	var filesModified, filesRead []string
+	for f := range modifiedSet {
+		observe.GlobalTrace("range modifiedSet")
+		filesModified = append(filesModified, f)
+	}
+	for f := range readSet {
+		observe.GlobalTrace("range readSet")
+		filesRead = append(filesRead, f)
+	}
+
 	type result struct {
-		Status      string   `json:"status"`
-		Result      string   `json:"result,omitempty"`
-		Steps       int      `json:"steps"`
-		Passed      bool     `json:"passed,omitempty"`
-		Score       float64  `json:"score,omitempty"`
-		Reflections []string `json:"reflections,omitempty"`
-		Error       string   `json:"error,omitempty"`
-		Note        string   `json:"note,omitempty"`
+		Status        string           `json:"status"`
+		Result        string           `json:"result,omitempty"`
+		Steps         int              `json:"steps"`
+		Passed        bool             `json:"passed,omitempty"`
+		Score         float64          `json:"score,omitempty"`
+		Reflections   []string         `json:"reflections,omitempty"`
+		ToolCalls     []toolCallRecord `json:"tool_calls,omitempty"`
+		FilesModified []string         `json:"files_modified,omitempty"`
+		FilesRead     []string         `json:"files_read,omitempty"`
+		Error         string           `json:"error,omitempty"`
+		Note          string           `json:"note,omitempty"`
 	}
 
 	turnCount, _ := finalState[bridge.KeyTurnCount].(int)
@@ -317,20 +401,48 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 	var note string
 	if status == "completed" {
 		observe.GlobalTrace("if: status == \"completed\"")
-		note = "The structured workflow completed successfully. Present these findings to the user as-is — do not take additional actions unless the user explicitly asks."
+		note = "Cross-check the 'result' narrative against 'tool_calls' and 'files_modified'. If the narrative claims edits but files_modified is empty, report that no changes were actually made."
 	}
 
 	out, _ := json.Marshal(result{
-		Status:      status,
-		Result:      resultText,
-		Steps:       turnCount,
-		Passed:      bridge.Passed(finalState),
-		Score:       bridge.Score(finalState),
-		Reflections: bridge.Reflections(finalState),
-		Error:       errMsg,
-		Note:        note,
+		Status:        status,
+		Result:        resultText,
+		Steps:         turnCount,
+		Passed:        bridge.Passed(finalState),
+		Score:         bridge.Score(finalState),
+		Reflections:   bridge.Reflections(finalState),
+		ToolCalls:     toolCalls,
+		FilesModified: filesModified,
+		FilesRead:     filesRead,
+		Error:         errMsg,
+		Note:          note,
 	})
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(out)}, nil")
 
 	return tool.InvokeResult{Content: string(out)}, nil
+}
+
+// truncate limits s to maxLen runes, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
+}
+
+// trackFiles extracts file_path from Edit/Write/Read tool call inputs.
+func trackFiles(tc model.ToolCallPart, modified, read map[string]bool) {
+	var fp struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.Unmarshal(tc.Input, &fp); err != nil || fp.FilePath == "" {
+		return
+	}
+	switch tc.Name {
+	case "Edit", "Write":
+		modified[fp.FilePath] = true
+	case "Read":
+		read[fp.FilePath] = true
+	}
 }
