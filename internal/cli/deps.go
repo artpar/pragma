@@ -549,7 +549,7 @@ func DefaultModelFor(providerName string) string {
 		return "zai-org/glm-5.1"
 	default:
 		observe.GlobalTrace("default")
-		return "claude-sonnet-4-20250514"
+		return "claude-sonnet-4-6-20250514"
 	}
 }
 
