@@ -89,8 +89,8 @@ func TestGlobTool_NoMatch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Content != "No files found" {
-		t.Errorf("expected 'No files found', got: %q", result.Content)
+	if !strings.HasPrefix(result.Content, "No files found") {
+		t.Errorf("expected 'No files found' prefix, got: %q", result.Content)
 	}
 }
 

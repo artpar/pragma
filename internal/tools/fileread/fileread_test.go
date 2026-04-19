@@ -56,13 +56,13 @@ func TestFileReadTool_OffsetAndLimit(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"5\t") {
+	if !strings.Contains(result.Content, "5→") {
 		t.Errorf("expected line 5, got: %s", result.Content)
 	}
-	if !strings.Contains(result.Content,"7\t") {
+	if !strings.Contains(result.Content, "7→") {
 		t.Errorf("expected line 7, got: %s", result.Content)
 	}
-	if strings.Contains(result.Content,"8\t") {
+	if strings.Contains(result.Content, "8→") {
 		t.Errorf("should not contain line 8, got: %s", result.Content)
 	}
 }
@@ -80,7 +80,7 @@ func TestFileReadTool_EmptyFile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"empty") {
+	if !strings.Contains(result.Content, "empty") {
 		t.Errorf("expected empty file warning, got: %s", result.Content)
 	}
 }
@@ -99,7 +99,7 @@ func TestFileReadTool_OffsetBeyondFile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"shorter than the provided offset") {
+	if !strings.Contains(result.Content, "shorter than the provided offset") {
 		t.Errorf("expected offset warning, got: %s", result.Content)
 	}
 }
@@ -274,10 +274,10 @@ func TestFileReadTool_CRLFNormalization(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if strings.Contains(result.Content,"\r") {
+	if strings.Contains(result.Content, "\r") {
 		t.Errorf("expected CRLF normalized, got result with \\r")
 	}
-	if !strings.Contains(result.Content,"line1") && !strings.Contains(result.Content,"line2") {
+	if !strings.Contains(result.Content, "line1") && !strings.Contains(result.Content, "line2") {
 		t.Errorf("expected both lines, got: %s", result.Content)
 	}
 }
