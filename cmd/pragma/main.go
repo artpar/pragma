@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -37,7 +38,7 @@ func main() {
 
 	cli.RegisterFlags(root)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	if err := root.ExecuteContext(ctx); err != nil {

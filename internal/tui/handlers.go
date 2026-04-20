@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -817,9 +818,23 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: m.sessionSave != nil")
 		m.sessionSave()
 	}
+	if m.sessionClose != nil {
+		m.sessionClose()
+	}
 
 	m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(m.toolbar.CostSummary())+"\n")
 	m.viewport.SetContent(m.viewportContent())
+
+	// Print resume hint to stderr (lands after alt-screen exit)
+	snap := m.store.Snapshot()
+	if snap.Conversation.ID != "" {
+		shortID := snap.Conversation.ID
+		if len(shortID) > 8 {
+			shortID = shortID[:8]
+		}
+		fmt.Fprintf(os.Stderr, "\nResume: pragma --resume %s\n", shortID)
+	}
+
 	observe.GlobalTrace("return: m, tea.Quit")
 	return m, tea.Quit
 }
@@ -895,6 +910,18 @@ func (m *Model) loadResumedSession(sessionID string) {
 	// Update toolbar
 	if sess.Conversation.Model != "" {
 		m.toolbar.SetModel(sess.Conversation.Model)
+	}
+
+	// Switch JSONL writer to the resumed session
+	if m.sessionSwitch != nil {
+		saveFn, closeFn := m.sessionSwitch(sessionID)
+		if saveFn != nil {
+			if m.sessionClose != nil {
+				m.sessionClose()
+			}
+			m.sessionSave = saveFn
+			m.sessionClose = closeFn
+		}
 	}
 
 	// Reload viewport segments from the resumed conversation's messages

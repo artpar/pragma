@@ -30,8 +30,10 @@ type Config struct {
 	CostTracker  *model.CostTracker
 	ModelName    string
 	Provider     string
-	SessionSave  func()
-	SlashCmds    *slash.Registry
+	SessionSave   func()
+	SessionClose  func()
+	SessionSwitch func(sessionID string) (saveFn func(), closeFn func()) // returns new save/close for resumed session
+	SlashCmds     *slash.Registry
 	SlashDeps    slash.Deps
 	HookMgr      *hook.Manager         // nil if no hooks configured
 	TokenMonitor *observe.TokenMonitor // nil if no token monitoring
@@ -189,8 +191,10 @@ type Model struct {
 	engine       *query.Engine
 	store        *app.StateStore
 	costTracker  *model.CostTracker
-	sessionSave  func()
-	slashCmds    *slash.Registry
+	sessionSave   func()
+	sessionClose  func()
+	sessionSwitch func(sessionID string) (saveFn func(), closeFn func())
+	slashCmds     *slash.Registry
 	slashDeps    slash.Deps
 	hookMgr      *hook.Manager
 	tokenMonitor *observe.TokenMonitor
@@ -275,6 +279,8 @@ func New(cfg Config) Model {
 		store:           cfg.Store,
 		costTracker:     cfg.CostTracker,
 		sessionSave:     cfg.SessionSave,
+		sessionClose:    cfg.SessionClose,
+		sessionSwitch:   cfg.SessionSwitch,
 		slashCmds:       cfg.SlashCmds,
 		slashDeps:       cfg.SlashDeps,
 		hookMgr:         cfg.HookMgr,

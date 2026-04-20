@@ -53,10 +53,11 @@ type Deps struct {
 	Metrics      *observe.Metrics
 	Auditor      *observe.Auditor
 	TokenMonitor *observe.TokenMonitor
-	LogFilePath  string
-	Cwd          string
-	SessionStart time.Time
-	Cleanup      func()
+	LogFilePath    string
+	Cwd            string
+	SessionStart   time.Time
+	SessionWriter  *session.Writer
+	Cleanup        func()
 }
 
 // SetupDeps creates all shared dependencies from CLI flags and config.
@@ -238,6 +239,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var conv model.Conversation
 	var resumedCost float64
 	var resumedTokens model.TokenUsage
+	var sessionWriter *session.Writer
 	var resumedTurnCount int
 	var sessionStart time.Time
 	resumeID, _ := cmd.Flags().GetString("resume")
@@ -309,10 +311,39 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			observe.GlobalTrace("if: cfg.Verbose")
 			fmt.Fprintf(os.Stderr, "resumed session %s (%d messages)\n", resumeID, len(conv.Messages))
 		}
+		// Open JSONL writer for appending to resumed session.
+		// If no .jsonl file exists (legacy .json session), create a new one.
+		sessionWriter, _ = sessionStore.Open(resumeID)
+		if sessionWriter == nil {
+			sessionWriter, _ = sessionStore.Create(session.HeaderData{
+				SessionID:      conv.ID,
+				Model:          conv.Model,
+				Provider:       conv.Provider,
+				WorkDir:        conv.WorkDir,
+				GitRemote:      sess.GitRemote,
+				SystemOverride: sess.SystemOverride,
+				CreatedAt:      conv.CreatedAt,
+				System:         conv.System,
+			})
+		}
 	} else {
 		observe.GlobalTrace("else: resumeID != \"\"")
 		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)
 		sessionStart = conv.CreatedAt
+		// Create JSONL writer for the new session
+		sessionStore, storeErr := session.NewStore()
+		if storeErr == nil {
+			sessionWriter, _ = sessionStore.Create(session.HeaderData{
+				SessionID:      conv.ID,
+				Model:          cfg.Model,
+				Provider:       cfg.Provider,
+				WorkDir:        cwd,
+				GitRemote:      sysprompt.GitRemoteURL(cwd),
+				SystemOverride: cfg.SystemPrompt,
+				CreatedAt:      conv.CreatedAt,
+				System:         sysPrompt,
+			})
+		}
 	}
 
 	// Create metrics with resumed values (zero for fresh sessions).
@@ -425,10 +456,11 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Metrics:      metrics,
 		Auditor:      auditor,
 		TokenMonitor: tokenMon,
-		LogFilePath:  logFilePath,
-		Cwd:          cwd,
-		SessionStart: sessionStart,
-		Cleanup:      compositeCleanup,
+		LogFilePath:   logFilePath,
+		Cwd:           cwd,
+		SessionStart:  sessionStart,
+		SessionWriter: sessionWriter,
+		Cleanup:       compositeCleanup,
 	}, nil
 }
 

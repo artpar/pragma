@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +31,35 @@ func NewStore() (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-// Save writes a session to <dir>/<id>.json.
+// Create opens a new session JSONL file and writes the header entry.
+// Returns a Writer for appending messages.
+func (s *Store) Create(header HeaderData) (*Writer, error) {
+	if !IsValidSessionID(header.SessionID) {
+		return nil, fmt.Errorf("invalid session ID %q", header.SessionID)
+	}
+	path := filepath.Join(s.dir, header.SessionID+".jsonl")
+	w, err := NewWriter(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := w.WriteHeader(header); err != nil {
+		w.Close()
+		return nil, fmt.Errorf("write header: %w", err)
+	}
+	return w, nil
+}
+
+// Open opens an existing session JSONL file for appending.
+// Reads existing message IDs into the dedup set.
+func (s *Store) Open(id string) (*Writer, error) {
+	if !IsValidSessionID(id) {
+		return nil, fmt.Errorf("invalid session ID %q", id)
+	}
+	path := filepath.Join(s.dir, id+".jsonl")
+	return OpenWriter(path)
+}
+
+// Save writes a session as monolithic JSON (legacy format).
 // Validates the session before writing (strips empty text blocks).
 // Uses atomic write (temp file + rename).
 func (s *Store) Save(sess Session) error {
@@ -38,7 +67,6 @@ func (s *Store) Save(sess Session) error {
 		return errors.New("session has no messages")
 	}
 
-	// Validate: strip empty text blocks from all messages
 	sanitizeConversation(&sess.Conversation)
 
 	data, err := json.Marshal(sess)
@@ -46,7 +74,7 @@ func (s *Store) Save(sess Session) error {
 		return fmt.Errorf("marshal session: %w", err)
 	}
 
-	path, err := s.sessionPath(sess.Conversation.ID)
+	path, err := s.legacyPath(sess.Conversation.ID)
 	if err != nil {
 		return err
 	}
@@ -57,7 +85,7 @@ func (s *Store) Save(sess Session) error {
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath) // clean up on rename failure
+		os.Remove(tmpPath)
 		return fmt.Errorf("rename session file: %w", err)
 	}
 
@@ -65,31 +93,111 @@ func (s *Store) Save(sess Session) error {
 }
 
 // Load reads a session by conversation ID.
+// Tries JSONL first, falls back to legacy JSON.
 func (s *Store) Load(id string) (Session, error) {
-	path, err := s.sessionPath(id)
-	if err != nil {
-		return Session{}, err
+	if !IsValidSessionID(id) {
+		return Session{}, fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", id)
 	}
+
+	// Try JSONL first
+	jsonlPath := filepath.Join(s.dir, id+".jsonl")
+	if _, err := os.Stat(jsonlPath); err == nil {
+		return s.loadJSONL(jsonlPath)
+	}
+
+	// Fall back to legacy JSON
+	jsonPath := filepath.Join(s.dir, id+".json")
+	return s.loadJSON(jsonPath)
+}
+
+func (s *Store) loadJSON(path string) (Session, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Session{}, fmt.Errorf("session %q not found: %w", id, err)
+			return Session{}, fmt.Errorf("session not found: %w", err)
 		}
-		return Session{}, fmt.Errorf("read session %q: %w", id, err)
+		return Session{}, fmt.Errorf("read session: %w", err)
 	}
 
 	var sess Session
 	if err := json.Unmarshal(data, &sess); err != nil {
-		return Session{}, fmt.Errorf("parse session %q: %w", id, err)
+		return Session{}, fmt.Errorf("parse session: %w", err)
 	}
 
-	// Validate on read: strip any empty text blocks that slipped through
 	sanitizeConversation(&sess.Conversation)
-
 	return sess, nil
 }
 
+func (s *Store) loadJSONL(path string) (Session, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Session{}, fmt.Errorf("open session: %w", err)
+	}
+	defer f.Close()
+
+	var header HeaderData
+	var messages []model.Message
+	var meta MetadataData
+	hasHeader := false
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB max line
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var entry Entry
+		if err := json.Unmarshal(line, &entry); err != nil {
+			continue // skip corrupt/partial lines
+		}
+
+		switch entry.Kind {
+		case EntryHeader:
+			if err := json.Unmarshal(entry.Data, &header); err == nil {
+				hasHeader = true
+			}
+		case EntryMessage:
+			var msg model.Message
+			if err := json.Unmarshal(entry.Data, &msg); err == nil {
+				messages = append(messages, msg)
+			}
+		case EntryMetadata:
+			json.Unmarshal(entry.Data, &meta) // last one wins
+		}
+	}
+
+	if !hasHeader {
+		return Session{}, fmt.Errorf("session file has no header: %s", path)
+	}
+
+	conv := model.Conversation{
+		ID:        header.SessionID,
+		Messages:  messages,
+		System:    header.System,
+		Model:     header.Model,
+		Provider:  header.Provider,
+		WorkDir:   header.WorkDir,
+		CreatedAt: header.CreatedAt,
+		UpdatedAt: meta.UpdatedAt,
+	}
+	sanitizeConversation(&conv)
+
+	return Session{
+		Conversation:   conv,
+		Summary:        meta.Summary,
+		CostUSD:        meta.CostUSD,
+		TurnCount:      meta.TurnCount,
+		TokenUsage:     meta.TokenUsage,
+		SystemOverride: header.SystemOverride,
+		GitRemote:      header.GitRemote,
+	}, nil
+}
+
 // List returns all sessions, sorted by UpdatedAt descending (newest first).
+// For JSONL files, reads only the first line (header) for fast listing.
+// For legacy JSON files, reads the full file.
 func (s *Store) List() ([]SessionSummary, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -99,47 +207,160 @@ func (s *Store) List() ([]SessionSummary, error) {
 		return nil, fmt.Errorf("read sessions directory: %w", err)
 	}
 
-	var summaries []SessionSummary
+	// Collect file info, deduplicating by session ID (.jsonl preferred over .json)
+	type fileInfo struct {
+		name string
+		path string
+		ext  string
+		info os.FileInfo
+	}
+	byID := make(map[string]fileInfo)
+
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() {
 			continue
 		}
-
-		path := filepath.Join(s.dir, entry.Name())
-		data, err := os.ReadFile(path)
+		name := entry.Name()
+		ext := filepath.Ext(name)
+		if ext != ".jsonl" && ext != ".json" {
+			continue
+		}
+		if strings.HasSuffix(name, ".tmp") {
+			continue
+		}
+		info, err := entry.Info()
 		if err != nil {
-			continue // skip unreadable files
+			continue
 		}
-
-		var sess Session
-		if err := json.Unmarshal(data, &sess); err != nil {
-			continue // skip corrupt files
+		sessionID := strings.TrimSuffix(name, ext)
+		existing, exists := byID[sessionID]
+		if exists && existing.ext == ".jsonl" {
+			continue // already have .jsonl, skip .json
 		}
-
-		summaries = append(summaries, summaryFromSession(sess))
+		byID[sessionID] = fileInfo{name: name, path: filepath.Join(s.dir, name), ext: ext, info: info}
 	}
 
-	sort.Slice(summaries, func(i, j int) bool {
-		return summaries[i].UpdatedAt.After(summaries[j].UpdatedAt)
+	files := make([]fileInfo, 0, len(byID))
+	for _, f := range byID {
+		files = append(files, f)
+	}
+
+	// Sort by mtime descending for early results
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].info.ModTime().After(files[j].info.ModTime())
 	})
+
+	var summaries []SessionSummary
+	for _, f := range files {
+		var summary SessionSummary
+		var err error
+		if f.ext == ".jsonl" {
+			summary, err = s.readJSONLSummary(f.path, f.info)
+		} else {
+			summary, err = s.readJSONSummary(f.path)
+		}
+		if err != nil {
+			continue // skip unreadable/corrupt files
+		}
+		summaries = append(summaries, summary)
+	}
 
 	return summaries, nil
 }
 
-// Delete removes a session file.
-func (s *Store) Delete(id string) error {
-	path, err := s.sessionPath(id)
+// readJSONLSummary reads only the first line (header) of a JSONL session file.
+func (s *Store) readJSONLSummary(path string, info os.FileInfo) (SessionSummary, error) {
+	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return SessionSummary{}, err
 	}
-	err = os.Remove(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("delete session %q: %w", id, err)
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	if !scanner.Scan() {
+		return SessionSummary{}, errors.New("empty file")
 	}
-	return nil
+
+	var entry Entry
+	if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+		return SessionSummary{}, err
+	}
+	if entry.Kind != EntryHeader {
+		return SessionSummary{}, errors.New("first line is not header")
+	}
+	var header HeaderData
+	if err := json.Unmarshal(entry.Data, &header); err != nil {
+		return SessionSummary{}, err
+	}
+
+	// Scan for the last metadata entry to get summary, cost, turns
+	var meta MetadataData
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var e Entry
+		if err := json.Unmarshal(line, &e); err != nil {
+			continue
+		}
+		if e.Kind == EntryMetadata {
+			json.Unmarshal(e.Data, &meta) // last one wins
+		}
+	}
+
+	summary := meta.Summary
+	updatedAt := meta.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = info.ModTime()
+	}
+
+	return SessionSummary{
+		ID:        header.SessionID,
+		Summary:   summary,
+		Model:     header.Model,
+		WorkDir:   header.WorkDir,
+		TurnCount: meta.TurnCount,
+		CostUSD:   meta.CostUSD,
+		CreatedAt: header.CreatedAt,
+		UpdatedAt: updatedAt,
+	}, nil
 }
 
-func (s *Store) sessionPath(id string) (string, error) {
+// readJSONSummary reads a full legacy JSON session file for its summary.
+func (s *Store) readJSONSummary(path string) (SessionSummary, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+	var sess Session
+	if err := json.Unmarshal(data, &sess); err != nil {
+		return SessionSummary{}, err
+	}
+	return summaryFromSession(sess), nil
+}
+
+// Delete removes a session file (.jsonl or legacy .json).
+func (s *Store) Delete(id string) error {
+	if !IsValidSessionID(id) {
+		return fmt.Errorf("invalid session ID %q", id)
+	}
+	// Try both extensions
+	for _, ext := range []string{".jsonl", ".json"} {
+		path := filepath.Join(s.dir, id+ext)
+		err := os.Remove(path)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("delete session %q: %w", id, err)
+		}
+	}
+	return nil // neither file existed
+}
+
+func (s *Store) legacyPath(id string) (string, error) {
 	if !IsValidSessionID(id) {
 		return "", fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", id)
 	}

@@ -138,6 +138,8 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 		return nil
 	}
 
+	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
+
 	ctx := cmd.Context()
 	events := engine.Run(ctx, result.InjectPrompt)
 
@@ -172,12 +174,14 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 			fmt.Println()
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
-			SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd)
+			sessionSaveFn()
+			sessionCloseFn()
 			return e.Err
 		}
 	}
 
-	SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd)
+	sessionSaveFn()
+	sessionCloseFn()
 
 	if d.Cfg.Verbose {
 		observe.GlobalTrace("if: d.Cfg.Verbose")

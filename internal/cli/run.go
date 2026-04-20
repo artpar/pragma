@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/background"
 	"github.com/artpar/pragma/internal/buildinfo"
 	"github.com/artpar/pragma/internal/compact"
@@ -25,7 +24,6 @@ import (
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/slash"
-	"github.com/artpar/pragma/internal/sysprompt"
 	"github.com/artpar/pragma/internal/tool"
 	toolsynthetic "github.com/artpar/pragma/internal/tools/synthetic"
 	"github.com/artpar/pragma/internal/tui"
@@ -239,7 +237,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	compDeps, compactor := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
 
-	sessionSaveFn := func() { SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd) }
+	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
 
 	slashCmds := slash.NewRegistry()
 
@@ -292,7 +290,32 @@ func RunInteractive(cmd *cobra.Command) error {
 		ModelName:    d.Cfg.Model,
 		Provider:     d.Cfg.Provider,
 		SessionSave:  sessionSaveFn,
-		SlashCmds:    slashCmds,
+		SessionClose: sessionCloseFn,
+		SessionSwitch: func(sessionID string) (func(), func()) {
+			sessStore, err := session.NewStore()
+			if err != nil {
+				return nil, nil
+			}
+			w, err := sessStore.Open(sessionID)
+			if err != nil {
+				// Legacy .json session — create new .jsonl file
+				snap := d.Store.Snapshot()
+				w, err = sessStore.Create(session.HeaderData{
+					SessionID: sessionID,
+					Model:     snap.Conversation.Model,
+					Provider:  snap.Conversation.Provider,
+					WorkDir:   snap.Conversation.WorkDir,
+					CreatedAt: snap.Conversation.CreatedAt,
+					System:    snap.Conversation.System,
+				})
+				if err != nil {
+					return nil, nil
+				}
+			}
+			d.SessionWriter = w
+			return makeSessionSaveClose(d)
+		},
+		SlashCmds: slashCmds,
 		SlashDeps:    slashDeps,
 		HookMgr:      d.HookMgr,
 		TokenMonitor: d.TokenMonitor,
@@ -416,6 +439,8 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		prompt = "Continue from where we left off."
 	}
 
+	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
+
 	ctx := cmd.Context()
 	events := engine.Run(ctx, prompt)
 
@@ -473,7 +498,8 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			if e.Guidance != "" {
 				fmt.Fprintf(os.Stderr, "Hint: %s\n", e.Guidance)
 			}
-			SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd)
+			sessionSaveFn()
+			sessionCloseFn()
 			return e.Err
 		}
 	}
@@ -486,7 +512,8 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}
 
-	SaveSession(d.Store, d.CostTracker, d.Metrics, d.Cfg.SystemPrompt, d.Cwd)
+	sessionSaveFn()
+	sessionCloseFn()
 
 	if d.Cfg.Verbose {
 		observe.GlobalTrace("if: d.Cfg.Verbose")
@@ -563,62 +590,68 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 	}, compactor
 }
 
-// SaveSession persists the current conversation to disk.
-func SaveSession(store *app.StateStore, costTracker *model.CostTracker, metrics *observe.Metrics, systemOverride, cwd string) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	sessionStore, err := session.NewStore()
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		return
+// makeSessionSaveClose creates sessionSaveFn and sessionCloseFn from Deps.
+// On resumed sessions, lastIdx starts at len(messages) so existing messages aren't re-written.
+func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
+	lastIdx := 0
+	if d.SessionWriter != nil {
+		snap := d.Store.Snapshot()
+		lastIdx = len(snap.Conversation.Messages)
 	}
-	snap := store.Snapshot()
-	if len(snap.Conversation.Messages) == 0 {
-		observe.GlobalTrace("if: len(snap.Conversation.Messages) == 0")
-		return
+	saveFn = func() {
+		if d.SessionWriter == nil {
+			return
+		}
+		snap := d.Store.Snapshot()
+		msnap := d.Metrics.Snapshot()
+		for i := lastIdx; i < len(snap.Conversation.Messages); i++ {
+			d.SessionWriter.WriteMessage(snap.Conversation.Messages[i])
+		}
+		lastIdx = len(snap.Conversation.Messages)
+		d.SessionWriter.WriteMetadata(session.MetadataData{
+			CostUSD:    d.CostTracker.TotalUSD(),
+			TurnCount:  countUserTurns(snap.Conversation.Messages),
+			TokenUsage: msnap.TokenUsage,
+			UpdatedAt:  snap.Conversation.UpdatedAt,
+			Summary:    extractSummary(snap.Conversation.Messages),
+		})
 	}
+	closeFn = func() {
+		if d.SessionWriter != nil {
+			d.SessionWriter.Close()
+		}
+	}
+	return
+}
 
-	summary := ""
-	for _, msg := range snap.Conversation.Messages {
-		observe.GlobalTrace("range snap.Conversation.Messages")
+// countUserTurns counts all RoleUser messages (matching old SaveSession behavior).
+func countUserTurns(msgs []model.Message) int {
+	count := 0
+	for _, msg := range msgs {
 		if msg.Role == model.RoleUser {
-			observe.GlobalTrace("if: msg.Role == model.RoleUser")
-			for _, part := range msg.Content {
-				observe.GlobalTrace("range msg.Content")
-				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
-					observe.GlobalTrace("if: ok && tp.Text != \"\"")
-					summary = tp.Text
-					if len(summary) > 100 {
-						observe.GlobalTrace("if: len(summary) > 100")
-						summary = summary[:100]
-					}
-					break
+			count++
+		}
+	}
+	return count
+}
+
+// extractSummary returns the first user text message, truncated to 100 chars.
+func extractSummary(msgs []model.Message) string {
+	for _, msg := range msgs {
+		if msg.Role != model.RoleUser {
+			continue
+		}
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+				s := tp.Text
+				if len(s) > 100 {
+					s = s[:100]
 				}
+				return s
 			}
-			break
 		}
 	}
-
-	turnCount := 0
-	for _, msg := range snap.Conversation.Messages {
-		observe.GlobalTrace("range snap.Conversation.Messages")
-		if msg.Role == model.RoleUser {
-			observe.GlobalTrace("if: msg.Role == model.RoleUser")
-			turnCount++
-		}
-	}
-
-	msnap := metrics.Snapshot()
-	sess := session.Session{
-		Conversation:   snap.Conversation,
-		Summary:        summary,
-		CostUSD:        costTracker.TotalUSD(),
-		TurnCount:      turnCount,
-		TokenUsage:     msnap.TokenUsage,
-		SystemOverride: systemOverride,
-		GitRemote:      sysprompt.GitRemoteURL(cwd),
-	}
-	_ = sessionStore.Save(sess)
+	return ""
 }
 
 // applyToolFilters applies --allowed-tools and --disallowed-tools flags.
