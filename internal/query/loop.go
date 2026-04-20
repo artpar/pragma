@@ -507,6 +507,7 @@ func (e *Engine) consumeStream(
 	var thinkBuf strings.Builder
 	var thinkSigBuf strings.Builder
 	var redactedThinkingParts []model.ThinkingPart
+	var bufferedToolInput strings.Builder
 	toolCalls := make(map[string]*toolAccumulator)
 	var toolOrder []string
 	var done *provider.StreamDone
@@ -554,17 +555,40 @@ func (e *Engine) consumeStream(
 			}
 			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name, signature: tc.Signature}
 			toolOrder = append(toolOrder, tc.ID)
+
+			// Apply any buffered input that arrived before the first ToolCallStart
+			if bufferedToolInput.Len() > 0 {
+				toolCalls[tc.ID].inputBuf.WriteString(bufferedToolInput.String())
+				bufferedToolInput.Reset()
+			}
 		}
 
 		if chunk.ToolCallInputDelta != nil {
 			observe.GlobalTrace("if: chunk.ToolCallInputDelta != nil")
-			acc, ok := toolCalls[chunk.ToolCallInputDelta.ToolCallID]
-			if !ok {
+			id := chunk.ToolCallInputDelta.ToolCallID
+			acc, ok := toolCalls[id]
+
+			if !ok && id == "" {
+				// Resilience for empty IDs (continuation chunks)
+				if len(toolOrder) > 0 {
+					// Append to the most recently started tool call
+					lastID := toolOrder[len(toolOrder)-1]
+					acc = toolCalls[lastID]
+				} else {
+					// No active tool calls, buffer the delta
+					bufferedToolInput.WriteString(chunk.ToolCallInputDelta.JSONDelta)
+					continue
+				}
+			}
+
+			if acc != nil {
+				acc.inputBuf.WriteString(chunk.ToolCallInputDelta.JSONDelta)
+			} else if id != "" {
+				// Unknown non-empty ID: still an error
 				observe.GlobalTrace("if: !ok")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
-				return model.Response{}, fmt.Errorf("input delta for unknown tool call %q", chunk.ToolCallInputDelta.ToolCallID)
+				return model.Response{}, fmt.Errorf("input delta for unknown tool call %q", id)
 			}
-			acc.inputBuf.WriteString(chunk.ToolCallInputDelta.JSONDelta)
 		}
 
 		if chunk.Done != nil {

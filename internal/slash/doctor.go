@@ -41,7 +41,6 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 		observe.GlobalTrace("if: providerName == \"\"")
 		providerName = deps.ModelName
 	}
-	check("Provider configured", providerName != "", "")
 
 	hasKey := false
 	for _, env := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY", "LILAC_API_KEY"} {
@@ -67,6 +66,15 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 			}
 		}
 	}
+
+	if providerName != "" {
+		check("Provider configured", true, "")
+	} else if hasKey {
+		check("Provider configured", false, "No default provider — will auto-detect from credentials")
+	} else {
+		check("Provider configured", false, "")
+	}
+
 	check("API key found", hasKey, "set env var, --api-key, or add to ~/.pragma/credentials.yml")
 
 	credPath, credPathErr := config.CredentialsPath()

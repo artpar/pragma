@@ -236,6 +236,10 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: id == \"\" && len(toolCallIDs) > 0")
 							id = toolCallIDs[len(toolCallIDs)-1]
 						}
+						if id == "" {
+							// Argument delta arrived before any tool call start — skip.
+							continue
+						}
 						if b, ok := accToolInputs[id]; ok {
 							observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: ok")
 							b.WriteString(tc.Function.Arguments)

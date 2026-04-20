@@ -37,6 +37,7 @@ import (
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
 	Cfg          config.Config
+	DryRun       bool
 	Bus          *observe.EventBus
 	StderrLogger *observe.Logger
 	Prov         provider.Provider
@@ -80,9 +81,15 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 
+	creds, _ := config.LoadCredentials()
+
 	ApplyFlagOverrides(cmd, &cfg)
 	if cfg.Provider == "" {
-		observe.GlobalTrace("if: cfg.Provider == \"\"")
+		observe.GlobalTrace("if: cfg.Provider == \"\" (auto-detect)")
+		cfg.Provider = autoDetectProvider(creds)
+	}
+	if cfg.Provider == "" {
+		observe.GlobalTrace("if: cfg.Provider still == \"\" (fallback to anthropic)")
 		cfg.Provider = "anthropic"
 	}
 	if cfg.Model == "" {
@@ -94,8 +101,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
 	}
-
-	creds, _ := config.LoadCredentials()
 
 	if cfg.APIKey == "" {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try credentials.yml)")
@@ -156,6 +161,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	auditor := observe.NewAuditor()
 	bus.Subscribe(auditor)
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	tokenMon := observe.NewTokenMonitor(bus, 200_000)
 	bus.Subscribe(tokenMon)
 
@@ -440,6 +446,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	return &Deps{
 		Cfg:          cfg,
+		DryRun:       dryRun,
 		Bus:          bus,
 		StderrLogger: logger,
 		Prov:         prov,
@@ -740,6 +747,37 @@ func pickAvailableProvider(defaultProv string, creds config.Credentials) (select
 	}
 	observe.GlobalTrace("return: available[choice-1], nil")
 	return available[choice-1], nil
+}
+
+// autoDetectProvider detects the provider based on available credentials in priority order.
+func autoDetectProvider(creds config.Credentials) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	priority := []struct {
+		name   string
+		envVar string
+	}{
+		{"anthropic", "ANTHROPIC_API_KEY"},
+		{"google", "GOOGLE_API_KEY"},
+		{"lilac", "LILAC_API_KEY"},
+		{"openai", "OPENAI_API_KEY"},
+		{"groq", "GROQ_API_KEY"},
+	}
+
+	for _, p := range priority {
+		if os.Getenv(p.envVar) != "" {
+			observe.GlobalTrace("detected from env: " + p.name)
+			return p.name
+		}
+		if creds.CredentialFor(p.name).APIKey != "" {
+			observe.GlobalTrace("detected from creds: " + p.name)
+			return p.name
+		}
+	}
+
+	observe.GlobalTrace("return: \"\" (none detected)")
+	return ""
 }
 
 // envVarForProvider returns the environment variable name for a provider's API key.
