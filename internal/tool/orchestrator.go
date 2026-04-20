@@ -132,6 +132,23 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	batchStart := time.Now()
 	var concurrentDuration, serialDuration time.Duration
 
+	// Serial tools execute FIRST: they may create/modify state that
+	// concurrent (read-only) tools depend on. Fixes race condition
+	// where Read runs before Write in the same batch.
+	if len(serial) > 0 && ctx.Err() == nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(serial) > 0 (first)")
+		serStart := time.Now()
+		for _, ic := range serial {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range serial")
+			if ctx.Err() != nil {
+				observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: ctx.Err() != nil")
+				break
+			}
+			singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
+		}
+		serialDuration = time.Since(serStart)
+	}
+
 	if len(concurrent) > 0 {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(concurrent) > 0")
 		concStart := time.Now()
@@ -175,24 +192,17 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		concurrentDuration = time.Since(concStart)
 	}
 
-	if len(serial) > 0 && ctx.Err() == nil {
-		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(serial) > 0")
-		serStart := time.Now()
+	if len(serial) > 0 && ctx.Err() != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: serial cancelled")
 		for _, ic := range serial {
-			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range serial")
-			singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
-		}
-		serialDuration = time.Since(serStart)
-	} else if len(serial) > 0 {
-		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "else-if: len(serial) > 0")
-
-		for _, ic := range serial {
-			singles[ic.index] = singleResult{
-				part: model.ToolResultPart{
-					ToolCallID: ic.call.ID,
-					Content:    "cancelled: " + ctx.Err().Error(),
-					IsError:    true,
-				},
+			if singles[ic.index].part.ToolCallID == "" {
+				singles[ic.index] = singleResult{
+					part: model.ToolResultPart{
+						ToolCallID: ic.call.ID,
+						Content:    "cancelled: " + ctx.Err().Error(),
+						IsError:    true,
+					},
+				}
 			}
 		}
 	}
