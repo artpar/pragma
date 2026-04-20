@@ -201,9 +201,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count == 0")
 
 		hint := diagnoseWhitespaceMismatch(content, in.OldString)
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file...\")")
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.%s\\nStri...")
-		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s\nString: %s", hint, in.OldString)
+		context := findNearestContext(content, in.OldString)
+		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s%s\nString: %s", hint, context, in.OldString)
 	}
 
 	if count > 1 && !in.ReplaceAll {
@@ -273,6 +272,81 @@ func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
 	}
 	observe.GlobalTrace("return: \"\", fmt.Errorf(\"file does not exist: %s. Make sure the path is correct.\", in....")
 	return "", fmt.Errorf("file does not exist: %s. Make sure the path is correct.", in.FilePath)
+}
+
+// findNearestContext searches for the first line of old_string in the file
+// and returns surrounding context to help the model see what's actually there.
+// Returns empty string if no meaningful match is found.
+func findNearestContext(content, oldString string) string {
+	lines := strings.Split(content, "\n")
+	oldLines := strings.Split(oldString, "\n")
+	if len(oldLines) == 0 {
+		return ""
+	}
+
+	// Try to find the first non-empty line of old_string in the file
+	var searchLine string
+	for _, l := range oldLines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed != "" && trimmed != "{" && trimmed != "}" && len(trimmed) > 5 {
+			searchLine = trimmed
+			break
+		}
+	}
+	if searchLine == "" {
+		return ""
+	}
+
+	// Find best matching line
+	bestIdx := -1
+	for i, line := range lines {
+		if strings.Contains(strings.TrimSpace(line), searchLine) {
+			bestIdx = i
+			break
+		}
+	}
+
+	if bestIdx == -1 {
+		// Try partial match — first 30 chars of search line
+		if len(searchLine) > 30 {
+			prefix := searchLine[:30]
+			for i, line := range lines {
+				if strings.Contains(line, prefix) {
+					bestIdx = i
+					break
+				}
+			}
+		}
+	}
+
+	if bestIdx == -1 {
+		return "\nHint: no similar content found. Re-read the file with the Read tool to see its current content before retrying."
+	}
+
+	// Show context around the match
+	start := bestIdx - 2
+	if start < 0 {
+		start = 0
+	}
+	end := bestIdx + len(oldLines) + 2
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	// Limit context to 15 lines to avoid overwhelming
+	if end-start > 15 {
+		end = start + 15
+	}
+
+	var b strings.Builder
+	b.WriteString("\nHint: found similar content at lines ")
+	b.WriteString(fmt.Sprintf("%d-%d", start+1, end))
+	b.WriteString(". Actual content:\n")
+	for i := start; i < end; i++ {
+		b.WriteString(fmt.Sprintf("  %d\t%s\n", i+1, lines[i]))
+	}
+	b.WriteString("Use the actual content shown above as your old_string for the next edit attempt.")
+	return b.String()
 }
 
 // diagnoseWhitespaceMismatch checks whether a tab↔space conversion would
