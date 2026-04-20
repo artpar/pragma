@@ -457,6 +457,9 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	var turnCount int
+	var turnToolCount int
+
 	for ev := range events {
 		observe.GlobalTrace("range events")
 		switch e := ev.(type) {
@@ -475,8 +478,11 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			if hasStructuredOutput && e.Call.Name == "StructuredOutput" {
 				structuredJSON = e.Call.Input
 			}
+			turnToolCount++
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
+			} else {
+				fmt.Fprintf(os.Stderr, "  ⏺ %s\n", e.Call.Name)
 			}
 		case query.ToolResultEvent:
 			observe.GlobalTrace("typecase: query.ToolResultEvent")
@@ -490,6 +496,11 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			}
 		case query.TurnCompleteEvent:
 			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
+			turnCount++
+			if d.Cfg.Verbose {
+				fmt.Fprintf(os.Stderr, "[turn %d complete, %d tool calls]\n", turnCount, turnToolCount)
+			}
+			turnToolCount = 0
 			if !hasStructuredOutput {
 				fmt.Fprintln(out)
 			}
@@ -515,10 +526,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	sessionSaveFn()
 	sessionCloseFn()
 
-	if d.Cfg.Verbose {
-		observe.GlobalTrace("if: d.Cfg.Verbose")
-		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", d.CostTracker.TotalUSD())
-	}
+	fmt.Fprintf(os.Stderr, "\ntotal cost: $%.6f\n", d.CostTracker.TotalUSD())
 	observe.GlobalTrace("return: nil")
 	return nil
 }

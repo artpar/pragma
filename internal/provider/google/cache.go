@@ -86,14 +86,8 @@ func (cm *cacheManager) getOrCreateCache(
 		_, delErr := cm.client.Caches.Delete(deleteCtx, cm.current.name, nil)
 		cancel()
 		if delErr != nil {
-			observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("delete old cache error: %v", delErr))
-			cm.bus.Emit(observe.ErrorOccurred{
-				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-				Severity:     "warn",
-				Component:    "google",
-				ErrorType:    "cache_delete_failed",
-				ErrorMessage: fmt.Sprintf("failed to delete old cache %s: %v", cm.current.name, delErr),
-			})
+			// Non-fatal: cache may have expired or been cleaned up server-side.
+			observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("delete old cache (non-fatal): %v", delErr))
 		}
 		cm.current = nil
 	}

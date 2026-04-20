@@ -38,6 +38,15 @@ var registry = map[string]ModelInfo{
 		SupportsToolUse:   true,
 		SupportsReasoning: true,
 	},
+	"google/gemma-4-31b-it": {
+		ID:                "google/gemma-4-31b-it",
+		MaxContext:        262144,
+		MaxOutput:         16384,
+		Pricing:           model.Pricing{InputPerMToken: 0.11, OutputPerMToken: 0.35},
+		SupportsVision:    true,
+		SupportsToolUse:   true,
+		SupportsReasoning: true,
+	},
 }
 
 // ListModels returns the sorted IDs of all known Lilac models.

@@ -609,8 +609,11 @@ func (e *Engine) consumeStream(
 				observe.GlobalTrace("if: len(raw) == 0")
 				raw = json.RawMessage("{}")
 			} else if !json.Valid(raw) {
-				observe.GlobalTrace("else-if: !json.Valid(raw)")
-				return model.Response{}, fmt.Errorf("invalid tool input JSON for %q", acc.name)
+				observe.GlobalTrace("else-if: !json.Valid(raw) — marking as malformed")
+				// Instead of killing the session, include the tool call with
+				// the raw (invalid) bytes. The orchestrator's json.Unmarshal
+				// will fail and send an error result back to the model so it
+				// can retry with correct JSON.
 			}
 			parts = append(parts, model.ToolCallPart{
 				ID:        acc.id,

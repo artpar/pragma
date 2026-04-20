@@ -120,11 +120,20 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 // lilacClassify classifies errors using HTTP status code string matching.
 var lilacClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
 
+func (p *Provider) ensureMaxTokens(params *provider.RequestParams) {
+	if params.MaxTokens == 0 {
+		if info, ok := LookupModel(params.Model); ok && info.MaxOutput > 0 {
+			params.MaxTokens = info.MaxOutput
+		}
+	}
+}
+
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
 	observe.TraceCtx(ctx, "lilac", "Provider.Complete", "enter")
 	defer observe.TraceCtx(ctx, "lilac", "Provider.Complete", "exit")
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
+	p.ensureMaxTokens(&params)
 	p.emitStart(traceID, spanID, params)
 	start := time.Now()
 
@@ -145,6 +154,12 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	}
 
 	resp := anyllm.ResponseFromCompletion(comp)
+	if resp.Usage.OutputTokens == 0 {
+		resp.Usage.OutputTokens = shared.EstimateOutputTokens(resp.Content)
+	}
+	if resp.Usage.InputTokens == 0 {
+		resp.Usage.InputTokens = shared.EstimateTokens(params)
+	}
 	p.bus.Emit(observe.APIRequestCompleted{
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  resp.StopReason,
@@ -162,6 +177,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	defer observe.TraceCtx(ctx, "lilac", "Provider.Stream", "exit")
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
+	p.ensureMaxTokens(&params)
 	p.emitStart(traceID, spanID, params)
 
 	llmParams := anyllm.RequestToParams(params)
@@ -235,6 +251,19 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					if stopReason == model.StopEndTurn && len(seenToolCalls) > 0 {
 						observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: stopReason == model.StopEndTurn && len(seenToolCalls) > 0")
 						stopReason = model.StopToolUse
+					}
+					// Estimate tokens if provider didn't report usage.
+					if usage.OutputTokens == 0 {
+						outputChars := accText.Len()
+						for _, b := range accToolInputs {
+							outputChars += b.Len()
+						}
+						if outputChars > 0 {
+							usage.OutputTokens = outputChars / 4
+						}
+					}
+					if usage.InputTokens == 0 {
+						usage.InputTokens = shared.EstimateTokens(params)
 					}
 					ch <- provider.StreamChunk{
 						Done: &provider.StreamDone{StopReason: stopReason, Usage: usage, Model: respModel},

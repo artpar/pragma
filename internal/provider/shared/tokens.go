@@ -52,6 +52,23 @@ func EstimateTokens(params provider.RequestParams) int {
 	return total
 }
 
+// EstimateOutputTokens provides a rough token estimate for response content.
+// Used when providers don't report usage (e.g., Lilac/vLLM streaming).
+func EstimateOutputTokens(parts []model.ContentPart) int {
+	total := 0
+	for _, part := range parts {
+		switch p := part.(type) {
+		case model.TextPart:
+			total += len(p.Text) / 4
+		case model.ToolCallPart:
+			total += len(p.Input) / 4
+		case model.ThinkingPart:
+			total += len(p.Text) / 4
+		}
+	}
+	return total
+}
+
 // MarshalContent serializes ContentParts to json.RawMessage for event recording.
 func MarshalContent(parts []model.ContentPart) json.RawMessage {
 	observe.GlobalTrace("enter")
