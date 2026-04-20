@@ -201,8 +201,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count == 0")
 
 		hint := diagnoseWhitespaceMismatch(content, in.OldString)
-		context := findNearestContext(content, in.OldString)
-		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s%s\nString: %s", hint, context, in.OldString)
+		nearby := findNearestContext(content, in.OldString)
+		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s%s\nString: %s", hint, nearby, in.OldString)
 	}
 
 	if count > 1 && !in.ReplaceAll {

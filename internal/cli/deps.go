@@ -37,7 +37,6 @@ import (
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
 	Cfg          config.Config
-	DryRun       bool
 	Bus          *observe.EventBus
 	StderrLogger *observe.Logger
 	Prov         provider.Provider
@@ -161,7 +160,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	auditor := observe.NewAuditor()
 	bus.Subscribe(auditor)
-	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	tokenMon := observe.NewTokenMonitor(bus, 200_000)
 	bus.Subscribe(tokenMon)
 
@@ -446,7 +444,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	return &Deps{
 		Cfg:          cfg,
-		DryRun:       dryRun,
 		Bus:          bus,
 		StderrLogger: logger,
 		Prov:         prov,
