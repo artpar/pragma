@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -397,5 +398,71 @@ func TestOrchestratorResultOrder(t *testing.T) {
 	}
 	if results.Results[2].ToolCallID != "tc-3" {
 		t.Errorf("result[2] ID: got %q", results.Results[2].ToolCallID)
+	}
+}
+
+// timestampTool records the time it was invoked, for ordering verification.
+type timestampTool struct {
+	echoTool
+	invokedAt time.Time
+	mu        sync.Mutex
+}
+
+func (t *timestampTool) Invoke(ctx context.Context, input json.RawMessage, s StateSnapshot) (InvokeResult, error) {
+	t.mu.Lock()
+	t.invokedAt = time.Now()
+	t.mu.Unlock()
+	// Small sleep so timestamps are distinguishable
+	time.Sleep(10 * time.Millisecond)
+	return InvokeResult{Content: string(input)}, nil
+}
+
+func (t *timestampTool) InvokedAt() time.Time {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.invokedAt
+}
+
+func TestOrchestratorSerialBeforeConcurrent(t *testing.T) {
+	// Verify that serial (write) tools execute BEFORE concurrent (read) tools
+	// in the same batch. This tests the fix from commit 54b80d4.
+	writeTool := &timestampTool{echoTool: *newEchoTool("Write", false)} // serial
+	readTool := &timestampTool{echoTool: *newEchoTool("Read", true)}   // concurrent
+
+	orch, bus, _ := setupOrchestrator(t, allowAllChecker{}, writeTool, readTool)
+	defer bus.Drain()
+
+	calls := []model.ToolCallPart{
+		{ID: "tc-read", Name: "Read", Input: json.RawMessage(`"reading"`)},
+		{ID: "tc-write", Name: "Write", Input: json.RawMessage(`"writing"`)},
+	}
+
+	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
+
+	if len(results.Results) != 2 {
+		t.Fatalf("results: got %d, want 2", len(results.Results))
+	}
+
+	writeTime := writeTool.InvokedAt()
+	readTime := readTool.InvokedAt()
+
+	if writeTime.IsZero() {
+		t.Fatal("Write tool was never invoked")
+	}
+	if readTime.IsZero() {
+		t.Fatal("Read tool was never invoked")
+	}
+
+	if !writeTime.Before(readTime) {
+		t.Errorf("serial Write tool invoked at %v, concurrent Read tool at %v — Write should execute BEFORE Read",
+			writeTime, readTime)
+	}
+
+	// Results should still maintain original call order
+	if results.Results[0].ToolCallID != "tc-read" {
+		t.Errorf("result[0] ID: got %q, want tc-read", results.Results[0].ToolCallID)
+	}
+	if results.Results[1].ToolCallID != "tc-write" {
+		t.Errorf("result[1] ID: got %q, want tc-write", results.Results[1].ToolCallID)
 	}
 }

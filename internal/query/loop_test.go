@@ -482,6 +482,82 @@ func TestRun_PauseTurnExceedsTurns(t *testing.T) {
 	}
 }
 
+func TestRun_TurnBudgetWarning(t *testing.T) {
+	// Verify that the engine injects a warning when reaching 80% of maxTurns.
+	// With maxTurns=10, warningThreshold = 10/5 = 2.
+	// Warning fires when remaining == 2, i.e., when turnCount==7 (before increment to 8).
+	// That means the 8th tool-call turn's result includes the warning.
+	maxTurns := 10
+
+	toolCallID := "tc-echo"
+	toolCallTurns := make([][]provider.StreamChunk, 0)
+	// 8 tool-call turns (each tool call increments turnCount by 1)
+	for i := 0; i < 8; i++ {
+		toolCallTurns = append(toolCallTurns, []provider.StreamChunk{
+			{ToolCallStart: &model.ToolCallPart{ID: toolCallID, Name: "echo"}},
+			{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: toolCallID, JSONDelta: `{"text":"ping"}`}},
+			{Done: &provider.StreamDone{StopReason: model.StopToolUse, Usage: model.TokenUsage{InputTokens: 50, OutputTokens: 10}}},
+		})
+	}
+	// Final turn: model outputs text and stops
+	toolCallTurns = append(toolCallTurns, textChunks("Done!", model.StopEndTurn))
+
+	prov := &testProvider{turns: toolCallTurns}
+
+	bus := observe.NewEventBus(256)
+	registry := tool.NewRegistry(bus)
+	_ = registry.Register(echoTool{})
+	checker := &allowAllChecker{}
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          "/tmp/test",
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	ct := model.NewCostTracker(0)
+
+	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+		MaxTurns:  maxTurns,
+	})
+
+	events := drain(engine.Run(context.Background(), "Run echo 8 times"))
+
+	// Check no errors
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+
+	// Inspect conversation messages for the turn budget warning
+	snap := engine.store.Snapshot()
+	msgs := snap.Conversation.APIMessages()
+
+	var foundWarning bool
+	for _, m := range msgs {
+		for _, part := range m.Content {
+			if tp, ok := part.(model.TextPart); ok {
+				if strings.Contains(tp.Text, "turns remaining") {
+					foundWarning = true
+					if !strings.Contains(tp.Text, "2 turns remaining") {
+						t.Errorf("warning text = %q, expected '2 turns remaining'", tp.Text)
+					}
+				}
+			}
+		}
+	}
+	if !foundWarning {
+		t.Error("expected turn budget warning at 80% usage (turn 8 of 10), but not found in conversation")
+	}
+}
+
 func TestRun_ModelFromAppState(t *testing.T) {
 	// Verify that when AppState.Model is set, the engine uses it instead of config.Model
 	prov := &testProvider{
