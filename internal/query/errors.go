@@ -111,6 +111,9 @@ func classifyByString(err error, msg string) ClassifiedError {
 	case strings.Contains(msg, "not_found") || strings.Contains(msg, "404") || strings.Contains(msg, "invalid model") || strings.Contains(msg, "model not found"):
 		observe.GlobalTrace("case: strings.Contains(msg, \"not_found\") || strings.Contains(msg, \"404\") || ...")
 		return ClassifiedError{Err: err, Kind: ErrorKindInvalidRequest, Guidance: "Check model name with /model. Run /doctor to verify provider configuration"}
+	case strings.Contains(msg, "400") || strings.Contains(msg, "bad request") || strings.Contains(msg, "invalid_request") || strings.Contains(msg, "unterminated string"):
+		observe.GlobalTrace("case: 400/bad request/invalid_request/unterminated string")
+		return ClassifiedError{Err: err, Kind: ErrorKindInvalidRequest, Guidance: "Model generated malformed output (likely hit output token limit mid-response). Try a simpler prompt, use a model with higher output limit, or use --max-tokens to increase output budget"}
 	default:
 		observe.GlobalTrace("default")
 		return ClassifiedError{Err: err, Kind: ErrorKindUnknown}

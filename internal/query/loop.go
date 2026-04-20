@@ -406,6 +406,19 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				resultParts = append(resultParts, r)
 			}
 			resultParts = append(resultParts, execResult.Supplements...)
+
+			// Inject turn budget warning when approaching limit
+			remaining := maxTurns - turnCount - 1
+			warningThreshold := maxTurns / 5 // warn at 80% usage
+			if warningThreshold < 2 {
+				warningThreshold = 2
+			}
+			if remaining == warningThreshold {
+				resultParts = append(resultParts, model.TextPart{
+					Text: fmt.Sprintf("[system: %d turns remaining out of %d. Wrap up your current task or summarize progress.]", remaining, maxTurns),
+				})
+			}
+
 			resultMsg := model.Message{
 				ID:        model.NewUUID(),
 				Role:      model.RoleUser,
