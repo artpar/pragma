@@ -29,16 +29,3 @@ type SessionSummary struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// summaryFromSession extracts a SessionSummary from a full Session.
-func summaryFromSession(sess Session) SessionSummary {
-	return SessionSummary{
-		ID:        sess.Conversation.ID,
-		Summary:   sess.Summary,
-		Model:     sess.Conversation.Model,
-		WorkDir:   sess.Conversation.WorkDir,
-		TurnCount: sess.TurnCount,
-		CostUSD:   sess.CostUSD,
-		CreatedAt: sess.Conversation.CreatedAt,
-		UpdatedAt: sess.Conversation.UpdatedAt,
-	}
-}

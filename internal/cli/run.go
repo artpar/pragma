@@ -298,19 +298,7 @@ func RunInteractive(cmd *cobra.Command) error {
 			}
 			w, err := sessStore.Open(sessionID)
 			if err != nil {
-				// Legacy .json session — create new .jsonl file
-				snap := d.Store.Snapshot()
-				w, err = sessStore.Create(session.HeaderData{
-					SessionID: sessionID,
-					Model:     snap.Conversation.Model,
-					Provider:  snap.Conversation.Provider,
-					WorkDir:   snap.Conversation.WorkDir,
-					CreatedAt: snap.Conversation.CreatedAt,
-					System:    snap.Conversation.System,
-				})
-				if err != nil {
-					return nil, nil
-				}
+				return nil, nil
 			}
 			d.SessionWriter = w
 			return makeSessionSaveClose(d)

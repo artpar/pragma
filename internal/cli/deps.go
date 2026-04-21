@@ -316,20 +316,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			fmt.Fprintf(os.Stderr, "resumed session %s (%d messages)\n", resumeID, len(conv.Messages))
 		}
 		// Open JSONL writer for appending to resumed session.
-		// If no .jsonl file exists (legacy .json session), create a new one.
 		sessionWriter, _ = sessionStore.Open(resumeID)
-		if sessionWriter == nil {
-			sessionWriter, _ = sessionStore.Create(session.HeaderData{
-				SessionID:      conv.ID,
-				Model:          conv.Model,
-				Provider:       conv.Provider,
-				WorkDir:        conv.WorkDir,
-				GitRemote:      sess.GitRemote,
-				SystemOverride: sess.SystemOverride,
-				CreatedAt:      conv.CreatedAt,
-				System:         conv.System,
-			})
-		}
 	} else {
 		observe.GlobalTrace("else: resumeID != \"\"")
 		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)

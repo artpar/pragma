@@ -59,73 +59,14 @@ func (s *Store) Open(id string) (*Writer, error) {
 	return OpenWriter(path)
 }
 
-// Save writes a session as monolithic JSON (legacy format).
-// Validates the session before writing (strips empty text blocks).
-// Uses atomic write (temp file + rename).
-func (s *Store) Save(sess Session) error {
-	if len(sess.Conversation.Messages) == 0 {
-		return errors.New("session has no messages")
-	}
-
-	sanitizeConversation(&sess.Conversation)
-
-	data, err := json.Marshal(sess)
-	if err != nil {
-		return fmt.Errorf("marshal session: %w", err)
-	}
-
-	path, err := s.legacyPath(sess.Conversation.ID)
-	if err != nil {
-		return err
-	}
-	tmpPath := path + ".tmp"
-
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		return fmt.Errorf("write temp session file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("rename session file: %w", err)
-	}
-
-	return nil
-}
-
-// Load reads a session by conversation ID.
-// Tries JSONL first, falls back to legacy JSON.
+// Load reads a session by conversation ID from its JSONL file.
 func (s *Store) Load(id string) (Session, error) {
 	if !IsValidSessionID(id) {
 		return Session{}, fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", id)
 	}
 
-	// Try JSONL first
 	jsonlPath := filepath.Join(s.dir, id+".jsonl")
-	if _, err := os.Stat(jsonlPath); err == nil {
-		return s.loadJSONL(jsonlPath)
-	}
-
-	// Fall back to legacy JSON
-	jsonPath := filepath.Join(s.dir, id+".json")
-	return s.loadJSON(jsonPath)
-}
-
-func (s *Store) loadJSON(path string) (Session, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return Session{}, fmt.Errorf("session not found: %w", err)
-		}
-		return Session{}, fmt.Errorf("read session: %w", err)
-	}
-
-	var sess Session
-	if err := json.Unmarshal(data, &sess); err != nil {
-		return Session{}, fmt.Errorf("parse session: %w", err)
-	}
-
-	sanitizeConversation(&sess.Conversation)
-	return sess, nil
+	return s.loadJSONL(jsonlPath)
 }
 
 func (s *Store) loadJSONL(path string) (Session, error) {
@@ -196,8 +137,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 }
 
 // List returns all sessions, sorted by UpdatedAt descending (newest first).
-// For JSONL files, reads only the first line (header) for fast listing.
-// For legacy JSON files, reads the full file.
+// Reads only the first line (header) of each JSONL file for fast listing.
 func (s *Store) List() ([]SessionSummary, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -207,22 +147,18 @@ func (s *Store) List() ([]SessionSummary, error) {
 		return nil, fmt.Errorf("read sessions directory: %w", err)
 	}
 
-	// Collect file info, deduplicating by session ID (.jsonl preferred over .json)
 	type fileInfo struct {
-		name string
 		path string
-		ext  string
 		info os.FileInfo
 	}
-	byID := make(map[string]fileInfo)
+	var files []fileInfo
 
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		ext := filepath.Ext(name)
-		if ext != ".jsonl" && ext != ".json" {
+		if filepath.Ext(name) != ".jsonl" {
 			continue
 		}
 		if strings.HasSuffix(name, ".tmp") {
@@ -232,35 +168,18 @@ func (s *Store) List() ([]SessionSummary, error) {
 		if err != nil {
 			continue
 		}
-		sessionID := strings.TrimSuffix(name, ext)
-		existing, exists := byID[sessionID]
-		if exists && existing.ext == ".jsonl" {
-			continue // already have .jsonl, skip .json
-		}
-		byID[sessionID] = fileInfo{name: name, path: filepath.Join(s.dir, name), ext: ext, info: info}
+		files = append(files, fileInfo{path: filepath.Join(s.dir, name), info: info})
 	}
 
-	files := make([]fileInfo, 0, len(byID))
-	for _, f := range byID {
-		files = append(files, f)
-	}
-
-	// Sort by mtime descending for early results
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].info.ModTime().After(files[j].info.ModTime())
 	})
 
 	var summaries []SessionSummary
 	for _, f := range files {
-		var summary SessionSummary
-		var err error
-		if f.ext == ".jsonl" {
-			summary, err = s.readJSONLSummary(f.path, f.info)
-		} else {
-			summary, err = s.readJSONSummary(f.path)
-		}
+		summary, err := s.readJSONLSummary(f.path, f.info)
 		if err != nil {
-			continue // skip unreadable/corrupt files
+			continue
 		}
 		summaries = append(summaries, summary)
 	}
@@ -328,43 +247,17 @@ func (s *Store) readJSONLSummary(path string, info os.FileInfo) (SessionSummary,
 	}, nil
 }
 
-// readJSONSummary reads a full legacy JSON session file for its summary.
-func (s *Store) readJSONSummary(path string) (SessionSummary, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return SessionSummary{}, err
-	}
-	var sess Session
-	if err := json.Unmarshal(data, &sess); err != nil {
-		return SessionSummary{}, err
-	}
-	return summaryFromSession(sess), nil
-}
-
-// Delete removes a session file (.jsonl or legacy .json).
+// Delete removes a session JSONL file.
 func (s *Store) Delete(id string) error {
 	if !IsValidSessionID(id) {
 		return fmt.Errorf("invalid session ID %q", id)
 	}
-	// Try both extensions
-	for _, ext := range []string{".jsonl", ".json"} {
-		path := filepath.Join(s.dir, id+ext)
-		err := os.Remove(path)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("delete session %q: %w", id, err)
-		}
+	path := filepath.Join(s.dir, id+".jsonl")
+	err := os.Remove(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("delete session %q: %w", id, err)
 	}
-	return nil // neither file existed
-}
-
-func (s *Store) legacyPath(id string) (string, error) {
-	if !IsValidSessionID(id) {
-		return "", fmt.Errorf("invalid session ID %q: must contain only alphanumeric characters and hyphens", id)
-	}
-	return filepath.Join(s.dir, id+".json"), nil
+	return nil
 }
 
 // IsValidSessionID checks that the ID contains only safe characters
