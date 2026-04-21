@@ -121,9 +121,23 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 var lilacClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
 
 func (p *Provider) ensureMaxTokens(params *provider.RequestParams) {
-	if params.MaxTokens == 0 {
-		if info, ok := LookupModel(params.Model); ok && info.MaxOutput > 0 {
-			params.MaxTokens = info.MaxOutput
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	info, known := LookupModel(params.Model)
+	if params.MaxTokens == 0 && known && info.MaxOutput > 0 {
+		params.MaxTokens = info.MaxOutput
+	}
+
+	// Cap max_tokens so prompt + output fits within the model's context window.
+	// vLLM rejects requests where prompt_tokens + max_tokens > context_length.
+	if known && info.MaxContext > 0 && params.MaxTokens > 0 {
+		promptEst := shared.EstimateTokens(*params)
+		headroom := info.MaxContext - promptEst
+		if headroom < 1024 {
+			headroom = 1024 // minimum to avoid zero-output requests
+		}
+		if params.MaxTokens > headroom {
+			params.MaxTokens = headroom
 		}
 	}
 }
@@ -155,9 +169,11 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 
 	resp := anyllm.ResponseFromCompletion(comp)
 	if resp.Usage.OutputTokens == 0 {
+		observe.TraceCtx(ctx, "lilac", "Provider.Complete", "if: resp.Usage.OutputTokens == 0")
 		resp.Usage.OutputTokens = shared.EstimateOutputTokens(resp.Content)
 	}
 	if resp.Usage.InputTokens == 0 {
+		observe.TraceCtx(ctx, "lilac", "Provider.Complete", "if: resp.Usage.InputTokens == 0")
 		resp.Usage.InputTokens = shared.EstimateTokens(params)
 	}
 	p.bus.Emit(observe.APIRequestCompleted{
@@ -237,7 +253,8 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 							id = toolCallIDs[len(toolCallIDs)-1]
 						}
 						if id == "" {
-							// Argument delta arrived before any tool call start — skip.
+							observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: id == \"\"")
+
 							continue
 						}
 						if b, ok := accToolInputs[id]; ok {
@@ -256,17 +273,21 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: stopReason == model.StopEndTurn && len(seenToolCalls) > 0")
 						stopReason = model.StopToolUse
 					}
-					// Estimate tokens if provider didn't report usage.
+
 					if usage.OutputTokens == 0 {
+						observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: usage.OutputTokens == 0")
 						outputChars := accText.Len()
 						for _, b := range accToolInputs {
+							observe.TraceCtx(ctx, "lilac", "Provider.Stream", "range accToolInputs")
 							outputChars += b.Len()
 						}
 						if outputChars > 0 {
+							observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: outputChars > 0")
 							usage.OutputTokens = outputChars / 4
 						}
 					}
 					if usage.InputTokens == 0 {
+						observe.TraceCtx(ctx, "lilac", "Provider.Stream", "if: usage.InputTokens == 0")
 						usage.InputTokens = shared.EstimateTokens(params)
 					}
 					ch <- provider.StreamChunk{

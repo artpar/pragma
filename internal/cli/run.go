@@ -3,8 +3,11 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -253,7 +257,6 @@ func RunInteractive(cmd *cobra.Command) error {
 		}
 	}
 
-	// Session store for slash commands
 	sessStore, _ := session.NewStore()
 
 	slashDeps := slash.Deps{
@@ -277,6 +280,12 @@ func RunInteractive(cmd *cobra.Command) error {
 			if cw, ok := d.Prov.ContextWindow(modelID); ok {
 				d.TokenMonitor.SetBudget(cw)
 			}
+		},
+		McpStatus: func() map[string]string {
+			if d.McpManager != nil {
+				return d.McpManager.ServerStatus()
+			}
+			return nil
 		},
 		SessionStore: sessStore,
 		SkillLoader:  skillLoader,
@@ -303,16 +312,19 @@ func RunInteractive(cmd *cobra.Command) error {
 			d.SessionWriter = w
 			return makeSessionSaveClose(d)
 		},
-		SlashCmds: slashCmds,
-		SlashDeps:    slashDeps,
-		HookMgr:      d.HookMgr,
-		TokenMonitor: d.TokenMonitor,
-		Metrics:      d.Metrics,
-		Workspace:    d.Cwd,
-		Version:      buildinfo.Version,
-		TaskReg:      d.TaskReg,
-		SessionStart: d.SessionStart,
+		SlashCmds:      slashCmds,
+		SlashDeps:      slashDeps,
+		HookMgr:        d.HookMgr,
+		TokenMonitor:   d.TokenMonitor,
+		Metrics:        d.Metrics,
+		Workspace:      d.Cwd,
+		Version:        buildinfo.Version,
+		TaskReg:        d.TaskReg,
+		SessionStart:   d.SessionStart,
+		McpServerNames: connectedMcpNames(d.McpManager),
 	})
+
+	log.SetOutput(io.Discard)
 
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	prompter.SetProgram(program)
@@ -589,8 +601,11 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 // makeSessionSaveClose creates sessionSaveFn and sessionCloseFn from Deps.
 // On resumed sessions, lastIdx starts at len(messages) so existing messages aren't re-written.
 func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	lastIdx := 0
 	if d.SessionWriter != nil {
+		observe.GlobalTrace("if: d.SessionWriter != nil")
 		snap := d.Store.Snapshot()
 		lastIdx = len(snap.Conversation.Messages)
 	}
@@ -622,31 +637,45 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 
 // countUserTurns counts all RoleUser messages (matching old SaveSession behavior).
 func countUserTurns(msgs []model.Message) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	count := 0
 	for _, msg := range msgs {
+		observe.GlobalTrace("range msgs")
 		if msg.Role == model.RoleUser {
+			observe.GlobalTrace("if: msg.Role == model.RoleUser")
 			count++
 		}
 	}
+	observe.GlobalTrace("return: count")
 	return count
 }
 
 // extractSummary returns the first user text message, truncated to 100 chars.
 func extractSummary(msgs []model.Message) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, msg := range msgs {
+		observe.GlobalTrace("range msgs")
 		if msg.Role != model.RoleUser {
+			observe.GlobalTrace("if: msg.Role != model.RoleUser")
 			continue
 		}
 		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
 			if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+				observe.GlobalTrace("if: ok && tp.Text != \"\"")
 				s := tp.Text
 				if len(s) > 100 {
+					observe.GlobalTrace("if: len(s) > 100")
 					s = s[:100]
 				}
+				observe.GlobalTrace("return: s")
 				return s
 			}
 		}
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }
 
@@ -777,4 +806,27 @@ func ConsumeEngineEvents(events <-chan query.LoopEvent, verbose bool) error {
 	}
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+// connectedMcpNames returns sorted connected server names from the MCP manager.
+func connectedMcpNames(mgr *mcp.Manager) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if mgr == nil {
+		observe.GlobalTrace("if: mgr == nil")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	status := mgr.ServerStatus()
+	var names []string
+	for name, st := range status {
+		observe.GlobalTrace("range status")
+		if st == "connected" {
+			observe.GlobalTrace("if: st == \"connected\"")
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	observe.GlobalTrace("return: names")
+	return names
 }

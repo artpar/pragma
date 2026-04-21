@@ -21,15 +21,7 @@ type Orchestrator struct {
 	checker   permission.Checker
 	prompter  permission.Prompter
 	bus       *observe.EventBus
-	hookMgr   *hook.Manager  // nil if no hooks configured
-	persister *PermPersister // nil to skip permission persistence
-}
-
-// PermPersister persists permission rules to settings.local.json.
-// Defined as an interface-like func to avoid circular imports with permission package.
-type PermPersister struct {
-	WorkDir string
-	Persist func(workDir string, rule permission.Rule) error
+	hookMgr *hook.Manager // nil if no hooks configured
 }
 
 // NewOrchestrator creates an Orchestrator.
@@ -53,12 +45,6 @@ func (o *Orchestrator) SetHookManager(mgr *hook.Manager) {
 	o.hookMgr = mgr
 }
 
-// SetPermPersister sets the permission persistence handler.
-func (o *Orchestrator) SetPermPersister(p *PermPersister) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	o.persister = p
-}
 
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
@@ -357,30 +343,7 @@ func (o *Orchestrator) executeSingle(
 
 		if sessionRule != nil {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: sessionRule != nil")
-
 			o.checker.AddSessionRule(*sessionRule)
-
-			if o.persister != nil {
-				observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.persister != nil")
-				if err := o.persister.Persist(o.persister.WorkDir, *sessionRule); err != nil {
-					observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: err != nil")
-					o.bus.Emit(observe.ErrorOccurred{
-						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
-						Severity:     "warn",
-						Component:    "orchestrator",
-						ErrorType:    "permission_persist_failed",
-						ErrorMessage: err.Error(),
-					})
-				} else {
-					observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "else: err != nil")
-					o.bus.Emit(observe.PermissionPersisted{
-						EventHeader: observe.NewEventHeader("PermissionPersisted", traceID, spanID, parentSpan),
-						ToolName:    sessionRule.ToolName,
-						Content:     sessionRule.Content,
-						Decision:    string(sessionRule.Decision),
-					})
-				}
-			}
 		}
 
 		o.bus.Emit(observe.ToolPermissionPrompted{

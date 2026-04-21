@@ -19,12 +19,19 @@ type ModelInfo struct {
 	SupportsReasoning bool
 }
 
-// Source: https://docs.getlilac.com/inference/models (2026-04-15)
+// Sources:
+//   GLM-5.1:  HuggingFace zai-org/GLM-5.1 config.json (max_position_embeddings: 202752)
+//             OpenRouter: max output 131,072
+//   Kimi K2.5: HuggingFace moonshotai/Kimi-K2.5 config.json (max_position_embeddings: 262144)
+//              OpenRouter: max output 65,535
+//   Gemma 4:   HuggingFace google/gemma-4-31b-it config.json (text_config.max_position_embeddings: 262144)
+//              Google AI docs: 256K context. No official max output stated.
+//   Pricing:   https://docs.getlilac.com/inference/models (2026-04-15)
 var registry = map[string]ModelInfo{
 	"zai-org/glm-5.1": {
 		ID:                "zai-org/glm-5.1",
-		MaxContext:        202800,
-		MaxOutput:         16384,
+		MaxContext:        202752,
+		MaxOutput:         131072,
 		Pricing:           model.Pricing{InputPerMToken: 0.90, OutputPerMToken: 3.00},
 		SupportsToolUse:   true,
 		SupportsReasoning: true,
@@ -32,7 +39,7 @@ var registry = map[string]ModelInfo{
 	"moonshotai/kimi-k2.5": {
 		ID:                "moonshotai/kimi-k2.5",
 		MaxContext:        262144,
-		MaxOutput:         16384,
+		MaxOutput:         65535,
 		Pricing:           model.Pricing{InputPerMToken: 0.40, OutputPerMToken: 2.00},
 		SupportsVision:    true,
 		SupportsToolUse:   true,

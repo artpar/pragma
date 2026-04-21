@@ -68,8 +68,10 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 	}
 
 	if providerName != "" {
+		observe.GlobalTrace("if: providerName != \"\"")
 		check("Provider configured", true, "")
 	} else if hasKey {
+		observe.GlobalTrace("else-if: hasKey")
 		check("Provider configured", false, "No default provider — will auto-detect from credentials")
 	} else {
 		check("Provider configured", false, "")
@@ -152,18 +154,23 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 		config.MCPLocalConfigPath(cwd),
 	}
 	if globalMCP, globalErr := config.GlobalMCPConfigPath(); globalErr == nil {
+		observe.GlobalTrace("if: globalErr == nil")
 		mcpPaths = append(mcpPaths, globalMCP)
 	}
 	mcpFound := false
 	for _, mp := range mcpPaths {
+		observe.GlobalTrace("range mcpPaths")
 		if _, err := os.Stat(mp); err == nil {
+			observe.GlobalTrace("if: err == nil")
 			mcpFound = true
 			break
 		}
 	}
 	if mcpFound {
+		observe.GlobalTrace("if: mcpFound")
 		check("MCP config", true, "")
 	} else {
+		observe.GlobalTrace("else: mcpFound")
 		check("MCP config", false, "no mcp.json found (optional)")
 	}
 

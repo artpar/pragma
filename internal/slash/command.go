@@ -54,6 +54,9 @@ type Deps struct {
 	ContextWindowFunc func(modelID string) (int, bool) // validates model + returns context window
 	OnModelChanged    func(modelID string)             // callback: update budget + compaction on model switch
 
+	// MCP status — nil-safe.
+	McpStatus func() map[string]string // returns server name → "connected"/"disconnected"
+
 	// Session + skill support — nil-safe.
 	SessionStore *session.Store
 	SkillLoader  *skill.Loader

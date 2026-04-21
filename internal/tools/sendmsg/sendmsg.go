@@ -130,13 +130,13 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent %q is %s, not running. Cannot deliver message.", in.To, tk.Status)}, nil
 	}
 
-	// Check if the agent is dead (heartbeat expired). Tasks that never
-	// heartbeated (LastHeartbeat is zero) are still initializing — skip check.
 	if !tk.LastHeartbeat.IsZero() && time.Since(tk.LastHeartbeat) > task.DeadAgentTimeout {
+		observe.GlobalTrace("if: !tk.LastHeartbeat.IsZero() && time.Since(tk.LastHeartbeat) > task.DeadAgentTi...")
 		_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
 			tt.Status = task.TaskFailed
 			tt.Error = fmt.Sprintf("agent unresponsive (no heartbeat for %s)", task.DeadAgentTimeout)
 		})
+		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent %q appears to be dead (no heart...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent %q appears to be dead (no heartbeat for %s). Message not delivered.", in.To, task.DeadAgentTimeout)}, nil
 	}
 

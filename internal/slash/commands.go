@@ -3,6 +3,7 @@ package slash
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -140,6 +141,13 @@ func registerBuiltins(r *Registry) {
 		Type:        TypeLocal,
 		CLIUse:      "resume [session-id]",
 	})
+	r.Register(Command{
+		Name:        "mcp",
+		Description: "Show MCP server connection status",
+		Handle:      handleMcp,
+		Type:        TypeLocal,
+		CLIUse:      "mcp",
+	})
 }
 
 func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) {
@@ -271,16 +279,15 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 	if args == "" {
 		observe.GlobalTrace("if: args == \"\"")
 
-		// If model lister is available and has models, open interactive picker.
 		if deps.ModelLister != nil {
 			observe.GlobalTrace("if: deps.ModelLister != nil")
 			if models := deps.ModelLister(); len(models) > 0 {
 				observe.GlobalTrace("if: len(models) > 0 — ShowModelDialog")
+				observe.GlobalTrace("return: Result{ShowModelDialog: true}, nil")
 				return Result{ShowModelDialog: true}, nil
 			}
 		}
 
-		// Fallback: no model lister or no models — show text.
 		snap := deps.Store.Snapshot()
 		modelName := snap.Model
 		if modelName == "" {
@@ -332,6 +339,52 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 	}
 	observe.GlobalTrace("return: Result{DisplayText: msg}, nil")
 	return Result{DisplayText: msg}, nil
+}
+
+func handleMcp(_ context.Context, _ string, deps Deps) (Result, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if deps.McpStatus == nil {
+		observe.GlobalTrace("if: deps.McpStatus == nil")
+		observe.GlobalTrace("return: Result{DisplayText: \"MCP is not configured.\"}, nil")
+		return Result{DisplayText: "MCP is not configured."}, nil
+	}
+
+	status := deps.McpStatus()
+	if len(status) == 0 {
+		observe.GlobalTrace("if: len(status) == 0")
+		observe.GlobalTrace("return: Result{DisplayText: \"No MCP servers configured.\"}, nil")
+		return Result{DisplayText: "No MCP servers configured."}, nil
+	}
+
+	var names []string
+	for name := range status {
+		observe.GlobalTrace("range status")
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	b.WriteString("MCP Servers\n")
+	b.WriteString(strings.Repeat("─", 40) + "\n\n")
+
+	connected := 0
+	for _, name := range names {
+		observe.GlobalTrace("range names")
+		st := status[name]
+		if st == "connected" {
+			observe.GlobalTrace("if: st == \"connected\"")
+			connected++
+			fmt.Fprintf(&b, "  ● %s — connected\n", name)
+		} else {
+			observe.GlobalTrace("else: st == \"connected\"")
+			fmt.Fprintf(&b, "  ○ %s — %s\n", name, st)
+		}
+	}
+
+	fmt.Fprintf(&b, "\n%d/%d servers connected\n", connected, len(status))
+	observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
+	return Result{DisplayText: b.String()}, nil
 }
 
 func handleExit(_ context.Context, _ string, deps Deps) (Result, error) {

@@ -126,11 +126,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if in.OldString == "" && in.NewString == "" {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == \"\" && in.NewString == \"\"")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"missing required fields 'old_string' and 'ne...")
 		return tool.InvokeResult{}, fmt.Errorf("missing required fields 'old_string' and 'new_string': Edit requires 'file_path', 'old_string' (text to find), and 'new_string' (replacement). Do not use 'operations' or other formats")
 	}
 
 	if in.OldString == in.NewString {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == in.NewString")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"no changes to make: old_string and new_strin...")
 		return tool.InvokeResult{}, fmt.Errorf("no changes to make: old_string and new_string are exactly the same")
 	}
 
@@ -202,6 +204,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 		hint := diagnoseWhitespaceMismatch(content, in.OldString)
 		nearby := findNearestContext(content, in.OldString)
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.%s%s\\nSt...")
 		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s%s\nString: %s", hint, nearby, in.OldString)
 	}
 
@@ -278,40 +281,53 @@ func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
 // and returns surrounding context to help the model see what's actually there.
 // Returns empty string if no meaningful match is found.
 func findNearestContext(content, oldString string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	lines := strings.Split(content, "\n")
 	oldLines := strings.Split(oldString, "\n")
 	if len(oldLines) == 0 {
+		observe.GlobalTrace("if: len(oldLines) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
 	// Try to find the first non-empty line of old_string in the file
 	var searchLine string
 	for _, l := range oldLines {
+		observe.GlobalTrace("range oldLines")
 		trimmed := strings.TrimSpace(l)
 		if trimmed != "" && trimmed != "{" && trimmed != "}" && len(trimmed) > 5 {
+			observe.GlobalTrace("if: trimmed != \"\" && trimmed != \"{\" && trimmed != \"}\" && len(trimmed) > 5")
 			searchLine = trimmed
 			break
 		}
 	}
 	if searchLine == "" {
+		observe.GlobalTrace("if: searchLine == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
-	// Find best matching line
 	bestIdx := -1
 	for i, line := range lines {
+		observe.GlobalTrace("range lines")
 		if strings.Contains(strings.TrimSpace(line), searchLine) {
+			observe.GlobalTrace("if: strings.Contains(strings.TrimSpace(line), searchLine)")
 			bestIdx = i
 			break
 		}
 	}
 
 	if bestIdx == -1 {
-		// Try partial match — first 30 chars of search line
+		observe.GlobalTrace("if: bestIdx == -1")
+
 		if len(searchLine) > 30 {
+			observe.GlobalTrace("if: len(searchLine) > 30")
 			prefix := searchLine[:30]
 			for i, line := range lines {
+				observe.GlobalTrace("range lines")
 				if strings.Contains(line, prefix) {
+					observe.GlobalTrace("if: strings.Contains(line, prefix)")
 					bestIdx = i
 					break
 				}
@@ -320,21 +336,24 @@ func findNearestContext(content, oldString string) string {
 	}
 
 	if bestIdx == -1 {
+		observe.GlobalTrace("if: bestIdx == -1")
+		observe.GlobalTrace("return: \"\\nHint: no similar content found. Re-read the file with the Read tool to see...")
 		return "\nHint: no similar content found. Re-read the file with the Read tool to see its current content before retrying."
 	}
 
-	// Show context around the match
 	start := bestIdx - 2
 	if start < 0 {
+		observe.GlobalTrace("if: start < 0")
 		start = 0
 	}
 	end := bestIdx + len(oldLines) + 2
 	if end > len(lines) {
+		observe.GlobalTrace("if: end > len(lines)")
 		end = len(lines)
 	}
 
-	// Limit context to 15 lines to avoid overwhelming
 	if end-start > 15 {
+		observe.GlobalTrace("if: end-start > 15")
 		end = start + 15
 	}
 
@@ -343,9 +362,11 @@ func findNearestContext(content, oldString string) string {
 	b.WriteString(fmt.Sprintf("%d-%d", start+1, end))
 	b.WriteString(". Actual content:\n")
 	for i := start; i < end; i++ {
+		observe.GlobalTrace("for: i < end")
 		b.WriteString(fmt.Sprintf("  %d\t%s\n", i+1, lines[i]))
 	}
 	b.WriteString("Use the actual content shown above as your old_string for the next edit attempt.")
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 

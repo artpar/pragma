@@ -112,7 +112,6 @@ func (d *permissionDialog) confirm() tea.Cmd {
 		decision = permission.DecisionAllow
 		rule = &permission.Rule{
 			ToolName: req.ToolName,
-			Content:  req.Content,
 			Decision: permission.DecisionAllow,
 			Source:   permission.SourceSession,
 		}

@@ -36,28 +36,28 @@ import (
 
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
-	Cfg          config.Config
-	Bus          *observe.EventBus
-	StderrLogger *observe.Logger
-	Prov         provider.Provider
-	Checker      permission.Checker
-	Store        *app.StateStore
-	Registry     *tool.Registry
-	CostTracker  *model.CostTracker
-	EngineCfg    query.EngineConfig
-	TaskReg      *task.Registry
-	McpManager   *mcp.Manager
-	LspManager   *lsp.Manager
-	CronSched    *cron.Scheduler
-	HookMgr      *hook.Manager
-	Metrics      *observe.Metrics
-	Auditor      *observe.Auditor
-	TokenMonitor *observe.TokenMonitor
-	LogFilePath    string
-	Cwd            string
-	SessionStart   time.Time
-	SessionWriter  *session.Writer
-	Cleanup        func()
+	Cfg           config.Config
+	Bus           *observe.EventBus
+	StderrLogger  *observe.Logger
+	Prov          provider.Provider
+	Checker       permission.Checker
+	Store         *app.StateStore
+	Registry      *tool.Registry
+	CostTracker   *model.CostTracker
+	EngineCfg     query.EngineConfig
+	TaskReg       *task.Registry
+	McpManager    *mcp.Manager
+	LspManager    *lsp.Manager
+	CronSched     *cron.Scheduler
+	HookMgr       *hook.Manager
+	Metrics       *observe.Metrics
+	Auditor       *observe.Auditor
+	TokenMonitor  *observe.TokenMonitor
+	LogFilePath   string
+	Cwd           string
+	SessionStart  time.Time
+	SessionWriter *session.Writer
+	Cleanup       func()
 }
 
 // SetupDeps creates all shared dependencies from CLI flags and config.
@@ -315,15 +315,16 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			observe.GlobalTrace("if: cfg.Verbose")
 			fmt.Fprintf(os.Stderr, "resumed session %s (%d messages)\n", resumeID, len(conv.Messages))
 		}
-		// Open JSONL writer for appending to resumed session.
+
 		sessionWriter, _ = sessionStore.Open(resumeID)
 	} else {
 		observe.GlobalTrace("else: resumeID != \"\"")
 		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)
 		sessionStart = conv.CreatedAt
-		// Create JSONL writer for the new session
+
 		sessionStore, storeErr := session.NewStore()
 		if storeErr == nil {
+			observe.GlobalTrace("if: storeErr == nil")
 			sessionWriter, _ = sessionStore.Create(session.HeaderData{
 				SessionID:      conv.ID,
 				Model:          cfg.Model,
@@ -337,7 +338,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 	}
 
-	// Create metrics with resumed values (zero for fresh sessions).
 	metrics := observe.NewMetrics(observe.MetricsSeed{TokenUsage: resumedTokens, TurnCount: resumedTurnCount})
 	bus.Subscribe(metrics)
 
@@ -430,23 +430,23 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t\tprov,\n\tChecker:...")
 
 	return &Deps{
-		Cfg:          cfg,
-		Bus:          bus,
-		StderrLogger: logger,
-		Prov:         prov,
-		Checker:      checker,
-		Store:        store,
-		Registry:     registry,
-		CostTracker:  costTracker,
-		EngineCfg:    engineCfg,
-		TaskReg:      taskReg,
-		McpManager:   mcpManager,
-		LspManager:   lspManager,
-		CronSched:    cronSched,
-		HookMgr:      hookMgr,
-		Metrics:      metrics,
-		Auditor:      auditor,
-		TokenMonitor: tokenMon,
+		Cfg:           cfg,
+		Bus:           bus,
+		StderrLogger:  logger,
+		Prov:          prov,
+		Checker:       checker,
+		Store:         store,
+		Registry:      registry,
+		CostTracker:   costTracker,
+		EngineCfg:     engineCfg,
+		TaskReg:       taskReg,
+		McpManager:    mcpManager,
+		LspManager:    lspManager,
+		CronSched:     cronSched,
+		HookMgr:       hookMgr,
+		Metrics:       metrics,
+		Auditor:       auditor,
+		TokenMonitor:  tokenMon,
 		LogFilePath:   logFilePath,
 		Cwd:           cwd,
 		SessionStart:  sessionStart,
@@ -621,12 +621,15 @@ func resolveModelAlias(providerName, modelInput string) string {
 	defer observe.GlobalTrace("exit")
 	lower := strings.ToLower(strings.TrimSpace(modelInput))
 	if aliases, ok := modelAliases[providerName]; ok {
+		observe.GlobalTrace("if: ok")
 		if resolved, ok := aliases[lower]; ok {
 			observe.GlobalTrace("resolved alias " + lower + " → " + resolved)
+			observe.GlobalTrace("return: resolved")
 			return resolved
 		}
 	}
 	observe.GlobalTrace("return: modelInput (no alias)")
+	observe.GlobalTrace("return: modelInput")
 	return modelInput
 }
 
@@ -750,17 +753,21 @@ func autoDetectProvider(creds config.Credentials) string {
 	}
 
 	for _, p := range priority {
+		observe.GlobalTrace("range priority")
 		if os.Getenv(p.envVar) != "" {
 			observe.GlobalTrace("detected from env: " + p.name)
+			observe.GlobalTrace("return: p.name")
 			return p.name
 		}
 		if creds.CredentialFor(p.name).APIKey != "" {
 			observe.GlobalTrace("detected from creds: " + p.name)
+			observe.GlobalTrace("return: p.name")
 			return p.name
 		}
 	}
 
 	observe.GlobalTrace("return: \"\" (none detected)")
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }
 

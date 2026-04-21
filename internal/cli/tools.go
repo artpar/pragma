@@ -138,10 +138,6 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	if d.HookMgr != nil {
 		observe.GlobalTrace("if: d.HookMgr != nil")
 		orchestrator.SetHookManager(d.HookMgr)
-		orchestrator.SetPermPersister(&tool.PermPersister{
-			WorkDir: d.Cwd,
-			Persist: permission.PersistRule,
-		})
 	}
 	lifecycleTool := &toollifecycle.Tool{
 		Provider:       d.Prov,

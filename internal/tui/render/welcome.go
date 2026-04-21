@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,8 @@ var welcomeDim = lipgloss.NewStyle().Faint(true)
 
 // RenderWelcome renders the condensed logo matching TS CondensedLogo.
 // Always the first element in the viewport; scrolls with content.
-func RenderWelcome(version, modelName, provider, workspace string, width int) string {
+// mcpServers lists connected MCP server names (nil/empty = no MCP line shown).
+func RenderWelcome(version, modelName, provider, workspace string, mcpServers []string, width int) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	path := DisplayPath(workspace)
@@ -54,12 +56,25 @@ func RenderWelcome(version, modelName, provider, workspace string, width int) st
 	line1 := namePart + versionPart
 	line2 := welcomeDim.Render(modelLine)
 	line3 := welcomeDim.Render(path)
-	line4 := welcomeDim.Render(hintLine)
+	hintRendered := welcomeDim.Render(hintLine)
+
+	var mcpText string
+	if len(mcpServers) > 0 {
+		mcpText = fmt.Sprintf("%d MCP server", len(mcpServers))
+		if len(mcpServers) > 1 {
+			mcpText += "s"
+		}
+		mcpText += ": " + strings.Join(mcpServers, ", ")
+	}
 
 	if width < 40 {
 		observe.GlobalTrace("if: width < 40")
-		observe.GlobalTrace("return: \"\\n  \" + line1 + \"\\n  \" + line2 + \"\\n  \" + line3 + \"\\n  \" + line4 + \"\\n\\n\"")
-		return "\n  " + line1 + "\n  " + line2 + "\n  " + line3 + "\n  " + line4 + "\n\n"
+		result := "\n  " + line1 + "\n  " + line2 + "\n  " + line3
+		if mcpText != "" {
+			result += "\n  " + welcomeDim.Render(mcpText)
+		}
+		result += "\n  " + hintRendered + "\n\n"
+		return result
 	}
 
 	textIndent := strings.Repeat(" ", mascotWidth+mascotGap)
@@ -77,6 +92,10 @@ func RenderWelcome(version, modelName, provider, workspace string, width int) st
 		line2 = welcomeDim.Render(modelLine)
 	}
 
+	if mcpText != "" && availWidth > 0 && runewidth.StringWidth(mcpText) > availWidth {
+		mcpText = truncateMiddle(mcpText, availWidth)
+	}
+
 	mRow1 := mascotBody.Render(mascotRow1L) + mascotFace.Render(mascotRow1E) + mascotBody.Render(mascotRow1R)
 	mRow2 := mascotBody.Render(mascotRow2L) + mascotFace.Render(mascotRow2B) + mascotBody.Render(mascotRow2R)
 	mRow3 := mascotBody.Render(mascotRow3)
@@ -86,7 +105,10 @@ func RenderWelcome(version, modelName, provider, workspace string, width int) st
 	b.WriteString(mRow1 + "  " + line1 + "\n")
 	b.WriteString(mRow2 + "  " + line2 + "\n")
 	b.WriteString(mRow3 + "  " + line3 + "\n")
-	b.WriteString(textIndent + line4 + "\n")
+	if mcpText != "" {
+		b.WriteString(textIndent + welcomeDim.Render(mcpText) + "\n")
+	}
+	b.WriteString(textIndent + hintRendered + "\n")
 	b.WriteString("\n")
 	observe.GlobalTrace("return: b.String()")
 	return b.String()

@@ -79,6 +79,9 @@ func (t *AutoTracker) RecordFailure() bool {
 
 // FailureCount returns the current consecutive failure count.
 func (t *AutoTracker) FailureCount() int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: t.consecutiveFailures")
 	return t.consecutiveFailures
 }
 

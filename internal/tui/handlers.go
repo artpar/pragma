@@ -79,6 +79,7 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			var models []string
 			currentModel := m.toolbar.modelName
 			if m.slashDeps.ModelLister != nil {
+				observe.GlobalTrace("if: m.slashDeps.ModelLister != nil")
 				models = m.slashDeps.ModelLister()
 			}
 			m.modelDlg.Show(models, currentModel)
@@ -86,10 +87,13 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 		if msg.Result.ShowResumeDialog {
 			observe.GlobalTrace("if: msg.Result.ShowResumeDialog")
 			if m.slashDeps.SessionStore != nil {
+				observe.GlobalTrace("if: m.slashDeps.SessionStore != nil")
 				summaries, err := m.slashDeps.SessionStore.List()
 				if err == nil && len(summaries) > 0 {
+					observe.GlobalTrace("if: err == nil && len(summaries) > 0")
 					entries := make([]SessionEntry, len(summaries))
 					for i, s := range summaries {
+						observe.GlobalTrace("range summaries")
 						entries[i] = SessionEntry{
 							ID:        s.ID,
 							Summary:   s.Summary,
@@ -491,12 +495,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				s.Model = selected
 			})
 			if m.slashDeps.OnModelChanged != nil {
+				observe.GlobalTrace("if: m.slashDeps.OnModelChanged != nil")
 				m.slashDeps.OnModelChanged(selected)
 			}
 			m.toolbar.SetModel(selected)
 			confirmMsg := fmt.Sprintf("Model switched to: %s", selected)
 			if m.slashDeps.ContextWindowFunc != nil {
+				observe.GlobalTrace("if: m.slashDeps.ContextWindowFunc != nil")
 				if cw, ok := m.slashDeps.ContextWindowFunc(selected); ok {
+					observe.GlobalTrace("if: ok")
 					confirmMsg = fmt.Sprintf("Model switched to: %s (context: %dk, takes effect on next turn)", selected, cw/1000)
 				}
 			}
@@ -819,17 +826,19 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 		m.sessionSave()
 	}
 	if m.sessionClose != nil {
+		observe.GlobalTrace("if: m.sessionClose != nil")
 		m.sessionClose()
 	}
 
 	m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(m.toolbar.CostSummary())+"\n")
 	m.viewport.SetContent(m.viewportContent())
 
-	// Print resume hint to stderr (lands after alt-screen exit)
 	snap := m.store.Snapshot()
 	if snap.Conversation.ID != "" {
+		observe.GlobalTrace("if: snap.Conversation.ID != \"\"")
 		shortID := snap.Conversation.ID
 		if len(shortID) > 8 {
+			observe.GlobalTrace("if: len(shortID) > 8")
 			shortID = shortID[:8]
 		}
 		fmt.Fprintf(os.Stderr, "\nResume: pragma --resume %s\n", shortID)
@@ -889,17 +898,18 @@ func (m *Model) loadResumedSession(sessionID string) {
 	defer observe.GlobalTrace("exit")
 
 	if m.slashDeps.SessionStore == nil {
+		observe.GlobalTrace("if: m.slashDeps.SessionStore == nil")
 		m.outputSegs = appendText(m.outputSegs, "\n  Session store not available.\n\n")
 		return
 	}
 
 	sess, err := m.slashDeps.SessionStore.Load(sessionID)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Error loading session: %s\n\n", err))
 		return
 	}
 
-	// Replace conversation in the state store
 	m.store.Update(func(s *app.AppState) {
 		s.Conversation = sess.Conversation
 		if sess.Conversation.Model != "" {
@@ -907,16 +917,18 @@ func (m *Model) loadResumedSession(sessionID string) {
 		}
 	})
 
-	// Update toolbar
 	if sess.Conversation.Model != "" {
+		observe.GlobalTrace("if: sess.Conversation.Model != \"\"")
 		m.toolbar.SetModel(sess.Conversation.Model)
 	}
 
-	// Switch JSONL writer to the resumed session
 	if m.sessionSwitch != nil {
+		observe.GlobalTrace("if: m.sessionSwitch != nil")
 		saveFn, closeFn := m.sessionSwitch(sessionID)
 		if saveFn != nil {
+			observe.GlobalTrace("if: saveFn != nil")
 			if m.sessionClose != nil {
+				observe.GlobalTrace("if: m.sessionClose != nil")
 				m.sessionClose()
 			}
 			m.sessionSave = saveFn
@@ -924,18 +936,20 @@ func (m *Model) loadResumedSession(sessionID string) {
 		}
 	}
 
-	// Reload viewport segments from the resumed conversation's messages
 	m.outputSegs = nil
 	for _, msg := range sess.Conversation.Messages {
+		observe.GlobalTrace("range sess.Conversation.Messages")
 		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 	}
 
 	shortID := sessionID
 	if len(shortID) > 8 {
+		observe.GlobalTrace("if: len(shortID) > 8")
 		shortID = shortID[:8]
 	}
 	summary := sess.Summary
 	if summary == "" {
+		observe.GlobalTrace("if: summary == \"\"")
 		summary = "(no summary)"
 	}
 	m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Resumed session %s — %s — %d turns\n\n", shortID, summary, sess.TurnCount))

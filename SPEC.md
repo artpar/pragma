@@ -1,4 +1,4 @@
-# gogent — Entity Model & Relationships
+# pragma — Entity Model & Relationships
 
 ## Context
 
@@ -47,7 +47,7 @@ internal/
     google/           ← Google adapter (translates model ↔ Google wire)
     groq/             ← Groq adapter (OpenAI-compatible, ultra-fast inference)
     shared/           ← Cross-provider utilities: EstimateTokens, WithRetry, ClassifyByStatusCodes
-    anyllm/           ← Bridge layer: gogent model types ↔ any-llm-go types (OpenAI/Groq)
+    anyllm/           ← Bridge layer: pragma model types ↔ any-llm-go types (OpenAI/Groq)
 
   tool/               ← Tool system (Descriptor interface, Registry, Orchestrator, Asker)
   tools/              ← Tool implementations (36 tools — see list below)
@@ -55,9 +55,9 @@ internal/
   permission/         ← Permission system (rule-based checker, content matching, dangerous paths)
   app/                ← AppState (TodoItem, PlanMode, TeamContext) + StateStore (references model/)
   tui/                ← Bubbletea TUI (permission dialog, ask dialog, streaming display)
-  config/             ← Settings + merge + path resolution (~/.gogent/)
+  config/             ← Settings + merge + path resolution (~/.pragma/)
   sysprompt/          ← System prompt builder (AGENT.md loading, env detection, skill listing)
-  session/            ← Session persistence (save/load/list to ~/.gogent/sessions/)
+  session/            ← Session persistence (save/load/list to ~/.pragma/sessions/)
   task/               ← Background tasks
   skill/              ← Skill type, disk loader, frontmatter parsing, arg substitution
   mcp/                ← MCP client + tool adapter + OAuth PKCE flow + token storage
@@ -68,7 +68,7 @@ internal/
   util/               ← Pure utilities
 ```
 
-**Dependency rule**: Only `internal/provider/anthropic/`, `internal/provider/openai/`, `internal/provider/google/`, `internal/provider/groq/` know about wire formats. `internal/provider/shared/` holds cross-provider utilities (token estimation, retry logic). `internal/provider/anyllm/` bridges gogent types ↔ any-llm-go types for OpenAI/Groq. Everything else imports only `internal/model/` and `internal/provider/` (the interface).
+**Dependency rule**: Only `internal/provider/anthropic/`, `internal/provider/openai/`, `internal/provider/google/`, `internal/provider/groq/` know about wire formats. `internal/provider/shared/` holds cross-provider utilities (token estimation, retry logic). `internal/provider/anyllm/` bridges pragma types ↔ any-llm-go types for OpenAI/Groq. Everything else imports only `internal/model/` and `internal/provider/` (the interface).
 
 ---
 
@@ -324,7 +324,7 @@ type TeamMember struct {
 }
 ```
 
-On-disk at `~/.gogent/teams/{sanitized}/config.json`. Atomic writes (temp + rename). Tasks at `~/.gogent/tasks/{sanitized}/`.
+On-disk at `~/.pragma/teams/{sanitized}/config.json`. Atomic writes (temp + rename). Tasks at `~/.pragma/tasks/{sanitized}/`.
 
 Key functions: `SanitizeName()`, `FormatAgentID()`, `GenerateWordSlug()`, `WriteTeamFile()`, `ReadTeamFile()`, `CleanupTeamDirectories()`, `TeamExists()`.
 
@@ -768,7 +768,7 @@ On exit plan mode, write this to:
 - Compaction test: conversation exceeds budget → compact → verify token reduction
 - Session test: save conversation with mixed ContentParts → restore → verify equality
 - Multi-provider test: same conversation played through Anthropic and OpenAI adapters
-# gogent — Observability, Debugging, Replayability, Testing
+# pragma — Observability, Debugging, Replayability, Testing
 
 ## Context
 
@@ -1018,7 +1018,7 @@ func (l *Logger) HandleEvent(event Event)
 
 ### 3.1b FlowTrace and Auto-Instrumentation (ADR-028)
 
-`internal/observe/trace.go` — context-carried and global trace functions. `cmd/gogent-instrument/` — AST tool that injects trace calls at every branch point. Per-execution JSONL logs at `~/.gogent/logs/`. Runtime filtering via `GOGENT_TRACE_FILTER` env var.
+`internal/observe/trace.go` — context-carried and global trace functions. `cmd/pragma-instrument/` — AST tool that injects trace calls at every branch point. Per-execution JSONL logs at `~/.pragma/logs/`. Runtime filtering via `PRAGMA_TRACE_FILTER` env var.
 
 ### 3.2 Recorder (for replay)
 
@@ -1038,7 +1038,7 @@ func (r *Recorder) Close() error
 
 Writes every event as JSONL to a replay file. The file contains the complete sequence of events for deterministic replay.
 
-**Replay file format** (`.gogent-replay.jsonl`):
+**Replay file format** (`.pragma-replay.jsonl`):
 ```jsonl
 {"kind":"ConversationStarted","time":"...","trace_id":"...","conversation_id":"...","model":"claude-sonnet-4-20250514"}
 {"kind":"MessageAppended","time":"...","role":"user","content_types":["text"],"token_estimate":42}
@@ -1203,18 +1203,18 @@ func (r *ReplayEngine) APIResponse(turn int) (model.Response, bool)
 **Event replay** (fastest, for debugging):
 - Walk through events, display in TUI or log format
 - No actual execution — just view what happened
-- `gogent replay --events session-abc/`
+- `pragma replay --events session-abc/`
 
 **Deterministic replay** (for regression testing):
 - Mock provider returns recorded API responses
 - Mock tools return recorded outputs
 - Verify the system produces the same events
-- `gogent replay --deterministic session-abc/`
+- `pragma replay --deterministic session-abc/`
 
 **Partial replay** (for reproducing bugs):
 - Replay up to turn N, then switch to live execution
 - Use recorded conversation state as starting point
-- `gogent replay --until-turn=5 --then-live session-abc/`
+- `pragma replay --until-turn=5 --then-live session-abc/`
 
 ---
 
@@ -1345,7 +1345,7 @@ func RunAllScenarios(t *testing.T, dir string)
 ### 6.5 Replay-Based Regression Testing
 
 When a bug is found in production:
-1. User shares replay file (`gogent share-replay` → uploads events + outputs)
+1. User shares replay file (`pragma share-replay` → uploads events + outputs)
 2. Replay file becomes a test case in `testdata/replays/`
 3. CI runs all replay files deterministically
 4. If system behavior changes, test fails
@@ -1408,15 +1408,15 @@ Emits warnings when token usage crosses thresholds. TUI shows live token count.
 ## Part 8: CLI Integration
 
 ```
-gogent                         # normal mode (Info level, compact format)
-gogent --verbose               # Debug level, text format
-gogent --debug                 # Trace level, JSON format to file
-gogent --debug=tool,api        # Trace level, only tool+api topics
-gogent --record                # enable replay recording
-gogent replay <dir>            # replay a recorded session
-gogent replay --deterministic  # replay for regression testing
-gogent audit <session>         # show permission audit trail
-gogent metrics <session>       # show metrics summary from replay file
+pragma                         # normal mode (Info level, compact format)
+pragma --verbose               # Debug level, text format
+pragma --debug                 # Trace level, JSON format to file
+pragma --debug=tool,api        # Trace level, only tool+api topics
+pragma --record                # enable replay recording
+pragma replay <dir>            # replay a recorded session
+pragma replay --deterministic  # replay for regression testing
+pragma audit <session>         # show permission audit trail
+pragma metrics <session>       # show metrics summary from replay file
 ```
 
 ---
@@ -1463,8 +1463,8 @@ On approval:
 - Scenario test: `go test ./internal/testing/ -run TestScenarios` — all YAML scenarios pass
 - Replay test: `go test ./internal/testing/ -run TestReplays` — all recorded sessions replay deterministically
 - Watchdog test: mock MCP server goes silent → watchdog emits unresponsive event within maxSilence
-- Integration: run `gogent --record -p "list files"` → replay file exists → `gogent replay --deterministic` passes
-# gogent — Spec Enforcement: How Code Cannot Drift from Plan
+- Integration: run `pragma --record -p "list files"` → replay file exists → `pragma replay --deterministic` passes
+# pragma — Spec Enforcement: How Code Cannot Drift from Plan
 
 ## Context
 
@@ -1518,7 +1518,7 @@ TestNoDirectProviderImports:
     - "internal/provider/openai"
     - "internal/provider/google"
   ALLOWED: "internal/provider" (the interface package)
-  Exception: cmd/gogent/main.go (wiring), internal/cli/ (factory)
+  Exception: cmd/pragma/main.go (wiring), internal/cli/ (factory)
 ```
 
 This enforces the LLM-generic boundary. If `internal/query/engine.go` imports `internal/provider/anthropic`, the test fails.
@@ -1560,7 +1560,7 @@ TestAllToolsRegistered:
   Scan all packages under internal/tools/
   For each package that defines a struct implementing Tool[I,O]:
     FAIL if that tool is not registered in the expected registration list
-  Cross-reference against the registration calls in cmd/gogent/main.go or cli/wire.go
+  Cross-reference against the registration calls in cmd/pragma/main.go or cli/wire.go
 ```
 
 ### 2.5 Package Dependency DAG Test
@@ -1699,7 +1699,7 @@ On approval:
 
 ---
 
-# gogent — Observability, Debugging, Replayability, Testing
+# pragma — Observability, Debugging, Replayability, Testing
 
 ## Context
 
@@ -1949,7 +1949,7 @@ func (l *Logger) HandleEvent(event Event)
 
 ### 3.1b FlowTrace and Auto-Instrumentation (ADR-028)
 
-`internal/observe/trace.go` — context-carried and global trace functions. `cmd/gogent-instrument/` — AST tool that injects trace calls at every branch point. Per-execution JSONL logs at `~/.gogent/logs/`. Runtime filtering via `GOGENT_TRACE_FILTER` env var.
+`internal/observe/trace.go` — context-carried and global trace functions. `cmd/pragma-instrument/` — AST tool that injects trace calls at every branch point. Per-execution JSONL logs at `~/.pragma/logs/`. Runtime filtering via `PRAGMA_TRACE_FILTER` env var.
 
 ### 3.2 Recorder (for replay)
 
@@ -1969,7 +1969,7 @@ func (r *Recorder) Close() error
 
 Writes every event as JSONL to a replay file. The file contains the complete sequence of events for deterministic replay.
 
-**Replay file format** (`.gogent-replay.jsonl`):
+**Replay file format** (`.pragma-replay.jsonl`):
 ```jsonl
 {"kind":"ConversationStarted","time":"...","trace_id":"...","conversation_id":"...","model":"claude-sonnet-4-20250514"}
 {"kind":"MessageAppended","time":"...","role":"user","content_types":["text"],"token_estimate":42}
@@ -2134,18 +2134,18 @@ func (r *ReplayEngine) APIResponse(turn int) (model.Response, bool)
 **Event replay** (fastest, for debugging):
 - Walk through events, display in TUI or log format
 - No actual execution — just view what happened
-- `gogent replay --events session-abc/`
+- `pragma replay --events session-abc/`
 
 **Deterministic replay** (for regression testing):
 - Mock provider returns recorded API responses
 - Mock tools return recorded outputs
 - Verify the system produces the same events
-- `gogent replay --deterministic session-abc/`
+- `pragma replay --deterministic session-abc/`
 
 **Partial replay** (for reproducing bugs):
 - Replay up to turn N, then switch to live execution
 - Use recorded conversation state as starting point
-- `gogent replay --until-turn=5 --then-live session-abc/`
+- `pragma replay --until-turn=5 --then-live session-abc/`
 
 ---
 
@@ -2276,7 +2276,7 @@ func RunAllScenarios(t *testing.T, dir string)
 ### 6.5 Replay-Based Regression Testing
 
 When a bug is found in production:
-1. User shares replay file (`gogent share-replay` → uploads events + outputs)
+1. User shares replay file (`pragma share-replay` → uploads events + outputs)
 2. Replay file becomes a test case in `testdata/replays/`
 3. CI runs all replay files deterministically
 4. If system behavior changes, test fails
@@ -2339,15 +2339,15 @@ Emits warnings when token usage crosses thresholds. TUI shows live token count.
 ## Part 8: CLI Integration
 
 ```
-gogent                         # normal mode (Info level, compact format)
-gogent --verbose               # Debug level, text format
-gogent --debug                 # Trace level, JSON format to file
-gogent --debug=tool,api        # Trace level, only tool+api topics
-gogent --record                # enable replay recording
-gogent replay <dir>            # replay a recorded session
-gogent replay --deterministic  # replay for regression testing
-gogent audit <session>         # show permission audit trail
-gogent metrics <session>       # show metrics summary from replay file
+pragma                         # normal mode (Info level, compact format)
+pragma --verbose               # Debug level, text format
+pragma --debug                 # Trace level, JSON format to file
+pragma --debug=tool,api        # Trace level, only tool+api topics
+pragma --record                # enable replay recording
+pragma replay <dir>            # replay a recorded session
+pragma replay --deterministic  # replay for regression testing
+pragma audit <session>         # show permission audit trail
+pragma metrics <session>       # show metrics summary from replay file
 ```
 
 ---
@@ -2394,4 +2394,4 @@ On approval:
 - Scenario test: `go test ./internal/testing/ -run TestScenarios` — all YAML scenarios pass
 - Replay test: `go test ./internal/testing/ -run TestReplays` — all recorded sessions replay deterministically
 - Watchdog test: mock MCP server goes silent → watchdog emits unresponsive event within maxSilence
-- Integration: run `gogent --record -p "list files"` → replay file exists → `gogent replay --deterministic` passes
+- Integration: run `pragma --record -p "list files"` → replay file exists → `pragma replay --deterministic` passes

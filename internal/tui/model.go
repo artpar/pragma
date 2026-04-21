@@ -38,10 +38,11 @@ type Config struct {
 	HookMgr      *hook.Manager         // nil if no hooks configured
 	TokenMonitor *observe.TokenMonitor // nil if no token monitoring
 	Metrics      *observe.Metrics      // always non-nil (created in deps.go)
-	Workspace    string                // full workspace directory path (run.go passes d.Cwd)
-	Version      string                // build version (from buildinfo.Version)
-	TaskReg      *task.Registry        // task registry for teammate visibility
-	SessionStart time.Time             // original session start (for resume elapsed time)
+	Workspace       string                // full workspace directory path (run.go passes d.Cwd)
+	Version         string                // build version (from buildinfo.Version)
+	TaskReg         *task.Registry        // task registry for teammate visibility
+	SessionStart    time.Time             // original session start (for resume elapsed time)
+	McpServerNames  []string              // connected MCP server names for welcome banner
 }
 
 // segmentKind distinguishes text (pre-rendered) from thinking/tool (rendered on demand).
@@ -146,6 +147,7 @@ type groupEntry struct {
 	CallHeader string      // pre-rendered "⏺ Read(file.go)\n"
 	Tool       toolSegData // tool result data (filled on ToolResultEvent)
 	Category   string      // "read", "search", "silent"
+	CallID     string      // tool call ID for matching results to calls
 	HasResult  bool        // false while waiting for ToolResultEvent
 }
 
@@ -199,8 +201,9 @@ type Model struct {
 	hookMgr      *hook.Manager
 	tokenMonitor *observe.TokenMonitor
 	metrics      *observe.Metrics
-	version      string // build version for welcome display
-	workspace    string // full workspace path for welcome display
+	version        string   // build version for welcome display
+	workspace      string   // full workspace path for welcome display
+	mcpServerNames []string // connected MCP server names for welcome banner
 
 	// Task registry for teammate visibility
 	taskReg         *task.Registry
@@ -288,6 +291,7 @@ func New(cfg Config) Model {
 		metrics:         cfg.Metrics,
 		version:         cfg.Version,
 		workspace:       cfg.Workspace,
+		mcpServerNames:  cfg.McpServerNames,
 		taskReg:         cfg.TaskReg,
 		input:           newInputComponent(),
 		perm:            newPermissionDialog(),
@@ -789,11 +793,12 @@ func (m *Model) addToGroup(callHeader string, call model.ToolCallPart, category 
 	g.Entries = append(g.Entries, groupEntry{
 		CallHeader: callHeader,
 		Category:   category,
+		CallID:     call.ID,
 		Tool:       toolSegData{Name: call.Name, Input: call.Input},
 	})
 }
 
-// fillGroupResult fills the result data into the last pending entry of the active group.
+// fillGroupResult fills the result data into the matching entry of the active group by call ID.
 func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResultPart, display string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -803,16 +808,16 @@ func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResult
 		if seg.kind == segGroup && seg.group != nil && seg.group.Active {
 			observe.GlobalTrace("if: seg.kind == segGroup && seg.group != nil && seg.group.Active")
 			g := seg.group
-			for j := len(g.Entries) - 1; j >= 0; j-- {
-				observe.GlobalTrace("for: j >= 0")
-				if !g.Entries[j].HasResult {
-					observe.GlobalTrace("if: !g.Entries[j].HasResult")
+			for j := range g.Entries {
+				observe.GlobalTrace("range g.Entries")
+				if g.Entries[j].CallID == call.ID && !g.Entries[j].HasResult {
+					observe.GlobalTrace("if: g.Entries[j].CallID == call.ID")
 					g.Entries[j].Tool.Content = result.Content
 					g.Entries[j].Tool.IsError = result.IsError
 					g.Entries[j].Tool.Display = display
 					g.Entries[j].HasResult = true
 					updateGroupCounts(g, &g.Entries[j], call.Input)
-					break
+					return
 				}
 			}
 			return
@@ -996,6 +1001,7 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 				activeGroup.Entries = append(activeGroup.Entries, groupEntry{
 					CallHeader: render.RenderToolCall(p, 80) + "\n",
 					Category:   cat,
+					CallID:     p.ID,
 					Tool:       toolSegData{Name: p.Name, Input: p.Input},
 				})
 			} else {
@@ -1067,7 +1073,7 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 		welcomeText := render.RenderWelcome(
 			m.version, m.toolbar.modelName, m.toolbar.provider,
-			m.workspace, m.width,
+			m.workspace, m.mcpServerNames, m.width,
 		)
 		m.outputSegs = append(m.outputSegs, segment{kind: segText, content: welcomeText})
 

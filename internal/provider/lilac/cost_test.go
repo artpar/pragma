@@ -1,6 +1,7 @@
 package lilac
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/artpar/pragma/internal/model"
@@ -146,8 +147,8 @@ func TestEnsureMaxTokens(t *testing.T) {
 			MaxTokens: 0,
 		}
 		p.ensureMaxTokens(&params)
-		if params.MaxTokens != 16384 {
-			t.Errorf("expected MaxTokens=16384, got %d", params.MaxTokens)
+		if params.MaxTokens != 65535 {
+			t.Errorf("expected MaxTokens=65535, got %d", params.MaxTokens)
 		}
 	})
 
@@ -170,6 +171,26 @@ func TestEnsureMaxTokens(t *testing.T) {
 		p.ensureMaxTokens(&params)
 		if params.MaxTokens != 0 {
 			t.Errorf("expected MaxTokens=0 for unknown model, got %d", params.MaxTokens)
+		}
+	})
+
+	t.Run("caps_max_tokens_to_fit_context_window", func(t *testing.T) {
+		// Gemma 4 context = 262144. Create a large prompt that fills most of it.
+		// ~250K tokens worth of text (~1M chars at 4 chars/token)
+		bigText := strings.Repeat("word ", 200000) // ~200K tokens at len/4
+		params := provider.RequestParams{
+			Model:     "google/gemma-4-31b-it",
+			MaxTokens: 16384,
+			Messages: []model.Message{
+				{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+			},
+		}
+		p.ensureMaxTokens(&params)
+		if params.MaxTokens >= 16384 {
+			t.Errorf("expected MaxTokens to be capped below 16384, got %d", params.MaxTokens)
+		}
+		if params.MaxTokens < 1024 {
+			t.Errorf("expected MaxTokens >= 1024 minimum, got %d", params.MaxTokens)
 		}
 	})
 }

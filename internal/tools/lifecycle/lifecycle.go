@@ -349,7 +349,6 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 			continue
 		}
 
-		// Find matching results in the next user message.
 		resultMap := make(map[string]model.ToolResultPart)
 		if mi+1 < len(msgs) && msgs[mi+1].Role == model.RoleUser {
 			observe.GlobalTrace("if: mi+1 < len(msgs) && msgs[mi+1].Role == model.RoleUser")
@@ -373,7 +372,6 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 				rec.Output = truncate(tr.Content, 500)
 				rec.IsError = tr.IsError
 
-				// Only track files for successful tool calls.
 				if !tr.IsError {
 					observe.GlobalTrace("if: !tr.IsError")
 					trackFiles(tc, modifiedSet, readSet)
@@ -435,25 +433,35 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 
 // truncate limits s to maxLen runes, appending "..." if truncated.
 func truncate(s string, maxLen int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	runes := []rune(s)
 	if len(runes) <= maxLen {
+		observe.GlobalTrace("if: len(runes) <= maxLen")
+		observe.GlobalTrace("return: s")
 		return s
 	}
+	observe.GlobalTrace("return: string(runes[:maxLen]) + \"...\"")
 	return string(runes[:maxLen]) + "..."
 }
 
 // trackFiles extracts file_path from Edit/Write/Read tool call inputs.
 func trackFiles(tc model.ToolCallPart, modified, read map[string]bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var fp struct {
 		FilePath string `json:"file_path"`
 	}
 	if err := json.Unmarshal(tc.Input, &fp); err != nil || fp.FilePath == "" {
+		observe.GlobalTrace("if: err != nil || fp.FilePath == \"\"")
 		return
 	}
 	switch tc.Name {
 	case "Edit", "Write":
+		observe.GlobalTrace("case: \"Edit\", \"Write\"")
 		modified[fp.FilePath] = true
 	case "Read":
+		observe.GlobalTrace("case: \"Read\"")
 		read[fp.FilePath] = true
 	}
 }
