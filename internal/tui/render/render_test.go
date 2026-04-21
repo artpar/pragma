@@ -305,7 +305,8 @@ func TestRenderToolOutputBashVerbose(t *testing.T) {
 
 func TestRenderToolOutputReadVerbose(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/test.go","offset":0,"limit":100}`)
-	content := "line1\nline2\nline3"
+	// Content matches readTextFile format: "N→line\n" (line numbers already embedded)
+	content := "1→line1\n2→line2\n3→line3"
 	nonVerbose := RenderToolOutput("Read", input, content, false, 80, "", false)
 	verbose := RenderToolOutput("Read", input, content, false, 80, "", true)
 
@@ -321,13 +322,10 @@ func TestRenderToolOutputReadVerbose(t *testing.T) {
 		t.Errorf("non-verbose should not show file content, got %q", plain)
 	}
 
-	// Verbose: should show numbered content
+	// Verbose: show content with embedded line numbers (no duplicate gutter)
 	vPlain := stripANSI(verbose)
-	if !strings.Contains(vPlain, "line1") {
-		t.Errorf("verbose should show file content, got %q", vPlain)
-	}
-	if !strings.Contains(vPlain, "1 ") {
-		t.Errorf("verbose should show line numbers, got %q", vPlain)
+	if !strings.Contains(vPlain, "1→line1") {
+		t.Errorf("verbose should show content with embedded line numbers, got %q", vPlain)
 	}
 	if strings.Contains(vPlain, "ctrl+o") {
 		t.Errorf("verbose should not show expand hint, got %q", vPlain)

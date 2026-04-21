@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -696,5 +697,219 @@ func TestRunLoop_PendingMessages(t *testing.T) {
 	drained := taskReg.DrainPendingMessages(tk.ID)
 	if len(drained) != 0 {
 		t.Errorf("expected 0 pending messages after drain, got %d", len(drained))
+	}
+}
+
+// TestRun_AutoCompactionTriggersAndReplaces verifies auto-compaction fires when
+// the token count heuristic exceeds the configured threshold and that conversation
+// messages are replaced with the compaction summary.
+func TestRun_AutoCompactionTriggersAndReplaces(t *testing.T) {
+	// Turn 1: main conversation response
+	// Turn 2: compaction call — the compactor calls provider.Complete which uses Stream
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			// Turn 1: normal response
+			textChunks("OK, noted.", model.StopEndTurn),
+			// Turn 2: compaction summary (compact.Service calls provider.Complete → Stream)
+			textChunks("Summary: user asked questions, assistant answered.", model.StopEndTurn),
+		},
+		pricing: model.Pricing{InputPerMToken: 3, OutputPerMToken: 15},
+	}
+
+	bus := observe.NewEventBus(256)
+	registry := tool.NewRegistry(bus)
+	checker := &allowAllChecker{}
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
+
+	// Create conversation with enough existing messages to exceed threshold
+	system := model.SystemPrompt{
+		Blocks: []model.SystemBlock{{Text: "You are helpful.", Cacheable: true}},
+	}
+	conv := model.NewConversation(system, "test-model", "test", "/tmp/test")
+
+	// Add 6 existing messages (~6000 tokens via heuristic estimator, 4 chars ≈ 1 token)
+	bigText := strings.Repeat("word ", 3000) // ~15000 chars ≈ 3750 tokens
+	conv.Messages = []model.Message{
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "more questions"}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: "more answers"}}},
+	}
+
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          "/tmp/test",
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	ct := model.NewCostTracker(0)
+
+	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+	})
+
+	// Configure auto-compaction with a very small window so threshold is easily exceeded.
+	// EffectiveWindow = 20000 - 4096 - 2000 = 13904
+	// AutoCompactThreshold = 13904 - 13000 = 904 tokens
+	// With ~15000 tokens of conversation, this will trigger immediately.
+	compactSvc := compact.NewService(prov, bus, ct, "test-model")
+	tracker := compact.NewAutoTracker(false)
+	engine.SetCompaction(CompactionDeps{
+		Compactor:   compactSvc,
+		AutoTracker: tracker,
+		WindowConfig: compact.WindowConfig{
+			ContextWindow:   20_000,
+			MaxOutput:       4096,
+			SystemPromptEst: 2000,
+		},
+	})
+
+	events := drain(engine.Run(context.Background(), "Tell me more"))
+
+	// Verify event sequence includes CompactionStartedEvent and CompactionEvent
+	var gotStarted, gotCompacted bool
+	var preTokens, postTokens int
+	var gotComplete bool
+
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case CompactionStartedEvent:
+			gotStarted = true
+		case CompactionEvent:
+			gotCompacted = true
+			preTokens = e.PreTokens
+			postTokens = e.PostTokens
+		case TurnCompleteEvent:
+			gotComplete = true
+		case ErrorEvent:
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+
+	if !gotStarted {
+		t.Error("expected CompactionStartedEvent")
+	}
+	if !gotCompacted {
+		t.Error("expected CompactionEvent")
+	}
+	if gotCompacted && preTokens <= postTokens {
+		t.Errorf("compaction should reduce tokens: pre=%d, post=%d", preTokens, postTokens)
+	}
+	if !gotComplete {
+		t.Error("expected TurnCompleteEvent after compaction")
+	}
+
+	// Verify conversation state was replaced
+	snap := store.Snapshot()
+	msgs := snap.Conversation.Messages
+	// After compaction: compact.Service replaces ALL messages with a summary.
+	// The original 6 messages + 2 new = 8, then compacted down to summary.
+	if len(msgs) >= 8 {
+		t.Errorf("compaction should have reduced message count from 8, got %d", len(msgs))
+	}
+	if len(msgs) == 0 {
+		t.Fatal("compaction should leave at least 1 summary message")
+	}
+}
+
+// TestRun_AutoCompactionCircuitBreaker verifies that 3 consecutive compaction failures
+// disable auto-compaction and emit CompactionDisabledEvent.
+func TestRun_AutoCompactionCircuitBreaker(t *testing.T) {
+	// We need 3 turns, each triggering compaction that fails.
+	// The compaction fails because compact.Service will get an error from the provider
+	// on the compaction call.
+	// Turn flow: main response (tool_use → end_turn) for 3 turns + failed compaction calls.
+	// Actually simpler: use a provider that works for main turns but the compaction
+	// service uses the same provider. We need the compaction call to fail.
+	// The simplest way: make the compaction content empty so ErrEmptySummary fires.
+
+	// Build 3 main turns + 3 compaction turns (each returns empty → triggers ErrEmptySummary)
+	var turns [][]provider.StreamChunk
+	for i := 0; i < 3; i++ {
+		// Main turn response (tool_use to keep looping)
+		turns = append(turns, textChunks("Response "+string(rune('A'+i)), model.StopEndTurn))
+		// Compaction turn — empty text triggers ErrEmptySummary
+		turns = append(turns, []provider.StreamChunk{
+			{TextDelta: ""},
+			{Done: &provider.StreamDone{StopReason: model.StopEndTurn, Usage: model.TokenUsage{InputTokens: 10, OutputTokens: 5}}},
+		})
+	}
+
+	prov := &testProvider{
+		turns:   turns,
+		pricing: model.Pricing{InputPerMToken: 3, OutputPerMToken: 15},
+	}
+
+	bus := observe.NewEventBus(256)
+	registry := tool.NewRegistry(bus)
+	checker := &allowAllChecker{}
+	prompter := &permission.NonInteractivePrompter{}
+	orch := tool.NewOrchestrator(registry, checker, prompter, bus)
+
+	system := model.SystemPrompt{
+		Blocks: []model.SystemBlock{{Text: "Be helpful.", Cacheable: true}},
+	}
+	conv := model.NewConversation(system, "test-model", "test", "/tmp/test")
+
+	// Pre-fill with large messages to trigger compaction
+	bigText := strings.Repeat("text ", 3000)
+	conv.Messages = []model.Message{
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+	}
+
+	store := app.NewStateStore(app.AppState{Conversation: conv, CWD: "/tmp/test", Model: "test-model", Provider: "test", MaxTokens: 4096})
+	ct := model.NewCostTracker(0)
+
+	engine := NewEngine(prov, registry, orch, store, ct, bus, EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+		MaxTurns:  3,
+	})
+
+	compactSvc := compact.NewService(prov, bus, ct, "test-model")
+	tracker := compact.NewAutoTracker(false)
+	engine.SetCompaction(CompactionDeps{
+		Compactor:   compactSvc,
+		AutoTracker: tracker,
+		WindowConfig: compact.WindowConfig{
+			ContextWindow:   20_000,
+			MaxOutput:       4096,
+			SystemPromptEst: 2000,
+		},
+	})
+
+	// The engine processes first turn → StopEndTurn → exits.
+	// Only 1 compaction attempt per run. Need tool_use to keep going.
+	// Actually, StopEndTurn exits the loop, so only 1 turn executes.
+	// To test circuit breaker, we need 3 separate runs.
+	events1 := drain(engine.Run(context.Background(), "Turn 1"))
+	events2 := drain(engine.Run(context.Background(), "Turn 2"))
+	events3 := drain(engine.Run(context.Background(), "Turn 3"))
+
+	allEvents := append(append(events1, events2...), events3...)
+
+	var failCount, disabledCount int
+	for _, ev := range allEvents {
+		switch ev.(type) {
+		case CompactionFailedEvent:
+			failCount++
+		case CompactionDisabledEvent:
+			disabledCount++
+		}
+	}
+
+	if failCount != 3 {
+		t.Errorf("expected 3 CompactionFailedEvents, got %d", failCount)
+	}
+	if disabledCount != 1 {
+		t.Errorf("expected 1 CompactionDisabledEvent, got %d", disabledCount)
 	}
 }

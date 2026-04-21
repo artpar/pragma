@@ -206,7 +206,7 @@ func renderRead(input json.RawMessage, content string, isError bool, width int, 
 	summary := fmt.Sprintf("Read %d %s", lineCount, noun)
 	if params.Offset > 0 {
 		observe.GlobalTrace("if: params.Offset > 0")
-		summary += fmt.Sprintf(" (from line %d)", params.Offset+1)
+		summary += fmt.Sprintf(" (from line %d)", params.Offset)
 	}
 
 	if !verbose {
@@ -219,7 +219,9 @@ func renderRead(input json.RawMessage, content string, isError bool, width int, 
 		return strings.TrimRight(b.String(), "\n")
 	}
 
-	// Verbose: show full content with line numbers (size guard: max 2000 lines per #46190)
+	// Verbose: show full content (size guard: max 2000 lines per #46190).
+	// Content already has line numbers from readTextFile (format: "N→content"),
+	// so we just indent each line — no duplicate gutter.
 	var b strings.Builder
 	b.WriteString(bracketDim.Render(BracketPrefix) + dimText.Render(summary))
 	b.WriteString("\n")
@@ -231,12 +233,10 @@ func renderRead(input json.RawMessage, content string, isError bool, width int, 
 		observe.GlobalTrace("if: len(showLines) > maxVerboseLines")
 		showLines = showLines[:maxVerboseLines]
 	}
-	startLine := params.Offset + 1
-	for i, line := range showLines {
+	for _, line := range showLines {
 		observe.GlobalTrace("range showLines")
 		b.WriteString(ContentIndent)
-		b.WriteString(diffGutter.Render(fmt.Sprintf("%4d ", startLine+i)))
-		b.WriteString(truncateLine(line, width-len(ContentIndent)-5))
+		b.WriteString(truncateLine(line, width-len(ContentIndent)))
 		b.WriteString("\n")
 	}
 	if len(lines) > maxVerboseLines {
