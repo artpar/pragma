@@ -154,8 +154,8 @@ func TestLoadSingleLSPConfig_MissingFile(t *testing.T) {
 
 func TestLoadConfig_MergesScopes(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(gogentDir, 0755); err != nil {
+	pragmaDir := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,7 +174,7 @@ func TestLoadConfig_MergesScopes(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(projectCfg)
-	if err := os.WriteFile(filepath.Join(gogentDir, "lsp.json"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "lsp.json"), data, 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -189,7 +189,7 @@ func TestLoadConfig_MergesScopes(t *testing.T) {
 		},
 	}
 	data, _ = json.Marshal(localCfg)
-	if err := os.WriteFile(filepath.Join(gogentDir, "lsp.local.json"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "lsp.local.json"), data, 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -216,8 +216,8 @@ func TestLoadConfig_MergesScopes(t *testing.T) {
 
 func TestLoadConfig_SkipsInvalidServers(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(gogentDir, 0755); err != nil {
+	pragmaDir := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -234,7 +234,7 @@ func TestLoadConfig_SkipsInvalidServers(t *testing.T) {
 		},
 	}
 	data, _ := json.Marshal(cfg)
-	if err := os.WriteFile(filepath.Join(gogentDir, "lsp.json"), data, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "lsp.json"), data, 0644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,4 +1,4 @@
-# gogent
+# pragma
 
 Agentic code. LLM-generic — works with Anthropic, OpenAI, Google, or any provider.
 
@@ -7,10 +7,10 @@ Agentic code. LLM-generic — works with Anthropic, OpenAI, Google, or any provi
 ```bash
 # Run with a prompt
 export ANTHROPIC_API_KEY=your-key
-go run ./cmd/gogent -p "What is 2+2?"
+go run ./cmd/pragma -p "What is 2+2?"
 
 # With options
-go run ./cmd/gogent -p "Explain Go channels" \
+go run ./cmd/pragma -p "Explain Go channels" \
   --model claude-haiku-4-5-20251001 \
   --system-prompt "Be concise" \
   --max-tokens 200 \
@@ -19,7 +19,7 @@ go run ./cmd/gogent -p "Explain Go channels" \
 
 ## Status
 
-**Phase 3 complete** — gogent is runnable. Non-interactive mode works end-to-end: config loading, streaming agentic loop with tool execution, Cobra CLI.
+**Phase 3 complete** — pragma is runnable. Non-interactive mode works end-to-end: config loading, streaming agentic loop with tool execution, Cobra CLI.
 
 ## CLI Flags
 
@@ -35,12 +35,12 @@ go run ./cmd/gogent -p "Explain Go channels" \
 | `--thinking` | Enable extended thinking |
 | `--thinking-budget` | Thinking token budget (default: 10000) |
 | `--verbose` | Verbose event logging to stderr |
-| `--record` | Record events to `gogent-recording.jsonl` |
+| `--record` | Record events to `pragma-recording.jsonl` |
 
 ## Architecture
 
 ```
-cmd/gogent/           CLI entry point (Cobra root command + wiring)
+cmd/pragma/           CLI entry point (Cobra root command + wiring)
 internal/
   config/             Config loading with 3-scope merge (global → project → CLI)
   query/              Engine + agentic loop (stream → accumulate → tool exec → loop)

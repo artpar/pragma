@@ -18,7 +18,7 @@ import (
 	groqprov "github.com/mozilla-ai/any-llm-go/providers/groq"
 )
 
-// Provider wraps any-llm-go's Groq provider for gogent.
+// Provider wraps any-llm-go's Groq provider for pragma.
 type Provider struct {
 	inner      providers.Provider
 	bus        *observe.EventBus

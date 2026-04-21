@@ -98,7 +98,7 @@ func (cm *cacheManager) getOrCreateCache(
 		SystemInstruction: sysInstruction,
 		Tools:             tools,
 		TTL:               cacheTTL,
-		DisplayName:       "gogent-session-cache",
+		DisplayName:       "pragma-session-cache",
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("create cache error: %v", err))

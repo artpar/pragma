@@ -69,8 +69,8 @@ func SanitizeName(s string) string {
 	return slug
 }
 
-// gogentHome returns the gogent home dir, falling back to ~/.pragma on error.
-func gogentHome() string {
+// pragmaHome returns the pragma home dir, falling back to ~/.pragma on error.
+func pragmaHome() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	home, err := config.PragmaHome()
@@ -89,16 +89,16 @@ func gogentHome() string {
 func TeamDir(teamName string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: filepath.Join(gogentHome(), teamsSubdir, SanitizeName(teamName))")
-	return filepath.Join(gogentHome(), teamsSubdir, SanitizeName(teamName))
+	observe.GlobalTrace("return: filepath.Join(pragmaHome(), teamsSubdir, SanitizeName(teamName))")
+	return filepath.Join(pragmaHome(), teamsSubdir, SanitizeName(teamName))
 }
 
 // TasksDir returns the tasks directory for a team: ~/.pragma/tasks/{sanitized}/
 func TasksDir(teamName string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: filepath.Join(gogentHome(), tasksSubdir, SanitizeName(teamName))")
-	return filepath.Join(gogentHome(), tasksSubdir, SanitizeName(teamName))
+	observe.GlobalTrace("return: filepath.Join(pragmaHome(), tasksSubdir, SanitizeName(teamName))")
+	return filepath.Join(pragmaHome(), tasksSubdir, SanitizeName(teamName))
 }
 
 // TeamFilePath returns the config file path for a team.

@@ -9,7 +9,7 @@ import (
 	"github.com/artpar/pragma/internal/tool"
 )
 
-// Infra holds the gogent infrastructure needed by bridge node factories.
+// Infra holds the pragma infrastructure needed by bridge node factories.
 // Passed once at wiring time — nodes capture what they need via closures.
 type Infra struct {
 	Provider     provider.Provider

@@ -187,16 +187,16 @@ func TestLoad_ProjectOverride(t *testing.T) {
 
 func TestLoad_MalformedJSON(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
+	pragmaDir := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(gogentDir, "settings.json"), []byte("{bad json"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "settings.json"), []byte("{bad json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Use the malformed file as the global config
-	_, err := loadWithGlobal(filepath.Join(gogentDir, "settings.json"), t.TempDir())
+	_, err := loadWithGlobal(filepath.Join(pragmaDir, "settings.json"), t.TempDir())
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}

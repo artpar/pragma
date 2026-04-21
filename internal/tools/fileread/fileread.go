@@ -119,7 +119,7 @@ Usage:
 - By default, it reads up to 2000 lines starting from the beginning of the file
 - When you already know which part of the file you need, only read that part. This can be important for larger files.
 - Results are returned with line numbers starting at 1, formatted as: line_number→content (the → arrow separates the line number from the actual file content)
-- This tool allows gogent to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as gogent is a multimodal LLM.
+- This tool allows pragma to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as pragma is a multimodal LLM.
 - This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.
 - This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
 - This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.

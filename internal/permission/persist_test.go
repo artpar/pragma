@@ -11,8 +11,8 @@ import (
 
 func TestPersistRuleNewFile(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
+	pragmaDir := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,8 +64,8 @@ func TestPersistRuleDedup(t *testing.T) {
 
 func TestPersistRulePreservesExisting(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".pragma")
-	os.MkdirAll(gogentDir, 0o755)
+	pragmaDir := filepath.Join(dir, ".pragma")
+	os.MkdirAll(pragmaDir, 0o755)
 
 	// Write initial settings with an existing permission
 	initial := config.Config{
@@ -75,7 +75,7 @@ func TestPersistRulePreservesExisting(t *testing.T) {
 		Model: "gpt-4o",
 	}
 	data, _ := json.MarshalIndent(initial, "", "  ")
-	os.WriteFile(filepath.Join(gogentDir, "settings.local.json"), data, 0o644)
+	os.WriteFile(filepath.Join(pragmaDir, "settings.local.json"), data, 0o644)
 
 	// Persist a new rule
 	rule := Rule{ToolName: "Bash", Content: "git *", Decision: DecisionAllow}
@@ -102,7 +102,7 @@ func TestPersistRulePreservesExisting(t *testing.T) {
 
 	// Verify other settings fields are preserved
 	var cfg config.Config
-	data, _ = os.ReadFile(filepath.Join(gogentDir, "settings.local.json"))
+	data, _ = os.ReadFile(filepath.Join(pragmaDir, "settings.local.json"))
 	json.Unmarshal(data, &cfg)
 	if cfg.Model != "gpt-4o" {
 		t.Errorf("Model field lost: got %q", cfg.Model)

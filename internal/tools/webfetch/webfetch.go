@@ -218,7 +218,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		observe.TraceCtx(ctx, "webfetch", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to create request: %v\", err)},...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to create request: %v", err)}, nil
 	}
-	req.Header.Set("User-Agent", "gogent/1.0 (AI coding assistant)")
+	req.Header.Set("User-Agent", "pragma/1.0 (AI coding assistant)")
 
 	client := pinnedHTTPClient(u.Hostname(), pinnedAddr)
 	resp, err := client.Do(req)

@@ -12,11 +12,11 @@ func TestBuild_FullPrompt(t *testing.T) {
 	t.Setenv("HOME", dir)
 
 	// Create an AGENT.md
-	gogentDir := filepath.Join(dir, "proj", ".pragma")
-	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
+	pragmaDir := filepath.Join(dir, "proj", ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(gogentDir, "AGENT.md"), []byte("test project rule"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "AGENT.md"), []byte("test project rule"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

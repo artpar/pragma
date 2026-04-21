@@ -28,13 +28,13 @@ type Registry struct {
 func NewRegistry() (*Registry, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	gogentHome, err := config.PragmaHome()
+	pragmaHome, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve gogent home: %w\", err)")
-		return nil, fmt.Errorf("resolve gogent home: %w", err)
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"resolve pragma home: %w\", err)")
+		return nil, fmt.Errorf("resolve pragma home: %w", err)
 	}
-	dir := filepath.Join(gogentHome, "active-sessions")
+	dir := filepath.Join(pragmaHome, "active-sessions")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"create active-sessions directory: %w\", err)")

@@ -232,7 +232,7 @@ func TestE2E_MultiTurnToolLoop(t *testing.T) {
 			},
 		).
 		WithTool("Glob", func(input json.RawMessage) (string, error) {
-			return "cmd/gogent/main.go\ncmd/gogent/lifecycle.go\ncmd/gogent/sessions.go\ncmd/gogent/replay.go", nil
+			return "cmd/pragma/main.go\ncmd/pragma/lifecycle.go\ncmd/pragma/sessions.go\ncmd/pragma/replay.go", nil
 		}).
 		WithTool("Bash", func(input json.RawMessage) (string, error) {
 			return "4", nil

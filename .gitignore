@@ -1,7 +1,6 @@
 # Binaries
 /pragma
-/gogent
-/gogent-instrument
+/pragma-instrument
 *.exe
 *.dll
 *.so
@@ -34,7 +33,7 @@ todo-app/
 
 # Runtime artifacts
 .gogent/
-gogent-recording.jsonl
+pragma-recording.jsonl
 stress-test/
 
 # E2E test snapshots

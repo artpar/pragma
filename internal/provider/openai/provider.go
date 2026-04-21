@@ -18,7 +18,7 @@ import (
 	oai "github.com/mozilla-ai/any-llm-go/providers/openai"
 )
 
-// Provider wraps any-llm-go's OpenAI provider for gogent.
+// Provider wraps any-llm-go's OpenAI provider for pragma.
 type Provider struct {
 	inner      providers.Provider
 	bus        *observe.EventBus

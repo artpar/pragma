@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/harness.sh"
 
-BINARY="$PROJECT_DIR/bin/gogent"
+BINARY="$PROJECT_DIR/bin/pragma"
 API_KEY="${ANTHROPIC_API_KEY:-smoke-test}"
 PASS=0
 FAIL=0
@@ -13,7 +13,7 @@ FAIL=0
 trap cleanup_all EXIT
 mkdir -p "$SNAPSHOT_DIR"
 
-echo "Building gogent..."
+echo "Building pragma..."
 (cd "$PROJECT_DIR" && make build)
 echo ""
 
@@ -21,7 +21,7 @@ echo ""
 # Test 1: /help
 # --------------------------------------------------
 test_help() {
-    local S="gogent-e2e-help-$$"
+    local S="pragma-e2e-help-$$"
     echo "=== Test: /help ==="
     tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
     tmux_wait_ready "$S"
@@ -38,7 +38,7 @@ test_help() {
 # Test 2: /cost
 # --------------------------------------------------
 test_cost() {
-    local S="gogent-e2e-cost-$$"
+    local S="pragma-e2e-cost-$$"
     echo ""
     echo "=== Test: /cost ==="
     tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
@@ -54,7 +54,7 @@ test_cost() {
 # Test 3: /exit quits the program
 # --------------------------------------------------
 test_exit() {
-    local S="gogent-e2e-exit-$$"
+    local S="pragma-e2e-exit-$$"
     echo ""
     echo "=== Test: /exit ==="
     tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
@@ -77,7 +77,7 @@ test_exit() {
 # Test 4: /unknown command shows error
 # --------------------------------------------------
 test_unknown() {
-    local S="gogent-e2e-unknown-$$"
+    local S="pragma-e2e-unknown-$$"
     echo ""
     echo "=== Test: /unknown ==="
     tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
@@ -98,7 +98,7 @@ test_message() {
         echo "=== Test: regular message === (SKIPPED: no real API key)"
         return
     fi
-    local S="gogent-e2e-msg-$$"
+    local S="pragma-e2e-msg-$$"
     echo ""
     echo "=== Test: regular message ==="
     tmux_start "$S" env ANTHROPIC_API_KEY="$API_KEY" "$BINARY"
@@ -120,8 +120,8 @@ test_provider_picker() {
     local TEMP_HOME
     TEMP_HOME=$(mktemp -d)
     harness_track_tmpdir "$TEMP_HOME"
-    mkdir -p "$TEMP_HOME/.gogent"
-    cat > "$TEMP_HOME/.gogent/credentials.yml" << 'CREDS'
+    mkdir -p "$TEMP_HOME/.pragma"
+    cat > "$TEMP_HOME/.pragma/credentials.yml" << 'CREDS'
 providers:
   google:
     api_key: fake-google-key-for-picker-test
@@ -129,7 +129,7 @@ providers:
     api_key: fake-lilac-key-for-picker-test
 CREDS
 
-    local S="gogent-e2e-picker-$$"
+    local S="pragma-e2e-picker-$$"
     tmux_start "$S" env -i HOME="$TEMP_HOME" PATH="$PATH" TERM="${TERM:-xterm-256color}" "$BINARY"
 
     if ! tmux_wait_for "$S" "Select provider" 10; then

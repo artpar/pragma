@@ -10,14 +10,14 @@ import (
 
 func setupHookConfig(t *testing.T, dir string, hooks map[string][]Entry) {
 	t.Helper()
-	gogentDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(gogentDir, 0o755); err != nil {
+	pragmaDir := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	hooksJSON, _ := json.Marshal(hooks)
 	settings := `{"hooks":` + string(hooksJSON) + `}`
-	if err := os.WriteFile(filepath.Join(gogentDir, "settings.json"), []byte(settings), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "settings.json"), []byte(settings), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

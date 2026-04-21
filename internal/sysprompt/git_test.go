@@ -7,7 +7,7 @@ import (
 )
 
 func TestGitRoot_InRepo(t *testing.T) {
-	// Run inside the gogent project directory — known git repo
+	// Run inside the pragma project directory — known git repo
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

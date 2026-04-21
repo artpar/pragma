@@ -1,5 +1,5 @@
 #!/bin/bash
-# e2e/harness.sh — Reusable tmux test primitives for gogent E2E tests.
+# e2e/harness.sh — Reusable tmux test primitives for pragma E2E tests.
 # Source this file; do not execute directly.
 
 if ! command -v tmux &>/dev/null; then
@@ -111,10 +111,10 @@ harness_track_tmpdir() {
 }
 
 # cleanup_all
-#   Kills all gogent-e2e-* sessions and removes tracked temp dirs.
+#   Kills all pragma-e2e-* sessions and removes tracked temp dirs.
 cleanup_all() {
     local sessions
-    sessions=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^gogent-e2e-' || true)
+    sessions=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^pragma-e2e-' || true)
     for s in $sessions; do
         tmux kill-session -t "$s" 2>/dev/null || true
     done

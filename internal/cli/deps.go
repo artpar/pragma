@@ -141,9 +141,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	// Always enabled, captures everything at LevelTrace in JSON format.
 	var cleanupFns []func()
 	var logFilePath string
-	if gogentHome, homeErr := config.PragmaHome(); homeErr == nil {
+	if pragmaHome, homeErr := config.PragmaHome(); homeErr == nil {
 		observe.GlobalTrace("if: homeErr == nil")
-		logsDir := filepath.Join(gogentHome, "logs")
+		logsDir := filepath.Join(pragmaHome, "logs")
 		if mkErr := os.MkdirAll(logsDir, 0o755); mkErr == nil {
 			observe.GlobalTrace("if: mkErr == nil")
 			logFileName := time.Now().Format("2006-01-02T15-04-05") + ".jsonl"
@@ -165,7 +165,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	if cfg.Record {
 		observe.GlobalTrace("if: cfg.Record")
-		recorder, recErr := observe.NewRecorder("gogent-recording.jsonl")
+		recorder, recErr := observe.NewRecorder("pragma-recording.jsonl")
 		if recErr != nil {
 			observe.GlobalTrace("if: recErr != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"create recorder: %w\", recErr)")
@@ -355,9 +355,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	taskReg := task.NewRegistry(bus)
 
 	var cronSched *cron.Scheduler
-	if gogentHome, homeErr := config.PragmaHome(); homeErr == nil {
+	if pragmaHome, homeErr := config.PragmaHome(); homeErr == nil {
 		observe.GlobalTrace("if: homeErr == nil")
-		cronStore := cron.NewStore(filepath.Join(gogentHome, "scheduled_tasks.json"))
+		cronStore := cron.NewStore(filepath.Join(pragmaHome, "scheduled_tasks.json"))
 		cronSched = cron.NewScheduler(bus, cronStore)
 	} else {
 		observe.GlobalTrace("else: homeErr == nil")

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-// PragmaHome returns the gogent home directory (~/.pragma/).
+// PragmaHome returns the pragma home directory (~/.pragma/).
 func PragmaHome() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

@@ -112,8 +112,8 @@ func TestServerConfig_Validate(t *testing.T) {
 func TestLoadConfig_MergeScopes(t *testing.T) {
 	// Create a temp directory structure with global and project configs
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(gogentDir, 0755); err != nil {
+	pragmaDir := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -130,7 +130,7 @@ func TestLoadConfig_MergeScopes(t *testing.T) {
 			}
 		}
 	}`
-	if err := os.WriteFile(filepath.Join(gogentDir, "mcp.json"), []byte(projectConfig), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "mcp.json"), []byte(projectConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -143,7 +143,7 @@ func TestLoadConfig_MergeScopes(t *testing.T) {
 			}
 		}
 	}`
-	if err := os.WriteFile(filepath.Join(gogentDir, "mcp.local.json"), []byte(localConfig), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "mcp.local.json"), []byte(localConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -173,8 +173,8 @@ func TestLoadConfig_MergeScopes(t *testing.T) {
 
 func TestLoadConfig_InvalidEntrySkipped(t *testing.T) {
 	dir := t.TempDir()
-	gogentDir := filepath.Join(dir, ".pragma")
-	if err := os.MkdirAll(gogentDir, 0755); err != nil {
+	pragmaDir := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(pragmaDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -185,7 +185,7 @@ func TestLoadConfig_InvalidEntrySkipped(t *testing.T) {
 			"bad": {"type": "stdio"}
 		}
 	}`
-	if err := os.WriteFile(filepath.Join(gogentDir, "mcp.json"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(pragmaDir, "mcp.json"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 

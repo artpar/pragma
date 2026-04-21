@@ -16,7 +16,7 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 	defer observe.GlobalTrace("exit")
 
 	var b strings.Builder
-	b.WriteString("gogent doctor\n")
+	b.WriteString("pragma doctor\n")
 	b.WriteString(strings.Repeat("─", 40) + "\n\n")
 
 	passes := 0
@@ -123,7 +123,7 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 	agentMD := filepath.Join(cwd, "AGENT.md")
 	if _, err := os.Stat(agentMD); err != nil {
 		observe.GlobalTrace("if: err != nil")
-		check("AGENT.md", false, "run 'gogent init' to create")
+		check("AGENT.md", false, "run 'pragma init' to create")
 	} else {
 		observe.GlobalTrace("else: err != nil")
 		check("AGENT.md", true, "")
@@ -147,13 +147,24 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 		check("Config loads cleanly", true, "")
 	}
 
-	mcpPath := filepath.Join(cwd, ".pragma", "mcp.json")
-	if _, err := os.Stat(mcpPath); err == nil {
-		observe.GlobalTrace("if: err == nil")
-		check("MCP config exists", true, "")
+	mcpPaths := []string{
+		config.MCPConfigPath(cwd),
+		config.MCPLocalConfigPath(cwd),
+	}
+	if globalMCP, globalErr := config.GlobalMCPConfigPath(); globalErr == nil {
+		mcpPaths = append(mcpPaths, globalMCP)
+	}
+	mcpFound := false
+	for _, mp := range mcpPaths {
+		if _, err := os.Stat(mp); err == nil {
+			mcpFound = true
+			break
+		}
+	}
+	if mcpFound {
+		check("MCP config", true, "")
 	} else {
-		observe.GlobalTrace("else: err == nil")
-		check("MCP config", false, "no .pragma/mcp.json (optional)")
+		check("MCP config", false, "no mcp.json found (optional)")
 	}
 
 	hookPaths := []string{

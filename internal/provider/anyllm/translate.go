@@ -1,4 +1,4 @@
-// Package anyllm provides translation between gogent's internal model types
+// Package anyllm provides translation between pragma's internal model types
 // and any-llm-go's provider types. Used by Google, OpenAI, and Groq adapters.
 package anyllm
 
@@ -13,7 +13,7 @@ import (
 	"github.com/mozilla-ai/any-llm-go/providers"
 )
 
-// RequestToParams converts gogent's internal RequestParams to any-llm-go CompletionParams.
+// RequestToParams converts pragma's internal RequestParams to any-llm-go CompletionParams.
 func RequestToParams(req provider.RequestParams) providers.CompletionParams {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -203,7 +203,7 @@ func MessageToAnyLLM(m model.Message, toolNames map[string]string) []providers.M
 	return out
 }
 
-// ToolsToAnyLLM converts gogent tool definitions to any-llm-go tools.
+// ToolsToAnyLLM converts pragma tool definitions to any-llm-go tools.
 func ToolsToAnyLLM(tools []model.ToolDef) []providers.Tool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -228,7 +228,7 @@ func ToolsToAnyLLM(tools []model.ToolDef) []providers.Tool {
 	return out
 }
 
-// ResponseFromCompletion converts an any-llm-go ChatCompletion to a gogent model.Response.
+// ResponseFromCompletion converts an any-llm-go ChatCompletion to a pragma model.Response.
 func ResponseFromCompletion(comp *providers.ChatCompletion) model.Response {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -262,7 +262,7 @@ func ResponseFromCompletion(comp *providers.ChatCompletion) model.Response {
 	return resp
 }
 
-// ContentFromMessage extracts gogent ContentParts from an any-llm-go Message.
+// ContentFromMessage extracts pragma ContentParts from an any-llm-go Message.
 func ContentFromMessage(msg providers.Message) []model.ContentPart {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -292,7 +292,7 @@ func ContentFromMessage(msg providers.Message) []model.ContentPart {
 	return parts
 }
 
-// StopReasonFromAnyLLM maps any-llm-go finish reason to gogent StopReason.
+// StopReasonFromAnyLLM maps any-llm-go finish reason to pragma StopReason.
 func StopReasonFromAnyLLM(fr string) model.StopReason {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -315,7 +315,7 @@ func StopReasonFromAnyLLM(fr string) model.StopReason {
 	}
 }
 
-// UsageFromAnyLLM converts any-llm-go Usage to gogent TokenUsage.
+// UsageFromAnyLLM converts any-llm-go Usage to pragma TokenUsage.
 // Note: CacheCreationInputTokens and CacheReadInputTokens are NOT mapped
 // because any-llm-go v0.9.0's Usage struct doesn't expose cache fields.
 // This means cache efficiency is invisible for OpenAI/Groq providers.

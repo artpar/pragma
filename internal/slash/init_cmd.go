@@ -6,7 +6,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-const initPrompt = `Please analyze this codebase and create an AGENT.md file in the project root, which will be given to future instances of gogent to operate in this repository.
+const initPrompt = `Please analyze this codebase and create an AGENT.md file in the project root, which will be given to future instances of pragma to operate in this repository.
 
 What to add:
 1. Commands that will be commonly used, such as how to build, lint, and run tests. Include the necessary commands to develop in this codebase, such as how to run a single test.
@@ -26,7 +26,7 @@ Usage notes:
 ` + "```" + `
 # AGENT.md
 
-This file provides guidance to gogent when working with code in this repository.
+This file provides guidance to pragma when working with code in this repository.
 ` + "```"
 
 func handleInit(_ context.Context, _ string, _ Deps) (Result, error) {

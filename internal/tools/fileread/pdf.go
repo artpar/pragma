@@ -121,7 +121,7 @@ func readPDFPages(ctx context.Context, filePath, displayPath string, pages strin
 func extractPagesAsImages(ctx context.Context, filePath, displayPath string, first, last int) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "enter")
 	defer observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "exit")
-	dir, err := os.MkdirTemp("", "gogent-pdf-*")
+	dir, err := os.MkdirTemp("", "pragma-pdf-*")
 	if err != nil {
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "if: err != nil")
 		observe.TraceCtx(ctx, "fileread", "extractPagesAsImages", "return: tool.InvokeResult{}, fmt.Errorf(\"create temp dir: %w\", err)")

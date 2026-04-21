@@ -72,13 +72,13 @@ func RunBackground(cmd *cobra.Command) error {
 		return fmt.Errorf("background mode requires --prompt flag")
 	}
 
-	gogentHome, err := config.PragmaHome()
+	pragmaHome, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: fmt.Errorf(\"resolve gogent home: %w\", err)")
-		return fmt.Errorf("resolve gogent home: %w", err)
+		observe.GlobalTrace("return: fmt.Errorf(\"resolve pragma home: %w\", err)")
+		return fmt.Errorf("resolve pragma home: %w", err)
 	}
-	logsDir := filepath.Join(gogentHome, "logs")
+	logsDir := filepath.Join(pragmaHome, "logs")
 	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"create logs directory: %w\", err)")
@@ -193,7 +193,7 @@ func RunBackground(cmd *cobra.Command) error {
 
 	fmt.Printf("Background session started (PID %d)\n", childPid)
 	fmt.Printf("  Logs: %s\n", logPath)
-	fmt.Printf("  Use 'gogent sessions' to manage.\n")
+	fmt.Printf("  Use 'pragma sessions' to manage.\n")
 	observe.GlobalTrace("return: nil")
 	return nil
 }

@@ -384,7 +384,7 @@ func (p *Provider) applyCache(ctx context.Context, model string, contents []*gen
 	return tail
 }
 
-// buildRequest converts gogent params to genai SDK types.
+// buildRequest converts pragma params to genai SDK types.
 func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content, *genai.GenerateContentConfig) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -552,7 +552,7 @@ func messagesToGenai(msgs []model.Message) []*genai.Content {
 	return contents
 }
 
-// toolsToGenai converts gogent tool definitions to genai tools.
+// toolsToGenai converts pragma tool definitions to genai tools.
 func toolsToGenai(tools []model.ToolDef) []*genai.Tool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -677,7 +677,7 @@ func sanitizeObj(obj map[string]any) {
 	}
 }
 
-// responseFromGenai converts a genai response to gogent model.Response.
+// responseFromGenai converts a genai response to pragma model.Response.
 func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) model.Response {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
