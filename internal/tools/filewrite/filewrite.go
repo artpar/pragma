@@ -119,14 +119,20 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: !isCreate")
 		data, readErr := os.ReadFile(filePath)
 		if readErr != nil {
+			observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: readErr != nil")
+			observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", readErr)")
 			return tool.InvokeResult{}, fmt.Errorf("read file: %w", readErr)
 		}
 		oldContent = tool.NormalizeTextContent(string(data))
 		timestamp, statErr := tool.FileTimestamp(filePath)
 		if statErr != nil {
+			observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: statErr != nil")
+			observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"stat file: %w\", statErr)")
 			return tool.InvokeResult{}, fmt.Errorf("stat file: %w", statErr)
 		}
 		if err := tool.EnsureFileFreshForWrite(state, filePath, oldContent, timestamp); err != nil {
+			observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: err != nil")
+			observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 			return tool.InvokeResult{}, err
 		}
 	}
@@ -150,6 +156,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		_ = t.LSP.SaveFile(ctx, filePath)
 	}
 	if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: statErr == nil")
 		tool.RecordFileState(state, filePath, strings.ReplaceAll(in.Content, "\r\n", "\n"), timestamp, nil, nil, false)
 	}
 

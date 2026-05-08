@@ -109,8 +109,10 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: desc.Flags().Concurrent")
 			concurrentCount++
 			if len(batches) > 0 && batches[len(batches)-1].concurrent {
+				observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(batches) > 0 && batches[len(batches)-1].concurrent")
 				batches[len(batches)-1].calls = append(batches[len(batches)-1].calls, ic)
 			} else {
+				observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "else: len(batches) > 0 && batches[len(batches)-1].concurrent")
 				batches = append(batches, toolBatch{concurrent: true, calls: []indexedCall{ic}})
 			}
 		} else {
@@ -130,13 +132,18 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	var concurrentDuration, serialDuration time.Duration
 
 	for _, batch := range batches {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range batches")
 		if ctx.Err() != nil {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: ctx.Err() != nil")
 			break
 		}
 		if !batch.concurrent {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: !batch.concurrent")
 			serStart := time.Now()
 			for _, ic := range batch.calls {
+				observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range batch.calls")
 				if ctx.Err() != nil {
+					observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: ctx.Err() != nil")
 					break
 				}
 				singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
@@ -148,6 +155,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		concStart := time.Now()
 		g, gctx := errgroup.WithContext(ctx)
 		for _, ic := range batch.calls {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range batch.calls")
 			ic := ic
 			g.Go(func() error {
 				defer func() {
@@ -173,6 +181,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			})
 		}
 		if err := g.Wait(); err != nil {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: err != nil")
 			o.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, batchSpan, ""),
 				Severity:     "warn",
@@ -185,9 +194,13 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	}
 
 	if ctx.Err() != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: ctx.Err() != nil")
 		for _, batch := range batches {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range batches")
 			for _, ic := range batch.calls {
+				observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range batch.calls")
 				if singles[ic.index].part.ToolCallID == "" {
+					observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: singles[ic.index].part.ToolCallID == \"\"")
 					singles[ic.index] = singleResult{
 						part: model.ToolResultPart{
 							ToolCallID: ic.call.ID,

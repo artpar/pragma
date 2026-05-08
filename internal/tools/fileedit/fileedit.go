@@ -155,6 +155,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			}
 			display := util.GenerateEditDiff("", in.OldString, in.NewString, in.FilePath, false, 3)
 			if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+				observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: statErr == nil")
 				tool.RecordFileState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
 			}
 			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: result, Display: display}, nil")
@@ -175,11 +176,16 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	content = tool.NormalizeTextContent(content)
 
 	if in.OldString != "" {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString != \"\"")
 		timestamp, err := tool.FileTimestamp(filePath)
 		if err != nil {
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"stat file: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("stat file: %w", err)
 		}
 		if err := tool.EnsureFileFreshForWrite(state, filePath, content, timestamp); err != nil {
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 			return tool.InvokeResult{}, err
 		}
 	}
@@ -198,6 +204,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 		}
 		if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: statErr == nil")
 			tool.RecordFileState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
 		}
 		if t.LSP != nil {
@@ -244,9 +251,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	timestamp, err := tool.FileTimestamp(filePath)
 	if err != nil {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"stat file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("stat file: %w", err)
 	}
 	if err := tool.EnsureFileFreshForWrite(state, filePath, content, timestamp); err != nil {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
 
@@ -263,6 +274,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 
 	if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: statErr == nil")
 		tool.RecordFileState(state, filePath, updated, timestamp, nil, nil, false)
 	}
 

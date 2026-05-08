@@ -173,9 +173,13 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 	}
 	timestamp, err := tool.FileTimestamp(nbPath)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"stat notebook: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("stat notebook: %w", err)
 	}
 	if err := tool.EnsureFileFreshForWrite(state, nbPath, tool.NormalizeTextContent(string(data)), timestamp); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
 
@@ -385,19 +389,26 @@ func writeNotebook(path string, nb *notebookContent) (string, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"marshal notebook: %w\", err)")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"marshal notebook: %w\", err)")
 		return "", fmt.Errorf("marshal notebook: %w", err)
 	}
 
 	data = append(data, '\n')
 	observe.GlobalTrace("return: os.WriteFile(path, data, 0644)")
 	if err := os.WriteFile(path, data, 0644); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
+	observe.GlobalTrace("return: string(data), nil")
 	return string(data), nil
 }
 
 func recordNotebookState(state tool.StateSnapshot, path, content string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if timestamp, err := tool.FileTimestamp(path); err == nil {
+		observe.GlobalTrace("if: err == nil")
 		tool.RecordFileState(state, path, tool.NormalizeTextContent(content), timestamp, nil, nil, false)
 	}
 }

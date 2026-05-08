@@ -240,7 +240,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, err
 	}
 	if cache, ok := tool.FileStateCacheFrom(state); ok {
+		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: ok")
 		if previous, found := cache.Get(filePath); found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Offset) && sameOptionalInt(previous.Limit, result.Limit) && previous.Timestamp == info.ModTime().UnixMilli() {
+			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Of...")
+			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: \"File unchanged since last read. The content from ...")
 			return tool.InvokeResult{Content: "File unchanged since last read. The content from the earlier Read tool_result in this conversation is still current — refer to that instead of re-reading."}, nil
 		}
 		cache.Set(filePath, tool.FileState{
@@ -251,6 +254,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		})
 	}
 	observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
+	observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: result.Display}, nil")
 	return tool.InvokeResult{Content: result.Display}, nil
 }
 
@@ -289,6 +293,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"read file: %w\", err)")
+		observe.GlobalTrace("return: textReadResult{}, fmt.Errorf(\"read file: %w\", err)")
 		return textReadResult{}, fmt.Errorf("read file: %w", err)
 	}
 
@@ -308,6 +313,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 		observe.GlobalTrace("if: totalLines == 0")
 		observe.GlobalTrace("return: \"<system-reminder>Warning: the file exists but the contents are empty.</syste...")
 		startLine := 1
+		observe.GlobalTrace("return: textReadResult{\n\tDisplay:\t\"<system-reminder>Warning: the file exists but the ...")
 		return textReadResult{
 			Display: "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>",
 			Content: content,
@@ -322,6 +328,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 		if *offset < 1 {
 			observe.GlobalTrace("if: *offset < 1")
 			observe.GlobalTrace("return: \"\", fmt.Errorf(\"offset must be >= 1 (1-indexed), got %d\", *offset)")
+			observe.GlobalTrace("return: textReadResult{}, fmt.Errorf(\"offset must be >= 1 (1-indexed), got %d\", *offset)")
 			return textReadResult{}, fmt.Errorf("offset must be >= 1 (1-indexed), got %d", *offset)
 		}
 		startLine = *offset
@@ -330,6 +337,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 	if startLine > totalLines {
 		observe.GlobalTrace("if: startLine > totalLines")
 		observe.GlobalTrace("return: fmt.Sprintf(\"<system-reminder>Warning: the file exists but is shorter than th...")
+		observe.GlobalTrace("return: textReadResult{\n\tDisplay:\tfmt.Sprintf(\"<system-reminder>Warning: the file exi...")
 		return textReadResult{
 			Display: fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", startLine, totalLines),
 			Content: content,
@@ -353,6 +361,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 	numLines := len(selectedLines)
 	viewContent := strings.Join(selectedLines, "\n")
 	if startLine == 1 && endLine == totalLines {
+		observe.GlobalTrace("if: startLine == 1 && endLine == totalLines")
 		viewContent = content
 	}
 
@@ -371,6 +380,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 		result += fmt.Sprintf("\n(%d lines total, showing lines %d-%d)", totalLines, startLine, endLine)
 	}
 	observe.GlobalTrace("return: result, nil")
+	observe.GlobalTrace("return: textReadResult{\n\tDisplay:\tresult,\n\tContent:\tviewContent,\n\tOffset:\t\t&startLine...")
 
 	return textReadResult{
 		Display: result,
@@ -381,16 +391,26 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 }
 
 func sameOptionalInt(a, b *int) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if a == nil || b == nil {
+		observe.GlobalTrace("if: a == nil || b == nil")
+		observe.GlobalTrace("return: a == nil && b == nil")
 		return a == nil && b == nil
 	}
+	observe.GlobalTrace("return: *a == *b")
 	return *a == *b
 }
 
 func cloneIntPtr(v *int) *int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if v == nil {
+		observe.GlobalTrace("if: v == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := *v
+	observe.GlobalTrace("return: &out")
 	return &out
 }

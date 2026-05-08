@@ -2,6 +2,7 @@ package tool
 
 import (
 	"errors"
+	"github.com/artpar/pragma/internal/observe"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,9 @@ type fileStateEntry struct {
 }
 
 func NewFileStateCache() *FileStateCache {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &FileStateCache{\n\tentries:\tmake(map[string]fileStateEntry),\n\torder:\t\tmake([]s...")
 	return &FileStateCache{
 		entries:  make(map[string]fileStateEntry),
 		order:    make([]string, 0, defaultFileStateEntries),
@@ -59,16 +63,25 @@ func NewFileStateCache() *FileStateCache {
 }
 
 func FileStateCacheFrom(state StateSnapshot) (*FileStateCache, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	provider, ok := state.(FileStateProvider)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil, false")
 		return nil, false
 	}
 	cache := provider.ReadFileState()
+	observe.GlobalTrace("return: cache, cache != nil")
 	return cache, cache != nil
 }
 
 func (c *FileStateCache) Get(path string) (FileState, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
+		observe.GlobalTrace("return: FileState{}, false")
 		return FileState{}, false
 	}
 	key := NormalizeFilePath(path)
@@ -78,14 +91,20 @@ func (c *FileStateCache) Get(path string) (FileState, bool) {
 
 	entry, ok := c.entries[key]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: FileState{}, false")
 		return FileState{}, false
 	}
 	c.touchLocked(key)
+	observe.GlobalTrace("return: cloneFileState(entry.state), true")
 	return cloneFileState(entry.state), true
 }
 
 func (c *FileStateCache) Set(path string, state FileState) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
 		return
 	}
 	key := NormalizeFilePath(path)
@@ -96,6 +115,7 @@ func (c *FileStateCache) Set(path string, state FileState) {
 	defer c.mu.Unlock()
 
 	if old, ok := c.entries[key]; ok {
+		observe.GlobalTrace("if: ok")
 		c.bytes -= old.size
 		c.removeOrderLocked(key)
 	}
@@ -106,7 +126,10 @@ func (c *FileStateCache) Set(path string, state FileState) {
 }
 
 func (c *FileStateCache) Delete(path string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
 		return
 	}
 	key := NormalizeFilePath(path)
@@ -115,6 +138,7 @@ func (c *FileStateCache) Delete(path string) {
 	defer c.mu.Unlock()
 
 	if old, ok := c.entries[key]; ok {
+		observe.GlobalTrace("if: ok")
 		delete(c.entries, key)
 		c.bytes -= old.size
 		c.removeOrderLocked(key)
@@ -122,45 +146,72 @@ func (c *FileStateCache) Delete(path string) {
 }
 
 func NormalizeFilePath(path string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if abs, err := filepath.Abs(path); err == nil {
+		observe.GlobalTrace("if: err == nil")
+		observe.GlobalTrace("return: filepath.Clean(abs)")
 		return filepath.Clean(abs)
 	}
+	observe.GlobalTrace("return: filepath.Clean(path)")
 	return filepath.Clean(path)
 }
 
 func FileTimestamp(path string) (int64, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	info, err := os.Stat(path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: 0, err")
 		return 0, err
 	}
+	observe.GlobalTrace("return: info.ModTime().UnixMilli(), nil")
 	return info.ModTime().UnixMilli(), nil
 }
 
 func NormalizeTextContent(content string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.ReplaceAll(content, \"\\r\\n\", \"\\n\")")
 	return strings.ReplaceAll(content, "\r\n", "\n")
 }
 
 func EnsureFileFreshForWrite(state StateSnapshot, path, currentContent string, timestamp int64) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cache, ok := FileStateCacheFrom(state)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: ErrFileReadState")
 		return ErrFileReadState
 	}
 	readState, ok := cache.Get(path)
 	if !ok || readState.IsPartialView {
+		observe.GlobalTrace("if: !ok || readState.IsPartialView")
+		observe.GlobalTrace("return: ErrFileNotRead")
 		return ErrFileNotRead
 	}
 	if timestamp > readState.Timestamp {
+		observe.GlobalTrace("if: timestamp > readState.Timestamp")
 		if readState.Offset == nil && readState.Limit == nil && currentContent == readState.Content {
+			observe.GlobalTrace("if: readState.Offset == nil && readState.Limit == nil && currentContent == readSt...")
+			observe.GlobalTrace("return: nil")
 			return nil
 		}
+		observe.GlobalTrace("return: ErrFileModified")
 		return ErrFileModified
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func RecordFileState(state StateSnapshot, path, content string, timestamp int64, offset, limit *int, isPartialView bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cache, ok := FileStateCacheFrom(state)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
 		return
 	}
 	cache.Set(path, FileState{
@@ -173,27 +224,41 @@ func RecordFileState(state StateSnapshot, path, content string, timestamp int64,
 }
 
 func cloneFileState(state FileState) FileState {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	state.Offset = cloneIntPtr(state.Offset)
 	state.Limit = cloneIntPtr(state.Limit)
+	observe.GlobalTrace("return: state")
 	return state
 }
 
 func cloneIntPtr(v *int) *int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if v == nil {
+		observe.GlobalTrace("if: v == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := *v
+	observe.GlobalTrace("return: &out")
 	return &out
 }
 
 func (c *FileStateCache) touchLocked(key string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	c.removeOrderLocked(key)
 	c.order = append(c.order, key)
 }
 
 func (c *FileStateCache) removeOrderLocked(key string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for i, existing := range c.order {
+		observe.GlobalTrace("range c.order")
 		if existing == key {
+			observe.GlobalTrace("if: existing == key")
 			c.order = append(c.order[:i], c.order[i+1:]...)
 			return
 		}
@@ -201,7 +266,10 @@ func (c *FileStateCache) removeOrderLocked(key string) {
 }
 
 func (c *FileStateCache) evictLocked() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for len(c.entries) > 1 && (len(c.entries) > c.maxItems || c.bytes > c.maxBytes) {
+		observe.GlobalTrace("for: len(c.entries) > 1 && (len(c.entries) > c.maxItems || c.bytes > c.maxBytes)")
 		key := c.order[0]
 		c.order = c.order[1:]
 		entry := c.entries[key]
