@@ -60,8 +60,10 @@ func RenderWelcome(version, modelName, provider, workspace string, mcpServers []
 
 	var mcpText string
 	if len(mcpServers) > 0 {
+		observe.GlobalTrace("if: len(mcpServers) > 0")
 		mcpText = fmt.Sprintf("%d MCP server", len(mcpServers))
 		if len(mcpServers) > 1 {
+			observe.GlobalTrace("if: len(mcpServers) > 1")
 			mcpText += "s"
 		}
 		mcpText += ": " + strings.Join(mcpServers, ", ")
@@ -71,9 +73,11 @@ func RenderWelcome(version, modelName, provider, workspace string, mcpServers []
 		observe.GlobalTrace("if: width < 40")
 		result := "\n  " + line1 + "\n  " + line2 + "\n  " + line3
 		if mcpText != "" {
+			observe.GlobalTrace("if: mcpText != \"\"")
 			result += "\n  " + welcomeDim.Render(mcpText)
 		}
 		result += "\n  " + hintRendered + "\n\n"
+		observe.GlobalTrace("return: result")
 		return result
 	}
 
@@ -93,6 +97,7 @@ func RenderWelcome(version, modelName, provider, workspace string, mcpServers []
 	}
 
 	if mcpText != "" && availWidth > 0 && runewidth.StringWidth(mcpText) > availWidth {
+		observe.GlobalTrace("if: mcpText != \"\" && availWidth > 0 && runewidth.StringWidth(mcpText) > availWidth")
 		mcpText = truncateMiddle(mcpText, availWidth)
 	}
 
@@ -106,6 +111,7 @@ func RenderWelcome(version, modelName, provider, workspace string, mcpServers []
 	b.WriteString(mRow2 + "  " + line2 + "\n")
 	b.WriteString(mRow3 + "  " + line3 + "\n")
 	if mcpText != "" {
+		observe.GlobalTrace("if: mcpText != \"\"")
 		b.WriteString(textIndent + welcomeDim.Render(mcpText) + "\n")
 	}
 	b.WriteString(textIndent + hintRendered + "\n")

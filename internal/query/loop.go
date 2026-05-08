@@ -82,8 +82,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			return
 		}
 
-		// Main session: sweep dead sub-agents each turn so TaskList stays accurate.
 		if e.taskRegistry != nil && e.config.TaskID == "" {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.taskRegistry != nil && e.config.TaskID == \"\"")
 			e.taskRegistry.ReapDead(task.DeadAgentTimeout)
 		}
 
@@ -407,9 +407,8 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			}
 			resultParts = append(resultParts, execResult.Supplements...)
 
-			// Inject turn budget warning when approaching limit
 			remaining := maxTurns - turnCount - 1
-			warningThreshold := maxTurns / 5 // warn at 80% usage
+			warningThreshold := maxTurns / 5
 			if warningThreshold < 2 {
 				warningThreshold = 2
 			}
@@ -469,6 +468,9 @@ func (p *progressSnapshot) Progress() tool.ProgressReporter {
 }
 
 func (p *progressSnapshot) ReadFileState() *tool.FileStateCache {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: p.fileState")
 	return p.fileState
 }
 
@@ -574,8 +576,8 @@ func (e *Engine) consumeStream(
 			toolCalls[tc.ID] = &toolAccumulator{id: tc.ID, name: tc.Name, signature: tc.Signature}
 			toolOrder = append(toolOrder, tc.ID)
 
-			// Apply any buffered input that arrived before the first ToolCallStart
 			if bufferedToolInput.Len() > 0 {
+				observe.GlobalTrace("if: bufferedToolInput.Len() > 0")
 				toolCalls[tc.ID].inputBuf.WriteString(bufferedToolInput.String())
 				bufferedToolInput.Reset()
 			}
@@ -587,22 +589,26 @@ func (e *Engine) consumeStream(
 			acc, ok := toolCalls[id]
 
 			if !ok && id == "" {
-				// Resilience for empty IDs (continuation chunks)
+				observe.GlobalTrace("if: !ok && id == \"\"")
+
 				if len(toolOrder) > 0 {
-					// Append to the most recently started tool call
+					observe.GlobalTrace("if: len(toolOrder) > 0")
+
 					lastID := toolOrder[len(toolOrder)-1]
 					acc = toolCalls[lastID]
 				} else {
-					// No active tool calls, buffer the delta
+					observe.GlobalTrace("else: len(toolOrder) > 0")
+
 					bufferedToolInput.WriteString(chunk.ToolCallInputDelta.JSONDelta)
 					continue
 				}
 			}
 
 			if acc != nil {
+				observe.GlobalTrace("if: acc != nil")
 				acc.inputBuf.WriteString(chunk.ToolCallInputDelta.JSONDelta)
 			} else if id != "" {
-				// Unknown non-empty ID: still an error
+
 				observe.GlobalTrace("if: !ok")
 				observe.GlobalTrace("return: model.Response{}, fmt.Errorf(\"input delta for unknown tool call %q\", chunk.To...")
 				return model.Response{}, fmt.Errorf("input delta for unknown tool call %q", id)
@@ -652,10 +658,7 @@ func (e *Engine) consumeStream(
 				raw = json.RawMessage("{}")
 			} else if !json.Valid(raw) {
 				observe.GlobalTrace("else-if: !json.Valid(raw) — marking as malformed")
-				// Instead of killing the session, include the tool call with
-				// the raw (invalid) bytes. The orchestrator's json.Unmarshal
-				// will fail and send an error result back to the model so it
-				// can retry with correct JSON.
+
 			}
 			parts = append(parts, model.ToolCallPart{
 				ID:        acc.id,

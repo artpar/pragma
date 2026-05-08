@@ -592,7 +592,7 @@ func SecondaryModelFor(providerName string) string {
 		return "gemini-2.5-flash"
 	case "lilac":
 		observe.GlobalTrace("case: \"lilac\"")
-		return "moonshotai/kimi-k2.5"
+		return "google/gemma-4-31b-it"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
@@ -611,6 +611,11 @@ var modelAliases = map[string]map[string]string{
 	"google": {
 		"flash": "gemini-2.5-flash",
 		"pro":   "gemini-2.5-pro",
+	},
+	"lilac": {
+		"gemma": "google/gemma-4-31b-it",
+		"glm":   "zai-org/glm-5.1",
+		"kimi":  "moonshotai/kimi-k2.5",
 	},
 }
 

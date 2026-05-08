@@ -77,8 +77,8 @@ func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch feature {
-	case provider.FeatureToolUse, provider.FeatureStreaming:
-		observe.GlobalTrace("case: provider.FeatureToolUse, provider.FeatureStreaming")
+	case provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages, provider.FeatureThinking:
+		observe.GlobalTrace("case: provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages, provider.FeatureThinking")
 		return true
 	}
 	observe.GlobalTrace("return: false")
@@ -125,18 +125,20 @@ func (p *Provider) ensureMaxTokens(params *provider.RequestParams) {
 	defer observe.GlobalTrace("exit")
 	info, known := LookupModel(params.Model)
 	if params.MaxTokens == 0 && known && info.MaxOutput > 0 {
+		observe.GlobalTrace("if: params.MaxTokens == 0 && known && info.MaxOutput > 0")
 		params.MaxTokens = info.MaxOutput
 	}
 
-	// Cap max_tokens so prompt + output fits within the model's context window.
-	// vLLM rejects requests where prompt_tokens + max_tokens > context_length.
 	if known && info.MaxContext > 0 && params.MaxTokens > 0 {
+		observe.GlobalTrace("if: known && info.MaxContext > 0 && params.MaxTokens > 0")
 		promptEst := shared.EstimateTokens(*params)
 		headroom := info.MaxContext - promptEst
 		if headroom < 1024 {
-			headroom = 1024 // minimum to avoid zero-output requests
+			observe.GlobalTrace("if: headroom < 1024")
+			headroom = 1024
 		}
 		if params.MaxTokens > headroom {
+			observe.GlobalTrace("if: params.MaxTokens > headroom")
 			params.MaxTokens = headroom
 		}
 	}
