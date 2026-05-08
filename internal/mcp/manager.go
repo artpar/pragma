@@ -80,6 +80,13 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 				client := NewClient(ns.name, ns.config, m.bus)
 				if err := client.Connect(ctx); err != nil {
 					observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "if: err != nil")
+					m.bus.Emit(observe.ErrorOccurred{
+						EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
+						Severity:     "error",
+						Component:    "mcp",
+						ErrorType:    "server_connect_failed",
+						ErrorMessage: fmt.Sprintf("MCP server %q failed to connect: %v", ns.name, err),
+					})
 					mu.Lock()
 					errs[ns.name] = err
 					mu.Unlock()

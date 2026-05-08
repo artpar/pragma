@@ -109,9 +109,53 @@ func TestServerConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_GlobalScope(t *testing.T) {
+	// Verify global ~/.pragma/mcp.json is loaded when present
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	globalPragma := filepath.Join(dir, ".pragma")
+	if err := os.MkdirAll(globalPragma, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	globalConfig := `{
+		"mcpServers": {
+			"analytics": {
+				"command": "analytics-mcp",
+				"args": ["--global"]
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(globalPragma, "mcp.json"), []byte(globalConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Use a separate workDir with no project config
+	workDir := t.TempDir()
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if len(servers) != 1 {
+		t.Fatalf("expected 1 server from global scope, got %d", len(servers))
+	}
+	if srv, ok := servers["analytics"]; !ok {
+		t.Error("expected 'analytics' server from global config")
+	} else if srv.Command != "analytics-mcp" {
+		t.Errorf("analytics command = %q, want analytics-mcp", srv.Command)
+	}
+}
+
 func TestLoadConfig_MergeScopes(t *testing.T) {
 	// Create a temp directory structure with global and project configs
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	pragmaDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(pragmaDir, 0755); err != nil {
 		t.Fatal(err)
@@ -173,6 +217,7 @@ func TestLoadConfig_MergeScopes(t *testing.T) {
 
 func TestLoadConfig_InvalidEntrySkipped(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	pragmaDir := filepath.Join(dir, ".pragma")
 	if err := os.MkdirAll(pragmaDir, 0755); err != nil {
 		t.Fatal(err)
@@ -210,6 +255,7 @@ func TestLoadConfig_InvalidEntrySkipped(t *testing.T) {
 
 func TestLoadConfig_NoConfigs(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	bus := observe.NewEventBus(64)
 	defer bus.Drain()
 

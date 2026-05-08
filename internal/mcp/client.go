@@ -140,7 +140,7 @@ func (c *Client) Connect(ctx context.Context) error {
 			EventHeader:  observe.NewEventHeader("MCPServerFailed", traceID, spanID, ""),
 			ServerName:   c.name,
 			ErrorType:    "initialize",
-			ErrorMessage: err.Error(),
+			ErrorMessage: fmt.Sprintf("server %q failed to initialize: %v", c.name, err),
 		})
 		observe.TraceCtx(ctx, "mcp", "Client.Connect", "return: fmt.Errorf(\"initialize %q: %w\", c.name, err)")
 		return fmt.Errorf("initialize %q: %w", c.name, err)
