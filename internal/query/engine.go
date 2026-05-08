@@ -41,6 +41,7 @@ type Engine struct {
 	costTracker  *model.CostTracker
 	bus          *observe.EventBus
 	config       EngineConfig
+	fileState    *tool.FileStateCache
 
 	// Compaction — nil means auto-compaction disabled.
 	// Subagent engines pass nil (#27794: only root engine auto-compacts).
@@ -84,6 +85,7 @@ func NewEngine(
 		costTracker:  ct,
 		bus:          bus,
 		config:       cfg,
+		fileState:    tool.NewFileStateCache(),
 	}
 	if len(compDeps) > 0 {
 		observe.GlobalTrace("if: len(compDeps) > 0")

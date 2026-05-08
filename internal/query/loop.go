@@ -367,7 +367,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			}
 
 			progressCh := make(chan tool.ProgressEvent, 16)
-			wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh}
+			wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh, fileState: e.fileState}
 
 			type execDone struct {
 				result tool.ExecuteResult
@@ -458,6 +458,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 type progressSnapshot struct {
 	tool.StateSnapshot
 	progressCh chan tool.ProgressEvent
+	fileState  *tool.FileStateCache
 }
 
 func (p *progressSnapshot) Progress() tool.ProgressReporter {
@@ -465,6 +466,10 @@ func (p *progressSnapshot) Progress() tool.ProgressReporter {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: p.progressCh")
 	return p.progressCh
+}
+
+func (p *progressSnapshot) ReadFileState() *tool.FileStateCache {
+	return p.fileState
 }
 
 // progressToLoopEvent converts a tool.ProgressEvent to a typed LoopEvent.

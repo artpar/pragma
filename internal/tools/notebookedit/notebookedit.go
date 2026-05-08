@@ -171,6 +171,13 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"read notebook: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read notebook: %w", err)
 	}
+	timestamp, err := tool.FileTimestamp(nbPath)
+	if err != nil {
+		return tool.InvokeResult{}, fmt.Errorf("stat notebook: %w", err)
+	}
+	if err := tool.EnsureFileFreshForWrite(state, nbPath, tool.NormalizeTextContent(string(data)), timestamp); err != nil {
+		return tool.InvokeResult{}, err
+	}
 
 	var nb notebookContent
 	if err := json.Unmarshal(data, &nb); err != nil {
@@ -182,20 +189,20 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, state tool.State
 	switch editMode {
 	case "replace":
 		observe.GlobalTrace("case: \"replace\"")
-		return t.doReplace(&nb, nbPath, in)
+		return t.doReplace(&nb, nbPath, in, state)
 	case "insert":
 		observe.GlobalTrace("case: \"insert\"")
-		return t.doInsert(&nb, nbPath, in)
+		return t.doInsert(&nb, nbPath, in, state)
 	case "delete":
 		observe.GlobalTrace("case: \"delete\"")
-		return t.doDelete(&nb, nbPath, in)
+		return t.doDelete(&nb, nbPath, in, state)
 	default:
 		observe.GlobalTrace("default")
 		return tool.InvokeResult{}, fmt.Errorf("unknown edit_mode: %q", editMode)
 	}
 }
 
-func (t *Tool) doReplace(nb *notebookContent, nbPath string, in NotebookEditInput) (tool.InvokeResult, error) {
+func (t *Tool) doReplace(nb *notebookContent, nbPath string, in NotebookEditInput, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	idx, err := findCell(nb, in.CellID)
@@ -214,11 +221,13 @@ func (t *Tool) doReplace(nb *notebookContent, nbPath string, in NotebookEditInpu
 		cell.Outputs = json.RawMessage("[]")
 	}
 
-	if err := writeNotebook(nbPath, nb); err != nil {
+	content, err := writeNotebook(nbPath, nb)
+	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
+	recordNotebookState(state, nbPath, content)
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Updated cell %s in %s\", cellIDStr(c...")
 
 	return tool.InvokeResult{
@@ -226,7 +235,7 @@ func (t *Tool) doReplace(nb *notebookContent, nbPath string, in NotebookEditInpu
 	}, nil
 }
 
-func (t *Tool) doInsert(nb *notebookContent, nbPath string, in NotebookEditInput) (tool.InvokeResult, error) {
+func (t *Tool) doInsert(nb *notebookContent, nbPath string, in NotebookEditInput, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	cellType := in.CellType
@@ -261,11 +270,13 @@ func (t *Tool) doInsert(nb *notebookContent, nbPath string, in NotebookEditInput
 	copy(nb.Cells[insertIdx+1:], nb.Cells[insertIdx:])
 	nb.Cells[insertIdx] = newCell
 
-	if err := writeNotebook(nbPath, nb); err != nil {
+	content, err := writeNotebook(nbPath, nb)
+	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
+	recordNotebookState(state, nbPath, content)
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Inserted %s cell at index %d in %s\"...")
 
 	return tool.InvokeResult{
@@ -273,7 +284,7 @@ func (t *Tool) doInsert(nb *notebookContent, nbPath string, in NotebookEditInput
 	}, nil
 }
 
-func (t *Tool) doDelete(nb *notebookContent, nbPath string, in NotebookEditInput) (tool.InvokeResult, error) {
+func (t *Tool) doDelete(nb *notebookContent, nbPath string, in NotebookEditInput, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	idx, err := findCell(nb, in.CellID)
@@ -286,11 +297,13 @@ func (t *Tool) doDelete(nb *notebookContent, nbPath string, in NotebookEditInput
 	cellID := cellIDStr(&nb.Cells[idx], idx)
 	nb.Cells = append(nb.Cells[:idx], nb.Cells[idx+1:]...)
 
-	if err := writeNotebook(nbPath, nb); err != nil {
+	content, err := writeNotebook(nbPath, nb)
+	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
+	recordNotebookState(state, nbPath, content)
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Deleted cell %s from %s\", cellID, n...")
 
 	return tool.InvokeResult{
@@ -365,17 +378,26 @@ func cellIDStr(cell *notebookCell, idx int) string {
 	return fmt.Sprintf("#%d", idx)
 }
 
-func writeNotebook(path string, nb *notebookContent) error {
+func writeNotebook(path string, nb *notebookContent) (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	data, err := json.MarshalIndent(nb, "", " ")
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: fmt.Errorf(\"marshal notebook: %w\", err)")
-		return fmt.Errorf("marshal notebook: %w", err)
+		return "", fmt.Errorf("marshal notebook: %w", err)
 	}
 
 	data = append(data, '\n')
 	observe.GlobalTrace("return: os.WriteFile(path, data, 0644)")
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func recordNotebookState(state tool.StateSnapshot, path, content string) {
+	if timestamp, err := tool.FileTimestamp(path); err == nil {
+		tool.RecordFileState(state, path, tool.NormalizeTextContent(content), timestamp, nil, nil, false)
+	}
 }

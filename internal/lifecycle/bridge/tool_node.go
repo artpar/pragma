@@ -12,7 +12,8 @@ import (
 
 // simpleSnapshot implements tool.StateSnapshot with a fixed working directory.
 type simpleSnapshot struct {
-	cwd string
+	cwd       string
+	fileState *tool.FileStateCache
 }
 
 func (s simpleSnapshot) WorkDir() string {
@@ -20,6 +21,10 @@ func (s simpleSnapshot) WorkDir() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: s.cwd")
 	return s.cwd
+}
+
+func (s simpleSnapshot) ReadFileState() *tool.FileStateCache {
+	return s.fileState
 }
 
 // ToolNode returns a NodeFunc that executes tool calls from the last assistant message.
@@ -30,6 +35,7 @@ func (s simpleSnapshot) WorkDir() string {
 func ToolNode(orch *tool.Orchestrator, cwd string) lifecycle.NodeFunc {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	fileState := tool.NewFileStateCache()
 	observe.GlobalTrace("return: func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, erro...")
 	return func(ctx context.Context, state lifecycle.State) (lifecycle.StateUpdate, error) {
 		msgs := Messages(state)
@@ -52,7 +58,7 @@ func ToolNode(orch *tool.Orchestrator, cwd string) lifecycle.NodeFunc {
 			return nil, nil
 		}
 
-		result := orch.Execute(ctx, toolCalls, simpleSnapshot{cwd: cwd})
+		result := orch.Execute(ctx, toolCalls, simpleSnapshot{cwd: cwd, fileState: fileState})
 
 		var content []model.ContentPart
 		for _, r := range result.Results {

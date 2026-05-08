@@ -239,8 +239,19 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
+	if cache, ok := tool.FileStateCacheFrom(state); ok {
+		if previous, found := cache.Get(filePath); found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Offset) && sameOptionalInt(previous.Limit, result.Limit) && previous.Timestamp == info.ModTime().UnixMilli() {
+			return tool.InvokeResult{Content: "File unchanged since last read. The content from the earlier Read tool_result in this conversation is still current — refer to that instead of re-reading."}, nil
+		}
+		cache.Set(filePath, tool.FileState{
+			Content:   result.Content,
+			Timestamp: info.ModTime().UnixMilli(),
+			Offset:    result.Offset,
+			Limit:     result.Limit,
+		})
+	}
 	observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
-	return tool.InvokeResult{Content: result}, nil
+	return tool.InvokeResult{Content: result.Display}, nil
 }
 
 func readImage(filePath, mimeType string, size int64) (tool.InvokeResult, error) {
@@ -264,18 +275,25 @@ func readImage(filePath, mimeType string, size int64) (tool.InvokeResult, error)
 	}, nil
 }
 
-func readTextFile(filePath string, offset, limit *int) (string, error) {
+type textReadResult struct {
+	Display string
+	Content string
+	Offset  *int
+	Limit   *int
+}
+
+func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"read file: %w\", err)")
-		return "", fmt.Errorf("read file: %w", err)
+		return textReadResult{}, fmt.Errorf("read file: %w", err)
 	}
 
 	content := string(data)
-	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = tool.NormalizeTextContent(content)
 
 	lines := strings.Split(content, "\n")
 	totalLines := len(lines)
@@ -289,7 +307,13 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 	if totalLines == 0 {
 		observe.GlobalTrace("if: totalLines == 0")
 		observe.GlobalTrace("return: \"<system-reminder>Warning: the file exists but the contents are empty.</syste...")
-		return "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>", nil
+		startLine := 1
+		return textReadResult{
+			Display: "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>",
+			Content: content,
+			Offset:  &startLine,
+			Limit:   cloneIntPtr(limit),
+		}, nil
 	}
 
 	startLine := 1
@@ -298,7 +322,7 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 		if *offset < 1 {
 			observe.GlobalTrace("if: *offset < 1")
 			observe.GlobalTrace("return: \"\", fmt.Errorf(\"offset must be >= 1 (1-indexed), got %d\", *offset)")
-			return "", fmt.Errorf("offset must be >= 1 (1-indexed), got %d", *offset)
+			return textReadResult{}, fmt.Errorf("offset must be >= 1 (1-indexed), got %d", *offset)
 		}
 		startLine = *offset
 	}
@@ -306,7 +330,12 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 	if startLine > totalLines {
 		observe.GlobalTrace("if: startLine > totalLines")
 		observe.GlobalTrace("return: fmt.Sprintf(\"<system-reminder>Warning: the file exists but is shorter than th...")
-		return fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", startLine, totalLines), nil
+		return textReadResult{
+			Display: fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", startLine, totalLines),
+			Content: content,
+			Offset:  &startLine,
+			Limit:   cloneIntPtr(limit),
+		}, nil
 	}
 
 	endLine := totalLines
@@ -322,6 +351,10 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 
 	selectedLines := lines[startLine-1 : endLine]
 	numLines := len(selectedLines)
+	viewContent := strings.Join(selectedLines, "\n")
+	if startLine == 1 && endLine == totalLines {
+		viewContent = content
+	}
 
 	// Add line numbers (number→content format)
 	var sb strings.Builder
@@ -339,5 +372,25 @@ func readTextFile(filePath string, offset, limit *int) (string, error) {
 	}
 	observe.GlobalTrace("return: result, nil")
 
-	return result, nil
+	return textReadResult{
+		Display: result,
+		Content: viewContent,
+		Offset:  &startLine,
+		Limit:   cloneIntPtr(limit),
+	}, nil
+}
+
+func sameOptionalInt(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func cloneIntPtr(v *int) *int {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
 }

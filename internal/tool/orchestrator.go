@@ -17,11 +17,11 @@ import (
 // Orchestrator executes tool calls with permission checking,
 // concurrent/serial partitioning, hook execution, and event emission.
 type Orchestrator struct {
-	registry  *Registry
-	checker   permission.Checker
-	prompter  permission.Prompter
-	bus       *observe.EventBus
-	hookMgr *hook.Manager // nil if no hooks configured
+	registry *Registry
+	checker  permission.Checker
+	prompter permission.Prompter
+	bus      *observe.EventBus
+	hookMgr  *hook.Manager // nil if no hooks configured
 }
 
 // NewOrchestrator creates an Orchestrator.
@@ -45,7 +45,6 @@ func (o *Orchestrator) SetHookManager(mgr *hook.Manager) {
 	o.hookMgr = mgr
 }
 
-
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
 	Results     []model.ToolResultPart
@@ -67,12 +66,18 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	defer observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "exit")
 	singles := make([]singleResult, len(calls))
 
-	// Partition
+	// Partition in input order. Consecutive concurrent-safe tools share a batch;
+	// each non-concurrent tool forms its own serial batch.
 	type indexedCall struct {
 		index int
 		call  model.ToolCallPart
 	}
-	var concurrent, serial []indexedCall
+	type toolBatch struct {
+		concurrent bool
+		calls      []indexedCall
+	}
+	var batches []toolBatch
+	var concurrentCount, serialCount int
 
 	traceID := observe.NewTraceID()
 	batchSpan := observe.NewSpanID()
@@ -102,45 +107,47 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		ic := indexedCall{index: i, call: call}
 		if desc.Flags().Concurrent {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: desc.Flags().Concurrent")
-			concurrent = append(concurrent, ic)
+			concurrentCount++
+			if len(batches) > 0 && batches[len(batches)-1].concurrent {
+				batches[len(batches)-1].calls = append(batches[len(batches)-1].calls, ic)
+			} else {
+				batches = append(batches, toolBatch{concurrent: true, calls: []indexedCall{ic}})
+			}
 		} else {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "else: desc.Flags().Concurrent")
-			serial = append(serial, ic)
+			serialCount++
+			batches = append(batches, toolBatch{calls: []indexedCall{ic}})
 		}
 	}
 	o.bus.Emit(observe.ToolBatchStarted{
 		EventHeader:     observe.NewEventHeader("ToolBatchStarted", traceID, batchSpan, ""),
-		ConcurrentCount: len(concurrent),
-		SerialCount:     len(serial),
+		ConcurrentCount: concurrentCount,
+		SerialCount:     serialCount,
 		TotalCount:      len(calls),
 	})
 
 	batchStart := time.Now()
 	var concurrentDuration, serialDuration time.Duration
 
-	// Serial tools execute FIRST: they may create/modify state that
-	// concurrent (read-only) tools depend on. Fixes race condition
-	// where Read runs before Write in the same batch.
-	if len(serial) > 0 && ctx.Err() == nil {
-		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(serial) > 0 (first)")
-		serStart := time.Now()
-		for _, ic := range serial {
-			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range serial")
-			if ctx.Err() != nil {
-				observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: ctx.Err() != nil")
-				break
-			}
-			singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
+	for _, batch := range batches {
+		if ctx.Err() != nil {
+			break
 		}
-		serialDuration = time.Since(serStart)
-	}
+		if !batch.concurrent {
+			serStart := time.Now()
+			for _, ic := range batch.calls {
+				if ctx.Err() != nil {
+					break
+				}
+				singles[ic.index] = o.executeSingle(ctx, ic.call, state, traceID, batchSpan, false)
+			}
+			serialDuration += time.Since(serStart)
+			continue
+		}
 
-	if len(concurrent) > 0 {
-		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: len(concurrent) > 0")
 		concStart := time.Now()
 		g, gctx := errgroup.WithContext(ctx)
-		for _, ic := range concurrent {
-			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range concurrent")
+		for _, ic := range batch.calls {
 			ic := ic
 			g.Go(func() error {
 				defer func() {
@@ -166,7 +173,6 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 			})
 		}
 		if err := g.Wait(); err != nil {
-			observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: err != nil")
 			o.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, batchSpan, ""),
 				Severity:     "warn",
@@ -175,19 +181,20 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 				ErrorMessage: err.Error(),
 			})
 		}
-		concurrentDuration = time.Since(concStart)
+		concurrentDuration += time.Since(concStart)
 	}
 
-	if len(serial) > 0 && ctx.Err() != nil {
-		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "if: serial cancelled")
-		for _, ic := range serial {
-			if singles[ic.index].part.ToolCallID == "" {
-				singles[ic.index] = singleResult{
-					part: model.ToolResultPart{
-						ToolCallID: ic.call.ID,
-						Content:    "cancelled: " + ctx.Err().Error(),
-						IsError:    true,
-					},
+	if ctx.Err() != nil {
+		for _, batch := range batches {
+			for _, ic := range batch.calls {
+				if singles[ic.index].part.ToolCallID == "" {
+					singles[ic.index] = singleResult{
+						part: model.ToolResultPart{
+							ToolCallID: ic.call.ID,
+							Content:    "cancelled: " + ctx.Err().Error(),
+							IsError:    true,
+						},
+					}
 				}
 			}
 		}

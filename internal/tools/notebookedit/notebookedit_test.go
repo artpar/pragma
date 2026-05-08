@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	toolpkg "github.com/artpar/pragma/internal/tool"
 )
 
 const sampleNotebook = `{
@@ -32,9 +34,19 @@ const sampleNotebook = `{
 }
 `
 
-type testState struct{ dir string }
+type testState struct {
+	dir   string
+	cache *toolpkg.FileStateCache
+}
 
 func (s testState) WorkDir() string { return s.dir }
+func (s testState) ReadFileState() *toolpkg.FileStateCache {
+	return s.cache
+}
+
+func newTestState(dir string) testState {
+	return testState{dir: dir, cache: toolpkg.NewFileStateCache()}
+}
 
 func writeNotebookFile(t *testing.T, dir string) string {
 	t.Helper()
@@ -43,6 +55,22 @@ func writeNotebookFile(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func markRead(t *testing.T, state testState, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timestamp, err := toolpkg.FileTimestamp(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.cache.Set(path, toolpkg.FileState{
+		Content:   toolpkg.NormalizeTextContent(string(data)),
+		Timestamp: timestamp,
+	})
 }
 
 func readNotebookFile(t *testing.T, path string) notebookContent {
@@ -61,6 +89,8 @@ func readNotebookFile(t *testing.T, path string) notebookContent {
 func TestReplaceCell(t *testing.T) {
 	dir := t.TempDir()
 	nbPath := writeNotebookFile(t, dir)
+	state := newTestState(dir)
+	markRead(t, state, nbPath)
 
 	tool := &Tool{}
 	input := json.RawMessage(`{
@@ -70,7 +100,7 @@ func TestReplaceCell(t *testing.T) {
 		"edit_mode": "replace"
 	}`)
 
-	result, err := tool.Invoke(nil, input, testState{dir})
+	result, err := tool.Invoke(nil, input, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +124,8 @@ func TestReplaceCell(t *testing.T) {
 func TestInsertCell(t *testing.T) {
 	dir := t.TempDir()
 	nbPath := writeNotebookFile(t, dir)
+	state := newTestState(dir)
+	markRead(t, state, nbPath)
 
 	tool := &Tool{}
 	input := json.RawMessage(`{
@@ -104,7 +136,7 @@ func TestInsertCell(t *testing.T) {
 		"edit_mode": "insert"
 	}`)
 
-	result, err := tool.Invoke(nil, input, testState{dir})
+	result, err := tool.Invoke(nil, input, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,6 +157,8 @@ func TestInsertCell(t *testing.T) {
 func TestDeleteCell(t *testing.T) {
 	dir := t.TempDir()
 	nbPath := writeNotebookFile(t, dir)
+	state := newTestState(dir)
+	markRead(t, state, nbPath)
 
 	tool := &Tool{}
 	input := json.RawMessage(`{
@@ -134,7 +168,7 @@ func TestDeleteCell(t *testing.T) {
 		"edit_mode": "delete"
 	}`)
 
-	result, err := tool.Invoke(nil, input, testState{dir})
+	result, err := tool.Invoke(nil, input, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,6 +188,8 @@ func TestDeleteCell(t *testing.T) {
 func TestCellByNumericIndex(t *testing.T) {
 	dir := t.TempDir()
 	nbPath := writeNotebookFile(t, dir)
+	state := newTestState(dir)
+	markRead(t, state, nbPath)
 
 	tool := &Tool{}
 	input := json.RawMessage(`{
@@ -163,7 +199,7 @@ func TestCellByNumericIndex(t *testing.T) {
 		"edit_mode": "replace"
 	}`)
 
-	result, err := tool.Invoke(nil, input, testState{dir})
+	result, err := tool.Invoke(nil, input, state)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +218,7 @@ func TestCellByNumericIndex(t *testing.T) {
 func TestInvalidExtension(t *testing.T) {
 	tool := &Tool{}
 	input := json.RawMessage(`{"notebook_path": "/tmp/test.py", "new_source": "x"}`)
-	_, err := tool.Invoke(nil, input, testState{"/tmp"})
+	_, err := tool.Invoke(nil, input, newTestState("/tmp"))
 	if err == nil {
 		t.Error("expected error for non-.ipynb file")
 	}

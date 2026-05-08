@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/artpar/pragma/internal/lsp"
 	"github.com/artpar/pragma/internal/observe"
@@ -116,9 +117,17 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	var oldContent string
 	if !isCreate {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: !isCreate")
-		if data, readErr := os.ReadFile(filePath); readErr == nil {
-			observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: readErr == nil")
-			oldContent = string(data)
+		data, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			return tool.InvokeResult{}, fmt.Errorf("read file: %w", readErr)
+		}
+		oldContent = tool.NormalizeTextContent(string(data))
+		timestamp, statErr := tool.FileTimestamp(filePath)
+		if statErr != nil {
+			return tool.InvokeResult{}, fmt.Errorf("stat file: %w", statErr)
+		}
+		if err := tool.EnsureFileFreshForWrite(state, filePath, oldContent, timestamp); err != nil {
+			return tool.InvokeResult{}, err
 		}
 	}
 
@@ -139,6 +148,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: t.LSP != nil")
 		_ = t.LSP.ChangeFile(ctx, filePath, in.Content)
 		_ = t.LSP.SaveFile(ctx, filePath)
+	}
+	if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+		tool.RecordFileState(state, filePath, strings.ReplaceAll(in.Content, "\r\n", "\n"), timestamp, nil, nil, false)
 	}
 
 	// Generate display diff for TUI (never sent to LLM)

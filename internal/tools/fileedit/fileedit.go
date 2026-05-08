@@ -154,6 +154,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				return tool.InvokeResult{}, err
 			}
 			display := util.GenerateEditDiff("", in.OldString, in.NewString, in.FilePath, false, 3)
+			if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+				tool.RecordFileState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
+			}
 			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: result, Display: display}, nil")
 			return tool.InvokeResult{Content: result, Display: display}, nil
 		}
@@ -169,7 +172,17 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	content := string(data)
 
-	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = tool.NormalizeTextContent(content)
+
+	if in.OldString != "" {
+		timestamp, err := tool.FileTimestamp(filePath)
+		if err != nil {
+			return tool.InvokeResult{}, fmt.Errorf("stat file: %w", err)
+		}
+		if err := tool.EnsureFileFreshForWrite(state, filePath, content, timestamp); err != nil {
+			return tool.InvokeResult{}, err
+		}
+	}
 
 	if in.OldString == "" {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == \"\"")
@@ -183,6 +196,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
 			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
+		}
+		if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+			tool.RecordFileState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
 		}
 		if t.LSP != nil {
 			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: t.LSP != nil")
@@ -226,6 +242,14 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, in.ReplaceAll, 3)
 
+	timestamp, err := tool.FileTimestamp(filePath)
+	if err != nil {
+		return tool.InvokeResult{}, fmt.Errorf("stat file: %w", err)
+	}
+	if err := tool.EnsureFileFreshForWrite(state, filePath, content, timestamp); err != nil {
+		return tool.InvokeResult{}, err
+	}
+
 	if err := os.WriteFile(filePath, []byte(updated), 0644); err != nil {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
@@ -236,6 +260,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: t.LSP != nil")
 		_ = t.LSP.ChangeFile(ctx, filePath, updated)
 		_ = t.LSP.SaveFile(ctx, filePath)
+	}
+
+	if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
+		tool.RecordFileState(state, filePath, updated, timestamp, nil, nil, false)
 	}
 
 	if in.ReplaceAll && count > 1 {

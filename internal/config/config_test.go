@@ -265,11 +265,11 @@ func TestLoad_RealFunction(t *testing.T) {
 
 	// Create project config in a subdirectory
 	projDir := filepath.Join(dir, "myproject")
-	projGogentDir := filepath.Join(projDir, ".pragma")
-	if err := os.MkdirAll(projGogentDir, 0o755); err != nil {
+	projPragmaDir := filepath.Join(projDir, ".pragma")
+	if err := os.MkdirAll(projPragmaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeJSON(t, filepath.Join(projGogentDir, "settings.json"), Config{Provider: "anthropic", Record: true})
+	writeJSON(t, filepath.Join(projPragmaDir, "settings.json"), Config{Provider: "anthropic", Record: true})
 
 	cfg, err := Load(projDir)
 	if err != nil {

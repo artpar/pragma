@@ -423,11 +423,11 @@ func (t *timestampTool) InvokedAt() time.Time {
 	return t.invokedAt
 }
 
-func TestOrchestratorSerialBeforeConcurrent(t *testing.T) {
-	// Verify that serial (write) tools execute BEFORE concurrent (read) tools
-	// in the same batch. This tests the fix from commit 54b80d4.
+func TestOrchestratorPreservesOrderAcrossSerialAndConcurrentTools(t *testing.T) {
+	// Match Pragma's tool flow: consecutive read-only calls may batch, but
+	// non-concurrent tools are ordered relative to the surrounding calls.
 	writeTool := &timestampTool{echoTool: *newEchoTool("Write", false)} // serial
-	readTool := &timestampTool{echoTool: *newEchoTool("Read", true)}   // concurrent
+	readTool := &timestampTool{echoTool: *newEchoTool("Read", true)}    // concurrent
 
 	orch, bus, _ := setupOrchestrator(t, allowAllChecker{}, writeTool, readTool)
 	defer bus.Drain()
@@ -453,9 +453,9 @@ func TestOrchestratorSerialBeforeConcurrent(t *testing.T) {
 		t.Fatal("Read tool was never invoked")
 	}
 
-	if !writeTime.Before(readTime) {
-		t.Errorf("serial Write tool invoked at %v, concurrent Read tool at %v — Write should execute BEFORE Read",
-			writeTime, readTime)
+	if !readTime.Before(writeTime) {
+		t.Errorf("Read tool invoked at %v, Write tool at %v — input order should be preserved",
+			readTime, writeTime)
 	}
 
 	// Results should still maintain original call order
