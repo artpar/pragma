@@ -615,7 +615,8 @@ var modelAliases = map[string]map[string]string{
 	"lilac": {
 		"gemma": "google/gemma-4-31b-it",
 		"glm":   "zai-org/glm-5.1",
-		"kimi":  "moonshotai/kimi-k2.5",
+		"k2.5":  "moonshotai/kimi-k2.5",
+		"kimi":  "moonshotai/kimi-k2.6",
 	},
 }
 

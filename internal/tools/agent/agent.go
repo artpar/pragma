@@ -63,7 +63,7 @@ var inputSchema = json.RawMessage(`{
 		},
 		"structure": {
 			"type": "string",
-			"description": "Natural language description of the execution structure for this sub-agent. When provided, the sub-agent executes as a structured workflow instead of the default tool-calling loop. Describe the steps, evaluation gates, and retry logic you want. Examples: 'try fixing, run tests, if fail reflect and retry 3x', 'plan steps first, execute each, verify result'."
+			"description": "Natural language description of the execution structure for this sub-agent. When provided, the sub-agent executes as a structured workflow with evaluation gates or retry logic. Examples: 'try fixing, run tests, if fail reflect and retry 3x', 'plan steps first, execute each, verify result before next'."
 		},
 		"teammate": {
 			"type": "boolean",

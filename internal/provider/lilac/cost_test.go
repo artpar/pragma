@@ -100,7 +100,7 @@ func TestStreamUsageEstimation(t *testing.T) {
 	})
 
 	t.Run("pricing_lookup_works_for_all_models", func(t *testing.T) {
-		models := []string{"moonshotai/kimi-k2.5", "zai-org/glm-5.1", "google/gemma-4-31b-it"}
+		models := []string{"moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6", "zai-org/glm-5.1", "google/gemma-4-31b-it"}
 		for _, m := range models {
 			pricing, ok := p.Pricing(m)
 			if !ok {
@@ -111,6 +111,22 @@ func TestStreamUsageEstimation(t *testing.T) {
 				t.Errorf("pricing for %s has zero values: input=$%.2f output=$%.2f",
 					m, pricing.InputPerMToken, pricing.OutputPerMToken)
 			}
+		}
+	})
+
+	t.Run("kimi_k2_6_cache_read_pricing", func(t *testing.T) {
+		pricing, ok := p.Pricing("moonshotai/kimi-k2.6")
+		if !ok {
+			t.Fatal("pricing not found for moonshotai/kimi-k2.6")
+		}
+		if pricing.InputPerMToken != 0.70 {
+			t.Errorf("expected input=0.70, got %.2f", pricing.InputPerMToken)
+		}
+		if pricing.OutputPerMToken != 3.50 {
+			t.Errorf("expected output=3.50, got %.2f", pricing.OutputPerMToken)
+		}
+		if pricing.CacheReadPerMToken != 0.20 {
+			t.Errorf("expected cache_read=0.20, got %.2f", pricing.CacheReadPerMToken)
 		}
 	})
 
