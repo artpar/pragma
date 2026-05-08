@@ -7,11 +7,12 @@ import "github.com/artpar/pragma/internal/observe"
 func StructureExamples() map[string]string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: map[string]string{\n\t\"tool-calling loop\":\t\"LLM calls tools in a loop until don...")
+	observe.GlobalTrace("return: map[string]string{...}")
+	observe.GlobalTrace("return: map[string]string{\n\t\"build test fix\":\t\"Implement components, build/test after...")
 	return map[string]string{
-		"tool-calling loop": "LLM calls tools in a loop until done (ReAct pattern)",
-		"plan then execute": "Plan steps first, execute each with tools, replan if needed",
+		"build test fix":    "Implement components, build/test after each, reflect on failures and fix until passing",
 		"attempt and retry": "Attempt the task with tools, evaluate if successful, if not reflect on what went wrong and retry",
+		"plan then execute": "Plan steps first, execute each with tools, verify result before next step",
 		"parallel analysis": "Analyze from multiple perspectives in parallel, then merge findings",
 	}
 }

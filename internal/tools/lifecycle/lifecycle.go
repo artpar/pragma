@@ -31,7 +31,7 @@ var inputSchema = json.RawMessage(`{
 	"properties": {
 		"structure": {
 			"type": "string",
-			"description": "Natural language description of the execution structure you want. Describe the steps, evaluation gates, retry logic, and flow. The system compiles this into an executable workflow graph. Examples: 'tool-calling loop', 'plan steps first, execute each with tools, verify result', 'attempt with tools, evaluate, reflect on failure, retry'."
+			"description": "Natural language description of the execution structure. Describe steps, verification, and retry logic. Examples: 'implement each module, run go build after each, fix errors, then run tests and fix until passing', 'attempt fix, run tests, if fail reflect and retry up to 3 times', 'plan steps, execute each with tools, verify result before next step'."
 		},
 		"prompt": {
 			"type": "string",
@@ -44,27 +44,22 @@ var inputSchema = json.RawMessage(`{
 	}
 }`)
 
-const toolDescription = `Execute a task using a structured workflow with evaluation gates, retry logic, or multi-perspective analysis.
+const toolDescription = `Execute a task using a structured workflow with build-test-fix loops, evaluation gates, or multi-perspective analysis. PREFERRED for any multi-step implementation task.
 
-This is an advanced tool for tasks that specifically need structured control flow. For most tasks, use tools directly or delegate via the Agent tool.
-
-Use LifecycleRun when the task specifically needs:
+Use LifecycleRun for:
+- Building projects or features: "implement each component, compile after each, fix errors, then run tests and fix until passing"
+- Any task with more than 3 tool calls: wrap it in a lifecycle so errors get caught and retried automatically
 - Retry with reflection: "fix the code, run tests, if tests fail reflect on what went wrong and retry up to 3 times"
-- Multi-perspective analysis: "analyze from a security perspective, then from a performance perspective, then merge findings"
+- Multi-perspective analysis: "analyze from security perspective, then performance perspective, then merge findings"
 - Evaluation gates: "attempt a fix, verify it works before moving on"
-
-Do NOT use for:
-- Simple questions, file reads, or single tool calls — respond directly
-- Multi-file investigation or research — use the Agent tool
-- Straightforward implementation — use tools directly
 
 Describe the execution structure in natural language and the system compiles it into an executable workflow graph.
 
 Structure examples:
-- "tool-calling loop" — LLM calls tools in a loop until done
-- "plan steps first, execute each with tools, verify the result"
-- "try fixing, run tests, if fail reflect and retry up to 3 times"
-- "analyze from security perspective, then performance, then merge findings"`
+- "implement modules one by one, run go build after each, fix compile errors, then run go test and fix failures until passing"
+- "attempt fix, run tests, if tests fail reflect on what went wrong and retry up to 3 times"
+- "plan steps first, execute each with tools, verify result passes before moving to next step"
+- "analyze from security perspective, then performance perspective, then merge findings"`
 
 // Tool implements the LifecycleRun tool for executing structured workflows.
 type Tool struct {

@@ -24,6 +24,9 @@ func (s simpleSnapshot) WorkDir() string {
 }
 
 func (s simpleSnapshot) ReadFileState() *tool.FileStateCache {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: s.fileState")
 	return s.fileState
 }
 
