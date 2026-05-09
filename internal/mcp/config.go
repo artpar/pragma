@@ -83,6 +83,7 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 
 	paths := []string{
 		globalPath,
+		config.RootMCPConfigPath(workDir),
 		config.MCPConfigPath(workDir),
 		config.MCPLocalConfigPath(workDir),
 	}

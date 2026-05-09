@@ -37,7 +37,8 @@ var inputSchema = json.RawMessage(`{
 
 // Tool searches available tools by keyword or direct selection.
 type Tool struct {
-	Registry *tool.Registry
+	Registry          *tool.Registry
+	PendingMCPServers func() []string
 }
 
 func (t *Tool) Name() string {
@@ -242,9 +243,10 @@ func (t *Tool) formatResult(matches []string, query string, totalTools int) (too
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	result := struct {
-		Matches    []string `json:"matches"`
-		Query      string   `json:"query"`
-		TotalTools int      `json:"total_tools"`
+		Matches           []string `json:"matches"`
+		Query             string   `json:"query"`
+		TotalTools        int      `json:"total_tools"`
+		PendingMCPServers []string `json:"pending_mcp_servers,omitempty"`
 	}{
 		Matches:    matches,
 		Query:      query,
@@ -253,6 +255,10 @@ func (t *Tool) formatResult(matches []string, query string, totalTools int) (too
 	if result.Matches == nil {
 		observe.GlobalTrace("if: result.Matches == nil")
 		result.Matches = []string{}
+	}
+	if len(result.Matches) == 0 && t.PendingMCPServers != nil {
+		observe.GlobalTrace("if: len(result.Matches) == 0 && t.PendingMCPServers != nil")
+		result.PendingMCPServers = t.PendingMCPServers()
 	}
 	data, _ := json.Marshal(result)
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")

@@ -78,6 +78,49 @@ func createTestSession(t *testing.T, store *Store, conv model.Conversation, summ
 	w.Close()
 }
 
+func TestCreateLoad_ContentReplacements(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conv := testConversation()
+	w, err := store.Create(HeaderData{
+		SessionID: conv.ID,
+		Model:     conv.Model,
+		Provider:  conv.Provider,
+		WorkDir:   conv.WorkDir,
+		CreatedAt: conv.CreatedAt,
+		System:    conv.System,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	records := []model.ContentReplacementRecord{{
+		Kind:        model.ContentReplacementKindToolResult,
+		ToolUseID:   "toolu-1",
+		Replacement: "<persisted-output>\npreview\n</persisted-output>",
+	}}
+	if err := w.WriteContentReplacement(records); err != nil {
+		t.Fatalf("WriteContentReplacement: %v", err)
+	}
+	w.Close()
+
+	loaded, err := store.Load(conv.ID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.ContentReplacements) != 1 {
+		t.Fatalf("ContentReplacements len = %d, want 1", len(loaded.ContentReplacements))
+	}
+	if loaded.ContentReplacements[0] != records[0] {
+		t.Fatalf("ContentReplacements[0] = %#v, want %#v", loaded.ContentReplacements[0], records[0])
+	}
+}
+
 func TestCreateLoad_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)

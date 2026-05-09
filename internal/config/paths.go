@@ -76,6 +76,11 @@ func MCPConfigPath(workDir string) string {
 	return filepath.Join(workDir, ".pragma", "mcp.json")
 }
 
+// RootMCPConfigPath returns <workDir>/.mcp.json.
+func RootMCPConfigPath(workDir string) string {
+	return filepath.Join(workDir, ".mcp.json")
+}
+
 // MCPLocalConfigPath returns <workDir>/.pragma/mcp.local.json.
 func MCPLocalConfigPath(workDir string) string {
 	return filepath.Join(workDir, ".pragma", "mcp.local.json")

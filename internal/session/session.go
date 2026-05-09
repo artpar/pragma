@@ -8,13 +8,14 @@ import (
 
 // Session wraps a Conversation with persistence metadata.
 type Session struct {
-	Conversation   model.Conversation `json:"conversation"`
-	Summary        string             `json:"summary,omitempty"`
-	CostUSD        float64            `json:"cost_usd,omitempty"`
-	TurnCount      int                `json:"turn_count"`
-	TokenUsage     model.TokenUsage   `json:"token_usage,omitzero"`
-	SystemOverride string             `json:"system_override,omitempty"`
-	GitRemote      string             `json:"git_remote,omitempty"`
+	Conversation        model.Conversation               `json:"conversation"`
+	Summary             string                           `json:"summary,omitempty"`
+	CostUSD             float64                          `json:"cost_usd,omitempty"`
+	TurnCount           int                              `json:"turn_count"`
+	TokenUsage          model.TokenUsage                 `json:"token_usage,omitzero"`
+	SystemOverride      string                           `json:"system_override,omitempty"`
+	GitRemote           string                           `json:"git_remote,omitempty"`
+	ContentReplacements []model.ContentReplacementRecord `json:"content_replacements,omitempty"`
 }
 
 // SessionSummary is a lightweight view for listing sessions.
@@ -28,4 +29,3 @@ type SessionSummary struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
-

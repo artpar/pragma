@@ -55,11 +55,19 @@ type Deps struct {
 	OnModelChanged    func(modelID string)             // callback: update budget + compaction on model switch
 
 	// MCP status — nil-safe.
-	McpStatus func() map[string]string // returns server name → "connected"/"disconnected"
+	McpStatus func() []McpServerStatus // returns configured MCP servers with connection state
 
 	// Session + skill support — nil-safe.
 	SessionStore *session.Store
 	SkillLoader  *skill.Loader
+}
+
+type McpServerStatus struct {
+	Name      string
+	Status    string
+	Error     string
+	ToolCount int
+	Transport string
 }
 
 // CommandType distinguishes how a command is executed.

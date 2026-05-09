@@ -113,6 +113,13 @@ func (w *Writer) WriteMetadata(m MetadataData) error {
 	return w.writeEntry(EntryMetadata, m)
 }
 
+func (w *Writer) WriteContentReplacement(records []model.ContentReplacementRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	return w.writeEntry(EntryContentReplacement, ContentReplacementData{Records: records})
+}
+
 func (w *Writer) writeEntry(kind EntryKind, data any) error {
 	entry, err := MarshalEntry(kind, data)
 	if err != nil {

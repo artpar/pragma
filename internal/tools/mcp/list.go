@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/observe"
@@ -89,10 +88,21 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 	}
 
 	clients := t.Manager.Clients()
-	if len(clients) == 0 {
-		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(clients) == 0")
-		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: \"No MCP servers connected.\"}, nil")
-		return tool.InvokeResult{Content: "No MCP servers connected."}, nil
+	status := t.Manager.ServerStatus()
+	if in.Server != "" {
+		if _, ok := clients[in.Server]; !ok {
+			observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: in.Server not connected")
+			if _, configured := status[in.Server]; !configured {
+				observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: !configured")
+				var available []string
+				for name := range status {
+					observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "range ServerStatus")
+					available = append(available, name)
+				}
+				observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: not found")
+				return tool.InvokeResult{}, fmt.Errorf("server %q not found. Available servers: %v", in.Server, available)
+			}
+		}
 	}
 
 	type resourceEntry struct {
@@ -104,7 +114,6 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 	}
 
 	var all []resourceEntry
-	var errors []string
 
 	for name, client := range clients {
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "range clients")
@@ -120,7 +129,6 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 		resources, err := client.ListResources(ctx)
 		if err != nil {
 			observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: err != nil")
-			errors = append(errors, fmt.Sprintf("%s: %v", name, err))
 			continue
 		}
 
@@ -138,21 +146,12 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 
 	if len(all) == 0 {
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(all) == 0")
-		msg := "No resources found. MCP servers may still provide tools even if they have no resources."
-		if len(errors) > 0 {
-			observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(errors) > 0")
-			msg += "\nErrors: " + strings.Join(errors, "; ")
-		}
-		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: msg}, nil")
-		return tool.InvokeResult{Content: msg}, nil
+		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: no resources}, nil")
+		return tool.InvokeResult{Content: "No resources found. MCP servers may still provide tools even if they have no resources."}, nil
 	}
 
 	data, _ := json.Marshal(all)
 	result := string(data)
-	if len(errors) > 0 {
-		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(errors) > 0")
-		result += "\nErrors from some servers: " + strings.Join(errors, "; ")
-	}
 	observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	return tool.InvokeResult{Content: result}, nil
 }

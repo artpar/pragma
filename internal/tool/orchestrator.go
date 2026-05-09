@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/toolresult"
 )
 
 // Orchestrator executes tool calls with permission checking,
@@ -457,11 +458,17 @@ func (o *Orchestrator) executeSingle(
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 
+	part := model.ToolResultPart{
+		ToolCallID: call.ID,
+		Content:    invokeResult.Content,
+	}
+	sessionID, _ := SessionIDFrom(state)
+	if processed, processErr := toolresult.ProcessToolResult(part, call.Name, desc.Flags().MaxResultSizeChars, sessionID); processErr == nil {
+		part = processed
+	}
+
 	return singleResult{
-		part: model.ToolResultPart{
-			ToolCallID: call.ID,
-			Content:    invokeResult.Content,
-		},
+		part:        part,
 		display:     invokeResult.Display,
 		supplements: invokeResult.Supplements,
 	}

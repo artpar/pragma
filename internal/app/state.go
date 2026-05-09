@@ -30,11 +30,15 @@ type AppState struct {
 	PlanMode     bool               `json:"plan_mode,omitempty"`
 	PlanFile     string             `json:"plan_file,omitempty"`
 	AdvisorModel string             `json:"advisor_model,omitempty"`
-	TeamContext  *TeamContext        `json:"team_context,omitempty"`
+	TeamContext  *TeamContext       `json:"team_context,omitempty"`
 }
 
 // WorkDir returns the current working directory.
 // This satisfies tool.StateSnapshot.
 func (s AppState) WorkDir() string {
 	return s.CWD
+}
+
+func (s AppState) SessionID() string {
+	return s.Conversation.ID
 }

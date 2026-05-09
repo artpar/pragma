@@ -916,6 +916,9 @@ func (m *Model) loadResumedSession(sessionID string) {
 			s.Model = sess.Conversation.Model
 		}
 	})
+	if m.engine != nil {
+		m.engine.ResetContentReplacementState(sess.ContentReplacements)
+	}
 
 	if sess.Conversation.Model != "" {
 		observe.GlobalTrace("if: sess.Conversation.Model != \"\"")

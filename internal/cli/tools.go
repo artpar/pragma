@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -24,14 +25,15 @@ import (
 	toolfilewrite "github.com/artpar/pragma/internal/tools/filewrite"
 	toolglob "github.com/artpar/pragma/internal/tools/glob"
 	toolgrep "github.com/artpar/pragma/internal/tools/grep"
+	toollifecycle "github.com/artpar/pragma/internal/tools/lifecycle"
 	toollsp "github.com/artpar/pragma/internal/tools/lsp"
 	toolmcp "github.com/artpar/pragma/internal/tools/mcp"
 	toolnotebookedit "github.com/artpar/pragma/internal/tools/notebookedit"
 	toolplan "github.com/artpar/pragma/internal/tools/plan"
 	toolpowershell "github.com/artpar/pragma/internal/tools/powershell"
 	toolremote "github.com/artpar/pragma/internal/tools/remote"
-	toolselftrace "github.com/artpar/pragma/internal/tools/selftrace"
 	toolrepl "github.com/artpar/pragma/internal/tools/repl"
+	toolselftrace "github.com/artpar/pragma/internal/tools/selftrace"
 	toolsendmsg "github.com/artpar/pragma/internal/tools/sendmsg"
 	toolskill "github.com/artpar/pragma/internal/tools/skill"
 	toolsleep "github.com/artpar/pragma/internal/tools/sleep"
@@ -44,7 +46,6 @@ import (
 	toolteamcreate "github.com/artpar/pragma/internal/tools/teamcreate"
 	toolteamdelete "github.com/artpar/pragma/internal/tools/teamdelete"
 	tooltodo "github.com/artpar/pragma/internal/tools/todo"
-	toollifecycle "github.com/artpar/pragma/internal/tools/lifecycle"
 	tooltoolsearch "github.com/artpar/pragma/internal/tools/toolsearch"
 	toolwebfetch "github.com/artpar/pragma/internal/tools/webfetch"
 	toolwebsearch "github.com/artpar/pragma/internal/tools/websearch"
@@ -56,6 +57,9 @@ import (
 func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*query.Engine, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	d.EngineCfg.MCPServerStatuses = func() []query.MCPServerStatus {
+		return mcpStatusesForQuery(d.McpManager)
+	}
 
 	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
 		subRegistry := tool.NewRegistry(d.Bus)
@@ -161,6 +165,20 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	return engine, nil
 }
 
+func mcpStatusesForQuery(mgr interface {
+	ServerStatuses() []mcp.ServerStatusInfo
+}) []query.MCPServerStatus {
+	if mgr == nil {
+		return nil
+	}
+	statuses := mgr.ServerStatuses()
+	out := make([]query.MCPServerStatus, 0, len(statuses))
+	for _, st := range statuses {
+		out = append(out, query.MCPServerStatus{Name: st.Name, Status: st.Status})
+	}
+	return out
+}
+
 // BaseTools returns all tool descriptors except Agent and AskUserQuestion
 // (which need the engine factory / asker).
 func BaseTools(d *Deps) []tool.Descriptor {
@@ -186,9 +204,15 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&tooltodo.Tool{Store: d.Store},
 		&toolplan.EnterTool{Store: d.Store},
 		&toolplan.ExitTool{Store: d.Store},
-		&tooltoolsearch.Tool{Registry: d.Registry},
-		&toolmcp.ListTool{Manager: d.McpManager},
-		&toolmcp.ReadTool{Manager: d.McpManager},
+		&tooltoolsearch.Tool{
+			Registry: d.Registry,
+			PendingMCPServers: func() []string {
+				if d.McpManager == nil {
+					return nil
+				}
+				return d.McpManager.PendingServerNames()
+			},
+		},
 		&toolworktree.EnterTool{},
 		&toolworktree.ExitTool{},
 		&toolcron.CreateTool{Scheduler: d.CronSched},
@@ -196,7 +220,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolcron.ListTool{Scheduler: d.CronSched},
 		&toolsendmsg.Tool{Tasks: d.TaskReg},
 		&toollsp.Tool{Manager: d.LspManager},
-		&toolwebsearch.Tool{},
+		&toolwebsearch.Tool{Token: d.Creds.CredentialFor("brave").APIKey},
 		&toolbrief.Tool{Bus: d.Bus},
 		&toolconfig.Tool{Store: d.Store, WorkDir: d.Cwd},
 		&toolselftrace.Tool{LogFilePath: d.LogFilePath},
@@ -208,6 +232,14 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		tools = append(tools,
 			&toolteamcreate.Tool{Store: d.Store, Bus: d.Bus},
 			&toolteamdelete.Tool{Store: d.Store, Bus: d.Bus},
+		)
+	}
+
+	if d.McpManager != nil && d.McpManager.HasConnectedResourceServer() {
+		observe.GlobalTrace("if: d.McpManager != nil && d.McpManager.HasConnectedResourceServer()")
+		tools = append(tools,
+			&toolmcp.ListTool{Manager: d.McpManager},
+			&toolmcp.ReadTool{Manager: d.McpManager},
 		)
 	}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/toolresult"
 )
 
 // DefaultMaxTurns is the maximum number of agentic loop iterations before
@@ -23,12 +24,21 @@ const DefaultMaxTurns = 100
 
 // EngineConfig holds query engine parameters derived from config + CLI flags.
 type EngineConfig struct {
-	Model       string
-	MaxTokens   int
-	MaxTurns    int // 0 means use DefaultMaxTurns
-	Temperature *float64
-	Thinking    *provider.ThinkingConfig
-	TaskID      string // when set with TaskRegistry, enables PendingMessages drain between turns
+	Model                     string
+	MaxTokens                 int
+	MaxTurns                  int // 0 means use DefaultMaxTurns
+	Temperature               *float64
+	Thinking                  *provider.ThinkingConfig
+	TaskID                    string // when set with TaskRegistry, enables PendingMessages drain between turns
+	ContentReplacementRecords []model.ContentReplacementRecord
+	RecordContentReplacements func([]model.ContentReplacementRecord)
+	MCPServerStatuses         func() []MCPServerStatus
+}
+
+// MCPServerStatus mirrors the session-init MCP server metadata shape.
+type MCPServerStatus struct {
+	Name   string
+	Status string
 }
 
 // Engine orchestrates the agentic loop: stream from provider, accumulate response,
@@ -54,6 +64,8 @@ type Engine struct {
 
 	// Task registry — when set with config.TaskID, enables PendingMessages drain.
 	taskRegistry *task.Registry
+
+	contentReplacementState *toolresult.ContentReplacementState
 }
 
 // CompactionDeps holds optional compaction dependencies.
@@ -87,6 +99,8 @@ func NewEngine(
 		config:       cfg,
 		fileState:    tool.NewFileStateCache(),
 	}
+	snap := store.Snapshot()
+	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), cfg.ContentReplacementRecords)
 	if len(compDeps) > 0 {
 		observe.GlobalTrace("if: len(compDeps) > 0")
 		e.compactor = compDeps[0].Compactor
@@ -127,6 +141,13 @@ func (e *Engine) SetCompaction(deps CompactionDeps) {
 	e.compactor = deps.Compactor
 	e.autoTracker = deps.AutoTracker
 	e.windowConfig = deps.WindowConfig
+}
+
+// ResetContentReplacementState rebuilds read-time replacement tracking after
+// the active conversation changes, such as an in-TUI session resume.
+func (e *Engine) ResetContentReplacementState(records []model.ContentReplacementRecord) {
+	snap := e.store.Snapshot()
+	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), records)
 }
 
 // Orchestrator returns the engine's tool orchestrator.

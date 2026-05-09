@@ -44,7 +44,9 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the WebSearch tool using the Brave Search API.
-type Tool struct{}
+type Tool struct {
+	Token string // Optional Brave Search API key (overrides env var)
+}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -61,7 +63,7 @@ func (t *Tool) Description() string {
 
 Provides up-to-date information via web search. Returns search results with titles, URLs, and descriptions.
 
-Requires BRAVE_SEARCH_API_KEY environment variable to be set.
+Requires BRAVE_SEARCH_API_KEY environment variable or brave.api_key in ~/.pragma/credentials.yml.
 
 When using search results, you MUST include a "Sources:" section at the end of your response with markdown hyperlinks to all sources used.`
 }
@@ -110,11 +112,14 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{Content: "Cannot specify both allowed_domains and blocked_domains."}, nil
 	}
 
-	apiKey := os.Getenv("BRAVE_SEARCH_API_KEY")
+	apiKey := t.Token
+	if apiKey == "" {
+		apiKey = os.Getenv("BRAVE_SEARCH_API_KEY")
+	}
 	if apiKey == "" {
 		observe.TraceCtx(ctx, "websearch", "Tool.Invoke", "if: apiKey == \"\"")
 		observe.TraceCtx(ctx, "websearch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"BRAVE_SEARCH_API_KEY environment variable is not ...")
-		return tool.InvokeResult{Content: "BRAVE_SEARCH_API_KEY environment variable is not set. Web search is unavailable."}, nil
+		return tool.InvokeResult{Content: "BRAVE_SEARCH_API_KEY environment variable or brave.api_key in ~/.pragma/credentials.yml is required. Web search is unavailable."}, nil
 	}
 
 	query := in.Query

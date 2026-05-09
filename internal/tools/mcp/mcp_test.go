@@ -55,8 +55,16 @@ func TestListTool_Invoke_NoServers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(result.Content, "No MCP servers connected") {
-		t.Fatalf("expected 'No MCP servers connected', got %q", result.Content)
+	if !strings.Contains(result.Content, "No resources found") {
+		t.Fatalf("expected 'No resources found', got %q", result.Content)
+	}
+}
+
+func TestListTool_DescriptionMatchesResourceScope(t *testing.T) {
+	tl := &ListTool{}
+	desc := tl.Description()
+	if !strings.Contains(desc, "Lists available resources from configured MCP servers") {
+		t.Fatalf("description should describe MCP resource listing, got %q", desc)
 	}
 }
 

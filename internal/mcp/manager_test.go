@@ -204,3 +204,61 @@ func TestManager_ServerStatus(t *testing.T) {
 		t.Errorf("dead status = %q", status["dead"])
 	}
 }
+
+func TestManager_ServerStatusIncludesConfiguredDisconnectedServers(t *testing.T) {
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	registry := tool.NewRegistry(bus)
+	mgr := NewManager(bus, registry)
+	mgr.configs["configured"] = ServerConfig{Command: "missing-command"}
+
+	status := mgr.ServerStatus()
+	if status["configured"] != "disconnected" {
+		t.Errorf("configured status = %q, want disconnected", status["configured"])
+	}
+}
+
+func TestManager_ServerStatusesIncludesFailures(t *testing.T) {
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	registry := tool.NewRegistry(bus)
+	mgr := NewManager(bus, registry)
+	mgr.configs["broken"] = ServerConfig{Command: "missing-command"}
+	mgr.statuses["broken"] = StatusFailed
+	mgr.lastErrors["broken"] = "exec: missing-command: executable file not found"
+
+	statuses := mgr.ServerStatuses()
+	if len(statuses) != 1 {
+		t.Fatalf("statuses len = %d, want 1", len(statuses))
+	}
+	got := statuses[0]
+	if got.Name != "broken" {
+		t.Errorf("name = %q, want broken", got.Name)
+	}
+	if got.Status != StatusFailed {
+		t.Errorf("status = %q, want %q", got.Status, StatusFailed)
+	}
+	if got.Error == "" {
+		t.Fatal("expected failure error to be preserved")
+	}
+	if got.Transport != "stdio" {
+		t.Errorf("transport = %q, want stdio", got.Transport)
+	}
+}
+
+func TestManager_PendingServerNames(t *testing.T) {
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	registry := tool.NewRegistry(bus)
+	mgr := NewManager(bus, registry)
+	mgr.statuses["ready"] = StatusConnected
+	mgr.statuses["waiting"] = StatusPending
+
+	names := mgr.PendingServerNames()
+	if len(names) != 1 || names[0] != "waiting" {
+		t.Fatalf("pending names = %v, want [waiting]", names)
+	}
+}

@@ -79,6 +79,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var header HeaderData
 	var messages []model.Message
 	var meta MetadataData
+	var replacements []model.ContentReplacementRecord
 	hasHeader := false
 
 	scanner := bufio.NewScanner(f)
@@ -106,6 +107,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			}
 		case EntryMetadata:
 			json.Unmarshal(entry.Data, &meta) // last one wins
+		case EntryContentReplacement:
+			var data ContentReplacementData
+			if err := json.Unmarshal(entry.Data, &data); err == nil {
+				replacements = append(replacements, data.Records...)
+			}
 		}
 	}
 
@@ -126,13 +132,14 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	sanitizeConversation(&conv)
 
 	return Session{
-		Conversation:   conv,
-		Summary:        meta.Summary,
-		CostUSD:        meta.CostUSD,
-		TurnCount:      meta.TurnCount,
-		TokenUsage:     meta.TokenUsage,
-		SystemOverride: header.SystemOverride,
-		GitRemote:      header.GitRemote,
+		Conversation:        conv,
+		Summary:             meta.Summary,
+		CostUSD:             meta.CostUSD,
+		TurnCount:           meta.TurnCount,
+		TokenUsage:          meta.TokenUsage,
+		SystemOverride:      header.SystemOverride,
+		GitRemote:           header.GitRemote,
+		ContentReplacements: replacements,
 	}, nil
 }
 

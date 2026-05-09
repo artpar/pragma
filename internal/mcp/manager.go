@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/artpar/pragma/internal/observe"
@@ -11,11 +12,31 @@ import (
 
 const maxConcurrentStdio = 5
 
+const (
+	StatusConnected    = "connected"
+	StatusDisconnected = "disconnected"
+	StatusFailed       = "failed"
+	StatusNeedsAuth    = "needs-auth"
+	StatusPending      = "pending"
+	StatusDisabled     = "disabled"
+)
+
+// ServerStatusInfo is the serialized MCP server connection state.
+type ServerStatusInfo struct {
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+	ToolCount int    `json:"tool_count,omitempty"`
+	Transport string `json:"transport,omitempty"`
+}
+
 // Manager handles multiple MCP server connections.
 type Manager struct {
 	clients         map[string]*Client
 	configs         map[string]ServerConfig // stored for reconnection
 	registeredTools map[string][]string     // server name → registered tool names
+	statuses        map[string]string
+	lastErrors      map[string]string
 	mu              sync.RWMutex
 	bus             *observe.EventBus
 	registry        *tool.Registry
@@ -31,6 +52,8 @@ func NewManager(bus *observe.EventBus, registry *tool.Registry) *Manager {
 		clients:         make(map[string]*Client),
 		configs:         make(map[string]ServerConfig),
 		registeredTools: make(map[string][]string),
+		statuses:        make(map[string]string),
+		lastErrors:      make(map[string]string),
 		bus:             bus,
 		registry:        registry,
 	}
@@ -54,6 +77,11 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 
 	for name, cfg := range servers {
 		observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "range servers")
+		m.mu.Lock()
+		m.configs[name] = cfg
+		m.statuses[name] = StatusPending
+		delete(m.lastErrors, name)
+		m.mu.Unlock()
 		ns := namedServer{name: name, config: cfg}
 		if cfg.effectiveType() == "stdio" {
 			observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "if: cfg.effectiveType() == \"stdio\"")
@@ -90,11 +118,16 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 					mu.Lock()
 					errs[ns.name] = err
 					mu.Unlock()
+					m.mu.Lock()
+					m.statuses[ns.name] = StatusFailed
+					m.lastErrors[ns.name] = err.Error()
+					m.mu.Unlock()
 					return
 				}
 				m.mu.Lock()
 				m.clients[ns.name] = client
-				m.configs[ns.name] = ns.config
+				m.statuses[ns.name] = StatusConnected
+				delete(m.lastErrors, ns.name)
 				m.mu.Unlock()
 			}(ns)
 		}
@@ -111,11 +144,16 @@ func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfi
 				mu.Lock()
 				errs[ns.name] = err
 				mu.Unlock()
+				m.mu.Lock()
+				m.statuses[ns.name] = StatusFailed
+				m.lastErrors[ns.name] = err.Error()
+				m.mu.Unlock()
 				return
 			}
 			m.mu.Lock()
 			m.clients[ns.name] = client
-			m.configs[ns.name] = ns.config
+			m.statuses[ns.name] = StatusConnected
+			delete(m.lastErrors, ns.name)
 			m.mu.Unlock()
 		}(ns)
 	}
@@ -195,6 +233,9 @@ func (m *Manager) DisconnectAll() {
 		}
 		delete(m.registeredTools, name)
 		_ = client.Disconnect()
+		if _, configured := m.configs[name]; configured {
+			m.statuses[name] = StatusDisconnected
+		}
 	}
 	m.clients = make(map[string]*Client)
 }
@@ -206,19 +247,105 @@ func (m *Manager) ServerStatus() map[string]string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	status := make(map[string]string, len(m.clients))
+	status := make(map[string]string, len(m.configs))
+	for name := range m.configs {
+		if st := m.statuses[name]; st != "" {
+			status[name] = st
+		} else {
+			status[name] = StatusDisconnected
+		}
+	}
 	for name, client := range m.clients {
 		observe.GlobalTrace("range m.clients")
 		if client.Connected() {
 			observe.GlobalTrace("if: client.Connected()")
-			status[name] = "connected"
-		} else {
+			status[name] = StatusConnected
+		} else if status[name] == "" || status[name] == StatusConnected {
 			observe.GlobalTrace("else: client.Connected()")
-			status[name] = "disconnected"
+			status[name] = StatusDisconnected
 		}
 	}
 	observe.GlobalTrace("return: status")
 	return status
+}
+
+// ServerStatuses returns sorted structured connection status for each configured server.
+func (m *Manager) ServerStatuses() []ServerStatusInfo {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	names := make([]string, 0, len(m.configs))
+	for name := range m.configs {
+		observe.GlobalTrace("range m.configs")
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	statuses := make([]ServerStatusInfo, 0, len(names))
+	for _, name := range names {
+		observe.GlobalTrace("range names")
+		cfg := m.configs[name]
+		st := m.statuses[name]
+		if st == "" {
+			st = StatusDisconnected
+		}
+		if client := m.clients[name]; client != nil && client.Connected() {
+			st = StatusConnected
+		}
+		statuses = append(statuses, ServerStatusInfo{
+			Name:      name,
+			Status:    st,
+			Error:     m.lastErrors[name],
+			ToolCount: len(m.registeredTools[name]),
+			Transport: cfg.effectiveType(),
+		})
+	}
+	observe.GlobalTrace("return: statuses")
+	return statuses
+}
+
+// PendingServerNames returns configured MCP servers that are still connecting.
+func (m *Manager) PendingServerNames() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var names []string
+	for name, st := range m.statuses {
+		observe.GlobalTrace("range m.statuses")
+		if st == StatusPending {
+			observe.GlobalTrace("if: st == StatusPending")
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	observe.GlobalTrace("return: names")
+	return names
+}
+
+// HasConnectedResourceServer reports whether any connected server supports MCP resources.
+func (m *Manager) HasConnectedResourceServer() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.RLock()
+	clients := make([]*Client, 0, len(m.clients))
+	for _, client := range m.clients {
+		observe.GlobalTrace("range m.clients")
+		clients = append(clients, client)
+	}
+	m.mu.RUnlock()
+	for _, client := range clients {
+		observe.GlobalTrace("range clients")
+		if client.Connected() && client.SupportsResources() {
+			observe.GlobalTrace("if: client.Connected() && client.SupportsResources()")
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
 }
 
 // ConnectedCount returns the number of connected servers.
@@ -265,17 +392,25 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 		m.registry.Unregister(toolName)
 	}
 	delete(m.registeredTools, name)
+	m.statuses[name] = StatusPending
+	delete(m.lastErrors, name)
 	m.mu.Unlock()
 
 	client := NewClient(name, cfg, m.bus)
 	if err := client.Connect(ctx); err != nil {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
+		m.mu.Lock()
+		m.statuses[name] = StatusFailed
+		m.lastErrors[name] = err.Error()
+		m.mu.Unlock()
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"reconnect %q: %w\", name, err)")
 		return fmt.Errorf("reconnect %q: %w", name, err)
 	}
 
 	m.mu.Lock()
 	m.clients[name] = client
+	m.statuses[name] = StatusConnected
+	delete(m.lastErrors, name)
 	m.mu.Unlock()
 
 	tools, err := client.ListTools(ctx)

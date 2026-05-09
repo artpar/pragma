@@ -73,6 +73,22 @@ func (c *Client) Connected() bool {
 	return c.connected
 }
 
+// SupportsResources reports whether the connected server advertised resource support.
+func (c *Client) SupportsResources() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.connected || c.mcpCli == nil {
+		observe.GlobalTrace("if: !c.connected || c.mcpCli == nil")
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	caps := c.mcpCli.GetServerCapabilities()
+	observe.GlobalTrace("return: caps.Resources != nil")
+	return caps.Resources != nil
+}
+
 // Connect establishes the MCP connection with a startup timeout.
 func (c *Client) Connect(ctx context.Context) error {
 	observe.TraceCtx(ctx, "mcp", "Client.Connect", "enter")

@@ -215,6 +215,38 @@ func TestLoadConfig_MergeScopes(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_RootMCPJSON(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", filepath.Join(dir, "home"))
+
+	content := `{
+		"mcpServers": {
+			"chrome-devtools": {
+				"command": "npx",
+				"args": ["-y", "chrome-devtools-mcp@latest"]
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(dir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	srv, ok := servers["chrome-devtools"]
+	if !ok {
+		t.Fatal("expected chrome-devtools server from .mcp.json")
+	}
+	if srv.Command != "npx" {
+		t.Errorf("command = %q, want npx", srv.Command)
+	}
+}
+
 func TestLoadConfig_InvalidEntrySkipped(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)

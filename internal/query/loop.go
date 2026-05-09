@@ -15,6 +15,7 @@ import (
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/toolresult"
 )
 
 // continuationPrompt is sent when the model returns StopPauseTurn,
@@ -118,11 +119,33 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			tools = e.filterReadOnlyTools(tools)
 		}
 
+		messagesForQuery := snap.Conversation.APIMessages()
+		var budgetErr error
+		messagesForQuery, budgetErr = e.applyToolResultBudget(messagesForQuery)
+		if budgetErr != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "tool result budget failed, continuing with original messages")
+		}
+
+		systemForQuery := e.systemWithMCPStatus(snap.Conversation.System)
+
+		if compacted, ok := e.autoCompactBeforeRequest(ctx, ch, resolvedModel, messagesForQuery, systemForQuery, tools); compacted {
+			messagesForQuery = ok
+			snap = e.store.Snapshot()
+			systemForQuery = e.systemWithMCPStatus(snap.Conversation.System)
+		} else if e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools) {
+			ch <- ErrorEvent{
+				Err:      provider.ErrContextOverflow,
+				Kind:     ErrorKindContextOverflow,
+				Guidance: "Run /compact to reduce context size",
+			}
+			return
+		}
+
 		params := provider.RequestParams{
 			Model:       resolvedModel,
 			MaxTokens:   e.config.MaxTokens,
-			Messages:    snap.Conversation.APIMessages(),
-			System:      snap.Conversation.System,
+			Messages:    messagesForQuery,
+			System:      systemForQuery,
 			Tools:       tools,
 			Temperature: e.config.Temperature,
 			Thinking:    e.config.Thinking,
@@ -224,64 +247,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 		e.costTracker.Record(resolvedModel, e.provider.Name(), response.Usage, pricing)
 
-		if e.compactor != nil && e.autoTracker != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.compactor != nil && e.autoTracker != nil")
-			compSnap := e.store.Snapshot()
-			var tokenCount int
-			if counter, ok := e.provider.(provider.TokenCounter); ok {
-				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: provider implements TokenCounter")
-				countParams := provider.RequestParams{
-					Model:    resolvedModel,
-					Messages: compSnap.Conversation.APIMessages(),
-					System:   compSnap.Conversation.System,
-					Tools:    tools,
-				}
-				precise, countErr := counter.CountTokens(ctx, countParams)
-				if countErr != nil {
-					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: countErr != nil, falling back to heuristic")
-					tokenCount = compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
-				} else {
-					observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: countErr != nil")
-					tokenCount = precise
-				}
-			} else {
-				observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: ok")
-				tokenCount = compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
-			}
-			if e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
-				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig)")
-				ch <- CompactionStartedEvent{}
-				compResult, compErr := e.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
-				if compErr != nil && ctx.Err() == nil {
-					observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compErr != nil && ctx.Err() == nil")
-
-					tripped := e.autoTracker.RecordFailure()
-					ch <- CompactionFailedEvent{
-						Attempt:  e.autoTracker.FailureCount(),
-						MaxRetry: compact.MaxConsecutiveFailures,
-						ErrorMsg: compErr.Error(),
-					}
-					if tripped {
-						observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: tripped")
-						e.bus.Emit(observe.ErrorOccurred{
-							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-							Severity:     "warn",
-							Component:    "compact",
-							ErrorType:    "circuit_breaker_tripped",
-							ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
-						})
-						ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
-					}
-				} else {
-					observe.TraceCtx(ctx, "query", "Engine.runLoop", "else: compErr != nil && ctx.Err() == nil")
-					e.autoTracker.RecordSuccess()
-					e.store.Update(func(s *app.AppState) {
-						s.Conversation.Messages = compResult.ReplacementMessages
-						s.Conversation.UpdatedAt = time.Now()
-					})
-					ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
-				}
-			}
+		if e.autoTracker != nil {
 			e.autoTracker.IncrementTurn()
 		}
 
@@ -452,6 +418,128 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
 }
 
+func (e *Engine) applyToolResultBudget(messages []model.Message) ([]model.Message, error) {
+	snap := e.store.Snapshot()
+	skipToolNames := make(map[string]bool)
+	for _, desc := range e.registry.List() {
+		if desc.Flags().MaxResultSizeChars < 0 {
+			skipToolNames[desc.Name()] = true
+		}
+	}
+	out, records, err := toolresult.ApplyToolResultBudget(messages, e.contentReplacementState, snap.Conversation.ID, skipToolNames)
+	if len(records) > 0 && e.config.RecordContentReplacements != nil {
+		e.config.RecordContentReplacements(records)
+	}
+	return out, err
+}
+
+func (e *Engine) autoCompactBeforeRequest(
+	ctx context.Context,
+	ch chan<- LoopEvent,
+	resolvedModel string,
+	messages []model.Message,
+	system model.SystemPrompt,
+	tools []model.ToolDef,
+) (bool, []model.Message) {
+	if e.compactor == nil || e.autoTracker == nil {
+		return false, nil
+	}
+	tokenCount := e.requestTokenCount(ctx, resolvedModel, messages, system, tools)
+	if !e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
+		return false, nil
+	}
+
+	ch <- CompactionStartedEvent{}
+	compResult, compErr := e.compactor.Compact(ctx, messages, system, "")
+	if compErr != nil {
+		if ctx.Err() != nil {
+			return false, nil
+		}
+		tripped := e.autoTracker.RecordFailure()
+		ch <- CompactionFailedEvent{
+			Attempt:  e.autoTracker.FailureCount(),
+			MaxRetry: compact.MaxConsecutiveFailures,
+			ErrorMsg: compErr.Error(),
+		}
+		if tripped {
+			e.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warn",
+				Component:    "compact",
+				ErrorType:    "circuit_breaker_tripped",
+				ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
+			})
+			ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
+		}
+		return false, nil
+	}
+
+	e.autoTracker.RecordSuccess()
+	e.store.Update(func(s *app.AppState) {
+		s.Conversation.Messages = compResult.ReplacementMessages
+		s.Conversation.UpdatedAt = time.Now()
+	})
+	ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
+	return true, compResult.ReplacementMessages
+}
+
+func (e *Engine) isAtBlockingLimit(ctx context.Context, resolvedModel string, messages []model.Message, system model.SystemPrompt, tools []model.ToolDef) bool {
+	if compact.EffectiveWindow(e.windowConfig) == 0 {
+		return false
+	}
+	tokenCount := e.requestTokenCount(ctx, resolvedModel, messages, system, tools)
+	blockingLimit := compact.EffectiveWindow(e.windowConfig) - 3_000
+	if blockingLimit < 0 {
+		blockingLimit = 0
+	}
+	return tokenCount >= blockingLimit
+}
+
+func (e *Engine) requestTokenCount(ctx context.Context, resolvedModel string, messages []model.Message, system model.SystemPrompt, tools []model.ToolDef) int {
+	if counter, ok := e.provider.(provider.TokenCounter); ok {
+		countParams := provider.RequestParams{
+			Model:    resolvedModel,
+			Messages: messages,
+			System:   system,
+			Tools:    tools,
+		}
+		if precise, err := counter.CountTokens(ctx, countParams); err == nil {
+			return precise
+		}
+	}
+	return compact.EstimateConversationTokens(messages)
+}
+
+func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemPrompt {
+	if e.config.MCPServerStatuses == nil {
+		return system
+	}
+	statuses := e.config.MCPServerStatuses()
+	if len(statuses) == 0 {
+		return system
+	}
+
+	var b strings.Builder
+	b.WriteString("# MCP Servers\n\n")
+	b.WriteString("mcp_servers:\n")
+	for _, server := range statuses {
+		if server.Name == "" {
+			continue
+		}
+		status := server.Status
+		if status == "" {
+			status = "disconnected"
+		}
+		fmt.Fprintf(&b, "- name: %s\n  status: %s\n", server.Name, status)
+	}
+	b.WriteString("\nUse this mcp_servers metadata as the authoritative MCP server configuration and connection status. When asked which MCP servers are configured, active, inactive, connected, failed, pending, or disabled, answer directly from mcp_servers without calling tools. ListMcpResourcesTool lists resources only and must not be used to infer MCP server status.")
+
+	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
+	blocks = append(blocks, system.Blocks...)
+	blocks = append(blocks, model.SystemBlock{Text: b.String(), Cacheable: false})
+	return model.SystemPrompt{Blocks: blocks}
+}
+
 // progressSnapshot wraps a StateSnapshot with a ProgressReporter for tool progress.
 // Implements tool.ProgressSource via optional interface pattern (ADR-042).
 type progressSnapshot struct {
@@ -472,6 +560,13 @@ func (p *progressSnapshot) ReadFileState() *tool.FileStateCache {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: p.fileState")
 	return p.fileState
+}
+
+func (p *progressSnapshot) SessionID() string {
+	if id, ok := tool.SessionIDFrom(p.StateSnapshot); ok {
+		return id
+	}
+	return ""
 }
 
 // progressToLoopEvent converts a tool.ProgressEvent to a typed LoopEvent.

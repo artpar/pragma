@@ -37,6 +37,7 @@ import (
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
 	Cfg           config.Config
+	Creds         config.Credentials
 	Bus           *observe.EventBus
 	StderrLogger  *observe.Logger
 	Prov          provider.Provider
@@ -243,6 +244,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var conv model.Conversation
 	var resumedCost float64
 	var resumedTokens model.TokenUsage
+	var resumedContentReplacements []model.ContentReplacementRecord
 	var sessionWriter *session.Writer
 	var resumedTurnCount int
 	var sessionStart time.Time
@@ -309,6 +311,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 		resumedCost = sess.CostUSD
 		resumedTokens = sess.TokenUsage
+		resumedContentReplacements = sess.ContentReplacements
 		resumedTurnCount = sess.TurnCount
 		sessionStart = sess.Conversation.CreatedAt
 		if cfg.Verbose {
@@ -365,10 +368,16 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	}
 	costTracker := model.NewCostTracker(resumedCost)
 	engineCfg := query.EngineConfig{
-		Model:       cfg.Model,
-		MaxTokens:   cfg.MaxTokens,
-		MaxTurns:    cfg.MaxTurns,
-		Temperature: cfg.Temperature,
+		Model:                     cfg.Model,
+		MaxTokens:                 cfg.MaxTokens,
+		MaxTurns:                  cfg.MaxTurns,
+		Temperature:               cfg.Temperature,
+		ContentReplacementRecords: resumedContentReplacements,
+	}
+	engineCfg.RecordContentReplacements = func(records []model.ContentReplacementRecord) {
+		if sessionWriter != nil {
+			_ = sessionWriter.WriteContentReplacement(records)
+		}
 	}
 	if cfg.Thinking != nil && cfg.Thinking.Enabled {
 		observe.GlobalTrace("if: cfg.Thinking != nil && cfg.Thinking.Enabled")
@@ -431,6 +440,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	return &Deps{
 		Cfg:           cfg,
+		Creds:         creds,
 		Bus:           bus,
 		StderrLogger:  logger,
 		Prov:          prov,

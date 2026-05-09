@@ -281,12 +281,7 @@ func RunInteractive(cmd *cobra.Command) error {
 				d.TokenMonitor.SetBudget(cw)
 			}
 		},
-		McpStatus: func() map[string]string {
-			if d.McpManager != nil {
-				return d.McpManager.ServerStatus()
-			}
-			return nil
-		},
+		McpStatus:    func() []slash.McpServerStatus { return mcpStatusesForSlash(d.McpManager) },
 		SessionStore: sessStore,
 		SkillLoader:  skillLoader,
 	}
@@ -829,4 +824,22 @@ func connectedMcpNames(mgr *mcp.Manager) []string {
 	sort.Strings(names)
 	observe.GlobalTrace("return: names")
 	return names
+}
+
+func mcpStatusesForSlash(mgr *mcp.Manager) []slash.McpServerStatus {
+	if mgr == nil {
+		return nil
+	}
+	statuses := mgr.ServerStatuses()
+	out := make([]slash.McpServerStatus, 0, len(statuses))
+	for _, st := range statuses {
+		out = append(out, slash.McpServerStatus{
+			Name:      st.Name,
+			Status:    st.Status,
+			Error:     st.Error,
+			ToolCount: st.ToolCount,
+			Transport: st.Transport,
+		})
+	}
+	return out
 }

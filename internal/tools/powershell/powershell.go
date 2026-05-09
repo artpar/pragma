@@ -130,7 +130,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true}")
-	return tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true}
+	return tool.ToolFlags{ReadOnly: false, Concurrent: false, Destructive: true, MaxResultSizeChars: 30_000}
 }
 
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {

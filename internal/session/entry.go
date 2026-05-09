@@ -11,9 +11,10 @@ import (
 type EntryKind string
 
 const (
-	EntryHeader   EntryKind = "header"
-	EntryMessage  EntryKind = "message"
-	EntryMetadata EntryKind = "metadata"
+	EntryHeader             EntryKind = "header"
+	EntryMessage            EntryKind = "message"
+	EntryMetadata           EntryKind = "metadata"
+	EntryContentReplacement EntryKind = "content_replacement"
 )
 
 // Entry is a single JSONL line in a session file. Discriminated by Kind.
@@ -42,6 +43,10 @@ type MetadataData struct {
 	TokenUsage model.TokenUsage `json:"token_usage"`
 	UpdatedAt  time.Time        `json:"updated_at"`
 	Summary    string           `json:"summary,omitempty"`
+}
+
+type ContentReplacementData struct {
+	Records []model.ContentReplacementRecord `json:"records"`
 }
 
 // MarshalEntry creates a JSONL-ready Entry from typed data.

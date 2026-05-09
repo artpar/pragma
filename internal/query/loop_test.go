@@ -60,8 +60,8 @@ func (tp *testProvider) Complete(_ context.Context, params provider.RequestParam
 
 func (tp *testProvider) SupportsFeature(_ provider.Feature) bool { return true }
 
-func (tp *testProvider) Pricing(_ string) (model.Pricing, bool)    { return tp.pricing, true }
-func (tp *testProvider) ContextWindow(_ string) (int, bool)        { return 200_000, true }
+func (tp *testProvider) Pricing(_ string) (model.Pricing, bool) { return tp.pricing, true }
+func (tp *testProvider) ContextWindow(_ string) (int, bool)     { return 200_000, true }
 
 // errorProvider returns an error from Stream().
 type errorProvider struct {
@@ -188,6 +188,47 @@ func TestRun_SimpleTextResponse(t *testing.T) {
 	}
 	if !gotComplete {
 		t.Error("expected TurnCompleteEvent")
+	}
+}
+
+func TestRun_IncludesMCPServerStatusInSystemPrompt(t *testing.T) {
+	prov := &testProvider{
+		turns:   [][]provider.StreamChunk{textChunks("ok", model.StopEndTurn)},
+		pricing: model.Pricing{InputPerMToken: 3, OutputPerMToken: 15},
+	}
+	engine, _ := newTestEngine(prov)
+	engine.config.MCPServerStatuses = func() []MCPServerStatus {
+		return []MCPServerStatus{
+			{Name: "chrome-devtools", Status: "connected"},
+			{Name: "missing", Status: "failed"},
+		}
+	}
+
+	events := drain(engine.Run(context.Background(), "Hi"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+
+	var combined strings.Builder
+	for _, block := range prov.lastParams.System.Blocks {
+		combined.WriteString(block.Text)
+		combined.WriteString("\n")
+	}
+	got := combined.String()
+	for _, want := range []string{
+		"mcp_servers:",
+		"name: chrome-devtools",
+		"status: connected",
+		"name: missing",
+		"status: failed",
+		"answer directly from mcp_servers without calling tools",
+		"ListMcpResourcesTool lists resources only",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, got)
+		}
 	}
 }
 
@@ -830,10 +871,8 @@ func TestRun_AutoCompactionCircuitBreaker(t *testing.T) {
 
 	// Build 3 main turns + 3 compaction turns (each returns empty → triggers ErrEmptySummary)
 	var turns [][]provider.StreamChunk
-	for i := 0; i < 3; i++ {
-		// Main turn response (tool_use to keep looping)
-		turns = append(turns, textChunks("Response "+string(rune('A'+i)), model.StopEndTurn))
-		// Compaction turn — empty text triggers ErrEmptySummary
+	for range 3 {
+		// Preflight compaction turn — empty text triggers ErrEmptySummary
 		turns = append(turns, []provider.StreamChunk{
 			{TextDelta: ""},
 			{Done: &provider.StreamDone{StopReason: model.StopEndTurn, Usage: model.TokenUsage{InputTokens: 10, OutputTokens: 5}}},

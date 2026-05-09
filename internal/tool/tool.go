@@ -15,9 +15,23 @@ type StateSnapshot interface {
 
 // ToolFlags describe tool behavior for orchestration decisions.
 type ToolFlags struct {
-	ReadOnly    bool
-	Concurrent  bool
-	Destructive bool
+	ReadOnly           bool
+	Concurrent         bool
+	Destructive        bool
+	MaxResultSizeChars int
+}
+
+type SessionIDProvider interface {
+	SessionID() string
+}
+
+func SessionIDFrom(state StateSnapshot) (string, bool) {
+	provider, ok := state.(SessionIDProvider)
+	if !ok {
+		return "", false
+	}
+	id := provider.SessionID()
+	return id, id != ""
 }
 
 // InvokeResult holds the output from a tool invocation.

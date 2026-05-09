@@ -217,6 +217,7 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 			Cwd:          d.Cwd,
 			SessionStore: ss,
 			SkillLoader:  sl,
+			McpStatus:    func() []slash.McpServerStatus { return mcpStatusesForSlash(d.McpManager) },
 		}
 		result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
 		if err != nil {

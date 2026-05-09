@@ -16,7 +16,7 @@ type fakeDescriptor struct {
 	desc string
 }
 
-func (f *fakeDescriptor) Name() string                { return f.name }
+func (f *fakeDescriptor) Name() string                 { return f.name }
 func (f *fakeDescriptor) Description() string          { return f.desc }
 func (f *fakeDescriptor) InputSchema() json.RawMessage { return json.RawMessage(`{}`) }
 func (f *fakeDescriptor) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
@@ -167,6 +167,34 @@ func TestToolSearch_MCPPrefixMode(t *testing.T) {
 	}
 	if len(out.Matches) != 2 {
 		t.Fatalf("expected 2 MCP matches, got %d: %v", len(out.Matches), out.Matches)
+	}
+}
+
+func TestToolSearch_IncludesPendingMCPServersWhenNoMatch(t *testing.T) {
+	reg := setupRegistry(t)
+	tl := &Tool{
+		Registry: reg,
+		PendingMCPServers: func() []string {
+			return []string{"chrome-devtools"}
+		},
+	}
+
+	result, err := tl.Invoke(context.Background(), json.RawMessage(`{"query":"nope"}`), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var out struct {
+		Matches           []string `json:"matches"`
+		PendingMCPServers []string `json:"pending_mcp_servers"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &out); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(out.Matches) != 0 {
+		t.Fatalf("expected no matches, got %v", out.Matches)
+	}
+	if len(out.PendingMCPServers) != 1 || out.PendingMCPServers[0] != "chrome-devtools" {
+		t.Fatalf("pending MCP servers = %v, want [chrome-devtools]", out.PendingMCPServers)
 	}
 }
 

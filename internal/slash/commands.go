@@ -3,7 +3,6 @@ package slash
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -357,28 +356,32 @@ func handleMcp(_ context.Context, _ string, deps Deps) (Result, error) {
 		return Result{DisplayText: "No MCP servers configured."}, nil
 	}
 
-	var names []string
-	for name := range status {
-		observe.GlobalTrace("range status")
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
 	var b strings.Builder
 	b.WriteString("MCP Servers\n")
 	b.WriteString(strings.Repeat("─", 40) + "\n\n")
 
 	connected := 0
-	for _, name := range names {
-		observe.GlobalTrace("range names")
-		st := status[name]
+	for _, server := range status {
+		observe.GlobalTrace("range status")
+		st := server.Status
+		if st == "" {
+			observe.GlobalTrace("if: st == \"\"")
+			st = "disconnected"
+		}
 		if st == "connected" {
 			observe.GlobalTrace("if: st == \"connected\"")
 			connected++
-			fmt.Fprintf(&b, "  ● %s — connected\n", name)
+			if server.ToolCount > 0 {
+				fmt.Fprintf(&b, "  ● %s — connected (%d tools)\n", server.Name, server.ToolCount)
+			} else {
+				fmt.Fprintf(&b, "  ● %s — connected\n", server.Name)
+			}
 		} else {
 			observe.GlobalTrace("else: st == \"connected\"")
-			fmt.Fprintf(&b, "  ○ %s — %s\n", name, st)
+			fmt.Fprintf(&b, "  ○ %s — %s\n", server.Name, st)
+			if server.Error != "" {
+				fmt.Fprintf(&b, "      %s\n", server.Error)
+			}
 		}
 	}
 
