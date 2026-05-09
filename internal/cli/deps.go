@@ -24,6 +24,7 @@ import (
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/provider/anthropic"
 	googleprov "github.com/artpar/pragma/internal/provider/google"
+	googlevertexprov "github.com/artpar/pragma/internal/provider/googlevertex"
 	groqprov "github.com/artpar/pragma/internal/provider/groq"
 	lilacprov "github.com/artpar/pragma/internal/provider/lilac"
 	oaiprov "github.com/artpar/pragma/internal/provider/openai"
@@ -102,15 +103,17 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		cfg.MaxTokens = 16384
 	}
 
-	if cfg.APIKey == "" {
+	if cfg.Provider == "google-vertex" {
+		observe.GlobalTrace("if: cfg.Provider == \"google-vertex\" (skip API key check)")
+	} else if cfg.APIKey == "" {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try credentials.yml)")
 		cfg.APIKey = creds.CredentialFor(cfg.Provider).APIKey
 	}
-	if cfg.APIKey == "" {
+	if cfg.Provider != "google-vertex" && cfg.APIKey == "" {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try env var)")
 		cfg.APIKey = os.Getenv(envVarForProvider(cfg.Provider))
 	}
-	if cfg.APIKey == "" {
+	if (cfg.Provider != "google-vertex" && cfg.APIKey == "") {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try provider picker)")
 		selected, selErr := pickAvailableProvider(cfg.Provider, creds)
 		if selErr != nil {
@@ -437,6 +440,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 	}
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t\tprov,\n\tChecker:...")
+	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tCreds:\t\tcreds,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t...")
 
 	return &Deps{
 		Cfg:           cfg,
@@ -550,6 +554,9 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) (provider.Provider
 			opts = append(opts, googleprov.WithBaseURL(baseURL))
 		}
 		return googleprov.New(cfg.APIKey, bus, opts...)
+	case "google-vertex":
+		observe.GlobalTrace("case: \"google-vertex\"")
+		return googlevertexprov.New(cfg.VertexProjectID, cfg.VertexLocation, cfg.VertexEndpointID, cfg.VertexDomain, bus)
 	case "lilac":
 		observe.GlobalTrace("case: \"lilac\"")
 		var opts []lilacprov.Option
@@ -674,7 +681,7 @@ type selectedProvider struct {
 }
 
 // knownProviders is the list of all supported provider names.
-var knownProviders = []string{"anthropic", "openai", "google", "groq", "lilac"}
+var knownProviders = []string{"anthropic", "openai", "google", "google-vertex", "groq", "lilac"}
 
 // pickAvailableProvider collects providers that have an API key (from credentials
 // or env vars) and either auto-selects or prompts the user to choose.

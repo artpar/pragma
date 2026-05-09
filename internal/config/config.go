@@ -19,6 +19,10 @@ type Config struct {
 	Model          string          `json:"model,omitempty"`
 	Provider       string          `json:"provider,omitempty"`
 	APIKey         string          `json:"api_key,omitempty"`
+	VertexProjectID string          `json:"vertex_project_id,omitempty"`
+	VertexLocation  string          `json:"vertex_location,omitempty"`
+	VertexEndpointID string         `json:"vertex_endpoint_id,omitempty"`
+	VertexDomain    string          `json:"vertex_domain,omitempty"`
 	MaxTokens      int             `json:"max_tokens,omitempty"`
 	Temperature    *float64        `json:"temperature,omitempty"`
 	Thinking       *ThinkingConfig `json:"thinking,omitempty"`
