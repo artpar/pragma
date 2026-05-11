@@ -14,24 +14,34 @@ const (
 )
 
 type HandoffState struct {
-	SchemaVersion                  string       `json:"schema_version"`
-	Goal                           string       `json:"goal"`
-	Invariants                     []string     `json:"invariants,omitempty"`
-	CurrentFocus                   string       `json:"current_focus,omitempty"`
-	Completed                      []string     `json:"completed,omitempty"`
-	LatestToolResultInterpretation string       `json:"latest_tool_result_interpretation,omitempty"`
-	NextAction                     string       `json:"next_action,omitempty"`
-	OpenQuestions                  []string     `json:"open_questions,omitempty"`
-	DoNot                          []string     `json:"do_not,omitempty"`
-	Evidence                       []string     `json:"evidence,omitempty"`
-	Decisions                      []string     `json:"decisions,omitempty"`
-	Files                          HandoffFiles `json:"files,omitempty"`
-	Risks                          []string     `json:"risks,omitempty"`
+	SchemaVersion                  string         `json:"schema_version"`
+	Goal                           string         `json:"goal"`
+	Invariants                     []string       `json:"invariants,omitempty"`
+	CurrentFocus                   string         `json:"current_focus,omitempty"`
+	Todos                          []HandoffTodo  `json:"todos,omitempty"`
+	Completed                      []string       `json:"completed,omitempty"`
+	LatestToolResultInterpretation string         `json:"latest_tool_result_interpretation,omitempty"`
+	NextAction                     string         `json:"next_action,omitempty"`
+	RecentActions                  []string       `json:"recent_actions,omitempty"`
+	OpenQuestions                  []string       `json:"open_questions,omitempty"`
+	DoNot                          []string       `json:"do_not,omitempty"`
+	Evidence                       []string       `json:"evidence,omitempty"`
+	Decisions                      []string       `json:"decisions,omitempty"`
+	Files                          HandoffFiles   `json:"files,omitempty"`
+	Risks                          []string       `json:"risks,omitempty"`
+	Extra                          map[string]any `json:"-"`
+}
+
+type HandoffTodo struct {
+	ID     string `json:"id,omitempty"`
+	Task   string `json:"task"`
+	Status string `json:"status"`
 }
 
 type HandoffFiles struct {
-	Read    []string `json:"read,omitempty"`
-	Changed []string `json:"changed,omitempty"`
+	Read    []string       `json:"read,omitempty"`
+	Changed []string       `json:"changed,omitempty"`
+	Extra   map[string]any `json:"-"`
 }
 
 type HandoffPatch struct {
@@ -51,9 +61,13 @@ func NewHandoffState(goal string) HandoffState {
 		Invariants: []string{
 			"Use current_handoff_state plus only the latest assistant tool_call blocks and matching tool_result blocks.",
 			"Every tool-use response must call PatchHandoffState first, before any real tool.",
+			"Maintain todos for long-running tasks; use statuses pending, in_progress, completed, or blocked.",
+			"Interpret each tool_result into durable state and choose a non-repeating next_action.",
 			"Preserve user constraints and do_not items unless the user explicitly changes them.",
 		},
-		CurrentFocus: "Start from the user's latest task.",
+		CurrentFocus:                   "Start from the user's latest task.",
+		LatestToolResultInterpretation: "No tool results interpreted yet.",
+		NextAction:                     "Choose the first useful tool call.",
 		OpenQuestions: []string{
 			"What is the first useful tool result interpretation?",
 		},
@@ -67,15 +81,116 @@ func (s HandoffState) IsZero() bool {
 func (s HandoffState) DeepCopy() HandoffState {
 	cp := s
 	cp.Invariants = copyStrings(s.Invariants)
+	cp.Todos = copyHandoffTodos(s.Todos)
 	cp.Completed = copyStrings(s.Completed)
+	cp.RecentActions = copyStrings(s.RecentActions)
 	cp.OpenQuestions = copyStrings(s.OpenQuestions)
 	cp.DoNot = copyStrings(s.DoNot)
 	cp.Evidence = copyStrings(s.Evidence)
 	cp.Decisions = copyStrings(s.Decisions)
 	cp.Files.Read = copyStrings(s.Files.Read)
 	cp.Files.Changed = copyStrings(s.Files.Changed)
+	cp.Files.Extra = copyJSONMap(s.Files.Extra)
 	cp.Risks = copyStrings(s.Risks)
+	cp.Extra = copyJSONMap(s.Extra)
 	return cp
+}
+
+func (s HandoffState) MarshalJSON() ([]byte, error) {
+	type alias HandoffState
+	base, err := json.Marshal(alias(s))
+	if err != nil {
+		return nil, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(base, &doc); err != nil {
+		return nil, err
+	}
+	delete(doc, "Extra")
+	for k, v := range s.Extra {
+		doc[k] = v
+	}
+	return json.Marshal(doc)
+}
+
+func (s *HandoffState) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var out HandoffState
+	extra := map[string]any{}
+	unmarshalKnown(raw, extra, "schema_version", &out.SchemaVersion)
+	unmarshalKnown(raw, extra, "goal", &out.Goal)
+	unmarshalKnown(raw, extra, "invariants", &out.Invariants)
+	unmarshalKnown(raw, extra, "current_focus", &out.CurrentFocus)
+	unmarshalKnown(raw, extra, "todos", &out.Todos)
+	unmarshalKnown(raw, extra, "completed", &out.Completed)
+	unmarshalKnown(raw, extra, "latest_tool_result_interpretation", &out.LatestToolResultInterpretation)
+	unmarshalKnown(raw, extra, "next_action", &out.NextAction)
+	unmarshalKnown(raw, extra, "recent_actions", &out.RecentActions)
+	unmarshalKnown(raw, extra, "open_questions", &out.OpenQuestions)
+	unmarshalKnown(raw, extra, "do_not", &out.DoNot)
+	unmarshalKnown(raw, extra, "evidence", &out.Evidence)
+	unmarshalKnown(raw, extra, "decisions", &out.Decisions)
+	unmarshalKnown(raw, extra, "files", &out.Files)
+	unmarshalKnown(raw, extra, "risks", &out.Risks)
+	for k, v := range raw {
+		if _, reserved := handoffStateReservedFields[k]; reserved {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(v, &decoded); err == nil {
+			extra[k] = decoded
+		}
+	}
+	if len(extra) > 0 {
+		out.Extra = extra
+	}
+	*s = out
+	return nil
+}
+
+func (f HandoffFiles) MarshalJSON() ([]byte, error) {
+	type alias HandoffFiles
+	base, err := json.Marshal(alias(f))
+	if err != nil {
+		return nil, err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(base, &doc); err != nil {
+		return nil, err
+	}
+	delete(doc, "Extra")
+	for k, v := range f.Extra {
+		doc[k] = v
+	}
+	return json.Marshal(doc)
+}
+
+func (f *HandoffFiles) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var out HandoffFiles
+	extra := map[string]any{}
+	unmarshalKnown(raw, extra, "read", &out.Read)
+	unmarshalKnown(raw, extra, "changed", &out.Changed)
+	for k, v := range raw {
+		if _, reserved := handoffFilesReservedFields[k]; reserved {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(v, &decoded); err == nil {
+			extra[k] = decoded
+		}
+	}
+	if len(extra) > 0 {
+		out.Extra = extra
+	}
+	*f = out
+	return nil
 }
 
 func (s HandoffState) PrettyJSON() string {
@@ -112,11 +227,10 @@ func ApplyHandoffPatch(state HandoffState, raw json.RawMessage) (HandoffState, e
 	seedHandoffPatchContainers(doc)
 
 	for _, op := range patch.Ops {
-		if err := applyPatchOp(&doc, op); err != nil {
-			return state, err
-		}
+		applyPatchOp(&doc, op)
 	}
 
+	doc = objectDoc(doc)
 	outData, err := json.Marshal(doc)
 	if err != nil {
 		return state, fmt.Errorf("marshal patched handoff state: %w", err)
@@ -138,7 +252,9 @@ func seedHandoffPatchContainers(doc any) {
 	}
 	for _, key := range []string{
 		"invariants",
+		"todos",
 		"completed",
+		"recent_actions",
 		"open_questions",
 		"do_not",
 		"evidence",
@@ -161,66 +277,28 @@ func seedHandoffPatchContainers(doc any) {
 	}
 }
 
-func applyPatchOp(doc *any, op HandoffPatchOp) error {
-	if op.Op != "add" && op.Op != "replace" && op.Op != "remove" {
-		return fmt.Errorf("unsupported handoff patch op %q", op.Op)
-	}
-	if op.Path == "" || op.Path[0] != '/' {
-		return fmt.Errorf("invalid handoff patch path %q", op.Path)
+func applyPatchOp(doc *any, op HandoffPatchOp) {
+	path := parsePatchPath(op.Path)
+	if isRemoveOp(op.Op) {
+		removePatchPath(doc, path)
+		return
 	}
 	var value any
-	if op.Op != "remove" {
-		if len(op.Value) == 0 {
-			return fmt.Errorf("handoff patch op %q at %q requires value", op.Op, op.Path)
-		}
+	if len(op.Value) > 0 {
 		if err := json.Unmarshal(op.Value, &value); err != nil {
-			return fmt.Errorf("parse handoff patch value at %q: %w", op.Path, err)
+			value = string(op.Value)
 		}
 	}
-
-	parts := parseJSONPointer(op.Path)
-	parent, key, err := patchParent(*doc, parts)
-	if err != nil {
-		return err
-	}
-	switch p := parent.(type) {
-	case map[string]any:
-		if op.Op == "remove" {
-			delete(p, key)
-			return nil
-		}
-		if op.Op == "replace" {
-			if _, ok := p[key]; !ok {
-				return fmt.Errorf("cannot replace missing handoff path %q", op.Path)
-			}
-		}
-		p[key] = value
-		return nil
-	case []any:
-		idx, err := patchArrayIndex(key, len(p), op.Op == "add")
-		if err != nil {
-			return fmt.Errorf("invalid array handoff path %q: %w", op.Path, err)
-		}
-		if op.Op == "remove" {
-			p = append(p[:idx], p[idx+1:]...)
-		} else if op.Op == "add" {
-			if idx == len(p) {
-				p = append(p, value)
-			} else {
-				p = append(p, nil)
-				copy(p[idx+1:], p[idx:])
-				p[idx] = value
-			}
-		} else {
-			p[idx] = value
-		}
-		return setParentArray(doc, parts[:len(parts)-1], p)
-	default:
-		return fmt.Errorf("handoff patch parent at %q is not object or array", op.Path)
-	}
+	setPatchPath(doc, path, value)
 }
 
-func parseJSONPointer(path string) []string {
+func parsePatchPath(path string) []string {
+	if path == "" {
+		return nil
+	}
+	if path[0] != '/' {
+		return []string{path}
+	}
 	raw := strings.Split(path[1:], "/")
 	out := make([]string, len(raw))
 	for i, p := range raw {
@@ -231,72 +309,135 @@ func parseJSONPointer(path string) []string {
 	return out
 }
 
-func patchParent(doc any, parts []string) (any, string, error) {
-	if len(parts) == 0 {
-		return nil, "", fmt.Errorf("handoff patch cannot target document root")
+func isRemoveOp(op string) bool {
+	switch strings.ToLower(op) {
+	case "remove", "delete", "unset":
+		return true
+	default:
+		return false
 	}
-	cur := doc
-	for _, part := range parts[:len(parts)-1] {
-		switch c := cur.(type) {
-		case map[string]any:
-			next, ok := c[part]
-			if !ok {
-				return nil, "", fmt.Errorf("missing handoff patch path component %q", part)
-			}
-			cur = next
-		case []any:
-			idx, err := patchArrayIndex(part, len(c), false)
-			if err != nil {
-				return nil, "", err
-			}
-			cur = c[idx]
-		default:
-			return nil, "", fmt.Errorf("handoff patch path component %q is not traversable", part)
-		}
-	}
-	return cur, parts[len(parts)-1], nil
 }
 
-func patchArrayIndex(part string, length int, allowAppend bool) (int, error) {
-	if part == "-" {
-		if allowAppend {
-			return length, nil
+func objectDoc(doc any) any {
+	if _, ok := doc.(map[string]any); ok {
+		return doc
+	}
+	return map[string]any{"value": doc}
+}
+
+func setPatchPath(target *any, parts []string, value any) {
+	if len(parts) == 0 {
+		*target = value
+		return
+	}
+	first := parts[0]
+	switch cur := (*target).(type) {
+	case map[string]any:
+		if len(parts) == 1 {
+			cur[first] = value
+			return
 		}
-		return 0, fmt.Errorf("append marker is only valid for add")
+		next, ok := cur[first]
+		if !ok || !isPatchContainer(next) {
+			next = newPatchContainer(parts[1])
+		}
+		setPatchPath(&next, parts[1:], value)
+		cur[first] = next
+	case []any:
+		idx := flexibleArrayIndex(first, len(cur))
+		for len(cur) <= idx {
+			cur = append(cur, nil)
+		}
+		if len(parts) == 1 {
+			cur[idx] = value
+			*target = cur
+			return
+		}
+		next := cur[idx]
+		if !isPatchContainer(next) {
+			next = newPatchContainer(parts[1])
+		}
+		setPatchPath(&next, parts[1:], value)
+		cur[idx] = next
+		*target = cur
+	default:
+		next := newPatchContainer(first)
+		*target = next
+		setPatchPath(target, parts, value)
+	}
+}
+
+func removePatchPath(target *any, parts []string) {
+	if len(parts) == 0 {
+		*target = map[string]any{}
+		return
+	}
+	first := parts[0]
+	switch cur := (*target).(type) {
+	case map[string]any:
+		if len(parts) == 1 {
+			delete(cur, first)
+			return
+		}
+		next, ok := cur[first]
+		if !ok {
+			return
+		}
+		removePatchPath(&next, parts[1:])
+		cur[first] = next
+	case []any:
+		idx, ok := existingArrayIndex(first, len(cur))
+		if !ok {
+			return
+		}
+		if len(parts) == 1 {
+			cur = append(cur[:idx], cur[idx+1:]...)
+			*target = cur
+			return
+		}
+		next := cur[idx]
+		removePatchPath(&next, parts[1:])
+		cur[idx] = next
+		*target = cur
+	}
+}
+
+func isPatchContainer(v any) bool {
+	switch v.(type) {
+	case map[string]any, []any:
+		return true
+	default:
+		return false
+	}
+}
+
+func newPatchContainer(nextPart string) any {
+	if nextPart == "-" {
+		return []any{}
+	}
+	if _, err := strconv.Atoi(nextPart); err == nil {
+		return []any{}
+	}
+	return map[string]any{}
+}
+
+func flexibleArrayIndex(part string, length int) int {
+	if part == "-" {
+		return length
 	}
 	idx, err := strconv.Atoi(part)
-	if err != nil {
-		return 0, err
+	if err != nil || idx < 0 {
+		return length
 	}
-	if idx < 0 || idx >= length {
-		return 0, fmt.Errorf("index %d out of range", idx)
-	}
-	return idx, nil
+	return idx
 }
 
-func setParentArray(doc *any, parts []string, value []any) error {
-	if len(parts) == 0 {
-		*doc = value
-		return nil
+func existingArrayIndex(part string, length int) (int, bool) {
+	idx, err := strconv.Atoi(part)
+	if err != nil || idx < 0 || idx >= length {
+		return 0, false
 	}
-	parent, key, err := patchParent(*doc, parts)
-	if err != nil {
-		return err
-	}
-	switch p := parent.(type) {
-	case map[string]any:
-		p[key] = value
-		return nil
-	case []any:
-		idx, err := patchArrayIndex(key, len(p), false)
-		if err != nil {
-			return err
-		}
-		p[idx] = value
-		return setParentArray(doc, parts[:len(parts)-1], p)
-	default:
-		return fmt.Errorf("handoff patch parent array path is not writable")
-	}
+	return idx, true
 }
 
 func copyStrings(in []string) []string {
@@ -306,4 +447,72 @@ func copyStrings(in []string) []string {
 	out := make([]string, len(in))
 	copy(out, in)
 	return out
+}
+
+func copyHandoffTodos(in []HandoffTodo) []HandoffTodo {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]HandoffTodo, len(in))
+	copy(out, in)
+	return out
+}
+
+func copyJSONMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		out := make(map[string]any, len(in))
+		for k, v := range in {
+			out[k] = v
+		}
+		return out
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		out = make(map[string]any, len(in))
+		for k, v := range in {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func unmarshalKnown(raw map[string]json.RawMessage, extra map[string]any, key string, target any) {
+	data, ok := raw[key]
+	if !ok {
+		return
+	}
+	if err := json.Unmarshal(data, target); err == nil {
+		return
+	}
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err == nil {
+		extra[key] = decoded
+	}
+}
+
+var handoffStateReservedFields = map[string]struct{}{
+	"schema_version":                    {},
+	"goal":                              {},
+	"invariants":                        {},
+	"current_focus":                     {},
+	"todos":                             {},
+	"completed":                         {},
+	"latest_tool_result_interpretation": {},
+	"next_action":                       {},
+	"recent_actions":                    {},
+	"open_questions":                    {},
+	"do_not":                            {},
+	"evidence":                          {},
+	"decisions":                         {},
+	"files":                             {},
+	"risks":                             {},
+}
+
+var handoffFilesReservedFields = map[string]struct{}{
+	"read":    {},
+	"changed": {},
 }

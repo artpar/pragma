@@ -561,7 +561,7 @@ func TestRun_StateHandoffPatchToolUpdatesStateAndPreservesResults(t *testing.T) 
 	}
 }
 
-func TestMessagesForRequest_StateHandoffPrefersLatestUserMessage(t *testing.T) {
+func TestMessagesForRequest_StateHandoffIncludesLatestToolExchangeBeforeNewUserMessage(t *testing.T) {
 	engine, _ := newTestEngine(&testProvider{})
 	engine.config.ContextMode = model.ContextModeStateHandoff
 
@@ -573,6 +573,30 @@ func TestMessagesForRequest_StateHandoffPrefersLatestUserMessage(t *testing.T) {
 	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{
 		model.ToolResultPart{ToolCallID: "tc-1", Content: "old result"},
 	}})
+	conv.Append(model.Message{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: "old answer"}}})
+	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "new instruction"}}})
+
+	got := engine.messagesForRequest(conv)
+	if len(got) != 3 {
+		t.Fatalf("messages = %d, want latest tool exchange plus latest user message", len(got))
+	}
+	if got[0].Role != model.RoleAssistant || !messageHasToolCall(got[0]) {
+		t.Fatalf("message[0] = %#v, want latest assistant tool call", got[0])
+	}
+	if got[1].Role != model.RoleUser || !messageHasToolResult(got[1]) {
+		t.Fatalf("message[1] = %#v, want latest user tool result", got[1])
+	}
+	if got[2].Role != model.RoleUser || messageText(got[2]) != "new instruction" {
+		t.Fatalf("message[2] = %#v, want latest user instruction", got[2])
+	}
+}
+
+func TestMessagesForRequest_StateHandoffUsesLatestUserMessageWithoutToolExchange(t *testing.T) {
+	engine, _ := newTestEngine(&testProvider{})
+	engine.config.ContextMode = model.ContextModeStateHandoff
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
+	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "old user"}}})
 	conv.Append(model.Message{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: "old answer"}}})
 	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "new instruction"}}})
 

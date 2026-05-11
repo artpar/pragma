@@ -102,12 +102,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
 	}
-	if cfg.ContextMode == "" {
-		cfg.ContextMode = model.ContextModeChat
-	}
-	if cfg.HandoffSchema == "" {
-		cfg.HandoffSchema = model.HandoffSchemaV1
-	}
+	applyContextDefaults(&cfg)
 	if cfg.ContextMode != model.ContextModeChat && cfg.ContextMode != model.ContextModeStateHandoff {
 		return nil, fmt.Errorf("invalid context mode %q", cfg.ContextMode)
 	}
@@ -556,6 +551,15 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("permission-mode") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"permission-mode\")")
 		cfg.PermissionMode, _ = cmd.Flags().GetString("permission-mode")
+	}
+}
+
+func applyContextDefaults(cfg *config.Config) {
+	if cfg.ContextMode == "" {
+		cfg.ContextMode = model.ContextModeStateHandoff
+	}
+	if cfg.HandoffSchema == "" {
+		cfg.HandoffSchema = model.HandoffSchemaV1
 	}
 }
 

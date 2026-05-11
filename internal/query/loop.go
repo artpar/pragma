@@ -590,19 +590,29 @@ func (e *Engine) messagesForRequest(conv model.Conversation) []model.Message {
 	}
 	last := api[len(api)-1]
 	if last.Role == model.RoleUser && !messageHasToolResult(last) {
+		if exchange, ok := latestToolExchange(api[:len(api)-1]); ok {
+			return append(exchange, last)
+		}
 		return []model.Message{last}
 	}
+	if exchange, ok := latestToolExchange(api); ok {
+		return exchange
+	}
+	return api
+}
+
+func latestToolExchange(api []model.Message) ([]model.Message, bool) {
 	for i := len(api) - 1; i >= 1; i-- {
 		if api[i].Role != model.RoleUser || !messageHasToolResult(api[i]) {
 			continue
 		}
 		for j := i - 1; j >= 0; j-- {
 			if api[j].Role == model.RoleAssistant && messageHasToolCall(api[j]) {
-				return []model.Message{api[j], api[i]}
+				return []model.Message{api[j], api[i]}, true
 			}
 		}
 	}
-	return api
+	return nil, false
 }
 
 func (e *Engine) systemWithHandoffState(system model.SystemPrompt, state model.HandoffState) model.SystemPrompt {
@@ -618,14 +628,21 @@ You are running in state-handoff context mode. You do not receive older chat his
 Use current_handoff_state plus the latest assistant tool_call blocks and matching tool_result blocks as your continuity source.
 PatchHandoffState is the required continuity mechanism in this mode.
 Every tool-use response MUST call PatchHandoffState as the first tool call before any other tool.
-The PatchHandoffState call must record durable task state: completed work, files read or changed, evidence, risks, current_focus, and next_action as applicable.
+The PatchHandoffState call must record durable task state: todos, recent_actions, completed work, files read or changed, evidence, risks, current_focus, and next_action as applicable.
+After a tool_result, interpret the concrete result into current_handoff_state before choosing the next tool.
+Do not repeat the same real tool call or same search if the latest tool_result already answered it. Advance next_action to the next distinct step.
+If Grep returns matching files, record those files/evidence and Read the most relevant file next instead of Grep again.
 When calling any real tool, call PatchHandoffState and that real tool in the same response, with PatchHandoffState first.
 If no durable task state changed yet, still call PatchHandoffState first with a minimal current_focus, next_action, or latest_tool_result_interpretation update explaining what you are about to do.
+PatchHandoffState accepts arbitrary JSON paths and fields. Use whatever structure best preserves progress for the next turn.
 
 Example patch-first response after reading files:
 PatchHandoffState({"ops":[
   {"op":"replace","path":"/latest_tool_result_interpretation","value":"Read internal/query/loop.go and found the state-handoff prompt builder."},
   {"op":"add","path":"/files/read/-","value":"internal/query/loop.go"},
+  {"op":"add","path":"/recent_actions/-","value":"Read internal/query/loop.go"},
+  {"op":"add","path":"/todos/-","value":{"id":"inspect-query-loop","task":"Inspect query loop state-handoff request construction","status":"completed"}},
+  {"op":"add","path":"/todos/-","value":{"id":"update-prompt","task":"Update the state-handoff protocol text","status":"in_progress"}},
   {"op":"replace","path":"/current_focus","value":"Update the handoff prompt requirements."},
   {"op":"replace","path":"/next_action","value":"Edit the state-handoff protocol text."}
 ]})
@@ -652,11 +669,10 @@ func handoffPatchToolDef() model.ToolDef {
 					"items":{
 						"type":"object",
 						"properties":{
-							"op":{"type":"string","enum":["add","replace","remove"]},
+							"op":{"type":"string"},
 							"path":{"type":"string"},
 							"value":{}
-						},
-						"required":["op","path"]
+						}
 					}
 				}
 			},

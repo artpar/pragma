@@ -141,3 +141,48 @@ func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
 		t.Fatalf("HandoffSchema = %q, want %q", cfg.HandoffSchema, model.HandoffSchemaV1)
 	}
 }
+
+func TestApplyFlagOverridesStateHandoffDoesNotImplyStopAfterToolExec(t *testing.T) {
+	cmd := &cobra.Command{Use: "pragma"}
+	RegisterFlags(cmd)
+	if err := cmd.ParseFlags([]string{
+		"--context-mode", model.ContextModeStateHandoff,
+		"--handoff-schema", model.HandoffSchemaV1,
+	}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	var cfg config.Config
+	ApplyFlagOverrides(cmd, &cfg)
+
+	if cfg.StopAfterToolExec {
+		t.Fatal("StopAfterToolExec = true, want false unless explicitly requested")
+	}
+}
+
+func TestApplyContextDefaultsUsesStateHandoff(t *testing.T) {
+	var cfg config.Config
+	applyContextDefaults(&cfg)
+
+	if cfg.ContextMode != model.ContextModeStateHandoff {
+		t.Fatalf("ContextMode = %q, want %q", cfg.ContextMode, model.ContextModeStateHandoff)
+	}
+	if cfg.HandoffSchema != model.HandoffSchemaV1 {
+		t.Fatalf("HandoffSchema = %q, want %q", cfg.HandoffSchema, model.HandoffSchemaV1)
+	}
+	if cfg.StopAfterToolExec {
+		t.Fatal("StopAfterToolExec = true, want false by default")
+	}
+}
+
+func TestApplyContextDefaultsPreservesExplicitChatMode(t *testing.T) {
+	cfg := config.Config{ContextMode: model.ContextModeChat}
+	applyContextDefaults(&cfg)
+
+	if cfg.ContextMode != model.ContextModeChat {
+		t.Fatalf("ContextMode = %q, want %q", cfg.ContextMode, model.ContextModeChat)
+	}
+	if cfg.StopAfterToolExec {
+		t.Fatal("StopAfterToolExec = true, want false for explicit chat mode")
+	}
+}
