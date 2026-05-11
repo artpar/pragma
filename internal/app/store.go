@@ -22,6 +22,7 @@ func (s *StateStore) Snapshot() AppState {
 	defer s.mu.RUnlock()
 	snap := s.state
 	snap.Conversation = s.state.Conversation.DeepCopy()
+	snap.HandoffState = s.state.HandoffState.DeepCopy()
 	if s.state.Temperature != nil {
 		t := *s.state.Temperature
 		snap.Temperature = &t

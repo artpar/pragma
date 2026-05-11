@@ -102,6 +102,18 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
 	}
+	if cfg.ContextMode == "" {
+		cfg.ContextMode = model.ContextModeChat
+	}
+	if cfg.HandoffSchema == "" {
+		cfg.HandoffSchema = model.HandoffSchemaV1
+	}
+	if cfg.ContextMode != model.ContextModeChat && cfg.ContextMode != model.ContextModeStateHandoff {
+		return nil, fmt.Errorf("invalid context mode %q", cfg.ContextMode)
+	}
+	if cfg.HandoffSchema != model.HandoffSchemaV1 {
+		return nil, fmt.Errorf("invalid handoff schema %q", cfg.HandoffSchema)
+	}
 
 	if cfg.Provider == "google-vertex" {
 		observe.GlobalTrace("if: cfg.Provider == \"google-vertex\" (skip API key check)")
@@ -113,7 +125,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try env var)")
 		cfg.APIKey = os.Getenv(envVarForProvider(cfg.Provider))
 	}
-	if (cfg.Provider != "google-vertex" && cfg.APIKey == "") {
+	if cfg.Provider != "google-vertex" && cfg.APIKey == "" {
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try provider picker)")
 		selected, selErr := pickAvailableProvider(cfg.Provider, creds)
 		if selErr != nil {
@@ -247,6 +259,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var conv model.Conversation
 	var resumedCost float64
 	var resumedTokens model.TokenUsage
+	var resumedHandoffState model.HandoffState
 	var resumedContentReplacements []model.ContentReplacementRecord
 	var sessionWriter *session.Writer
 	var resumedTurnCount int
@@ -314,6 +327,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 		resumedCost = sess.CostUSD
 		resumedTokens = sess.TokenUsage
+		resumedHandoffState = sess.HandoffState
 		resumedContentReplacements = sess.ContentReplacements
 		resumedTurnCount = sess.TurnCount
 		sessionStart = sess.Conversation.CreatedAt
@@ -349,6 +363,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	store := app.NewStateStore(app.AppState{
 		Conversation: conv,
+		HandoffState: resumedHandoffState,
 		CWD:          cwd,
 		Model:        cfg.Model,
 		Provider:     cfg.Provider,
@@ -374,6 +389,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Model:                     cfg.Model,
 		MaxTokens:                 cfg.MaxTokens,
 		MaxTurns:                  cfg.MaxTurns,
+		ContextMode:               cfg.ContextMode,
+		HandoffSchema:             cfg.HandoffSchema,
+		StopAfterToolExec:         cfg.StopAfterToolExec,
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
 	}
@@ -522,6 +540,18 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("max-turns") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"max-turns\")")
 		cfg.MaxTurns, _ = cmd.Flags().GetInt("max-turns")
+	}
+	if cmd.Flags().Changed("context-mode") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"context-mode\")")
+		cfg.ContextMode, _ = cmd.Flags().GetString("context-mode")
+	}
+	if cmd.Flags().Changed("handoff-schema") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"handoff-schema\")")
+		cfg.HandoffSchema, _ = cmd.Flags().GetString("handoff-schema")
+	}
+	if cmd.Flags().Changed("stop-after-tool-exec") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"stop-after-tool-exec\")")
+		cfg.StopAfterToolExec, _ = cmd.Flags().GetBool("stop-after-tool-exec")
 	}
 	if cmd.Flags().Changed("permission-mode") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"permission-mode\")")

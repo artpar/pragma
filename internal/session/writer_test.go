@@ -72,6 +72,12 @@ func TestWriter_RoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	handoff := model.NewHandoffState("finish long task")
+	handoff.CurrentFocus = "read loop"
+	handoff.Completed = []string{"loaded latest tool result"}
+	if err := w.WriteHandoffState(handoff); err != nil {
+		t.Fatal(err)
+	}
 
 	meta := MetadataData{
 		CostUSD:   0.005,
@@ -111,6 +117,15 @@ func TestWriter_RoundTrip(t *testing.T) {
 	}
 	if sess.TurnCount != 2 {
 		t.Errorf("TurnCount = %d, want 2", sess.TurnCount)
+	}
+	if sess.HandoffState.Goal != handoff.Goal {
+		t.Errorf("HandoffState.Goal = %q, want %q", sess.HandoffState.Goal, handoff.Goal)
+	}
+	if sess.HandoffState.CurrentFocus != handoff.CurrentFocus {
+		t.Errorf("HandoffState.CurrentFocus = %q, want %q", sess.HandoffState.CurrentFocus, handoff.CurrentFocus)
+	}
+	if len(sess.HandoffState.Completed) != 1 || sess.HandoffState.Completed[0] != handoff.Completed[0] {
+		t.Errorf("HandoffState.Completed = %#v, want %#v", sess.HandoffState.Completed, handoff.Completed)
 	}
 
 	// Verify ContentPart discriminators survived

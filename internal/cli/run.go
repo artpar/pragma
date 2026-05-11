@@ -124,6 +124,8 @@ func RunBackground(cmd *cobra.Command) error {
 	addStringFlag("allowed-tools")
 	addStringFlag("disallowed-tools")
 	addStringFlag("permission-mode")
+	addStringFlag("context-mode")
+	addStringFlag("handoff-schema")
 	addStringFlag("output-schema")
 	addIntFlag("max-tokens")
 	addIntFlag("max-turns")
@@ -131,6 +133,7 @@ func RunBackground(cmd *cobra.Command) error {
 	addBoolFlag("thinking")
 	addBoolFlag("verbose")
 	addBoolFlag("record")
+	addBoolFlag("stop-after-tool-exec")
 	if cmd.Flags().Changed("temperature") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"temperature\")")
 		v, _ := cmd.Flags().GetFloat64("temperature")
@@ -613,6 +616,7 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 		for i := lastIdx; i < len(snap.Conversation.Messages); i++ {
 			d.SessionWriter.WriteMessage(snap.Conversation.Messages[i])
 		}
+		d.SessionWriter.WriteHandoffState(snap.HandoffState)
 		lastIdx = len(snap.Conversation.Messages)
 		d.SessionWriter.WriteMetadata(session.MetadataData{
 			CostUSD:    d.CostTracker.TotalUSD(),
@@ -827,12 +831,17 @@ func connectedMcpNames(mgr *mcp.Manager) []string {
 }
 
 func mcpStatusesForSlash(mgr *mcp.Manager) []slash.McpServerStatus {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if mgr == nil {
+		observe.GlobalTrace("if: mgr == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	statuses := mgr.ServerStatuses()
 	out := make([]slash.McpServerStatus, 0, len(statuses))
 	for _, st := range statuses {
+		observe.GlobalTrace("range statuses")
 		out = append(out, slash.McpServerStatus{
 			Name:      st.Name,
 			Status:    st.Status,
@@ -841,5 +850,6 @@ func mcpStatusesForSlash(mgr *mcp.Manager) []slash.McpServerStatus {
 			Transport: st.Transport,
 		})
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }

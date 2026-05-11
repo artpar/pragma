@@ -26,6 +26,7 @@ type testProvider struct {
 	callIdx    int
 	pricing    model.Pricing
 	lastParams provider.RequestParams // captured from most recent Stream call
+	history    []provider.RequestParams
 }
 
 func (tp *testProvider) Name() string { return "test" }
@@ -33,6 +34,7 @@ func (tp *testProvider) Name() string { return "test" }
 func (tp *testProvider) Stream(_ context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {
 	tp.mu.Lock()
 	tp.lastParams = params
+	tp.history = append(tp.history, params)
 	idx := tp.callIdx
 	tp.callIdx++
 	tp.mu.Unlock()
@@ -150,6 +152,25 @@ func drain(ch <-chan LoopEvent) []LoopEvent {
 		events = append(events, ev)
 	}
 	return events
+}
+
+func messageText(msg model.Message) string {
+	var b strings.Builder
+	for _, part := range msg.Content {
+		if tp, ok := part.(model.TextPart); ok {
+			b.WriteString(tp.Text)
+		}
+	}
+	return b.String()
+}
+
+func systemText(system model.SystemPrompt) string {
+	var b strings.Builder
+	for _, block := range system.Blocks {
+		b.WriteString(block.Text)
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 func textChunks(text string, stopReason model.StopReason) []provider.StreamChunk {
@@ -315,6 +336,252 @@ func TestRun_ToolUseLoop(t *testing.T) {
 	}
 	if !gotText {
 		t.Error("expected TextEvent in second turn")
+	}
+}
+
+func TestRun_StopAfterToolExec(t *testing.T) {
+	toolCallID := "tc-stop-after-tool"
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: toolCallID, Name: "echo"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: toolCallID, JSONDelta: `{"text":"handoff"}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse, Usage: model.TokenUsage{InputTokens: 80, OutputTokens: 20}}},
+			},
+			textChunks("should not be requested", model.StopEndTurn),
+		},
+	}
+	engine, _ := newTestEngine(prov, echoTool{})
+	engine.config.StopAfterToolExec = true
+
+	events := drain(engine.Run(context.Background(), "Call echo once"))
+
+	var gotToolCall, gotToolResult bool
+	var complete *TurnCompleteEvent
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case ToolCallEvent:
+			gotToolCall = true
+			if e.Call.ID != toolCallID {
+				t.Errorf("tool call ID = %q, want %q", e.Call.ID, toolCallID)
+			}
+		case ToolResultEvent:
+			gotToolResult = true
+			if e.Result.ToolCallID != toolCallID {
+				t.Errorf("tool result ID = %q, want %q", e.Result.ToolCallID, toolCallID)
+			}
+			if e.Result.Content != "echo: handoff" {
+				t.Errorf("tool result = %q, want %q", e.Result.Content, "echo: handoff")
+			}
+		case TextEvent:
+			t.Fatalf("unexpected second provider text event: %q", e.Text)
+		case TurnCompleteEvent:
+			ev := e
+			complete = &ev
+		case ErrorEvent:
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+
+	if !gotToolCall {
+		t.Error("expected ToolCallEvent")
+	}
+	if !gotToolResult {
+		t.Error("expected ToolResultEvent")
+	}
+	if complete == nil {
+		t.Fatal("expected TurnCompleteEvent")
+	}
+	if complete.StopReason != model.StopToolUse {
+		t.Errorf("StopReason = %s, want %s", complete.StopReason, model.StopToolUse)
+	}
+
+	prov.mu.Lock()
+	calls := prov.callIdx
+	prov.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", calls)
+	}
+
+	msgs := engine.store.Snapshot().Conversation.Messages
+	if len(msgs) != 3 {
+		t.Fatalf("conversation messages = %d, want 3", len(msgs))
+	}
+	if msgs[1].Role != model.RoleAssistant {
+		t.Fatalf("message[1].Role = %s, want assistant", msgs[1].Role)
+	}
+	if _, ok := msgs[1].Content[0].(model.ToolCallPart); !ok {
+		t.Fatalf("message[1] content[0] = %T, want ToolCallPart", msgs[1].Content[0])
+	}
+	if msgs[2].Role != model.RoleUser {
+		t.Fatalf("message[2].Role = %s, want user", msgs[2].Role)
+	}
+	if _, ok := msgs[2].Content[0].(model.ToolResultPart); !ok {
+		t.Fatalf("message[2] content[0] = %T, want ToolResultPart", msgs[2].Content[0])
+	}
+}
+
+func TestRun_StateHandoffSendsLatestToolExchangeOnly(t *testing.T) {
+	toolCallID := "tc-state-handoff"
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: toolCallID, Name: "echo"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: toolCallID, JSONDelta: `{"text":"handoff"}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse, Usage: model.TokenUsage{InputTokens: 80, OutputTokens: 20}}},
+			},
+			textChunks("done", model.StopEndTurn),
+		},
+	}
+	engine, _ := newTestEngine(prov, echoTool{})
+	engine.config.ContextMode = model.ContextModeStateHandoff
+	engine.config.HandoffSchema = model.HandoffSchemaV1
+
+	events := drain(engine.Run(context.Background(), "Find the request boundary and keep going"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+
+	prov.mu.Lock()
+	history := append([]provider.RequestParams(nil), prov.history...)
+	prov.mu.Unlock()
+	if len(history) != 2 {
+		t.Fatalf("provider calls = %d, want 2", len(history))
+	}
+
+	second := history[1]
+	if len(second.Messages) != 2 {
+		t.Fatalf("second request messages = %d, want latest assistant tool call plus user tool result", len(second.Messages))
+	}
+	if second.Messages[0].Role != model.RoleAssistant || !messageHasToolCall(second.Messages[0]) {
+		t.Fatalf("second message[0] = role %s content %#v, want assistant tool call", second.Messages[0].Role, second.Messages[0].Content)
+	}
+	if second.Messages[1].Role != model.RoleUser || !messageHasToolResult(second.Messages[1]) {
+		t.Fatalf("second message[1] = role %s content %#v, want user tool result", second.Messages[1].Role, second.Messages[1].Content)
+	}
+	for _, msg := range second.Messages {
+		if strings.Contains(messageText(msg), "Find the request boundary") {
+			t.Fatalf("second request leaked original user message: %#v", second.Messages)
+		}
+	}
+
+	sys := systemText(second.System)
+	if !strings.Contains(sys, "current_handoff_state:") {
+		t.Fatalf("system prompt missing handoff state:\n%s", sys)
+	}
+	if !strings.Contains(sys, "Find the request boundary and keep going") {
+		t.Fatalf("system prompt missing goal in handoff state:\n%s", sys)
+	}
+
+	var foundPatchTool bool
+	for _, td := range second.Tools {
+		if td.Name == "PatchHandoffState" {
+			foundPatchTool = true
+			break
+		}
+	}
+	if !foundPatchTool {
+		t.Fatalf("PatchHandoffState tool missing from state-handoff request")
+	}
+}
+
+func TestRun_StateHandoffPatchToolUpdatesStateAndPreservesResults(t *testing.T) {
+	patchCallID := "tc-patch"
+	echoCallID := "tc-echo"
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: patchCallID, Name: "PatchHandoffState"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: patchCallID, JSONDelta: `{"ops":[{"op":"add","path":"/latest_tool_result_interpretation","value":"echo result guides next step"},{"op":"add","path":"/completed/-","value":"patched durable state"}]}`}},
+				{ToolCallStart: &model.ToolCallPart{ID: echoCallID, Name: "echo"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: echoCallID, JSONDelta: `{"text":"next"}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse, Usage: model.TokenUsage{InputTokens: 90, OutputTokens: 30}}},
+			},
+			textChunks("done", model.StopEndTurn),
+		},
+	}
+	engine, _ := newTestEngine(prov, echoTool{})
+	engine.config.ContextMode = model.ContextModeStateHandoff
+	engine.config.HandoffSchema = model.HandoffSchemaV1
+
+	events := drain(engine.Run(context.Background(), "Keep state patched while using tools"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+
+	snap := engine.store.Snapshot()
+	if snap.HandoffState.LatestToolResultInterpretation != "echo result guides next step" {
+		t.Fatalf("LatestToolResultInterpretation = %q", snap.HandoffState.LatestToolResultInterpretation)
+	}
+	if len(snap.HandoffState.Completed) != 1 || snap.HandoffState.Completed[0] != "patched durable state" {
+		t.Fatalf("Completed = %#v", snap.HandoffState.Completed)
+	}
+
+	msgs := snap.Conversation.Messages
+	if len(msgs) < 3 {
+		t.Fatalf("conversation messages = %d, want at least 3", len(msgs))
+	}
+	resultsMsg := msgs[2]
+	if resultsMsg.Role != model.RoleUser {
+		t.Fatalf("results message role = %s, want user", resultsMsg.Role)
+	}
+	if len(resultsMsg.Content) != 2 {
+		t.Fatalf("result parts = %d, want 2", len(resultsMsg.Content))
+	}
+	first, ok := resultsMsg.Content[0].(model.ToolResultPart)
+	if !ok {
+		t.Fatalf("result[0] = %T, want ToolResultPart", resultsMsg.Content[0])
+	}
+	second, ok := resultsMsg.Content[1].(model.ToolResultPart)
+	if !ok {
+		t.Fatalf("result[1] = %T, want ToolResultPart", resultsMsg.Content[1])
+	}
+	if first.ToolCallID != patchCallID || first.Content != "handoff state patched" || first.IsError {
+		t.Fatalf("patch result = %#v", first)
+	}
+	if second.ToolCallID != echoCallID || second.Content != "echo: next" || second.IsError {
+		t.Fatalf("echo result = %#v", second)
+	}
+
+	prov.mu.Lock()
+	history := append([]provider.RequestParams(nil), prov.history...)
+	prov.mu.Unlock()
+	if len(history) != 2 {
+		t.Fatalf("provider calls = %d, want 2", len(history))
+	}
+	if len(history[1].Messages) != 2 {
+		t.Fatalf("second request messages = %d, want latest exchange only", len(history[1].Messages))
+	}
+	if !messageHasToolCall(history[1].Messages[0]) || !messageHasToolResult(history[1].Messages[1]) {
+		t.Fatalf("second request did not preserve latest tool call/result exchange: %#v", history[1].Messages)
+	}
+}
+
+func TestMessagesForRequest_StateHandoffPrefersLatestUserMessage(t *testing.T) {
+	engine, _ := newTestEngine(&testProvider{})
+	engine.config.ContextMode = model.ContextModeStateHandoff
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
+	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "old user"}}})
+	conv.Append(model.Message{Role: model.RoleAssistant, Content: []model.ContentPart{
+		model.ToolCallPart{ID: "tc-1", Name: "echo", Input: json.RawMessage(`{"text":"old"}`)},
+	}})
+	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{
+		model.ToolResultPart{ToolCallID: "tc-1", Content: "old result"},
+	}})
+	conv.Append(model.Message{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: "old answer"}}})
+	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "new instruction"}}})
+
+	got := engine.messagesForRequest(conv)
+	if len(got) != 1 {
+		t.Fatalf("messages = %d, want latest user message only", len(got))
+	}
+	if got[0].Role != model.RoleUser || messageText(got[0]) != "new instruction" {
+		t.Fatalf("message = %#v, want latest user instruction", got[0])
 	}
 }
 

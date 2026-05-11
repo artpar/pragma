@@ -27,6 +27,9 @@ type EngineConfig struct {
 	Model                     string
 	MaxTokens                 int
 	MaxTurns                  int // 0 means use DefaultMaxTurns
+	ContextMode               string
+	HandoffSchema             string
+	StopAfterToolExec         bool
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
 	TaskID                    string // when set with TaskRegistry, enables PendingMessages drain between turns
@@ -146,6 +149,8 @@ func (e *Engine) SetCompaction(deps CompactionDeps) {
 // ResetContentReplacementState rebuilds read-time replacement tracking after
 // the active conversation changes, such as an in-TUI session resume.
 func (e *Engine) ResetContentReplacementState(records []model.ContentReplacementRecord) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	snap := e.store.Snapshot()
 	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), records)
 }

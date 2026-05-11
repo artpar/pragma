@@ -91,6 +91,29 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{
+			name:    "overlay stop after tool exec enables experiment",
+			base:    Config{},
+			overlay: Config{StopAfterToolExec: true},
+			check: func(t *testing.T, got Config) {
+				if !got.StopAfterToolExec {
+					t.Error("StopAfterToolExec = false, want true")
+				}
+			},
+		},
+		{
+			name:    "overlay context handoff settings",
+			base:    Config{ContextMode: "chat", HandoffSchema: "handoff.v1"},
+			overlay: Config{ContextMode: "state-handoff", HandoffSchema: "handoff.v2"},
+			check: func(t *testing.T, got Config) {
+				if got.ContextMode != "state-handoff" {
+					t.Errorf("ContextMode = %q, want state-handoff", got.ContextMode)
+				}
+				if got.HandoffSchema != "handoff.v2" {
+					t.Errorf("HandoffSchema = %q, want handoff.v2", got.HandoffSchema)
+				}
+			},
+		},
+		{
 			name:    "multiple fields mixed",
 			base:    Config{Model: "base", Provider: "anthropic", MaxTokens: 1000},
 			overlay: Config{Model: "overlay", MaxTokens: 2000},
@@ -205,14 +228,17 @@ func TestLoad_MalformedJSON(t *testing.T) {
 func TestJSONRoundTrip(t *testing.T) {
 	temp := 0.5
 	original := Config{
-		Model:        "test-model",
-		Provider:     "anthropic",
-		MaxTokens:    8192,
-		Temperature:  &temp,
-		Thinking:     &ThinkingConfig{Enabled: true, BudgetTokens: 10000},
-		SystemPrompt: "You are helpful.",
-		Verbose:      true,
-		Record:       true,
+		Model:             "test-model",
+		Provider:          "anthropic",
+		MaxTokens:         8192,
+		Temperature:       &temp,
+		Thinking:          &ThinkingConfig{Enabled: true, BudgetTokens: 10000},
+		SystemPrompt:      "You are helpful.",
+		ContextMode:       "state-handoff",
+		HandoffSchema:     "handoff.v1",
+		StopAfterToolExec: true,
+		Verbose:           true,
+		Record:            true,
 	}
 
 	data, err := json.Marshal(original)
@@ -242,6 +268,15 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 	if restored.SystemPrompt != original.SystemPrompt {
 		t.Errorf("SystemPrompt = %q, want %q", restored.SystemPrompt, original.SystemPrompt)
+	}
+	if restored.ContextMode != original.ContextMode {
+		t.Errorf("ContextMode = %q, want %q", restored.ContextMode, original.ContextMode)
+	}
+	if restored.HandoffSchema != original.HandoffSchema {
+		t.Errorf("HandoffSchema = %q, want %q", restored.HandoffSchema, original.HandoffSchema)
+	}
+	if restored.StopAfterToolExec != original.StopAfterToolExec {
+		t.Errorf("StopAfterToolExec = %v, want %v", restored.StopAfterToolExec, original.StopAfterToolExec)
 	}
 	if restored.Verbose != original.Verbose {
 		t.Errorf("Verbose = %v, want %v", restored.Verbose, original.Verbose)
@@ -308,15 +343,17 @@ func TestMerge_AllFields(t *testing.T) {
 	temp := 0.5
 	base := Config{}
 	overlay := Config{
-		Model:        "m",
-		Provider:     "p",
-		APIKey:       "k",
-		MaxTokens:    100,
-		Temperature:  &temp,
-		Thinking:     &ThinkingConfig{Enabled: true, BudgetTokens: 5000},
-		SystemPrompt: "sys",
-		Verbose:      true,
-		Record:       true,
+		Model:         "m",
+		Provider:      "p",
+		APIKey:        "k",
+		MaxTokens:     100,
+		Temperature:   &temp,
+		Thinking:      &ThinkingConfig{Enabled: true, BudgetTokens: 5000},
+		SystemPrompt:  "sys",
+		ContextMode:   "state-handoff",
+		HandoffSchema: "handoff.v1",
+		Verbose:       true,
+		Record:        true,
 	}
 
 	got := merge(base, overlay)
@@ -340,6 +377,12 @@ func TestMerge_AllFields(t *testing.T) {
 	}
 	if got.SystemPrompt != "sys" {
 		t.Errorf("SystemPrompt = %q", got.SystemPrompt)
+	}
+	if got.ContextMode != "state-handoff" {
+		t.Errorf("ContextMode = %q", got.ContextMode)
+	}
+	if got.HandoffSchema != "handoff.v1" {
+		t.Errorf("HandoffSchema = %q", got.HandoffSchema)
 	}
 	if !got.Verbose {
 		t.Error("Verbose = false")

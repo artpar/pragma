@@ -3,15 +3,18 @@ package cli
 import (
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestAutoDetectProvider(t *testing.T) {
 	tests := []struct {
-		name     string
-		envVars  map[string]string
-		creds    config.Credentials
-		want     string
+		name    string
+		envVars map[string]string
+		creds   config.Credentials
+		want    string
 	}{
 		{
 			name: "no credentials at all",
@@ -111,5 +114,30 @@ func TestAutoDetectProvider(t *testing.T) {
 				t.Errorf("autoDetectProvider() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
+	cmd := &cobra.Command{Use: "pragma"}
+	RegisterFlags(cmd)
+	if err := cmd.ParseFlags([]string{
+		"--stop-after-tool-exec",
+		"--context-mode", model.ContextModeStateHandoff,
+		"--handoff-schema", model.HandoffSchemaV1,
+	}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	var cfg config.Config
+	ApplyFlagOverrides(cmd, &cfg)
+
+	if !cfg.StopAfterToolExec {
+		t.Fatal("StopAfterToolExec = false, want true")
+	}
+	if cfg.ContextMode != model.ContextModeStateHandoff {
+		t.Fatalf("ContextMode = %q, want %q", cfg.ContextMode, model.ContextModeStateHandoff)
+	}
+	if cfg.HandoffSchema != model.HandoffSchemaV1 {
+		t.Fatalf("HandoffSchema = %q, want %q", cfg.HandoffSchema, model.HandoffSchemaV1)
 	}
 }

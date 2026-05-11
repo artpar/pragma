@@ -20,6 +20,7 @@ type TeamContext struct {
 // Satisfies tool.StateSnapshot via WorkDir() method.
 type AppState struct {
 	Conversation model.Conversation `json:"conversation"`
+	HandoffState model.HandoffState `json:"handoff_state,omitempty"`
 	CWD          string             `json:"cwd"`
 	Model        string             `json:"model"`
 	Provider     string             `json:"provider"`

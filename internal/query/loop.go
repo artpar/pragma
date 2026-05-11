@@ -9,6 +9,7 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/compact"
+	"github.com/artpar/pragma/internal/debug"
 	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -70,6 +71,9 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	}
 	e.store.Update(func(s *app.AppState) {
 		s.Conversation.Append(userMsg)
+		if e.isStateHandoffMode() && s.HandoffState.IsZero() {
+			s.HandoffState = model.NewHandoffState(userMessage)
+		}
 	})
 
 	malformedRetries := 0
@@ -118,8 +122,11 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: snap.PlanMode")
 			tools = e.filterReadOnlyTools(tools)
 		}
+		if e.isStateHandoffMode() {
+			tools = append([]model.ToolDef{handoffPatchToolDef()}, tools...)
+		}
 
-		messagesForQuery := snap.Conversation.APIMessages()
+		messagesForQuery := e.messagesForRequest(snap.Conversation)
 		var budgetErr error
 		messagesForQuery, budgetErr = e.applyToolResultBudget(messagesForQuery)
 		if budgetErr != nil {
@@ -127,12 +134,18 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 
 		systemForQuery := e.systemWithMCPStatus(snap.Conversation.System)
+		systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
 
 		if compacted, ok := e.autoCompactBeforeRequest(ctx, ch, resolvedModel, messagesForQuery, systemForQuery, tools); compacted {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compacted")
+			debug.Log("autoCompactBeforeRequest returned true for model %s", resolvedModel)
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compacted")
 			messagesForQuery = ok
 			snap = e.store.Snapshot()
 			systemForQuery = e.systemWithMCPStatus(snap.Conversation.System)
+			systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
 		} else if e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools) {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "else-if: e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools)")
 			ch <- ErrorEvent{
 				Err:      provider.ErrContextOverflow,
 				Kind:     ErrorKindContextOverflow,
@@ -230,6 +243,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			Content:   response.Content,
 			Timestamp: time.Now(),
 		}
+		debug.Log("Assistant response: StopReason=%s, ContentParts=%d", response.StopReason, len(response.Content))
 		e.store.Update(func(s *app.AppState) {
 			s.Conversation.Append(assistantMsg)
 		})
@@ -248,6 +262,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		e.costTracker.Record(resolvedModel, e.provider.Name(), response.Usage, pricing)
 
 		if e.autoTracker != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.autoTracker != nil")
 			e.autoTracker.IncrementTurn()
 		}
 
@@ -332,36 +347,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ch <- ToolCallEvent{Call: tc}
 			}
 
-			progressCh := make(chan tool.ProgressEvent, 16)
-			wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh, fileState: e.fileState}
-
-			type execDone struct {
-				result tool.ExecuteResult
-			}
-			doneCh := make(chan execDone, 1)
-			go func() {
-				doneCh <- execDone{result: e.orchestrator.Execute(ctx, toolCalls, wrappedSnap)}
-			}()
-
-			var execResult tool.ExecuteResult
-		drainLoop:
-			for {
-				select {
-				case pe := <-progressCh:
-					ch <- progressToLoopEvent(pe)
-				case d := <-doneCh:
-					execResult = d.result
-
-					for {
-						select {
-						case pe := <-progressCh:
-							ch <- progressToLoopEvent(pe)
-						default:
-							break drainLoop
-						}
-					}
-				}
-			}
+			execResult := e.executeToolBatch(ctx, toolCalls, snap, ch)
 
 			for i, r := range execResult.Results {
 				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i]}
@@ -393,6 +379,11 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			e.store.Update(func(s *app.AppState) {
 				s.Conversation.Append(resultMsg)
 			})
+			if e.config.StopAfterToolExec {
+				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.config.StopAfterToolExec")
+				ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+				return
+			}
 			turnCount++
 			continue
 
@@ -419,17 +410,23 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 }
 
 func (e *Engine) applyToolResultBudget(messages []model.Message) ([]model.Message, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	snap := e.store.Snapshot()
 	skipToolNames := make(map[string]bool)
 	for _, desc := range e.registry.List() {
+		observe.GlobalTrace("range e.registry.List()")
 		if desc.Flags().MaxResultSizeChars < 0 {
+			observe.GlobalTrace("if: desc.Flags().MaxResultSizeChars < 0")
 			skipToolNames[desc.Name()] = true
 		}
 	}
 	out, records, err := toolresult.ApplyToolResultBudget(messages, e.contentReplacementState, snap.Conversation.ID, skipToolNames)
 	if len(records) > 0 && e.config.RecordContentReplacements != nil {
+		observe.GlobalTrace("if: len(records) > 0 && e.config.RecordContentReplacements != nil")
 		e.config.RecordContentReplacements(records)
 	}
+	observe.GlobalTrace("return: out, err")
 	return out, err
 }
 
@@ -441,18 +438,27 @@ func (e *Engine) autoCompactBeforeRequest(
 	system model.SystemPrompt,
 	tools []model.ToolDef,
 ) (bool, []model.Message) {
+	observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "exit")
 	if e.compactor == nil || e.autoTracker == nil {
+		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: e.compactor == nil || e.autoTracker == nil")
+		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
 		return false, nil
 	}
 	tokenCount := e.requestTokenCount(ctx, resolvedModel, messages, system, tools)
 	if !e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
+		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: !e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig)")
+		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
 		return false, nil
 	}
 
 	ch <- CompactionStartedEvent{}
 	compResult, compErr := e.compactor.Compact(ctx, messages, system, "")
 	if compErr != nil {
+		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: compErr != nil")
 		if ctx.Err() != nil {
+			observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: ctx.Err() != nil")
+			observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
 			return false, nil
 		}
 		tripped := e.autoTracker.RecordFailure()
@@ -462,6 +468,7 @@ func (e *Engine) autoCompactBeforeRequest(
 			ErrorMsg: compErr.Error(),
 		}
 		if tripped {
+			observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: tripped")
 			e.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 				Severity:     "warn",
@@ -471,6 +478,7 @@ func (e *Engine) autoCompactBeforeRequest(
 			})
 			ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
 		}
+		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
 		return false, nil
 	}
 
@@ -480,23 +488,33 @@ func (e *Engine) autoCompactBeforeRequest(
 		s.Conversation.UpdatedAt = time.Now()
 	})
 	ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
+	observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: true, compResult.ReplacementMessages")
 	return true, compResult.ReplacementMessages
 }
 
 func (e *Engine) isAtBlockingLimit(ctx context.Context, resolvedModel string, messages []model.Message, system model.SystemPrompt, tools []model.ToolDef) bool {
+	observe.TraceCtx(ctx, "query", "Engine.isAtBlockingLimit", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.isAtBlockingLimit", "exit")
 	if compact.EffectiveWindow(e.windowConfig) == 0 {
+		observe.TraceCtx(ctx, "query", "Engine.isAtBlockingLimit", "if: compact.EffectiveWindow(e.windowConfig) == 0")
+		observe.TraceCtx(ctx, "query", "Engine.isAtBlockingLimit", "return: false")
 		return false
 	}
 	tokenCount := e.requestTokenCount(ctx, resolvedModel, messages, system, tools)
 	blockingLimit := compact.EffectiveWindow(e.windowConfig) - 3_000
 	if blockingLimit < 0 {
+		observe.TraceCtx(ctx, "query", "Engine.isAtBlockingLimit", "if: blockingLimit < 0")
 		blockingLimit = 0
 	}
+	observe.TraceCtx(ctx, "query", "Engine.isAtBlockingLimit", "return: tokenCount >= blockingLimit")
 	return tokenCount >= blockingLimit
 }
 
 func (e *Engine) requestTokenCount(ctx context.Context, resolvedModel string, messages []model.Message, system model.SystemPrompt, tools []model.ToolDef) int {
+	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "exit")
 	if counter, ok := e.provider.(provider.TokenCounter); ok {
+		observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "if: ok")
 		countParams := provider.RequestParams{
 			Model:    resolvedModel,
 			Messages: messages,
@@ -504,18 +522,32 @@ func (e *Engine) requestTokenCount(ctx context.Context, resolvedModel string, me
 			Tools:    tools,
 		}
 		if precise, err := counter.CountTokens(ctx, countParams); err == nil {
+			observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "if: err == nil")
+			debug.Log("Precise token count for model %s: %d", resolvedModel, precise)
+			observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "if: err == nil")
+			observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: precise")
 			return precise
 		}
 	}
-	return compact.EstimateConversationTokens(messages)
+	est := compact.EstimateConversationTokens(messages)
+	debug.Log("Estimated token count for model %s: %d", resolvedModel, est)
+	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: compact.EstimateConversationTokens(messages)")
+	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: est")
+	return est
 }
 
 func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if e.config.MCPServerStatuses == nil {
+		observe.GlobalTrace("if: e.config.MCPServerStatuses == nil")
+		observe.GlobalTrace("return: system")
 		return system
 	}
 	statuses := e.config.MCPServerStatuses()
 	if len(statuses) == 0 {
+		observe.GlobalTrace("if: len(statuses) == 0")
+		observe.GlobalTrace("return: system")
 		return system
 	}
 
@@ -523,11 +555,14 @@ func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemProm
 	b.WriteString("# MCP Servers\n\n")
 	b.WriteString("mcp_servers:\n")
 	for _, server := range statuses {
+		observe.GlobalTrace("range statuses")
 		if server.Name == "" {
+			observe.GlobalTrace("if: server.Name == \"\"")
 			continue
 		}
 		status := server.Status
 		if status == "" {
+			observe.GlobalTrace("if: status == \"\"")
 			status = "disconnected"
 		}
 		fmt.Fprintf(&b, "- name: %s\n  status: %s\n", server.Name, status)
@@ -537,7 +572,188 @@ func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemProm
 	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
 	blocks = append(blocks, system.Blocks...)
 	blocks = append(blocks, model.SystemBlock{Text: b.String(), Cacheable: false})
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
 	return model.SystemPrompt{Blocks: blocks}
+}
+
+func (e *Engine) isStateHandoffMode() bool {
+	return e.config.ContextMode == model.ContextModeStateHandoff
+}
+
+func (e *Engine) messagesForRequest(conv model.Conversation) []model.Message {
+	if !e.isStateHandoffMode() {
+		return conv.APIMessages()
+	}
+	api := conv.APIMessages()
+	if len(api) < 2 {
+		return api
+	}
+	last := api[len(api)-1]
+	if last.Role == model.RoleUser && !messageHasToolResult(last) {
+		return []model.Message{last}
+	}
+	for i := len(api) - 1; i >= 1; i-- {
+		if api[i].Role != model.RoleUser || !messageHasToolResult(api[i]) {
+			continue
+		}
+		for j := i - 1; j >= 0; j-- {
+			if api[j].Role == model.RoleAssistant && messageHasToolCall(api[j]) {
+				return []model.Message{api[j], api[i]}
+			}
+		}
+	}
+	return api
+}
+
+func (e *Engine) systemWithHandoffState(system model.SystemPrompt, state model.HandoffState) model.SystemPrompt {
+	if !e.isStateHandoffMode() {
+		return system
+	}
+	if state.IsZero() {
+		state = model.NewHandoffState("")
+	}
+	block := `# Handoff State Protocol
+
+You are running in state-handoff context mode. You do not receive older chat history.
+Use current_handoff_state plus the latest assistant tool_call blocks and matching tool_result blocks as your continuity source.
+After interpreting tool results, call PatchHandoffState with minimal JSON Patch operations for durable changes. You may call PatchHandoffState and the next real tool in the same response when both are needed.
+
+current_handoff_state:
+` + state.PrettyJSON()
+
+	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
+	blocks = append(blocks, system.Blocks...)
+	blocks = append(blocks, model.SystemBlock{Text: block, Cacheable: false})
+	return model.SystemPrompt{Blocks: blocks}
+}
+
+func handoffPatchToolDef() model.ToolDef {
+	return model.ToolDef{
+		Name:        "PatchHandoffState",
+		Description: "Patch the persistent JSON handoff state. Use this to preserve tool-result interpretation, constraints, completed work, next action, risks, and evidence.",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"ops":{
+					"type":"array",
+					"items":{
+						"type":"object",
+						"properties":{
+							"op":{"type":"string","enum":["add","replace","remove"]},
+							"path":{"type":"string"},
+							"value":{}
+						},
+						"required":["op","path"]
+					}
+				}
+			},
+			"required":["ops"]
+		}`),
+	}
+}
+
+func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPart, snap app.AppState, ch chan<- LoopEvent) tool.ExecuteResult {
+	results := make([]model.ToolResultPart, len(calls))
+	displays := make([]string, len(calls))
+	realCalls := make([]model.ToolCallPart, 0, len(calls))
+	realIndexes := make([]int, 0, len(calls))
+
+	for i, call := range calls {
+		if call.Name != "PatchHandoffState" {
+			realCalls = append(realCalls, call)
+			realIndexes = append(realIndexes, i)
+			continue
+		}
+		results[i] = e.executeHandoffPatch(call)
+	}
+
+	var supplements []model.ContentPart
+	if len(realCalls) > 0 {
+		progressCh := make(chan tool.ProgressEvent, 16)
+		wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh, fileState: e.fileState}
+
+		type execDone struct {
+			result tool.ExecuteResult
+		}
+		doneCh := make(chan execDone, 1)
+		go func() {
+			doneCh <- execDone{result: e.orchestrator.Execute(ctx, realCalls, wrappedSnap)}
+		}()
+
+		var execResult tool.ExecuteResult
+	drainLoop:
+		for {
+			select {
+			case pe := <-progressCh:
+				ch <- progressToLoopEvent(pe)
+			case d := <-doneCh:
+				execResult = d.result
+
+				for {
+					select {
+					case pe := <-progressCh:
+						ch <- progressToLoopEvent(pe)
+					default:
+						break drainLoop
+					}
+				}
+			}
+		}
+
+		for i, r := range execResult.Results {
+			idx := realIndexes[i]
+			results[idx] = r
+			displays[idx] = execResult.Displays[i]
+		}
+		supplements = execResult.Supplements
+	}
+
+	return tool.ExecuteResult{
+		Results:     results,
+		Displays:    displays,
+		Supplements: supplements,
+	}
+}
+
+func (e *Engine) executeHandoffPatch(call model.ToolCallPart) model.ToolResultPart {
+	snap := e.store.Snapshot()
+	state := snap.HandoffState
+	if state.IsZero() {
+		state = model.NewHandoffState("")
+	}
+	next, err := model.ApplyHandoffPatch(state, call.Input)
+	if err != nil {
+		return model.ToolResultPart{
+			ToolCallID: call.ID,
+			Content:    err.Error(),
+			IsError:    true,
+		}
+	}
+	e.store.Update(func(s *app.AppState) {
+		s.HandoffState = next
+	})
+	return model.ToolResultPart{
+		ToolCallID: call.ID,
+		Content:    "handoff state patched",
+	}
+}
+
+func messageHasToolCall(msg model.Message) bool {
+	for _, part := range msg.Content {
+		if _, ok := part.(model.ToolCallPart); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func messageHasToolResult(msg model.Message) bool {
+	for _, part := range msg.Content {
+		if _, ok := part.(model.ToolResultPart); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // progressSnapshot wraps a StateSnapshot with a ProgressReporter for tool progress.
@@ -563,9 +779,14 @@ func (p *progressSnapshot) ReadFileState() *tool.FileStateCache {
 }
 
 func (p *progressSnapshot) SessionID() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if id, ok := tool.SessionIDFrom(p.StateSnapshot); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: id")
 		return id
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }
 

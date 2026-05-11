@@ -113,6 +113,13 @@ func (w *Writer) WriteMetadata(m MetadataData) error {
 	return w.writeEntry(EntryMetadata, m)
 }
 
+func (w *Writer) WriteHandoffState(state model.HandoffState) error {
+	if state.IsZero() {
+		return nil
+	}
+	return w.writeEntry(EntryHandoffState, HandoffStateData{State: state})
+}
+
 func (w *Writer) WriteContentReplacement(records []model.ContentReplacementRecord) error {
 	if len(records) == 0 {
 		return nil

@@ -14,6 +14,7 @@ const (
 	EntryHeader             EntryKind = "header"
 	EntryMessage            EntryKind = "message"
 	EntryMetadata           EntryKind = "metadata"
+	EntryHandoffState       EntryKind = "handoff_state"
 	EntryContentReplacement EntryKind = "content_replacement"
 )
 
@@ -47,6 +48,10 @@ type MetadataData struct {
 
 type ContentReplacementData struct {
 	Records []model.ContentReplacementRecord `json:"records"`
+}
+
+type HandoffStateData struct {
+	State model.HandoffState `json:"state"`
 }
 
 // MarshalEntry creates a JSONL-ready Entry from typed data.

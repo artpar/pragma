@@ -16,22 +16,25 @@ type RawPermission struct {
 // Config holds all configuration from settings files and CLI flags.
 // No internal package dependencies (DAG rule: config has no internal deps).
 type Config struct {
-	Model          string          `json:"model,omitempty"`
-	Provider       string          `json:"provider,omitempty"`
-	APIKey         string          `json:"api_key,omitempty"`
-	VertexProjectID string          `json:"vertex_project_id,omitempty"`
-	VertexLocation  string          `json:"vertex_location,omitempty"`
-	VertexEndpointID string         `json:"vertex_endpoint_id,omitempty"`
-	VertexDomain    string          `json:"vertex_domain,omitempty"`
-	MaxTokens      int             `json:"max_tokens,omitempty"`
-	Temperature    *float64        `json:"temperature,omitempty"`
-	Thinking       *ThinkingConfig `json:"thinking,omitempty"`
-	SystemPrompt   string          `json:"system_prompt,omitempty"`
-	MaxTurns       int             `json:"max_turns,omitempty"`
-	Verbose        bool            `json:"verbose,omitempty"`
-	Record         bool            `json:"record,omitempty"`
-	Permissions    []RawPermission `json:"permissions,omitempty"`
-	PermissionMode string          `json:"permission_mode,omitempty"`
+	Model             string          `json:"model,omitempty"`
+	Provider          string          `json:"provider,omitempty"`
+	APIKey            string          `json:"api_key,omitempty"`
+	VertexProjectID   string          `json:"vertex_project_id,omitempty"`
+	VertexLocation    string          `json:"vertex_location,omitempty"`
+	VertexEndpointID  string          `json:"vertex_endpoint_id,omitempty"`
+	VertexDomain      string          `json:"vertex_domain,omitempty"`
+	MaxTokens         int             `json:"max_tokens,omitempty"`
+	Temperature       *float64        `json:"temperature,omitempty"`
+	Thinking          *ThinkingConfig `json:"thinking,omitempty"`
+	SystemPrompt      string          `json:"system_prompt,omitempty"`
+	MaxTurns          int             `json:"max_turns,omitempty"`
+	ContextMode       string          `json:"context_mode,omitempty"`
+	HandoffSchema     string          `json:"handoff_schema,omitempty"`
+	StopAfterToolExec bool            `json:"stop_after_tool_exec,omitempty"`
+	Verbose           bool            `json:"verbose,omitempty"`
+	Record            bool            `json:"record,omitempty"`
+	Permissions       []RawPermission `json:"permissions,omitempty"`
+	PermissionMode    string          `json:"permission_mode,omitempty"`
 }
 
 // ThinkingConfig controls extended thinking / reasoning.
@@ -150,6 +153,15 @@ func merge(base, overlay Config) Config {
 	}
 	if overlay.MaxTurns != 0 {
 		result.MaxTurns = overlay.MaxTurns
+	}
+	if overlay.ContextMode != "" {
+		result.ContextMode = overlay.ContextMode
+	}
+	if overlay.HandoffSchema != "" {
+		result.HandoffSchema = overlay.HandoffSchema
+	}
+	if overlay.StopAfterToolExec {
+		result.StopAfterToolExec = true
 	}
 	if overlay.Temperature != nil {
 		result.Temperature = overlay.Temperature
