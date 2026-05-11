@@ -50,7 +50,7 @@ func NewHandoffState(goal string) HandoffState {
 		Goal:          goal,
 		Invariants: []string{
 			"Use current_handoff_state plus only the latest assistant tool_call blocks and matching tool_result blocks.",
-			"Patch current_handoff_state when tool results change durable task state.",
+			"Every tool-use response must call PatchHandoffState first, before any real tool.",
 			"Preserve user constraints and do_not items unless the user explicitly changes them.",
 		},
 		CurrentFocus: "Start from the user's latest task.",

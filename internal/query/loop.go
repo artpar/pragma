@@ -616,7 +616,20 @@ func (e *Engine) systemWithHandoffState(system model.SystemPrompt, state model.H
 
 You are running in state-handoff context mode. You do not receive older chat history.
 Use current_handoff_state plus the latest assistant tool_call blocks and matching tool_result blocks as your continuity source.
-After interpreting tool results, call PatchHandoffState with minimal JSON Patch operations for durable changes. You may call PatchHandoffState and the next real tool in the same response when both are needed.
+PatchHandoffState is the required continuity mechanism in this mode.
+Every tool-use response MUST call PatchHandoffState as the first tool call before any other tool.
+The PatchHandoffState call must record durable task state: completed work, files read or changed, evidence, risks, current_focus, and next_action as applicable.
+When calling any real tool, call PatchHandoffState and that real tool in the same response, with PatchHandoffState first.
+If no durable task state changed yet, still call PatchHandoffState first with a minimal current_focus, next_action, or latest_tool_result_interpretation update explaining what you are about to do.
+
+Example patch-first response after reading files:
+PatchHandoffState({"ops":[
+  {"op":"replace","path":"/latest_tool_result_interpretation","value":"Read internal/query/loop.go and found the state-handoff prompt builder."},
+  {"op":"add","path":"/files/read/-","value":"internal/query/loop.go"},
+  {"op":"replace","path":"/current_focus","value":"Update the handoff prompt requirements."},
+  {"op":"replace","path":"/next_action","value":"Edit the state-handoff protocol text."}
+]})
+Edit(...)
 
 current_handoff_state:
 ` + state.PrettyJSON()
