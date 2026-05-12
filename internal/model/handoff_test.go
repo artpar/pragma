@@ -30,9 +30,20 @@ func TestNewHandoffState(t *testing.T) {
 
 func TestApplyHandoffPatch(t *testing.T) {
 	state := NewHandoffState("inspect repo")
+	state.AddCertifiedFact(CertifiedFact{
+		ID:       "query-loop-contract",
+		Kind:     "file_contains",
+		Source:   "internal/query/loop.go",
+		Evidence: "messagesForRequest selects latest tool exchange only",
+		Verified: true,
+	})
 	raw := json.RawMessage(`{
 		"ops": [
 				{"op":"replace","path":"/current_focus","value":"read query loop"},
+				{"op":"add","path":"/investigation/observed_contracts/-","value":{"name":"query loop","source":"internal/query/loop.go","evidence":"messagesForRequest selects latest tool exchange only","fields":["messages","system"],"fact_refs":["query-loop-contract"]}},
+				{"op":"add","path":"/investigation/certified_fact_refs/-","value":"query-loop-contract"},
+				{"op":"add","path":"/investigation/acceptance_checks/-","value":{"description":"run focused query tests","command":"go test ./internal/query","expected":"pass","fact_refs":["query-loop-contract"]}},
+				{"op":"replace","path":"/investigation/ready_for_changes","value":true},
 				{"op":"add","path":"/todos/-","value":{"id":"read-query","task":"Read query loop","status":"completed"}},
 				{"op":"add","path":"/recent_actions/-","value":"Read internal/query/loop.go"},
 				{"op":"add","path":"/completed/-","value":"found provider request boundary"},
@@ -59,6 +70,27 @@ func TestApplyHandoffPatch(t *testing.T) {
 	if len(next.Files.Read) != 1 || next.Files.Read[0] != "internal/query/loop.go" {
 		t.Fatalf("Files.Read = %#v", next.Files.Read)
 	}
+	if !next.AllowsChanges() {
+		t.Fatalf("AllowsChanges = false, missing %#v", next.ChangeGateMissing())
+	}
+}
+
+func TestHandoffChangeGateRequiresInvestigation(t *testing.T) {
+	state := NewHandoffState("inspect repo")
+	if state.AllowsChanges() {
+		t.Fatal("new handoff state should not allow changes before investigation")
+	}
+	missing := strings.Join(state.ChangeGateMissing(), "\n")
+	for _, want := range []string{
+		"investigation.certified_fact_refs",
+		"investigation.observed_contracts",
+		"investigation.acceptance_checks",
+		"investigation.ready_for_changes=true",
+	} {
+		if !strings.Contains(missing, want) {
+			t.Fatalf("missing gate output %q in %#v", want, state.ChangeGateMissing())
+		}
+	}
 }
 
 func TestApplyHandoffPatchAllowsArbitraryAddPaths(t *testing.T) {
@@ -71,7 +103,8 @@ func TestApplyHandoffPatchAllowsArbitraryAddPaths(t *testing.T) {
 			{"op":"invented","path":"/anything/deep/0/name","value":"allowed"},
 			{"op":"remove","path":"/missing/path/does/not/exist"},
 			{"path":"path without leading slash","value":"allowed too"},
-			{"op":"replace","path":"/freeform_known_field","value":["not","schema","checked"]}
+			{"op":"replace","path":"/freeform_known_field","value":["not","schema","checked"]},
+			{"op":"replace","path":"/certified_facts/fake","value":{"id":"fake","verified":true}}
 		]
 	}`)
 
@@ -102,6 +135,9 @@ func TestApplyHandoffPatchAllowsArbitraryAddPaths(t *testing.T) {
 	}
 	if next.Extra["path without leading slash"] != "allowed too" {
 		t.Fatalf("path without leading slash = %#v", next.Extra["path without leading slash"])
+	}
+	if _, ok := next.CertifiedFacts["fake"]; ok {
+		t.Fatalf("PatchHandoffState wrote certified fact: %#v", next.CertifiedFacts["fake"])
 	}
 
 	data, err := json.Marshal(next)
@@ -152,16 +188,50 @@ func TestApplyHandoffPatchPreservesArbitraryKnownFieldValues(t *testing.T) {
 func TestHandoffStateDeepCopyCopiesTodos(t *testing.T) {
 	state := NewHandoffState("finish long task")
 	state.Todos = []HandoffTodo{{ID: "a", Task: "first", Status: "pending"}}
+	state.AddCertifiedFact(CertifiedFact{
+		ID: "fact-a", Kind: "file_contains", Source: "a.go", Evidence: "needle", Fields: []string{"a"}, Verified: true,
+	})
+	state.Investigation.CertifiedFactRefs = []string{"fact-a"}
+	state.Investigation.ObservedContracts = []HandoffObservedContract{{
+		Name: "contract", Source: "real.log", Evidence: "kind=APIRequestStarted", Fields: []string{"kind"}, FactRefs: []string{"fact-a"},
+	}}
+	state.Investigation.AcceptanceChecks = []HandoffAcceptanceCheck{{
+		Description: "real input check", Command: "go test ./...", Expected: "pass", FactRefs: []string{"fact-a"},
+	}}
 	state.Extra = map[string]any{"scratch": map[string]any{"count": float64(1)}}
 	state.Files.Extra = map[string]any{"identified": []any{"a.go"}}
 
 	cp := state.DeepCopy()
 	cp.Todos[0].Status = "completed"
+	cp.CertifiedFacts["fact-a"] = CertifiedFact{ID: "fact-a", Kind: "changed", Verified: true}
+	cp.Investigation.CertifiedFactRefs[0] = "changed"
+	cp.Investigation.ObservedContracts[0].Fields[0] = "changed"
+	cp.Investigation.ObservedContracts[0].FactRefs[0] = "changed"
+	cp.Investigation.AcceptanceChecks[0].Command = "changed"
+	cp.Investigation.AcceptanceChecks[0].FactRefs[0] = "changed"
 	cp.Extra["scratch"].(map[string]any)["count"] = float64(2)
 	cp.Files.Extra["identified"].([]any)[0] = "b.go"
 
 	if state.Todos[0].Status != "pending" {
 		t.Fatalf("DeepCopy shared todo backing array: %#v", state.Todos)
+	}
+	if state.CertifiedFacts["fact-a"].Kind != "file_contains" {
+		t.Fatalf("DeepCopy shared certified facts: %#v", state.CertifiedFacts)
+	}
+	if state.Investigation.CertifiedFactRefs[0] != "fact-a" {
+		t.Fatalf("DeepCopy shared certified fact refs: %#v", state.Investigation.CertifiedFactRefs)
+	}
+	if state.Investigation.ObservedContracts[0].Fields[0] != "kind" {
+		t.Fatalf("DeepCopy shared observed contract fields: %#v", state.Investigation.ObservedContracts)
+	}
+	if state.Investigation.ObservedContracts[0].FactRefs[0] != "fact-a" {
+		t.Fatalf("DeepCopy shared observed contract refs: %#v", state.Investigation.ObservedContracts)
+	}
+	if state.Investigation.AcceptanceChecks[0].FactRefs[0] != "fact-a" {
+		t.Fatalf("DeepCopy shared acceptance check refs: %#v", state.Investigation.AcceptanceChecks)
+	}
+	if state.Investigation.AcceptanceChecks[0].Command != "go test ./..." {
+		t.Fatalf("DeepCopy shared acceptance checks: %#v", state.Investigation.AcceptanceChecks)
 	}
 	if state.Extra["scratch"].(map[string]any)["count"] != float64(1) {
 		t.Fatalf("DeepCopy shared Extra: %#v", state.Extra)

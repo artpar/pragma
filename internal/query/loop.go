@@ -1,9 +1,14 @@
 package query
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +27,11 @@ import (
 // continuationPrompt is sent when the model returns StopPauseTurn,
 // indicating it wants to continue but hit a turn-level limit.
 const continuationPrompt = "Please continue."
+
+const (
+	stateHandoffMaxToolResultChars      = 24_000
+	stateHandoffMaxToolResultBatchChars = 64_000
+)
 
 // Run starts the agentic loop in a goroutine and returns a channel of LoopEvents.
 // The channel is closed when the loop finishes.
@@ -123,7 +133,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			tools = e.filterReadOnlyTools(tools)
 		}
 		if e.isStateHandoffMode() {
-			tools = append([]model.ToolDef{handoffPatchToolDef()}, tools...)
+			tools = append([]model.ToolDef{handoffPatchToolDef(), certifyFactToolDef()}, tools...)
 		}
 
 		messagesForQuery := e.messagesForRequest(snap.Conversation)
@@ -591,12 +601,12 @@ func (e *Engine) messagesForRequest(conv model.Conversation) []model.Message {
 	last := api[len(api)-1]
 	if last.Role == model.RoleUser && !messageHasToolResult(last) {
 		if exchange, ok := latestToolExchange(api[:len(api)-1]); ok {
-			return append(exchange, last)
+			return append(boundStateHandoffToolResults(exchange), last)
 		}
 		return []model.Message{last}
 	}
 	if exchange, ok := latestToolExchange(api); ok {
-		return exchange
+		return boundStateHandoffToolResults(exchange)
 	}
 	return api
 }
@@ -615,6 +625,52 @@ func latestToolExchange(api []model.Message) ([]model.Message, bool) {
 	return nil, false
 }
 
+func boundStateHandoffToolResults(messages []model.Message) []model.Message {
+	out := make([]model.Message, len(messages))
+	remaining := stateHandoffMaxToolResultBatchChars
+	for i, msg := range messages {
+		out[i] = msg
+		if len(msg.Content) == 0 {
+			continue
+		}
+		content := make([]model.ContentPart, len(msg.Content))
+		for j, part := range msg.Content {
+			result, ok := part.(model.ToolResultPart)
+			if !ok {
+				content[j] = part
+				continue
+			}
+			limit := stateHandoffMaxToolResultChars
+			if remaining < limit {
+				limit = remaining
+			}
+			result.Content = boundToolResultContent(result.Content, limit)
+			remaining -= len(result.Content)
+			if remaining < 0 {
+				remaining = 0
+			}
+			content[j] = result
+		}
+		out[i].Content = content
+	}
+	return out
+}
+
+func boundToolResultContent(content string, limit int) string {
+	if limit <= 0 {
+		return fmt.Sprintf("[tool result omitted from state-handoff prompt: original_size=%d chars; use focused read/search or CertifyFact for exact facts]", len(content))
+	}
+	if len(content) <= limit {
+		return content
+	}
+	const suffixBudget = 180
+	if limit <= suffixBudget {
+		return fmt.Sprintf("[tool result truncated from %d chars]", len(content))
+	}
+	keep := limit - suffixBudget
+	return content[:keep] + fmt.Sprintf("\n\n[tool result truncated for state-handoff prompt: original_size=%d chars, shown_prefix=%d chars; use focused read/search or CertifyFact for exact facts]", len(content), keep)
+}
+
 func (e *Engine) systemWithHandoffState(system model.SystemPrompt, state model.HandoffState) model.SystemPrompt {
 	if !e.isStateHandoffMode() {
 		return system
@@ -629,9 +685,17 @@ Use current_handoff_state plus the latest assistant tool_call blocks and matchin
 PatchHandoffState is the required continuity mechanism in this mode.
 Every tool-use response MUST call PatchHandoffState as the first tool call before any other tool.
 The PatchHandoffState call must record durable task state: todos, recent_actions, completed work, files read or changed, evidence, risks, current_focus, and next_action as applicable.
+CertifyFact is the only tool that may write current_handoff_state.certified_facts. PatchHandoffState may reference certified fact IDs, but MUST NOT write /certified_facts directly.
 After a tool_result, interpret the concrete result into current_handoff_state before choosing the next tool.
 Do not repeat the same real tool call or same search if the latest tool_result already answered it. Advance next_action to the next distinct step.
 If Grep returns matching files, record those files/evidence and Read the most relevant file next instead of Grep again.
+Do not end the turn with only a plan when the user's coding task still has pending implementation or verification work. Patch the plan into current_handoff_state and call the next real tool in the same response, or mark a concrete blocker.
+Before calling any non-read-only tool such as Edit, Write, Bash, NotebookEdit, or other changing/destructive tools, you MUST first investigate with read-only tools, call CertifyFact to create runtime-verified facts, and patch:
+- /investigation/certified_fact_refs/- with a fact ID returned by CertifyFact.
+- /investigation/observed_contracts/- with the real source/evidence you are relying on, including fact_refs that reference certified facts.
+- /investigation/acceptance_checks/- with the real acceptance command or expected real-input check that will prove the change, including fact_refs that reference certified facts.
+- /investigation/ready_for_changes to true.
+The runtime blocks non-read-only tools until those fields are present.
 When calling any real tool, call PatchHandoffState and that real tool in the same response, with PatchHandoffState first.
 If no durable task state changed yet, still call PatchHandoffState first with a minimal current_focus, next_action, or latest_tool_result_interpretation update explaining what you are about to do.
 PatchHandoffState accepts arbitrary JSON paths and fields. Use whatever structure best preserves progress for the next turn.
@@ -681,6 +745,27 @@ func handoffPatchToolDef() model.ToolDef {
 	}
 }
 
+func certifyFactToolDef() model.ToolDef {
+	return model.ToolDef{
+		Name:        "CertifyFact",
+		Description: "Ask Pragma to verify a concrete fact from runtime evidence. Valid kind values are file_contains, json_shape, jsonl_shape, and tool_result_contains. Only this tool can write certified_facts into handoff state.",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"id":{"type":"string","description":"Stable fact ID to reference from current_handoff_state.investigation.certified_fact_refs and acceptance_checks.fact_refs."},
+				"kind":{"type":"string","enum":["file_contains","json_shape","jsonl_shape","tool_result_contains"],"description":"file_contains verifies that a real file contains text; json_shape/jsonl_shape verifies matching JSONL records have required fields; tool_result_contains verifies a previous tool_result by tool_call_id contains text."},
+				"path":{"type":"string","description":"Filesystem path for file_contains, json_shape, or jsonl_shape. Relative paths resolve against the current working directory."},
+				"contains":{"type":"string","description":"Exact text that must be present for file_contains or tool_result_contains."},
+				"claim":{"type":"string","description":"Human-readable claim this verified fact proves."},
+				"required_fields":{"type":"array","items":{"type":"string"},"description":"Fields that must exist on at least one matching JSONL object for json_shape/jsonl_shape."},
+				"selector":{"type":"object","properties":{"field":{"type":"string"},"equals":{"type":"string"}},"description":"Optional JSONL selector. Example: {\"field\":\"kind\",\"equals\":\"APIRequestStarted\"}."},
+				"tool_call_id":{"type":"string","description":"Previous tool call ID to inspect for tool_result_contains."}
+			},
+			"required":["id","kind"]
+		}`),
+	}
+}
+
 func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPart, snap app.AppState, ch chan<- LoopEvent) tool.ExecuteResult {
 	results := make([]model.ToolResultPart, len(calls))
 	displays := make([]string, len(calls))
@@ -688,15 +773,29 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	realIndexes := make([]int, 0, len(calls))
 
 	for i, call := range calls {
-		if call.Name != "PatchHandoffState" {
+		if call.Name != "PatchHandoffState" && call.Name != "CertifyFact" {
 			realCalls = append(realCalls, call)
 			realIndexes = append(realIndexes, i)
 			continue
 		}
-		results[i] = e.executeHandoffPatch(call)
+		if call.Name == "PatchHandoffState" {
+			results[i] = e.executeHandoffPatch(call)
+		} else {
+			results[i] = e.executeCertifyFact(call)
+		}
 	}
 
 	var supplements []model.ContentPart
+	if len(realCalls) > 0 {
+		gateState := e.store.Snapshot().HandoffState
+		filteredCalls, filteredIndexes, blocked := e.filterBlockedChangeCalls(realCalls, realIndexes, gateState)
+		for idx, result := range blocked {
+			results[idx] = result
+		}
+		realCalls = filteredCalls
+		realIndexes = filteredIndexes
+	}
+
 	if len(realCalls) > 0 {
 		progressCh := make(chan tool.ProgressEvent, 16)
 		wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh, fileState: e.fileState}
@@ -744,6 +843,30 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	}
 }
 
+func (e *Engine) filterBlockedChangeCalls(calls []model.ToolCallPart, indexes []int, state model.HandoffState) ([]model.ToolCallPart, []int, map[int]model.ToolResultPart) {
+	if !e.isStateHandoffMode() || state.AllowsChanges() {
+		return calls, indexes, nil
+	}
+	missing := state.ChangeGateMissing()
+	blocked := make(map[int]model.ToolResultPart)
+	allowedCalls := make([]model.ToolCallPart, 0, len(calls))
+	allowedIndexes := make([]int, 0, len(indexes))
+	for i, call := range calls {
+		desc, ok := e.registry.Get(call.Name)
+		if ok && desc.Flags().ReadOnly {
+			allowedCalls = append(allowedCalls, call)
+			allowedIndexes = append(allowedIndexes, indexes[i])
+			continue
+		}
+		blocked[indexes[i]] = model.ToolResultPart{
+			ToolCallID: call.ID,
+			Content:    "change blocked: investigate and patch " + strings.Join(missing, ", ") + " before calling non-read-only tools",
+			IsError:    true,
+		}
+	}
+	return allowedCalls, allowedIndexes, blocked
+}
+
 func (e *Engine) executeHandoffPatch(call model.ToolCallPart) model.ToolResultPart {
 	snap := e.store.Snapshot()
 	state := snap.HandoffState
@@ -765,6 +888,222 @@ func (e *Engine) executeHandoffPatch(call model.ToolCallPart) model.ToolResultPa
 		ToolCallID: call.ID,
 		Content:    "handoff state patched",
 	}
+}
+
+type certifyFactInput struct {
+	ID             string               `json:"id"`
+	Kind           string               `json:"kind"`
+	Path           string               `json:"path,omitempty"`
+	Contains       string               `json:"contains,omitempty"`
+	Claim          string               `json:"claim,omitempty"`
+	RequiredFields []string             `json:"required_fields,omitempty"`
+	Selector       *certifyFactSelector `json:"selector,omitempty"`
+	ToolCallID     string               `json:"tool_call_id,omitempty"`
+}
+
+type certifyFactSelector struct {
+	Field  string `json:"field,omitempty"`
+	Equals string `json:"equals,omitempty"`
+}
+
+func (e *Engine) executeCertifyFact(call model.ToolCallPart) model.ToolResultPart {
+	var in certifyFactInput
+	if err := json.Unmarshal(call.Input, &in); err != nil {
+		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: invalid input: " + err.Error(), IsError: true}
+	}
+	if strings.TrimSpace(in.ID) == "" {
+		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: id is required", IsError: true}
+	}
+	fact, err := e.certifyFact(in)
+	if err != nil {
+		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: " + err.Error(), IsError: true}
+	}
+	e.store.Update(func(s *app.AppState) {
+		if s.HandoffState.IsZero() {
+			s.HandoffState = model.NewHandoffState("")
+		}
+		s.HandoffState.AddCertifiedFact(fact)
+	})
+	data, _ := json.Marshal(fact)
+	return model.ToolResultPart{ToolCallID: call.ID, Content: string(data)}
+}
+
+func (e *Engine) certifyFact(in certifyFactInput) (model.CertifiedFact, error) {
+	switch strings.ToLower(strings.TrimSpace(in.Kind)) {
+	case "file_contains":
+		return e.certifyFileContains(in)
+	case "json_shape", "jsonl_shape":
+		return e.certifyJSONShape(in)
+	case "tool_result_contains":
+		return e.certifyToolResultContains(in)
+	default:
+		return model.CertifiedFact{}, fmt.Errorf("unsupported kind %q; supported kinds: file_contains, json_shape, jsonl_shape, tool_result_contains", in.Kind)
+	}
+}
+
+func (e *Engine) certifyFileContains(in certifyFactInput) (model.CertifiedFact, error) {
+	if strings.TrimSpace(in.Path) == "" {
+		return model.CertifiedFact{}, fmt.Errorf("path is required")
+	}
+	if in.Contains == "" {
+		return model.CertifiedFact{}, fmt.Errorf("contains is required")
+	}
+	path := resolveCertifyPath(e.store.Snapshot().CWD, in.Path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return model.CertifiedFact{}, err
+	}
+	if !strings.Contains(string(data), in.Contains) {
+		return model.CertifiedFact{}, fmt.Errorf("%s does not contain requested text", path)
+	}
+	return model.CertifiedFact{
+		ID:         in.ID,
+		Kind:       "file_contains",
+		Source:     path,
+		Claim:      in.Claim,
+		Evidence:   in.Contains,
+		SampleHash: sha256Hex([]byte(in.Contains)),
+		Verified:   true,
+	}, nil
+}
+
+func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, error) {
+	if strings.TrimSpace(in.Path) == "" {
+		return model.CertifiedFact{}, fmt.Errorf("path is required")
+	}
+	if len(in.RequiredFields) == 0 {
+		return model.CertifiedFact{}, fmt.Errorf("required_fields is required")
+	}
+	path := resolveCertifyPath(e.store.Snapshot().CWD, in.Path)
+	file, err := os.Open(path)
+	if err != nil {
+		return model.CertifiedFact{}, err
+	}
+	defer file.Close()
+
+	required := make(map[string]bool, len(in.RequiredFields))
+	for _, f := range in.RequiredFields {
+		required[f] = false
+	}
+	observed := make(map[string]bool)
+	var matching int
+	var sample []byte
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var obj map[string]any
+		if err := json.Unmarshal(line, &obj); err != nil {
+			continue
+		}
+		if !matchesCertifySelector(obj, in.Selector) {
+			continue
+		}
+		matching++
+		if sample == nil {
+			sample = append([]byte(nil), line...)
+		}
+		for k := range obj {
+			observed[k] = true
+		}
+		for k := range required {
+			if _, ok := obj[k]; ok {
+				required[k] = true
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return model.CertifiedFact{}, err
+	}
+	if matching == 0 {
+		return model.CertifiedFact{}, fmt.Errorf("no JSONL records matched selector")
+	}
+	var missing []string
+	for k, ok := range required {
+		if !ok {
+			missing = append(missing, k)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		return model.CertifiedFact{}, fmt.Errorf("missing required fields: %s", strings.Join(missing, ", "))
+	}
+	fields := make([]string, 0, len(observed))
+	for k := range observed {
+		fields = append(fields, k)
+	}
+	sort.Strings(fields)
+	return model.CertifiedFact{
+		ID:              in.ID,
+		Kind:            "json_shape",
+		Source:          path,
+		Claim:           in.Claim,
+		Evidence:        fmt.Sprintf("%d matching records with required fields %s", matching, strings.Join(in.RequiredFields, ", ")),
+		Fields:          fields,
+		MatchingRecords: matching,
+		SampleHash:      sha256Hex(sample),
+		Verified:        true,
+	}, nil
+}
+
+func (e *Engine) certifyToolResultContains(in certifyFactInput) (model.CertifiedFact, error) {
+	if strings.TrimSpace(in.ToolCallID) == "" {
+		return model.CertifiedFact{}, fmt.Errorf("tool_call_id is required")
+	}
+	if in.Contains == "" {
+		return model.CertifiedFact{}, fmt.Errorf("contains is required")
+	}
+	snap := e.store.Snapshot()
+	for _, msg := range snap.Conversation.Messages {
+		for _, part := range msg.Content {
+			result, ok := part.(model.ToolResultPart)
+			if !ok || result.ToolCallID != in.ToolCallID {
+				continue
+			}
+			if !strings.Contains(result.Content, in.Contains) {
+				return model.CertifiedFact{}, fmt.Errorf("tool result %s does not contain requested text", in.ToolCallID)
+			}
+			return model.CertifiedFact{
+				ID:         in.ID,
+				Kind:       "tool_result_contains",
+				Source:     "tool_result:" + in.ToolCallID,
+				Claim:      in.Claim,
+				Evidence:   in.Contains,
+				ToolCallID: in.ToolCallID,
+				SampleHash: sha256Hex([]byte(result.Content)),
+				Verified:   true,
+			}, nil
+		}
+	}
+	return model.CertifiedFact{}, fmt.Errorf("tool result %s not found", in.ToolCallID)
+}
+
+func resolveCertifyPath(cwd, path string) string {
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(filepath.Join(cwd, path))
+}
+
+func matchesCertifySelector(obj map[string]any, selector *certifyFactSelector) bool {
+	if selector == nil || selector.Field == "" {
+		return true
+	}
+	got, ok := obj[selector.Field]
+	if !ok {
+		return false
+	}
+	return fmt.Sprint(got) == selector.Equals
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func messageHasToolCall(msg model.Message) bool {

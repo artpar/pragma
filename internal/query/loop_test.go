@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -115,6 +117,26 @@ func (echoTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permissi
 }
 func (echoTool) Flags() tool.ToolFlags {
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
+}
+
+type mutatingTestTool struct {
+	invoked bool
+}
+
+func (m *mutatingTestTool) Name() string        { return "mutate" }
+func (m *mutatingTestTool) Description() string { return "mutates test state" }
+func (m *mutatingTestTool) InputSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+func (m *mutatingTestTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	m.invoked = true
+	return tool.InvokeResult{Content: "mutated"}, nil
+}
+func (m *mutatingTestTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	return checker.Check(context.Background(), "mutate", "")
+}
+func (m *mutatingTestTool) Flags() tool.ToolFlags {
+	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
 // newTestEngine creates an Engine wired for testing.
@@ -561,6 +583,106 @@ func TestRun_StateHandoffPatchToolUpdatesStateAndPreservesResults(t *testing.T) 
 	}
 }
 
+func TestRun_StateHandoffBlocksMutatingToolsUntilInvestigationReady(t *testing.T) {
+	patchCallID := "tc-patch"
+	mutateCallID := "tc-mutate"
+	mutate := &mutatingTestTool{}
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: patchCallID, Name: "PatchHandoffState"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: patchCallID, JSONDelta: `{"ops":[{"op":"replace","path":"/current_focus","value":"trying to edit too early"}]}`}},
+				{ToolCallStart: &model.ToolCallPart{ID: mutateCallID, Name: "mutate"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: mutateCallID, JSONDelta: `{}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse, Usage: model.TokenUsage{InputTokens: 90, OutputTokens: 30}}},
+			},
+			textChunks("done", model.StopEndTurn),
+		},
+	}
+	engine, _ := newTestEngine(prov, mutate)
+	engine.config.ContextMode = model.ContextModeStateHandoff
+	engine.config.HandoffSchema = model.HandoffSchemaV1
+
+	events := drain(engine.Run(context.Background(), "Change code without enough investigation"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+	if mutate.invoked {
+		t.Fatal("mutating tool was invoked before investigation gate was ready")
+	}
+	resultsMsg := engine.store.Snapshot().Conversation.Messages[2]
+	result := resultsMsg.Content[1].(model.ToolResultPart)
+	if !result.IsError || !strings.Contains(result.Content, "change blocked") {
+		t.Fatalf("mutating result = %#v, want change blocked error", result)
+	}
+}
+
+func TestRun_StateHandoffAllowsMutatingToolsAfterInvestigationReady(t *testing.T) {
+	patchCallID := "tc-patch"
+	certifyCallID := "tc-certify"
+	mutateCallID := "tc-mutate"
+	mutate := &mutatingTestTool{}
+	contractFile := t.TempDir() + "/contract.txt"
+	if err := os.WriteFile(contractFile, []byte("real contract marker"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	patchInput := `{"ops":[{"op":"add","path":"/investigation/certified_fact_refs/-","value":"contract_fact"},{"op":"add","path":"/investigation/observed_contracts/-","value":{"name":"test contract","source":"contract.txt","evidence":"real contract marker","fact_refs":["contract_fact"]}},{"op":"add","path":"/investigation/acceptance_checks/-","value":{"description":"run against real contract","command":"go test ./internal/query","expected":"pass","fact_refs":["contract_fact"]}},{"op":"replace","path":"/investigation/ready_for_changes","value":true}]}`
+	certifyInput := fmt.Sprintf(`{"id":"contract_fact","kind":"file_contains","path":%q,"contains":"real contract marker","claim":"contract file contains the marker"}`, contractFile)
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: patchCallID, Name: "PatchHandoffState"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: patchCallID, JSONDelta: patchInput}},
+				{ToolCallStart: &model.ToolCallPart{ID: certifyCallID, Name: "CertifyFact"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: certifyCallID, JSONDelta: certifyInput}},
+				{ToolCallStart: &model.ToolCallPart{ID: mutateCallID, Name: "mutate"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: mutateCallID, JSONDelta: `{}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse, Usage: model.TokenUsage{InputTokens: 90, OutputTokens: 30}}},
+			},
+			textChunks("done", model.StopEndTurn),
+		},
+	}
+	engine, _ := newTestEngine(prov, mutate)
+	engine.config.ContextMode = model.ContextModeStateHandoff
+	engine.config.HandoffSchema = model.HandoffSchemaV1
+
+	events := drain(engine.Run(context.Background(), "Change code after enough investigation"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+	if !mutate.invoked {
+		t.Fatal("mutating tool was not invoked after investigation gate was ready")
+	}
+	resultsMsg := engine.store.Snapshot().Conversation.Messages[2]
+	result := resultsMsg.Content[2].(model.ToolResultPart)
+	if result.IsError || result.Content != "mutated" {
+		t.Fatalf("mutating result = %#v, want successful mutation", result)
+	}
+	if _, ok := engine.store.Snapshot().HandoffState.CertifiedFacts["contract_fact"]; !ok {
+		t.Fatal("certified fact was not stored")
+	}
+}
+
+func TestCertifyFactToolSchemaNamesSupportedKinds(t *testing.T) {
+	var schema struct {
+		Properties map[string]struct {
+			Enum []string `json:"enum"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(certifyFactToolDef().InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(schema.Properties["kind"].Enum, ",")
+	want := "file_contains,json_shape,jsonl_shape,tool_result_contains"
+	if got != want {
+		t.Fatalf("CertifyFact kind enum = %q, want %q", got, want)
+	}
+}
+
 func TestMessagesForRequest_StateHandoffIncludesLatestToolExchangeBeforeNewUserMessage(t *testing.T) {
 	engine, _ := newTestEngine(&testProvider{})
 	engine.config.ContextMode = model.ContextModeStateHandoff
@@ -588,6 +710,36 @@ func TestMessagesForRequest_StateHandoffIncludesLatestToolExchangeBeforeNewUserM
 	}
 	if got[2].Role != model.RoleUser || messageText(got[2]) != "new instruction" {
 		t.Fatalf("message[2] = %#v, want latest user instruction", got[2])
+	}
+}
+
+func TestMessagesForRequest_StateHandoffBoundsLatestToolResults(t *testing.T) {
+	engine, _ := newTestEngine(&testProvider{})
+	engine.config.ContextMode = model.ContextModeStateHandoff
+
+	large := strings.Repeat("x", stateHandoffMaxToolResultChars+10_000)
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
+	conv.Append(model.Message{Role: model.RoleAssistant, Content: []model.ContentPart{
+		model.ToolCallPart{ID: "tc-1", Name: "Read", Input: json.RawMessage(`{"file_path":"large.log"}`)},
+	}})
+	conv.Append(model.Message{Role: model.RoleUser, Content: []model.ContentPart{
+		model.ToolResultPart{ToolCallID: "tc-1", Content: large},
+	}})
+
+	got := engine.messagesForRequest(conv)
+	if len(got) != 2 {
+		t.Fatalf("messages = %d, want latest exchange", len(got))
+	}
+	result := got[1].Content[0].(model.ToolResultPart)
+	if len(result.Content) > stateHandoffMaxToolResultChars {
+		t.Fatalf("bounded result length = %d, want <= %d", len(result.Content), stateHandoffMaxToolResultChars)
+	}
+	if !strings.Contains(result.Content, "tool result truncated for state-handoff prompt") {
+		t.Fatalf("bounded result missing truncation marker: %q", result.Content[len(result.Content)-200:])
+	}
+	original := conv.Messages[1].Content[0].(model.ToolResultPart)
+	if original.Content != large {
+		t.Fatal("messagesForRequest mutated stored conversation tool result")
 	}
 }
 

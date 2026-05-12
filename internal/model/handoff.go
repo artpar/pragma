@@ -14,22 +14,62 @@ const (
 )
 
 type HandoffState struct {
-	SchemaVersion                  string         `json:"schema_version"`
-	Goal                           string         `json:"goal"`
-	Invariants                     []string       `json:"invariants,omitempty"`
-	CurrentFocus                   string         `json:"current_focus,omitempty"`
-	Todos                          []HandoffTodo  `json:"todos,omitempty"`
-	Completed                      []string       `json:"completed,omitempty"`
-	LatestToolResultInterpretation string         `json:"latest_tool_result_interpretation,omitempty"`
-	NextAction                     string         `json:"next_action,omitempty"`
-	RecentActions                  []string       `json:"recent_actions,omitempty"`
-	OpenQuestions                  []string       `json:"open_questions,omitempty"`
-	DoNot                          []string       `json:"do_not,omitempty"`
-	Evidence                       []string       `json:"evidence,omitempty"`
-	Decisions                      []string       `json:"decisions,omitempty"`
-	Files                          HandoffFiles   `json:"files,omitempty"`
-	Risks                          []string       `json:"risks,omitempty"`
-	Extra                          map[string]any `json:"-"`
+	SchemaVersion                  string                   `json:"schema_version"`
+	Goal                           string                   `json:"goal"`
+	Invariants                     []string                 `json:"invariants,omitempty"`
+	CurrentFocus                   string                   `json:"current_focus,omitempty"`
+	Investigation                  HandoffInvestigation     `json:"investigation"`
+	CertifiedFacts                 map[string]CertifiedFact `json:"certified_facts,omitempty"`
+	Todos                          []HandoffTodo            `json:"todos,omitempty"`
+	Completed                      []string                 `json:"completed,omitempty"`
+	LatestToolResultInterpretation string                   `json:"latest_tool_result_interpretation,omitempty"`
+	NextAction                     string                   `json:"next_action,omitempty"`
+	RecentActions                  []string                 `json:"recent_actions,omitempty"`
+	OpenQuestions                  []string                 `json:"open_questions,omitempty"`
+	DoNot                          []string                 `json:"do_not,omitempty"`
+	Evidence                       []string                 `json:"evidence,omitempty"`
+	Decisions                      []string                 `json:"decisions,omitempty"`
+	Files                          HandoffFiles             `json:"files,omitempty"`
+	Risks                          []string                 `json:"risks,omitempty"`
+	Extra                          map[string]any           `json:"-"`
+}
+
+type HandoffInvestigation struct {
+	ObservedContracts []HandoffObservedContract `json:"observed_contracts,omitempty"`
+	AcceptanceChecks  []HandoffAcceptanceCheck  `json:"acceptance_checks,omitempty"`
+	CertifiedFactRefs []string                  `json:"certified_fact_refs,omitempty"`
+	ReadyForChanges   bool                      `json:"ready_for_changes"`
+	Blockers          []string                  `json:"blockers,omitempty"`
+}
+
+type HandoffObservedContract struct {
+	Name     string   `json:"name,omitempty"`
+	Source   string   `json:"source,omitempty"`
+	Evidence string   `json:"evidence,omitempty"`
+	Fields   []string `json:"fields,omitempty"`
+	FactRefs []string `json:"fact_refs,omitempty"`
+}
+
+type HandoffAcceptanceCheck struct {
+	Description string   `json:"description,omitempty"`
+	Command     string   `json:"command,omitempty"`
+	Expected    string   `json:"expected,omitempty"`
+	Status      string   `json:"status,omitempty"`
+	FactRefs    []string `json:"fact_refs,omitempty"`
+}
+
+type CertifiedFact struct {
+	ID              string         `json:"id"`
+	Kind            string         `json:"kind"`
+	Source          string         `json:"source,omitempty"`
+	Claim           string         `json:"claim,omitempty"`
+	Evidence        string         `json:"evidence,omitempty"`
+	Fields          []string       `json:"fields,omitempty"`
+	MatchingRecords int            `json:"matching_records,omitempty"`
+	SampleHash      string         `json:"sample_hash,omitempty"`
+	ToolCallID      string         `json:"tool_call_id,omitempty"`
+	Verified        bool           `json:"verified"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
 type HandoffTodo struct {
@@ -61,8 +101,11 @@ func NewHandoffState(goal string) HandoffState {
 		Invariants: []string{
 			"Use current_handoff_state plus only the latest assistant tool_call blocks and matching tool_result blocks.",
 			"Every tool-use response must call PatchHandoffState first, before any real tool.",
+			"Certified facts are written only by CertifyFact; PatchHandoffState may only reference certified fact IDs.",
 			"Maintain todos for long-running tasks; use statuses pending, in_progress, completed, or blocked.",
 			"Interpret each tool_result into durable state and choose a non-repeating next_action.",
+			"Before non-read-only tools, use CertifyFact, reference certified facts from investigation.certified_fact_refs, observed_contracts.fact_refs, and acceptance_checks.fact_refs, and set investigation.ready_for_changes.",
+			"Do not end with a plan when implementation or verification work remains; keep using tools until todos are completed or blocked.",
 			"Preserve user constraints and do_not items unless the user explicitly changes them.",
 		},
 		CurrentFocus:                   "Start from the user's latest task.",
@@ -81,6 +124,8 @@ func (s HandoffState) IsZero() bool {
 func (s HandoffState) DeepCopy() HandoffState {
 	cp := s
 	cp.Invariants = copyStrings(s.Invariants)
+	cp.Investigation = s.Investigation.DeepCopy()
+	cp.CertifiedFacts = copyCertifiedFacts(s.CertifiedFacts)
 	cp.Todos = copyHandoffTodos(s.Todos)
 	cp.Completed = copyStrings(s.Completed)
 	cp.RecentActions = copyStrings(s.RecentActions)
@@ -94,6 +139,51 @@ func (s HandoffState) DeepCopy() HandoffState {
 	cp.Risks = copyStrings(s.Risks)
 	cp.Extra = copyJSONMap(s.Extra)
 	return cp
+}
+
+func (i HandoffInvestigation) DeepCopy() HandoffInvestigation {
+	cp := i
+	cp.ObservedContracts = copyObservedContracts(i.ObservedContracts)
+	cp.AcceptanceChecks = copyAcceptanceChecks(i.AcceptanceChecks)
+	cp.CertifiedFactRefs = copyStrings(i.CertifiedFactRefs)
+	cp.Blockers = copyStrings(i.Blockers)
+	return cp
+}
+
+func (s HandoffState) ChangeGateMissing() []string {
+	var missing []string
+	if !hasCertifiedFactRef(s.Investigation.CertifiedFactRefs, s.CertifiedFacts) {
+		missing = append(missing, "investigation.certified_fact_refs referencing verified certified_facts")
+	}
+	if !hasObservedContract(s.Investigation.ObservedContracts, s.CertifiedFacts) {
+		missing = append(missing, "investigation.observed_contracts with source, evidence, and verified fact_refs")
+	}
+	if !hasAcceptanceCheck(s.Investigation.AcceptanceChecks, s.CertifiedFacts) {
+		missing = append(missing, "investigation.acceptance_checks with description, command or expected result, and verified fact_refs")
+	}
+	if !s.Investigation.ReadyForChanges {
+		missing = append(missing, "investigation.ready_for_changes=true")
+	}
+	return missing
+}
+
+func (s *HandoffState) AddCertifiedFact(f CertifiedFact) {
+	if s.CertifiedFacts == nil {
+		s.CertifiedFacts = make(map[string]CertifiedFact)
+	}
+	f.Verified = true
+	s.CertifiedFacts[f.ID] = f.DeepCopy()
+}
+
+func (f CertifiedFact) DeepCopy() CertifiedFact {
+	cp := f
+	cp.Fields = copyStrings(f.Fields)
+	cp.Metadata = copyJSONMap(f.Metadata)
+	return cp
+}
+
+func (s HandoffState) AllowsChanges() bool {
+	return len(s.ChangeGateMissing()) == 0
 }
 
 func (s HandoffState) MarshalJSON() ([]byte, error) {
@@ -124,6 +214,8 @@ func (s *HandoffState) UnmarshalJSON(data []byte) error {
 	unmarshalKnown(raw, extra, "goal", &out.Goal)
 	unmarshalKnown(raw, extra, "invariants", &out.Invariants)
 	unmarshalKnown(raw, extra, "current_focus", &out.CurrentFocus)
+	unmarshalKnown(raw, extra, "investigation", &out.Investigation)
+	unmarshalKnown(raw, extra, "certified_facts", &out.CertifiedFacts)
 	unmarshalKnown(raw, extra, "todos", &out.Todos)
 	unmarshalKnown(raw, extra, "completed", &out.Completed)
 	unmarshalKnown(raw, extra, "latest_tool_result_interpretation", &out.LatestToolResultInterpretation)
@@ -227,6 +319,9 @@ func ApplyHandoffPatch(state HandoffState, raw json.RawMessage) (HandoffState, e
 	seedHandoffPatchContainers(doc)
 
 	for _, op := range patch.Ops {
+		if targetsCertifiedFacts(op.Path) {
+			continue
+		}
 		applyPatchOp(&doc, op)
 	}
 
@@ -264,6 +359,19 @@ func seedHandoffPatchContainers(doc any) {
 		if _, ok := root[key]; !ok {
 			root[key] = []any{}
 		}
+	}
+	investigation, ok := root["investigation"].(map[string]any)
+	if !ok {
+		investigation = map[string]any{}
+		root["investigation"] = investigation
+	}
+	for _, key := range []string{"observed_contracts", "acceptance_checks", "certified_fact_refs", "blockers"} {
+		if _, ok := investigation[key]; !ok {
+			investigation[key] = []any{}
+		}
+	}
+	if _, ok := investigation["ready_for_changes"]; !ok {
+		investigation["ready_for_changes"] = false
 	}
 	files, ok := root["files"].(map[string]any)
 	if !ok {
@@ -307,6 +415,11 @@ func parsePatchPath(path string) []string {
 		out[i] = p
 	}
 	return out
+}
+
+func targetsCertifiedFacts(path string) bool {
+	parts := parsePatchPath(path)
+	return len(parts) > 0 && parts[0] == "certified_facts"
 }
 
 func isRemoveOp(op string) bool {
@@ -458,6 +571,78 @@ func copyHandoffTodos(in []HandoffTodo) []HandoffTodo {
 	return out
 }
 
+func copyObservedContracts(in []HandoffObservedContract) []HandoffObservedContract {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]HandoffObservedContract, len(in))
+	copy(out, in)
+	for i := range out {
+		out[i].Fields = copyStrings(in[i].Fields)
+		out[i].FactRefs = copyStrings(in[i].FactRefs)
+	}
+	return out
+}
+
+func copyAcceptanceChecks(in []HandoffAcceptanceCheck) []HandoffAcceptanceCheck {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]HandoffAcceptanceCheck, len(in))
+	copy(out, in)
+	for i := range out {
+		out[i].FactRefs = copyStrings(in[i].FactRefs)
+	}
+	return out
+}
+
+func copyCertifiedFacts(in map[string]CertifiedFact) map[string]CertifiedFact {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]CertifiedFact, len(in))
+	for k, v := range in {
+		out[k] = v.DeepCopy()
+	}
+	return out
+}
+
+func hasCertifiedFactRef(refs []string, facts map[string]CertifiedFact) bool {
+	for _, ref := range refs {
+		if f, ok := facts[ref]; ok && f.Verified {
+			return true
+		}
+	}
+	return false
+}
+
+func hasObservedContract(contracts []HandoffObservedContract, facts map[string]CertifiedFact) bool {
+	for _, c := range contracts {
+		if strings.TrimSpace(c.Source) == "" || strings.TrimSpace(c.Evidence) == "" {
+			continue
+		}
+		if hasCertifiedFactRef(c.FactRefs, facts) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAcceptanceCheck(checks []HandoffAcceptanceCheck, facts map[string]CertifiedFact) bool {
+	for _, c := range checks {
+		if strings.TrimSpace(c.Description) == "" {
+			continue
+		}
+		if strings.TrimSpace(c.Command) == "" && strings.TrimSpace(c.Expected) == "" {
+			continue
+		}
+		if hasCertifiedFactRef(c.FactRefs, facts) {
+			return true
+		}
+	}
+	return false
+}
+
 func copyJSONMap(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
@@ -499,6 +684,8 @@ var handoffStateReservedFields = map[string]struct{}{
 	"goal":                              {},
 	"invariants":                        {},
 	"current_focus":                     {},
+	"investigation":                     {},
+	"certified_facts":                   {},
 	"todos":                             {},
 	"completed":                         {},
 	"latest_tool_result_interpretation": {},
