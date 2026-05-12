@@ -51,11 +51,13 @@ type HandoffObservedContract struct {
 }
 
 type HandoffAcceptanceCheck struct {
-	Description string   `json:"description,omitempty"`
-	Command     string   `json:"command,omitempty"`
-	Expected    string   `json:"expected,omitempty"`
-	Status      string   `json:"status,omitempty"`
-	FactRefs    []string `json:"fact_refs,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	Command        string   `json:"command,omitempty"`
+	Expected       string   `json:"expected,omitempty"`
+	ExpectedResult string   `json:"expected_result,omitempty"`
+	ExpectedOutput string   `json:"expected_output,omitempty"`
+	Status         string   `json:"status,omitempty"`
+	FactRefs       []string `json:"fact_refs,omitempty"`
 }
 
 type CertifiedFact struct {
@@ -65,6 +67,7 @@ type CertifiedFact struct {
 	Claim           string         `json:"claim,omitempty"`
 	Evidence        string         `json:"evidence,omitempty"`
 	Fields          []string       `json:"fields,omitempty"`
+	Paths           []string       `json:"paths,omitempty"`
 	MatchingRecords int            `json:"matching_records,omitempty"`
 	SampleHash      string         `json:"sample_hash,omitempty"`
 	ToolCallID      string         `json:"tool_call_id,omitempty"`
@@ -178,6 +181,7 @@ func (s *HandoffState) AddCertifiedFact(f CertifiedFact) {
 func (f CertifiedFact) DeepCopy() CertifiedFact {
 	cp := f
 	cp.Fields = copyStrings(f.Fields)
+	cp.Paths = copyStrings(f.Paths)
 	cp.Metadata = copyJSONMap(f.Metadata)
 	return cp
 }
@@ -633,7 +637,7 @@ func hasAcceptanceCheck(checks []HandoffAcceptanceCheck, facts map[string]Certif
 		if strings.TrimSpace(c.Description) == "" {
 			continue
 		}
-		if strings.TrimSpace(c.Command) == "" && strings.TrimSpace(c.Expected) == "" {
+		if strings.TrimSpace(c.Command) == "" && strings.TrimSpace(acceptanceExpected(c)) == "" {
 			continue
 		}
 		if hasCertifiedFactRef(c.FactRefs, facts) {
@@ -641,6 +645,15 @@ func hasAcceptanceCheck(checks []HandoffAcceptanceCheck, facts map[string]Certif
 		}
 	}
 	return false
+}
+
+func acceptanceExpected(c HandoffAcceptanceCheck) string {
+	for _, v := range []string{c.Expected, c.ExpectedResult, c.ExpectedOutput} {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func copyJSONMap(in map[string]any) map[string]any {

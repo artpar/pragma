@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -693,9 +694,10 @@ Do not end the turn with only a plan when the user's coding task still has pendi
 Before calling any non-read-only tool such as Edit, Write, Bash, NotebookEdit, or other changing/destructive tools, you MUST first investigate with read-only tools, call CertifyFact to create runtime-verified facts, and patch:
 - /investigation/certified_fact_refs/- with a fact ID returned by CertifyFact.
 - /investigation/observed_contracts/- with the real source/evidence you are relying on, including fact_refs that reference certified facts.
-- /investigation/acceptance_checks/- with the real acceptance command or expected real-input check that will prove the change, including fact_refs that reference certified facts.
+- /investigation/acceptance_checks/- with the real acceptance command or expected real-input check that will prove the change, including fact_refs that reference certified facts. Use "expected" for the expected result; "expected_result" and "expected_output" are also accepted.
 - /investigation/ready_for_changes to true.
 The runtime blocks non-read-only tools until those fields are present.
+If you rely on nested JSON or log structure, certify it with CertifyFact required_paths before writing code against that structure.
 When calling any real tool, call PatchHandoffState and that real tool in the same response, with PatchHandoffState first.
 If no durable task state changed yet, still call PatchHandoffState first with a minimal current_focus, next_action, or latest_tool_result_interpretation update explaining what you are about to do.
 PatchHandoffState accepts arbitrary JSON paths and fields. Use whatever structure best preserves progress for the next turn.
@@ -758,6 +760,7 @@ func certifyFactToolDef() model.ToolDef {
 				"contains":{"type":"string","description":"Exact text that must be present for file_contains or tool_result_contains."},
 				"claim":{"type":"string","description":"Human-readable claim this verified fact proves."},
 				"required_fields":{"type":"array","items":{"type":"string"},"description":"Fields that must exist on at least one matching JSONL object for json_shape/jsonl_shape."},
+				"required_paths":{"type":"array","items":{"type":"string"},"description":"Nested dot paths that must exist on at least one matching JSONL object for json_shape/jsonl_shape. Array indexes are supported, e.g. content.0.type or content.0.data.name."},
 				"selector":{"type":"object","properties":{"field":{"type":"string"},"equals":{"type":"string"}},"description":"Optional JSONL selector. Example: {\"field\":\"kind\",\"equals\":\"APIRequestStarted\"}."},
 				"tool_call_id":{"type":"string","description":"Previous tool call ID to inspect for tool_result_contains."}
 			},
@@ -897,6 +900,7 @@ type certifyFactInput struct {
 	Contains       string               `json:"contains,omitempty"`
 	Claim          string               `json:"claim,omitempty"`
 	RequiredFields []string             `json:"required_fields,omitempty"`
+	RequiredPaths  []string             `json:"required_paths,omitempty"`
 	Selector       *certifyFactSelector `json:"selector,omitempty"`
 	ToolCallID     string               `json:"tool_call_id,omitempty"`
 }
@@ -971,8 +975,8 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 	if strings.TrimSpace(in.Path) == "" {
 		return model.CertifiedFact{}, fmt.Errorf("path is required")
 	}
-	if len(in.RequiredFields) == 0 {
-		return model.CertifiedFact{}, fmt.Errorf("required_fields is required")
+	if len(in.RequiredFields) == 0 && len(in.RequiredPaths) == 0 {
+		return model.CertifiedFact{}, fmt.Errorf("required_fields or required_paths is required")
 	}
 	path := resolveCertifyPath(e.store.Snapshot().CWD, in.Path)
 	file, err := os.Open(path)
@@ -984,6 +988,10 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 	required := make(map[string]bool, len(in.RequiredFields))
 	for _, f := range in.RequiredFields {
 		required[f] = false
+	}
+	requiredPaths := make(map[string]bool, len(in.RequiredPaths))
+	for _, p := range in.RequiredPaths {
+		requiredPaths[p] = false
 	}
 	observed := make(map[string]bool)
 	var matching int
@@ -1011,6 +1019,11 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 				required[k] = true
 			}
 		}
+		for p := range requiredPaths {
+			if jsonPathExists(obj, p) {
+				requiredPaths[p] = true
+			}
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return model.CertifiedFact{}, err
@@ -1024,9 +1037,14 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 			missing = append(missing, k)
 		}
 	}
+	for p, ok := range requiredPaths {
+		if !ok {
+			missing = append(missing, p)
+		}
+	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		return model.CertifiedFact{}, fmt.Errorf("missing required fields: %s", strings.Join(missing, ", "))
+		return model.CertifiedFact{}, fmt.Errorf("missing required fields or paths: %s", strings.Join(missing, ", "))
 	}
 	fields := make([]string, 0, len(observed))
 	for k := range observed {
@@ -1038,8 +1056,9 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 		Kind:            "json_shape",
 		Source:          path,
 		Claim:           in.Claim,
-		Evidence:        fmt.Sprintf("%d matching records with required fields %s", matching, strings.Join(in.RequiredFields, ", ")),
+		Evidence:        certifiedJSONEvidence(matching, in.RequiredFields, in.RequiredPaths),
 		Fields:          fields,
+		Paths:           copySortedStrings(in.RequiredPaths),
 		MatchingRecords: matching,
 		SampleHash:      sha256Hex(sample),
 		Verified:        true,
@@ -1099,6 +1118,52 @@ func matchesCertifySelector(obj map[string]any, selector *certifyFactSelector) b
 		return false
 	}
 	return fmt.Sprint(got) == selector.Equals
+}
+
+func jsonPathExists(root any, path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	cur := root
+	for _, part := range strings.Split(path, ".") {
+		if part == "" {
+			return false
+		}
+		switch node := cur.(type) {
+		case map[string]any:
+			next, ok := node[part]
+			if !ok {
+				return false
+			}
+			cur = next
+		case []any:
+			idx, err := strconv.Atoi(part)
+			if err != nil || idx < 0 || idx >= len(node) {
+				return false
+			}
+			cur = node[idx]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func certifiedJSONEvidence(matching int, fields, paths []string) string {
+	var parts []string
+	if len(fields) > 0 {
+		parts = append(parts, "required fields "+strings.Join(fields, ", "))
+	}
+	if len(paths) > 0 {
+		parts = append(parts, "required paths "+strings.Join(paths, ", "))
+	}
+	return fmt.Sprintf("%d matching records with %s", matching, strings.Join(parts, " and "))
+}
+
+func copySortedStrings(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
 }
 
 func sha256Hex(data []byte) string {

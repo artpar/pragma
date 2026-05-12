@@ -628,7 +628,7 @@ func TestRun_StateHandoffAllowsMutatingToolsAfterInvestigationReady(t *testing.T
 	if err := os.WriteFile(contractFile, []byte("real contract marker"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	patchInput := `{"ops":[{"op":"add","path":"/investigation/certified_fact_refs/-","value":"contract_fact"},{"op":"add","path":"/investigation/observed_contracts/-","value":{"name":"test contract","source":"contract.txt","evidence":"real contract marker","fact_refs":["contract_fact"]}},{"op":"add","path":"/investigation/acceptance_checks/-","value":{"description":"run against real contract","command":"go test ./internal/query","expected":"pass","fact_refs":["contract_fact"]}},{"op":"replace","path":"/investigation/ready_for_changes","value":true}]}`
+	patchInput := `{"ops":[{"op":"add","path":"/investigation/certified_fact_refs/-","value":"contract_fact"},{"op":"add","path":"/investigation/observed_contracts/-","value":{"name":"test contract","source":"contract.txt","evidence":"real contract marker","fact_refs":["contract_fact"]}},{"op":"add","path":"/investigation/acceptance_checks/-","value":{"description":"run against real contract","command":"go test ./internal/query","expected_result":"pass","fact_refs":["contract_fact"]}},{"op":"replace","path":"/investigation/ready_for_changes","value":true}]}`
 	certifyInput := fmt.Sprintf(`{"id":"contract_fact","kind":"file_contains","path":%q,"contains":"real contract marker","claim":"contract file contains the marker"}`, contractFile)
 	prov := &testProvider{
 		turns: [][]provider.StreamChunk{
@@ -671,6 +671,7 @@ func TestCertifyFactToolSchemaNamesSupportedKinds(t *testing.T) {
 	var schema struct {
 		Properties map[string]struct {
 			Enum []string `json:"enum"`
+			Type string   `json:"type"`
 		} `json:"properties"`
 	}
 	if err := json.Unmarshal(certifyFactToolDef().InputSchema, &schema); err != nil {
@@ -680,6 +681,43 @@ func TestCertifyFactToolSchemaNamesSupportedKinds(t *testing.T) {
 	want := "file_contains,json_shape,jsonl_shape,tool_result_contains"
 	if got != want {
 		t.Fatalf("CertifyFact kind enum = %q, want %q", got, want)
+	}
+	if schema.Properties["required_paths"].Type != "array" {
+		t.Fatalf("CertifyFact required_paths type = %q, want array", schema.Properties["required_paths"].Type)
+	}
+}
+
+func TestCertifyJSONShapeSupportsNestedRequiredPaths(t *testing.T) {
+	dir := t.TempDir()
+	logPath := dir + "/recording.jsonl"
+	data := strings.Join([]string{
+		`{"kind":"APIRequestCompleted","stop_reason":"tool_use","content":[{"type":"tool_call","data":{"name":"PatchHandoffState","input":{"ops":[]}}}]}`,
+		`{"kind":"APIRequestCompleted","stop_reason":"end_turn","content":[{"type":"text","data":{"text":"done"}}]}`,
+	}, "\n")
+	if err := os.WriteFile(logPath, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	engine, _ := newTestEngine(&testProvider{})
+	engine.store.Update(func(s *app.AppState) {
+		s.CWD = dir
+	})
+
+	fact, err := engine.certifyFact(certifyFactInput{
+		ID:            "api-completed-tool-call-shape",
+		Kind:          "jsonl_shape",
+		Path:          "recording.jsonl",
+		RequiredPaths: []string{"content.0.type", "content.0.data.name", "content.0.data.input.ops"},
+		Selector:      &certifyFactSelector{Field: "stop_reason", Equals: "tool_use"},
+		Claim:         "tool-use APIRequestCompleted records carry nested tool call shape",
+	})
+	if err != nil {
+		t.Fatalf("certifyFact: %v", err)
+	}
+	if fact.MatchingRecords != 1 {
+		t.Fatalf("MatchingRecords = %d, want 1", fact.MatchingRecords)
+	}
+	if strings.Join(fact.Paths, ",") != "content.0.data.input.ops,content.0.data.name,content.0.type" {
+		t.Fatalf("Paths = %#v", fact.Paths)
 	}
 }
 

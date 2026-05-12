@@ -93,6 +93,31 @@ func TestHandoffChangeGateRequiresInvestigation(t *testing.T) {
 	}
 }
 
+func TestHandoffAcceptanceCheckAcceptsExpectedAliases(t *testing.T) {
+	state := NewHandoffState("inspect repo")
+	state.AddCertifiedFact(CertifiedFact{
+		ID:       "fact-a",
+		Kind:     "file_contains",
+		Source:   "a.log",
+		Evidence: "real",
+		Verified: true,
+	})
+	state.Investigation.CertifiedFactRefs = []string{"fact-a"}
+	state.Investigation.ObservedContracts = []HandoffObservedContract{{
+		Source: "a.log", Evidence: "real", FactRefs: []string{"fact-a"},
+	}}
+	state.Investigation.AcceptanceChecks = []HandoffAcceptanceCheck{{
+		Description:    "verify real behavior",
+		ExpectedResult: "passes with real fixture",
+		FactRefs:       []string{"fact-a"},
+	}}
+	state.Investigation.ReadyForChanges = true
+
+	if !state.AllowsChanges() {
+		t.Fatalf("AllowsChanges = false, missing %#v", state.ChangeGateMissing())
+	}
+}
+
 func TestApplyHandoffPatchAllowsArbitraryAddPaths(t *testing.T) {
 	state := NewHandoffState("inspect repo")
 	raw := json.RawMessage(`{
