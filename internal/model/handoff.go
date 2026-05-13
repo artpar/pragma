@@ -29,6 +29,9 @@ type HandoffState struct {
 	DoNot                          []string                 `json:"do_not,omitempty"`
 	Evidence                       []string                 `json:"evidence,omitempty"`
 	Decisions                      []string                 `json:"decisions,omitempty"`
+	VerifiedFailures               []HandoffVerifiedFailure `json:"verified_failures,omitempty"`
+	InvalidatedAssumptions         []string                 `json:"invalidated_assumptions,omitempty"`
+	RepairConstraints              []string                 `json:"repair_constraints,omitempty"`
 	Files                          HandoffFiles             `json:"files,omitempty"`
 	Risks                          []string                 `json:"risks,omitempty"`
 	Extra                          map[string]any           `json:"-"`
@@ -81,6 +84,18 @@ type HandoffTodo struct {
 	Status string `json:"status"`
 }
 
+type HandoffVerifiedFailure struct {
+	ID                    string `json:"id,omitempty"`
+	ToolCallID            string `json:"tool_call_id,omitempty"`
+	ToolName              string `json:"tool_name,omitempty"`
+	Command               string `json:"command,omitempty"`
+	ErrorType             string `json:"error_type,omitempty"`
+	ErrorMessage          string `json:"error_message,omitempty"`
+	OutputExcerpt         string `json:"output_excerpt,omitempty"`
+	InvalidatedAssumption string `json:"invalidated_assumption,omitempty"`
+	RepairConstraint      string `json:"repair_constraint,omitempty"`
+}
+
 type HandoffFiles struct {
 	Read    []string       `json:"read,omitempty"`
 	Changed []string       `json:"changed,omitempty"`
@@ -107,6 +122,7 @@ func NewHandoffState(goal string) HandoffState {
 			"Certified facts are written only by CertifyFact; PatchHandoffState may only reference certified fact IDs.",
 			"Maintain todos for long-running tasks; use statuses pending, in_progress, completed, or blocked.",
 			"Interpret each tool_result into durable state and choose a non-repeating next_action.",
+			"Treat verified_failures, invalidated_assumptions, and repair_constraints as authoritative tool-verified feedback for the next attempt.",
 			"Before non-read-only tools, use CertifyFact, reference certified facts from investigation.certified_fact_refs, observed_contracts.fact_refs, and acceptance_checks.fact_refs, and set investigation.ready_for_changes.",
 			"Do not end with a plan when implementation or verification work remains; keep using tools until todos are completed or blocked.",
 			"Preserve user constraints and do_not items unless the user explicitly changes them.",
@@ -136,6 +152,9 @@ func (s HandoffState) DeepCopy() HandoffState {
 	cp.DoNot = copyStrings(s.DoNot)
 	cp.Evidence = copyStrings(s.Evidence)
 	cp.Decisions = copyStrings(s.Decisions)
+	cp.VerifiedFailures = copyVerifiedFailures(s.VerifiedFailures)
+	cp.InvalidatedAssumptions = copyStrings(s.InvalidatedAssumptions)
+	cp.RepairConstraints = copyStrings(s.RepairConstraints)
 	cp.Files.Read = copyStrings(s.Files.Read)
 	cp.Files.Changed = copyStrings(s.Files.Changed)
 	cp.Files.Extra = copyJSONMap(s.Files.Extra)
@@ -229,6 +248,9 @@ func (s *HandoffState) UnmarshalJSON(data []byte) error {
 	unmarshalKnown(raw, extra, "do_not", &out.DoNot)
 	unmarshalKnown(raw, extra, "evidence", &out.Evidence)
 	unmarshalKnown(raw, extra, "decisions", &out.Decisions)
+	unmarshalKnown(raw, extra, "verified_failures", &out.VerifiedFailures)
+	unmarshalKnown(raw, extra, "invalidated_assumptions", &out.InvalidatedAssumptions)
+	unmarshalKnown(raw, extra, "repair_constraints", &out.RepairConstraints)
 	unmarshalKnown(raw, extra, "files", &out.Files)
 	unmarshalKnown(raw, extra, "risks", &out.Risks)
 	for k, v := range raw {
@@ -358,6 +380,9 @@ func seedHandoffPatchContainers(doc any) {
 		"do_not",
 		"evidence",
 		"decisions",
+		"verified_failures",
+		"invalidated_assumptions",
+		"repair_constraints",
 		"risks",
 	} {
 		if _, ok := root[key]; !ok {
@@ -575,6 +600,15 @@ func copyHandoffTodos(in []HandoffTodo) []HandoffTodo {
 	return out
 }
 
+func copyVerifiedFailures(in []HandoffVerifiedFailure) []HandoffVerifiedFailure {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]HandoffVerifiedFailure, len(in))
+	copy(out, in)
+	return out
+}
+
 func copyObservedContracts(in []HandoffObservedContract) []HandoffObservedContract {
 	if len(in) == 0 {
 		return nil
@@ -708,6 +742,9 @@ var handoffStateReservedFields = map[string]struct{}{
 	"do_not":                            {},
 	"evidence":                          {},
 	"decisions":                         {},
+	"verified_failures":                 {},
+	"invalidated_assumptions":           {},
+	"repair_constraints":                {},
 	"files":                             {},
 	"risks":                             {},
 }

@@ -688,6 +688,7 @@ Every tool-use response MUST call PatchHandoffState as the first tool call befor
 The PatchHandoffState call must record durable task state: todos, recent_actions, completed work, files read or changed, evidence, risks, current_focus, and next_action as applicable.
 CertifyFact is the only tool that may write current_handoff_state.certified_facts. PatchHandoffState may reference certified fact IDs, but MUST NOT write /certified_facts directly.
 After a tool_result, interpret the concrete result into current_handoff_state before choosing the next tool.
+Pragma automatically records failed tools and nonzero shell commands in current_handoff_state.verified_failures, invalidated_assumptions, and repair_constraints. Treat those fields as authoritative verified feedback: do not repeat an invalidated assumption, and make the next action satisfy the newest repair constraint.
 Do not repeat the same real tool call or same search if the latest tool_result already answered it. Advance next_action to the next distinct step.
 If Grep returns matching files, record those files/evidence and Read the most relevant file next instead of Grep again.
 Do not end the turn with only a plan when the user's coding task still has pending implementation or verification work. Patch the plan into current_handoff_state and call the next real tool in the same response, or mark a concrete blocker.
@@ -838,6 +839,8 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		}
 		supplements = execResult.Supplements
 	}
+
+	e.recordHandoffToolFailures(calls, results, displays)
 
 	return tool.ExecuteResult{
 		Results:     results,

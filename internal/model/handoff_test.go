@@ -223,6 +223,11 @@ func TestHandoffStateDeepCopyCopiesTodos(t *testing.T) {
 	state.Investigation.AcceptanceChecks = []HandoffAcceptanceCheck{{
 		Description: "real input check", Command: "go test ./...", Expected: "pass", FactRefs: []string{"fact-a"},
 	}}
+	state.VerifiedFailures = []HandoffVerifiedFailure{{
+		ID: "fail-a", ToolCallID: "tc-a", ToolName: "Bash", ErrorMessage: "go test failed",
+	}}
+	state.InvalidatedAssumptions = []string{"go test passed"}
+	state.RepairConstraints = []string{"fix compiler error before rerun"}
 	state.Extra = map[string]any{"scratch": map[string]any{"count": float64(1)}}
 	state.Files.Extra = map[string]any{"identified": []any{"a.go"}}
 
@@ -234,6 +239,9 @@ func TestHandoffStateDeepCopyCopiesTodos(t *testing.T) {
 	cp.Investigation.ObservedContracts[0].FactRefs[0] = "changed"
 	cp.Investigation.AcceptanceChecks[0].Command = "changed"
 	cp.Investigation.AcceptanceChecks[0].FactRefs[0] = "changed"
+	cp.VerifiedFailures[0].ErrorMessage = "changed"
+	cp.InvalidatedAssumptions[0] = "changed"
+	cp.RepairConstraints[0] = "changed"
 	cp.Extra["scratch"].(map[string]any)["count"] = float64(2)
 	cp.Files.Extra["identified"].([]any)[0] = "b.go"
 
@@ -257,6 +265,15 @@ func TestHandoffStateDeepCopyCopiesTodos(t *testing.T) {
 	}
 	if state.Investigation.AcceptanceChecks[0].Command != "go test ./..." {
 		t.Fatalf("DeepCopy shared acceptance checks: %#v", state.Investigation.AcceptanceChecks)
+	}
+	if state.VerifiedFailures[0].ErrorMessage != "go test failed" {
+		t.Fatalf("DeepCopy shared verified failures: %#v", state.VerifiedFailures)
+	}
+	if state.InvalidatedAssumptions[0] != "go test passed" {
+		t.Fatalf("DeepCopy shared invalidated assumptions: %#v", state.InvalidatedAssumptions)
+	}
+	if state.RepairConstraints[0] != "fix compiler error before rerun" {
+		t.Fatalf("DeepCopy shared repair constraints: %#v", state.RepairConstraints)
 	}
 	if state.Extra["scratch"].(map[string]any)["count"] != float64(1) {
 		t.Fatalf("DeepCopy shared Extra: %#v", state.Extra)

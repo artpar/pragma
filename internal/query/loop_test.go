@@ -667,6 +667,74 @@ func TestRun_StateHandoffAllowsMutatingToolsAfterInvestigationReady(t *testing.T
 	}
 }
 
+func TestRecordHandoffToolFailuresPromotesVerifiedFeedback(t *testing.T) {
+	engine, _ := newTestEngine(&testProvider{})
+	engine.config.ContextMode = model.ContextModeStateHandoff
+	engine.config.HandoffSchema = model.HandoffSchemaV1
+
+	engine.recordHandoffToolFailures(
+		[]model.ToolCallPart{
+			{
+				ID:    "tc-bash",
+				Name:  "Bash",
+				Input: json.RawMessage(`{"command":"go test ./internal/query"}`),
+			},
+			{
+				ID:    "tc-edit",
+				Name:  "Edit",
+				Input: json.RawMessage(`{"file_path":"internal/query/loop.go"}`),
+			},
+		},
+		[]model.ToolResultPart{
+			{
+				ToolCallID: "tc-bash",
+				Content:    "internal/query/loop_observability_test.go:46:8: impossible type switch case\nExit code 1",
+			},
+			{
+				ToolCallID: "tc-edit",
+				Content:    "string to replace not found in file",
+				IsError:    true,
+			},
+		},
+		[]string{"exit_code:1", ""},
+	)
+
+	state := engine.store.Snapshot().HandoffState
+	if len(state.VerifiedFailures) != 2 {
+		t.Fatalf("VerifiedFailures = %#v, want 2 entries", state.VerifiedFailures)
+	}
+	if state.VerifiedFailures[0].Command != "go test ./internal/query" {
+		t.Fatalf("bash command summary = %q", state.VerifiedFailures[0].Command)
+	}
+	if state.VerifiedFailures[0].ErrorType != "exit_code:1" {
+		t.Fatalf("bash error type = %q", state.VerifiedFailures[0].ErrorType)
+	}
+	if !strings.Contains(state.VerifiedFailures[0].OutputExcerpt, "impossible type switch case") {
+		t.Fatalf("bash output excerpt = %q", state.VerifiedFailures[0].OutputExcerpt)
+	}
+	if state.VerifiedFailures[1].Command != "Edit internal/query/loop.go" {
+		t.Fatalf("edit command summary = %q", state.VerifiedFailures[1].Command)
+	}
+	if !containsString(state.InvalidatedAssumptions, "The shell command succeeded.") {
+		t.Fatalf("InvalidatedAssumptions missing shell failure: %#v", state.InvalidatedAssumptions)
+	}
+	if !containsString(state.InvalidatedAssumptions, "The Edit old_string or target region exists exactly in the current file.") {
+		t.Fatalf("InvalidatedAssumptions missing edit failure: %#v", state.InvalidatedAssumptions)
+	}
+	if !strings.Contains(state.NextAction, "Before another Edit") {
+		t.Fatalf("NextAction = %q", state.NextAction)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestCertifyFactToolSchemaNamesSupportedKinds(t *testing.T) {
 	var schema struct {
 		Properties map[string]struct {
