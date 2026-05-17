@@ -65,7 +65,7 @@ func TestLiveJetBrainsMCPDiscovery(t *testing.T) {
 		t.Fatalf("unexpected server statuses: %+v", statuses)
 	}
 
-	registeredName := BuildToolName(serverName, jetBrainsApplicationInfoTool)
+	registeredName := jetBrainsApplicationInfoTool
 	desc, ok := registry.Get(registeredName)
 	if !ok {
 		t.Fatalf("expected registered tool %q", registeredName)

@@ -26,6 +26,10 @@ type ServerConfig struct {
 	// SSE / HTTP transport fields.
 	URL     string            `json:"url,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
+
+	// PreserveToolNames exposes remote MCP tool names exactly as advertised.
+	// Use only for trusted servers whose tool names are valid for the selected model provider.
+	PreserveToolNames bool `json:"preserveToolNames,omitempty"`
 }
 
 // effectiveType returns the transport type, defaulting to "stdio".
@@ -269,10 +273,16 @@ func loadJetBrainsMCPDiscoveryFile(path, workDir string) (map[string]ServerConfi
 		observe.GlobalTrace("if: len(servers) == 0 && discovery.URL != \"\"")
 		servers = map[string]ServerConfig{
 			"jetbrains-" + jetBrainsProjectHash(projectPath): {
-				Type: "http",
-				URL:  discovery.URL,
+				Type:              "http",
+				URL:               discovery.URL,
+				PreserveToolNames: true,
 			},
 		}
+	}
+	for name, sc := range servers {
+		observe.GlobalTrace("range servers")
+		sc.PreserveToolNames = true
+		servers[name] = sc
 	}
 	observe.GlobalTrace("return: servers, nil")
 	return servers, nil

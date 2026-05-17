@@ -21,19 +21,26 @@ type MCPToolAdapter struct {
 	fullName string
 }
 
-// NewMCPToolAdapter creates an adapter. fullName is "mcp__<server>__<tool>".
+// NewMCPToolAdapter creates an adapter. By default fullName is
+// "mcp__<server>__<tool>". Trusted reflective servers may opt into preserving
+// the remote MCP tool name exactly.
 func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	fullName := BuildToolName(client.Name(), info.Name)
+	if client.config.PreserveToolNames {
+		observe.GlobalTrace("if: client.config.PreserveToolNames")
+		fullName = info.Name
+	}
 	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tBuildToolName(...")
 	return &MCPToolAdapter{
 		client:   client,
 		toolInfo: info,
-		fullName: BuildToolName(client.Name(), info.Name),
+		fullName: fullName,
 	}
 }
 
-// Name returns the fully-qualified tool name (mcp__<server>__<tool>).
+// Name returns the registry-facing tool name.
 func (a *MCPToolAdapter) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

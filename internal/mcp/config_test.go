@@ -282,6 +282,9 @@ func TestLoadConfig_JetBrainsDiscoveryExactProject(t *testing.T) {
 	if srv.URL != "http://127.0.0.1:49231" {
 		t.Errorf("url = %q", srv.URL)
 	}
+	if !srv.PreserveToolNames {
+		t.Errorf("PreserveToolNames = false, want true")
+	}
 }
 
 func TestLoadConfig_JetBrainsDiscoveryLatestForWorkspaceChild(t *testing.T) {
@@ -381,6 +384,9 @@ func TestLoadConfig_JetBrainsDiscoveryDoesNotOverrideExplicitConfig(t *testing.T
 	}
 	if servers[serverName].URL != "http://manual.example/mcp" {
 		t.Fatalf("explicit config should win, got url %q", servers[serverName].URL)
+	}
+	if servers[serverName].PreserveToolNames {
+		t.Fatalf("explicit config should keep its own preserveToolNames value")
 	}
 }
 

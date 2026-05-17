@@ -88,6 +88,31 @@ func TestMCPToolAdapter_Name(t *testing.T) {
 	}
 }
 
+func TestMCPToolAdapter_NamePreserved(t *testing.T) {
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	client := &Client{
+		name: "jetbrains-test",
+		config: ServerConfig{
+			Type:              "http",
+			URL:               "http://127.0.0.1:1234",
+			PreserveToolNames: true,
+		},
+		bus: bus,
+	}
+	info := ToolInfo{
+		Name:        "com.intellij.openapi.application.ApplicationInfo.getInstance",
+		Description: "Returns IDE information",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	}
+
+	adapter := NewMCPToolAdapter(client, info)
+	if got := adapter.Name(); got != info.Name {
+		t.Errorf("Name() = %q, want preserved remote name %q", got, info.Name)
+	}
+}
+
 func TestMCPToolAdapter_Description(t *testing.T) {
 	adapter, cleanup := newTestAdapter(t)
 	defer cleanup()

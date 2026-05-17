@@ -182,7 +182,7 @@ func TestManager_ConnectsDiscoveredJetBrainsHTTPServer(t *testing.T) {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 
-	fullName := BuildToolName(serverName, reflectiveTool)
+	fullName := reflectiveTool
 	desc, ok := registry.Get(fullName)
 	if !ok {
 		t.Fatalf("expected registered JetBrains MCP tool %q", fullName)
