@@ -1,0 +1,18 @@
+<idea-plugin>
+  <id>com.github.artpar.pragma.jetbrains.reflectiveMcp</id>
+  <name>Pragma Reflective MCP Bridge</name>
+  <vendor email="artpar@users.noreply.github.com">Pragma</vendor>
+
+  <description>
+    Exposes selected IntelliJ Platform APIs and registered actions as an MCP server on localhost.
+    Tool names mirror platform API or action identifiers so clients can discover IDE capabilities
+    without Pragma-specific translations.
+  </description>
+
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <projectService serviceImplementation="com.github.artpar.pragma.jetbrains.mcp.ReflectiveMcpProjectService"/>
+    <postStartupActivity implementation="com.github.artpar.pragma.jetbrains.mcp.McpStartupActivity"/>
+  </extensions>
+</idea-plugin>
