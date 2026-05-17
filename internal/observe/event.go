@@ -29,11 +29,11 @@ type EventHeader struct {
 	AgentID    string    `json:"agent_id,omitempty"`
 }
 
-func (h EventHeader) EventKind() string          { return h.Kind }
-func (h EventHeader) EventTimestamp() time.Time   { return h.Time }
-func (h EventHeader) EventTraceID() string        { return h.Trace }
-func (h EventHeader) EventSpanID() string         { return h.Span }
-func (h EventHeader) EventParentSpanID() string   { return h.ParentSpan }
+func (h EventHeader) EventKind() string         { return h.Kind }
+func (h EventHeader) EventTimestamp() time.Time { return h.Time }
+func (h EventHeader) EventTraceID() string      { return h.Trace }
+func (h EventHeader) EventSpanID() string       { return h.Span }
+func (h EventHeader) EventParentSpanID() string { return h.ParentSpan }
 
 // NewEventHeader creates an EventHeader with the given kind and trace/span IDs.
 func NewEventHeader(kind, traceID, spanID, parentSpanID string) EventHeader {
@@ -365,31 +365,6 @@ func UnmarshalEvent(data []byte) (Event, error) {
 	// Permission persistence
 	case "PermissionPersisted":
 		var e PermissionPersisted
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	// LSP events
-	case "LSPServerStarted":
-		var e LSPServerStarted
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "LSPServerStopped":
-		var e LSPServerStopped
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "LSPRequestSent":
-		var e LSPRequestSent
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "LSPRequestCompleted":
-		var e LSPRequestCompleted
 		if err := json.Unmarshal(data, &e); err != nil {
 			return nil, err
 		}

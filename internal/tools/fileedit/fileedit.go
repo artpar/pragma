@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/artpar/pragma/internal/lsp"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
@@ -51,9 +50,7 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the FileEdit tool.
-type Tool struct {
-	LSP *lsp.Manager // optional; nil if no LSP servers configured
-}
+type Tool struct{}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -207,11 +204,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: statErr == nil")
 			tool.RecordFileState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
 		}
-		if t.LSP != nil {
-			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: t.LSP != nil")
-			_ = t.LSP.ChangeFile(ctx, filePath, in.NewString)
-			_ = t.LSP.SaveFile(ctx, filePath)
-		}
 		display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, false, 3)
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
 		return tool.InvokeResult{
@@ -265,12 +257,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
-	}
-
-	if t.LSP != nil {
-		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: t.LSP != nil")
-		_ = t.LSP.ChangeFile(ctx, filePath, updated)
-		_ = t.LSP.SaveFile(ctx, filePath)
 	}
 
 	if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {

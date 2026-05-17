@@ -16,7 +16,6 @@ import (
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/cron"
 	"github.com/artpar/pragma/internal/hook"
-	"github.com/artpar/pragma/internal/lsp"
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -49,7 +48,6 @@ type Deps struct {
 	EngineCfg     query.EngineConfig
 	TaskReg       *task.Registry
 	McpManager    *mcp.Manager
-	LspManager    *lsp.Manager
 	CronSched     *cron.Scheduler
 	HookMgr       *hook.Manager
 	Metrics       *observe.Metrics
@@ -405,17 +403,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	registry := tool.NewRegistry(bus)
 
-	lspManager := lsp.NewManager(bus)
-	lspConfigs, lspErr := lsp.LoadConfig(cwd, bus)
-	if lspErr != nil {
-		observe.GlobalTrace("if: lspErr != nil")
-		fmt.Fprintf(os.Stderr, "warning: load lsp config: %v\n", lspErr)
-	}
-	if len(lspConfigs) > 0 {
-		observe.GlobalTrace("if: len(lspConfigs) > 0")
-		lspManager.Initialize(lspConfigs, cwd)
-	}
-
 	mcpManager := mcp.NewManager(bus, registry)
 
 	mcpServers, mcpErr := mcp.LoadConfig(cwd, bus)
@@ -445,7 +432,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	go watchdog.Start(cmd.Context())
 
 	compositeCleanup := func() {
-		lspManager.Shutdown()
 		mcpManager.DisconnectAll()
 		bus.Drain()
 		for _, fn := range cleanupFns {
@@ -468,7 +454,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		EngineCfg:     engineCfg,
 		TaskReg:       taskReg,
 		McpManager:    mcpManager,
-		LspManager:    lspManager,
 		CronSched:     cronSched,
 		HookMgr:       hookMgr,
 		Metrics:       metrics,

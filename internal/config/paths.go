@@ -94,22 +94,3 @@ func GlobalMCPConfigPath() (string, error) {
 	}
 	return filepath.Join(dir, "mcp.json"), nil
 }
-
-// LSPConfigPath returns <workDir>/.pragma/lsp.json.
-func LSPConfigPath(workDir string) string {
-	return filepath.Join(workDir, ".pragma", "lsp.json")
-}
-
-// LSPLocalConfigPath returns <workDir>/.pragma/lsp.local.json.
-func LSPLocalConfigPath(workDir string) string {
-	return filepath.Join(workDir, ".pragma", "lsp.local.json")
-}
-
-// GlobalLSPConfigPath returns ~/.pragma/lsp.json.
-func GlobalLSPConfigPath() (string, error) {
-	dir, err := PragmaHome()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "lsp.json"), nil
-}

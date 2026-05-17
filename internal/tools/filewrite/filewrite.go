@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/artpar/pragma/internal/lsp"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
@@ -38,9 +37,7 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the FileWrite tool.
-type Tool struct {
-	LSP *lsp.Manager // optional; nil if no LSP servers configured
-}
+type Tool struct{}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -150,11 +147,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("write file: %w", err)
 	}
 
-	if t.LSP != nil {
-		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: t.LSP != nil")
-		_ = t.LSP.ChangeFile(ctx, filePath, in.Content)
-		_ = t.LSP.SaveFile(ctx, filePath)
-	}
 	if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: statErr == nil")
 		tool.RecordFileState(state, filePath, strings.ReplaceAll(in.Content, "\r\n", "\n"), timestamp, nil, nil, false)

@@ -26,7 +26,6 @@ import (
 	toolglob "github.com/artpar/pragma/internal/tools/glob"
 	toolgrep "github.com/artpar/pragma/internal/tools/grep"
 	toollifecycle "github.com/artpar/pragma/internal/tools/lifecycle"
-	toollsp "github.com/artpar/pragma/internal/tools/lsp"
 	toolmcp "github.com/artpar/pragma/internal/tools/mcp"
 	toolnotebookedit "github.com/artpar/pragma/internal/tools/notebookedit"
 	toolplan "github.com/artpar/pragma/internal/tools/plan"
@@ -189,8 +188,8 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolglob.Tool{},
 		&toolgrep.Tool{},
 		&toolfileread.Tool{},
-		&toolfilewrite.Tool{LSP: d.LspManager},
-		&toolfileedit.Tool{LSP: d.LspManager},
+		&toolfilewrite.Tool{},
+		&toolfileedit.Tool{},
 		&toolbash.Tool{},
 		&toolnotebookedit.Tool{},
 		&toolwebfetch.Tool{Provider: d.Prov, Bus: d.Bus, SecondaryModel: SecondaryModelFor(d.Cfg.Provider)},
@@ -219,7 +218,6 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolcron.DeleteTool{Scheduler: d.CronSched},
 		&toolcron.ListTool{Scheduler: d.CronSched},
 		&toolsendmsg.Tool{Tasks: d.TaskReg},
-		&toollsp.Tool{Manager: d.LspManager},
 		&toolwebsearch.Tool{Token: d.Creds.CredentialFor("brave").APIKey},
 		&toolbrief.Tool{Bus: d.Bus},
 		&toolconfig.Tool{Store: d.Store, WorkDir: d.Cwd},
