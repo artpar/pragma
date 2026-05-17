@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -247,6 +248,142 @@ func TestLoadConfig_RootMCPJSON(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_JetBrainsDiscoveryExactProject(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	workDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverName := "jetbrains-" + jetBrainsProjectHash(absWorkDir)
+	writeJetBrainsDiscovery(t, home, jetBrainsProjectHash(absWorkDir)+".json", absWorkDir, serverName, "http://127.0.0.1:49231")
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	srv, ok := servers[serverName]
+	if !ok {
+		t.Fatalf("expected discovered JetBrains MCP server %q", serverName)
+	}
+	if srv.effectiveType() != "http" {
+		t.Errorf("type = %q, want http", srv.effectiveType())
+	}
+	if srv.URL != "http://127.0.0.1:49231" {
+		t.Errorf("url = %q", srv.URL)
+	}
+}
+
+func TestLoadConfig_JetBrainsDiscoveryLatestForWorkspaceChild(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	projectDir := filepath.Join(dir, "project")
+	workDir := filepath.Join(projectDir, "pkg")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	absProjectDir, err := filepath.Abs(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverName := "jetbrains-" + jetBrainsProjectHash(absProjectDir)
+	writeJetBrainsDiscovery(t, home, "latest.json", absProjectDir, serverName, "http://127.0.0.1:49232")
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := servers[serverName]; !ok {
+		t.Fatalf("expected latest JetBrains MCP discovery for ancestor project")
+	}
+}
+
+func TestLoadConfig_JetBrainsDiscoverySkipsOtherProject(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	workDir := filepath.Join(dir, "project")
+	otherDir := filepath.Join(dir, "other")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(otherDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	absOtherDir, err := filepath.Abs(otherDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverName := "jetbrains-" + jetBrainsProjectHash(absOtherDir)
+	writeJetBrainsDiscovery(t, home, "latest.json", absOtherDir, serverName, "http://127.0.0.1:49233")
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := servers[serverName]; ok {
+		t.Fatalf("did not expect JetBrains MCP discovery for another project")
+	}
+}
+
+func TestLoadConfig_JetBrainsDiscoveryDoesNotOverrideExplicitConfig(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	workDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverName := "jetbrains-" + jetBrainsProjectHash(absWorkDir)
+	rootConfig := `{
+		"mcpServers": {
+			"` + serverName + `": {
+				"type": "http",
+				"url": "http://manual.example/mcp"
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(workDir, ".mcp.json"), []byte(rootConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeJetBrainsDiscovery(t, home, jetBrainsProjectHash(absWorkDir)+".json", absWorkDir, serverName, "http://127.0.0.1:49234")
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if servers[serverName].URL != "http://manual.example/mcp" {
+		t.Fatalf("explicit config should win, got url %q", servers[serverName].URL)
+	}
+}
+
 func TestLoadConfig_InvalidEntrySkipped(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
@@ -298,4 +435,36 @@ func TestLoadConfig_NoConfigs(t *testing.T) {
 	if len(servers) != 0 {
 		t.Errorf("expected 0 servers, got %d", len(servers))
 	}
+}
+
+func writeJetBrainsDiscovery(t *testing.T, home, filename, projectPath, serverName, url string) {
+	t.Helper()
+	dir := filepath.Join(home, ".pragma", "jetbrains-mcp")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{
+		"server": "pragma-jetbrains-reflective-mcp",
+		"projectPath": ` + quoteJSON(projectPath) + `,
+		"url": ` + quoteJSON(url) + `,
+		"mcpConfig": {
+			"mcpServers": {
+				"` + serverName + `": {
+					"type": "http",
+					"url": ` + quoteJSON(url) + `
+				}
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func quoteJSON(value string) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }

@@ -1,10 +1,13 @@
 package mcp
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/observe"
@@ -68,6 +71,12 @@ type MCPConfig struct {
 	MCPServers map[string]ServerConfig `json:"mcpServers"`
 }
 
+type jetBrainsMCPDiscovery struct {
+	ProjectPath string    `json:"projectPath"`
+	URL         string    `json:"url"`
+	MCPConfig   MCPConfig `json:"mcpConfig"`
+}
+
 // LoadConfig loads and merges MCP server configs from multiple scopes.
 // Scope priority: local > project > global (closer overrides farther).
 // Invalid entries are skipped with warnings emitted to bus (per-entry validation).
@@ -125,6 +134,37 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 			merged[name] = sc
 		}
 	}
+
+	jetBrainsServers, err := loadJetBrainsMCPDiscovery(workDir)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
+			Severity:     "warn",
+			Component:    "mcp",
+			ErrorType:    "jetbrains_discovery_error",
+			ErrorMessage: fmt.Sprintf("failed to load JetBrains MCP discovery: %v", err),
+		})
+	}
+	for name, sc := range jetBrainsServers {
+		observe.GlobalTrace("range jetBrainsServers")
+		if _, exists := merged[name]; exists {
+			observe.GlobalTrace("if: exists")
+			continue
+		}
+		if validErr := sc.validate(); validErr != nil {
+			observe.GlobalTrace("if: validErr != nil")
+			bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
+				Severity:     "warn",
+				Component:    "mcp",
+				ErrorType:    "config_validation_error",
+				ErrorMessage: fmt.Sprintf("skipping JetBrains MCP server %q: %v", name, validErr),
+			})
+			continue
+		}
+		merged[name] = sc
+	}
 	observe.GlobalTrace("return: merged, nil")
 
 	return merged, nil
@@ -156,4 +196,114 @@ func loadSingleConfig(path string) (map[string]ServerConfig, error) {
 	observe.GlobalTrace("return: cfg.MCPServers, nil")
 
 	return cfg.MCPServers, nil
+}
+
+func loadJetBrainsMCPDiscovery(workDir string) (map[string]ServerConfig, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	pragmaHome, err := config.PragmaHome()
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return nil, err
+	}
+
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		absWorkDir = workDir
+	}
+
+	dir := filepath.Join(pragmaHome, "jetbrains-mcp")
+	paths := []string{
+		filepath.Join(dir, jetBrainsProjectHash(absWorkDir)+".json"),
+		filepath.Join(dir, "latest.json"),
+	}
+
+	for _, path := range paths {
+		observe.GlobalTrace("range paths")
+		servers, err := loadJetBrainsMCPDiscoveryFile(path, absWorkDir)
+		if err != nil {
+			observe.GlobalTrace("if: err != nil")
+			if errors.Is(err, os.ErrNotExist) {
+				observe.GlobalTrace("if: errors.Is(err, os.ErrNotExist)")
+				continue
+			}
+			return nil, err
+		}
+		if len(servers) > 0 {
+			observe.GlobalTrace("if: len(servers) > 0")
+			return servers, nil
+		}
+	}
+	observe.GlobalTrace("return: nil, nil")
+	return nil, nil
+}
+
+func loadJetBrainsMCPDiscoveryFile(path, workDir string) (map[string]ServerConfig, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return nil, err
+	}
+
+	var discovery jetBrainsMCPDiscovery
+	if err := json.Unmarshal(data, &discovery); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	projectPath := discovery.ProjectPath
+	if projectPath == "" {
+		observe.GlobalTrace("if: projectPath == \"\"")
+		return nil, nil
+	}
+	if !sameOrAncestor(projectPath, workDir) {
+		observe.GlobalTrace("if: !sameOrAncestor(projectPath, workDir)")
+		return nil, nil
+	}
+
+	servers := discovery.MCPConfig.MCPServers
+	if len(servers) == 0 && discovery.URL != "" {
+		observe.GlobalTrace("if: len(servers) == 0 && discovery.URL != \"\"")
+		servers = map[string]ServerConfig{
+			"jetbrains-" + jetBrainsProjectHash(projectPath): {
+				Type: "http",
+				URL:  discovery.URL,
+			},
+		}
+	}
+	observe.GlobalTrace("return: servers, nil")
+	return servers, nil
+}
+
+func sameOrAncestor(projectPath, workDir string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	absProject, err := filepath.Abs(projectPath)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		absProject = projectPath
+	}
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		absWorkDir = workDir
+	}
+	rel, err := filepath.Rel(absProject, absWorkDir)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return false
+	}
+	observe.GlobalTrace("return: rel == \".\" || rel != \"..\" && !strings.HasPrefix(rel, \"..\"+string(filepath.Separator))")
+	return rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func jetBrainsProjectHash(projectPath string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	sum := sha256.Sum256([]byte(projectPath))
+	observe.GlobalTrace("return: fmt.Sprintf(\"%x\", sum)[:16]")
+	return fmt.Sprintf("%x", sum)[:16]
 }

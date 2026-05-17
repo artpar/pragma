@@ -3,6 +3,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -128,6 +131,68 @@ func TestManager_ToolDefs(t *testing.T) {
 	}
 	if !found {
 		t.Error("MCP tool not found in ToolDefs")
+	}
+}
+
+func TestManager_ConnectsDiscoveredJetBrainsHTTPServer(t *testing.T) {
+	const reflectiveTool = "com.intellij.openapi.application.ApplicationInfo.getInstance"
+
+	mcpServer := server.NewMCPServer(
+		"pragma-jetbrains-reflective-mcp",
+		"0.1.0",
+		server.WithToolCapabilities(false),
+	)
+	mcpServer.AddTool(
+		mcp.NewTool(reflectiveTool, mcp.WithDescription("Return IDE and project information")),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return mcp.NewToolResultText(`{"projectName":"pragma","ide":{"productName":"IntelliJ IDEA"}}`), nil
+		},
+	)
+
+	httpServer := server.NewTestStreamableHTTPServer(mcpServer)
+	defer httpServer.Close()
+
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	workDir := filepath.Join(dir, "pragma")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverName := "jetbrains-" + jetBrainsProjectHash(absWorkDir)
+	writeJetBrainsDiscovery(t, home, jetBrainsProjectHash(absWorkDir)+".json", absWorkDir, serverName, httpServer.URL)
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+	registry := tool.NewRegistry(bus)
+	mgr := NewManager(bus, registry)
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if errs := mgr.ConnectAll(context.Background(), servers); len(errs) > 0 {
+		t.Fatalf("ConnectAll errors: %v", errs)
+	}
+	if err := mgr.RegisterTools(context.Background()); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+
+	fullName := BuildToolName(serverName, reflectiveTool)
+	desc, ok := registry.Get(fullName)
+	if !ok {
+		t.Fatalf("expected registered JetBrains MCP tool %q", fullName)
+	}
+	result, err := desc.Invoke(context.Background(), json.RawMessage(`{}`), nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if !strings.Contains(result.Content, `"projectName":"pragma"`) {
+		t.Fatalf("expected IDE project state, got %q", result.Content)
 	}
 }
 
