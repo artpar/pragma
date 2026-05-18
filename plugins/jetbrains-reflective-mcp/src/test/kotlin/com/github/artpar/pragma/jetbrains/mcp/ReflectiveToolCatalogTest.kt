@@ -16,6 +16,7 @@ class ReflectiveToolCatalogTest {
 
         assertEquals(names.size, names.toSet().size)
         assertTrue("com.intellij.psi.PsiReference.resolve" in names)
+        assertTrue("com.intellij.psi.search.PsiSearchHelper.processElementsWithWord" in names)
         assertTrue("com.intellij.openapi.actionSystem.ActionManager.tryToExecute" in names)
         definitions.forEach { definition ->
             assertTrue((definition["description"] as String).isNotBlank())
@@ -104,6 +105,9 @@ class FakeIdePorts : IdePorts {
 
         override fun filesByName(name: String): List<VirtualFileInfo> =
             listOf(VirtualFileInfo("/tmp/test/$name", name, "Kotlin"))
+
+        override fun elementsWithWord(word: String, context: String, limit: Int, includeHidden: Boolean): WordSearchResult =
+            WordSearchResult(word, context, limit, 1, false, listOf(wordOccurrence(word)))
     }
 
     override val vfs: VfsPort = object : VfsPort {
@@ -131,5 +135,14 @@ class FakeIdePorts : IdePorts {
         line = 10,
         column = 3,
         text = "Target",
+    )
+
+    private fun wordOccurrence(word: String): WordOccurrenceInfo = WordOccurrenceInfo(
+        filePath = "/tmp/test/src/Main.kt",
+        projectRelativePath = "src/Main.kt",
+        line = 10,
+        column = 3,
+        text = "fun $word()",
+        element = element(word),
     )
 }

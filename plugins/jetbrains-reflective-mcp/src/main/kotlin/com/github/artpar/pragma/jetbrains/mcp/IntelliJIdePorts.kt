@@ -18,6 +18,9 @@ import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.PsiReference
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.PsiSearchHelper
+import com.intellij.psi.search.TextOccurenceProcessor
+import com.intellij.psi.search.UsageSearchContext
 import com.intellij.psi.search.searches.ReferencesSearch
 import java.nio.file.Path
 
@@ -168,6 +171,69 @@ private class IntelliJPsiPort(private val project: Project) : PsiPort {
             )
         }
     }
+
+    override fun elementsWithWord(word: String, context: String, limit: Int, includeHidden: Boolean): WordSearchResult = readAction {
+        val occurrences = mutableListOf<WordOccurrenceInfo>()
+        val seen = mutableSetOf<String>()
+        val normalizedContext = context.ifBlank { "any" }.lowercase()
+        val searchContext = normalizedContext.toUsageSearchContext()
+        val scope = GlobalSearchScope.projectScope(project)
+        val scanLimit = (limit * 10).coerceAtLeast(limit).coerceAtMost(5000)
+        PsiSearchHelper.getInstance(project).processElementsWithWord(
+            TextOccurenceProcessor { element, offsetInElement ->
+                if (occurrences.size >= scanLimit) {
+                    return@TextOccurenceProcessor false
+                }
+                val file = element.containingFile?.virtualFile
+                val document = element.containingFile?.viewProvider?.document
+                val offset = (element.textRange?.startOffset ?: 0) + offsetInElement
+                val line = document?.getLineNumber(offset)?.plus(1)
+                val column = if (document != null && line != null) {
+                    offset - document.getLineStartOffset(line - 1) + 1
+                } else {
+                    null
+                }
+                val relativePath = file?.let { project.relativePath(it) }
+                if (!includeHidden && relativePath?.isHiddenProjectPath() == true) {
+                    return@TextOccurenceProcessor true
+                }
+                val text = document?.lineTextAt(offset)?.take(500)
+                val key = listOf(relativePath, line, column, text).joinToString("|")
+                if (!seen.add(key)) {
+                    return@TextOccurenceProcessor true
+                }
+                occurrences += WordOccurrenceInfo(
+                    filePath = file?.path,
+                    projectRelativePath = relativePath,
+                    line = line,
+                    column = column,
+                    text = text,
+                    element = element.toStableValue(project),
+                )
+                true
+            },
+            scope,
+            word,
+            searchContext,
+            true,
+        )
+        val sorted = occurrences.sortedWith(
+            compareBy<WordOccurrenceInfo>(
+                { it.projectRelativePath ?: "" },
+                { it.line ?: Int.MAX_VALUE },
+                { it.column ?: Int.MAX_VALUE },
+            ),
+        )
+        val limited = sorted.take(limit)
+        WordSearchResult(
+            word = word,
+            context = normalizedContext,
+            limit = limit,
+            count = limited.size,
+            truncated = sorted.size > limit,
+            occurrences = limited,
+        )
+    }
 }
 
 private class IntelliJVfsPort(private val project: Project) : VfsPort {
@@ -204,6 +270,35 @@ private fun com.intellij.openapi.editor.Document.offsetAt(lineOneBased: Int, col
     val lineEnd = getLineEndOffset(line)
     return (lineStart + (columnOneBased - 1).coerceAtLeast(0)).coerceIn(lineStart, lineEnd)
 }
+
+private fun com.intellij.openapi.editor.Document.lineTextAt(offset: Int): String {
+    val safeOffset = offset.coerceIn(0, textLength.coerceAtLeast(0))
+    val line = getLineNumber(safeOffset).coerceIn(0, (lineCount - 1).coerceAtLeast(0))
+    return charsSequence.subSequence(getLineStartOffset(line), getLineEndOffset(line)).toString()
+}
+
+private fun String.toUsageSearchContext(): Short =
+    when (this) {
+        "code" -> UsageSearchContext.IN_CODE
+        "comments" -> UsageSearchContext.IN_COMMENTS
+        "strings" -> UsageSearchContext.IN_STRINGS
+        "plain_text", "plaintext", "plain-text" -> UsageSearchContext.IN_PLAIN_TEXT
+        "foreign_languages", "foreign", "foreign-languages" -> UsageSearchContext.IN_FOREIGN_LANGUAGES
+        else -> UsageSearchContext.ANY
+    }
+
+private fun String.isHiddenProjectPath(): Boolean =
+    split('/', '\\').any { it.startsWith(".") } ||
+        endsWith(".jsonl") ||
+        endsWith("_test.go") ||
+        startsWith("build/") ||
+        startsWith("dist/") ||
+        startsWith("bin/") ||
+        startsWith("testdata/") ||
+        contains("/build/") ||
+        contains("/dist/") ||
+        contains("/bin/") ||
+        contains("/testdata/")
 
 private fun <T> readAction(body: () -> T): T =
     ApplicationManager.getApplication().runReadAction<T>(body)

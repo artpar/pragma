@@ -100,6 +100,24 @@ data class ReferencesResult(
     val references: List<ReferenceInfo>,
 )
 
+data class WordOccurrenceInfo(
+    val filePath: String?,
+    val projectRelativePath: String?,
+    val line: Int?,
+    val column: Int?,
+    val text: String?,
+    val element: PsiElementInfo?,
+)
+
+data class WordSearchResult(
+    val word: String,
+    val context: String,
+    val limit: Int,
+    val count: Int,
+    val truncated: Boolean,
+    val occurrences: List<WordOccurrenceInfo>,
+)
+
 data class VirtualFileInfo(
     val filePath: String,
     val projectRelativePath: String?,

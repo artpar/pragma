@@ -11,6 +11,7 @@ data class FilePositionInput(val position: TextPosition)
 data class ReferencesInput(val position: TextPosition, val limit: Int)
 data class FileNameInput(val name: String)
 data class FilePathInput(val filePath: String)
+data class WordSearchInput(val word: String, val context: String, val limit: Int, val includeHidden: Boolean)
 
 fun defaultToolDescriptors(): List<ToolDescriptor<*>> = listOf(
     ToolDescriptor(
@@ -77,6 +78,28 @@ fun defaultToolDescriptors(): List<ToolDescriptor<*>> = listOf(
         ),
         decode = { FileNameInput(it.stringArg("name")) },
         execute = { input, ports -> ports.psi.filesByName(input.name) },
+    ),
+    ToolDescriptor(
+        name = "com.intellij.psi.search.PsiSearchHelper.processElementsWithWord",
+        source = "PsiSearchHelper.processElementsWithWord(processor, GlobalSearchScope.projectScope(project), word, UsageSearchContext.*, true)",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "word" to stringProp("Word to search through the IntelliJ word index."),
+                "context" to stringProp("UsageSearchContext name: any, code, comments, strings, plain_text, or foreign_languages. Defaults to any."),
+                "limit" to intProp("Maximum occurrences to return. Defaults to 100."),
+                "includeHidden" to boolProp("If true, include dot-directories such as .git, .pragma, IDE metadata, testdata, and build output. Defaults to false."),
+            ),
+            required = listOf("word"),
+        ),
+        decode = {
+            WordSearchInput(
+                word = it.stringArg("word"),
+                context = it.stringArg("context", "any"),
+                limit = it.intArg("limit", 100).coerceIn(1, 1000),
+                includeHidden = it.boolArg("includeHidden", false),
+            )
+        },
+        execute = { input, ports -> ports.psi.elementsWithWord(input.word, input.context, input.limit, input.includeHidden) },
     ),
     ToolDescriptor(
         name = "com.intellij.openapi.vfs.LocalFileSystem.refreshAndFindFileByPath",

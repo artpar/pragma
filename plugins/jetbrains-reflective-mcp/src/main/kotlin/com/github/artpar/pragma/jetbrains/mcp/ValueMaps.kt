@@ -78,6 +78,22 @@ fun Any?.toBoundaryValue(): Any? {
             "count" to count,
             "references" to references.map { it.toBoundaryValue() },
         )
+        is WordOccurrenceInfo -> mapOf(
+            "filePath" to filePath,
+            "projectRelativePath" to projectRelativePath,
+            "line" to line,
+            "column" to column,
+            "text" to text,
+            "element" to element.toBoundaryValue(),
+        )
+        is WordSearchResult -> mapOf(
+            "word" to word,
+            "context" to context,
+            "limit" to limit,
+            "count" to count,
+            "truncated" to truncated,
+            "occurrences" to occurrences.map { it.toBoundaryValue() },
+        )
         is VirtualFileInfo -> mapOf(
             "filePath" to filePath,
             "projectRelativePath" to projectRelativePath,

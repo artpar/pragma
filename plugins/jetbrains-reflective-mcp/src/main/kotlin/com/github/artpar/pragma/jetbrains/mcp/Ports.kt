@@ -27,6 +27,7 @@ interface PsiPort {
     fun resolveReference(position: TextPosition): PsiResolveResult
     fun references(position: TextPosition, limit: Int): ReferencesResult
     fun filesByName(name: String): List<VirtualFileInfo>
+    fun elementsWithWord(word: String, context: String, limit: Int, includeHidden: Boolean): WordSearchResult
 }
 
 interface VfsPort {
