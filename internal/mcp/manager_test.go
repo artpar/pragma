@@ -134,6 +134,78 @@ func TestManager_ToolDefs(t *testing.T) {
 	}
 }
 
+func TestManager_ConfigureServersMarksPendingWithoutConnecting(t *testing.T) {
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	registry := tool.NewRegistry(bus)
+	mgr := NewManager(bus, registry)
+	mgr.ConfigureServers(map[string]ServerConfig{
+		"slow-server": {Command: "slow-mcp"},
+	})
+
+	statuses := mgr.ServerStatuses()
+	if len(statuses) != 1 {
+		t.Fatalf("statuses len = %d, want 1", len(statuses))
+	}
+	if statuses[0].Name != "slow-server" {
+		t.Fatalf("status name = %q, want slow-server", statuses[0].Name)
+	}
+	if statuses[0].Status != StatusPending {
+		t.Fatalf("status = %q, want %q", statuses[0].Status, StatusPending)
+	}
+	if mgr.ConnectedCount() != 0 {
+		t.Fatalf("connected count = %d, want 0", mgr.ConnectedCount())
+	}
+}
+
+func TestManager_ConnectAllAndRegisterRegistersTools(t *testing.T) {
+	echoTool := server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "echo",
+			Description: "Echoes input",
+			InputSchema: mcp.ToolInputSchema{
+				Type:       "object",
+				Properties: map[string]any{"msg": map[string]any{"type": "string"}},
+			},
+		},
+		Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return mcp.NewToolResultText(req.GetString("msg", "")), nil
+		},
+	}
+
+	mcpServer := server.NewMCPServer("test-http-mcp", "0.1.0", server.WithToolCapabilities(false))
+	mcpServer.AddTool(echoTool.Tool, echoTool.Handler)
+	httpServer := server.NewTestStreamableHTTPServer(mcpServer)
+	defer httpServer.Close()
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	registry := tool.NewRegistry(bus)
+	mgr := NewManager(bus, registry)
+	errs := mgr.ConnectAllAndRegister(context.Background(), map[string]ServerConfig{
+		"http-srv": {Type: "http", URL: httpServer.URL},
+	})
+	if len(errs) > 0 {
+		t.Fatalf("ConnectAllAndRegister errors: %v", errs)
+	}
+
+	fullName := BuildToolName("http-srv", "echo")
+	desc, ok := registry.Get(fullName)
+	if !ok {
+		t.Fatalf("tool %q not found in registry", fullName)
+	}
+
+	result, err := desc.Invoke(context.Background(), json.RawMessage(`{"msg":"hello"}`), nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if result.Content != "hello" {
+		t.Fatalf("result = %q, want hello", result.Content)
+	}
+}
+
 func TestManager_ConnectsDiscoveredJetBrainsHTTPServer(t *testing.T) {
 	const reflectiveTool = "com.intellij.openapi.application.ApplicationInfo.getInstance"
 

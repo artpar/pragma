@@ -123,7 +123,6 @@ func NewHandoffState(goal string) HandoffState {
 			"Maintain todos for long-running tasks; use statuses pending, in_progress, completed, or blocked.",
 			"Interpret each tool_result into durable state and choose a non-repeating next_action.",
 			"Treat verified_failures, invalidated_assumptions, and repair_constraints as authoritative tool-verified feedback for the next attempt.",
-			"Before non-read-only tools, use CertifyFact, reference certified facts from investigation.certified_fact_refs, observed_contracts.fact_refs, and acceptance_checks.fact_refs, and set investigation.ready_for_changes.",
 			"Do not end with a plan when implementation or verification work remains; keep using tools until todos are completed or blocked.",
 			"Preserve user constraints and do_not items unless the user explicitly changes them.",
 		},

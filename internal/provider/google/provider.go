@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/pragma/internal/debug"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
@@ -90,16 +91,20 @@ func (p *Provider) CountTokens(ctx context.Context, params provider.RequestParam
 	observe.TraceCtx(ctx, "google", "Provider.CountTokens", "enter")
 	defer observe.TraceCtx(ctx, "google", "Provider.CountTokens", "exit")
 
-	contents, cfg := p.buildRequest(params)
+	mapper := newGoogleToolNameMapper(params.Tools)
+	contents, cfg := p.buildRequestWithToolNameMapper(params, mapper)
 	resp, err := p.client.Models.CountTokens(ctx, params.Model, contents, &genai.CountTokensConfig{
 		SystemInstruction: cfg.SystemInstruction,
 		Tools:             cfg.Tools,
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "if: err != nil")
+		debug.Log("Google CountTokens error: %v", err)
+		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "if: err != nil")
 		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "return: 0, fmt.Errorf(\"google: count tokens: %w\", err)")
 		return 0, fmt.Errorf("google: count tokens: %w", err)
 	}
+	debug.Log("Google CountTokens result for %s: %d", params.Model, resp.TotalTokens)
 	observe.TraceCtx(ctx, "google", "Provider.CountTokens", fmt.Sprintf("return: %d", resp.TotalTokens))
 	observe.TraceCtx(ctx, "google", "Provider.CountTokens", "return: int(resp.TotalTokens), nil")
 	return int(resp.TotalTokens), nil
@@ -149,7 +154,8 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	p.emitStart(traceID, spanID, params)
 	start := time.Now()
 
-	contents, cfg := p.buildRequest(params)
+	mapper := newGoogleToolNameMapper(params.Tools)
+	contents, cfg := p.buildRequestWithToolNameMapper(params, mapper)
 	contents = p.applyCache(ctx, params.Model, contents, cfg)
 
 	var resp *genai.GenerateContentResponse
@@ -164,7 +170,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		return model.Response{}, err
 	}
 
-	result := responseFromGenai(resp, params.Model)
+	result := responseFromGenai(resp, params.Model, mapper)
 	p.bus.Emit(observe.APIRequestCompleted{
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  result.StopReason, Usage: result.Usage,
@@ -183,7 +189,8 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	spanID := observe.NewSpanID()
 	p.emitStart(traceID, spanID, params)
 
-	contents, cfg := p.buildRequest(params)
+	mapper := newGoogleToolNameMapper(params.Tools)
+	contents, cfg := p.buildRequestWithToolNameMapper(params, mapper)
 	contents = p.applyCache(ctx, params.Model, contents, cfg)
 	ch := make(chan provider.StreamChunk, 32)
 
@@ -258,12 +265,13 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 					case part.FunctionCall != nil:
 						observe.TraceCtx(ctx, "google", "Provider.Stream", "case: part.FunctionCall != nil")
 						fc := part.FunctionCall
+						toolName := mapper.fromWire(fc.Name)
 						id := fc.ID
 						if id == "" {
 							id = model.NewUUID()
 						}
 						seenToolCalls[id] = true
-						tc := model.ToolCallPart{ID: id, Name: fc.Name}
+						tc := model.ToolCallPart{ID: id, Name: toolName}
 						if fc.Args != nil {
 							argsJSON, _ := json.Marshal(fc.Args)
 							tc.Input = argsJSON
@@ -273,7 +281,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						}
 						accToolCalls = append(accToolCalls, tc)
 						ch <- provider.StreamChunk{
-							ToolCallStart: &model.ToolCallPart{ID: id, Name: fc.Name, Signature: tc.Signature},
+							ToolCallStart: &model.ToolCallPart{ID: id, Name: toolName, Signature: tc.Signature},
 						}
 						if fc.Args != nil {
 							argsJSON, _ := json.Marshal(fc.Args)
@@ -388,6 +396,14 @@ func (p *Provider) applyCache(ctx context.Context, model string, contents []*gen
 func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content, *genai.GenerateContentConfig) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	mapper := newGoogleToolNameMapper(params.Tools)
+	observe.GlobalTrace("return: p.buildRequestWithToolNameMapper(params, mapper)")
+	return p.buildRequestWithToolNameMapper(params, mapper)
+}
+
+func (p *Provider) buildRequestWithToolNameMapper(params provider.RequestParams, mapper googleToolNameMapper) ([]*genai.Content, *genai.GenerateContentConfig) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cfg := &genai.GenerateContentConfig{}
 
 	if len(params.System.Blocks) > 0 {
@@ -419,7 +435,7 @@ func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content
 
 	if len(params.Tools) > 0 {
 		observe.GlobalTrace("if: len(params.Tools) > 0")
-		cfg.Tools = toolsToGenai(params.Tools)
+		cfg.Tools = toolsToGenai(params.Tools, mapper)
 	}
 
 	if len(params.ResponseSchema) > 0 {
@@ -448,16 +464,21 @@ func (p *Provider) buildRequest(params provider.RequestParams) ([]*genai.Content
 		}
 	}
 
-	contents := messagesToGenai(params.Messages)
+	contents := messagesToGenai(params.Messages, mapper)
 	observe.GlobalTrace("return: contents, cfg")
 
 	return contents, cfg
 }
 
 // messagesToGenai converts internal messages to genai Content.
-func messagesToGenai(msgs []model.Message) []*genai.Content {
+func messagesToGenai(msgs []model.Message, mappers ...googleToolNameMapper) []*genai.Content {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	mapper := googleToolNameMapper{}
+	if len(mappers) > 0 {
+		observe.GlobalTrace("if: len(mappers) > 0")
+		mapper = mappers[0]
+	}
 
 	toolNames := make(map[string]string)
 	for _, m := range msgs {
@@ -468,7 +489,7 @@ func messagesToGenai(msgs []model.Message) []*genai.Content {
 				observe.GlobalTrace("range m.Content")
 				if tc, ok := p.(model.ToolCallPart); ok {
 					observe.GlobalTrace("if: ok")
-					toolNames[tc.ID] = tc.Name
+					toolNames[tc.ID] = mapper.toWire(tc.Name)
 				}
 			}
 		}
@@ -500,7 +521,7 @@ func messagesToGenai(msgs []model.Message) []*genai.Content {
 				if len(part.Input) > 0 {
 					_ = json.Unmarshal(part.Input, &args)
 				}
-				p := genai.NewPartFromFunctionCall(part.Name, args)
+				p := genai.NewPartFromFunctionCall(mapper.toWire(part.Name), args)
 				if part.Signature != "" {
 					p.ThoughtSignature = []byte(part.Signature)
 				}
@@ -552,10 +573,94 @@ func messagesToGenai(msgs []model.Message) []*genai.Content {
 	return contents
 }
 
-// toolsToGenai converts pragma tool definitions to genai tools.
-func toolsToGenai(tools []model.ToolDef) []*genai.Tool {
+type googleToolNameMapper struct {
+	originalToWire map[string]string
+	wireToOriginal map[string]string
+}
+
+func newGoogleToolNameMapper(tools []model.ToolDef) googleToolNameMapper {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	mapper := googleToolNameMapper{
+		originalToWire: make(map[string]string, len(tools)),
+		wireToOriginal: make(map[string]string, len(tools)),
+	}
+	used := make(map[string]int, len(tools))
+	for _, tool := range tools {
+		observe.GlobalTrace("range tools")
+		wire := googleSafeToolName(tool.Name)
+		if count := used[wire]; count > 0 {
+			observe.GlobalTrace("if: count > 0")
+			used[wire] = count + 1
+			wire = fmt.Sprintf("%s_%d", wire, count+1)
+		} else {
+			observe.GlobalTrace("else: count > 0")
+			used[wire] = 1
+		}
+		mapper.originalToWire[tool.Name] = wire
+		mapper.wireToOriginal[wire] = tool.Name
+	}
+	observe.GlobalTrace("return: mapper")
+	return mapper
+}
+
+func (m googleToolNameMapper) toWire(name string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if mapped := m.originalToWire[name]; mapped != "" {
+		observe.GlobalTrace("if: mapped != \"\"")
+		observe.GlobalTrace("return: mapped")
+		return mapped
+	}
+	observe.GlobalTrace("return: name")
+	return name
+}
+
+func (m googleToolNameMapper) fromWire(name string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if mapped := m.wireToOriginal[name]; mapped != "" {
+		observe.GlobalTrace("if: mapped != \"\"")
+		observe.GlobalTrace("return: mapped")
+		return mapped
+	}
+	observe.GlobalTrace("return: name")
+	return name
+}
+
+func googleSafeToolName(name string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var b strings.Builder
+	for _, r := range name {
+		observe.GlobalTrace("range name")
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_':
+			observe.GlobalTrace("case: r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_'")
+			b.WriteRune(r)
+		default:
+			observe.GlobalTrace("default")
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		observe.GlobalTrace("if: b.Len() == 0")
+		observe.GlobalTrace("return: \"tool\"")
+		return "tool"
+	}
+	observe.GlobalTrace("return: b.String()")
+	return b.String()
+}
+
+// toolsToGenai converts pragma tool definitions to genai tools.
+func toolsToGenai(tools []model.ToolDef, mappers ...googleToolNameMapper) []*genai.Tool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	mapper := googleToolNameMapper{}
+	if len(mappers) > 0 {
+		observe.GlobalTrace("if: len(mappers) > 0")
+		mapper = mappers[0]
+	}
 	var decls []*genai.FunctionDeclaration
 	for _, t := range tools {
 		observe.GlobalTrace("range tools")
@@ -567,7 +672,7 @@ func toolsToGenai(tools []model.ToolDef) []*genai.Tool {
 			_ = json.Unmarshal(sanitized, schema)
 		}
 		decls = append(decls, &genai.FunctionDeclaration{
-			Name:        t.Name,
+			Name:        mapper.toWire(t.Name),
 			Description: t.Description,
 			Parameters:  schema,
 		})
@@ -678,9 +783,14 @@ func sanitizeObj(obj map[string]any) {
 }
 
 // responseFromGenai converts a genai response to pragma model.Response.
-func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) model.Response {
+func responseFromGenai(resp *genai.GenerateContentResponse, modelName string, mappers ...googleToolNameMapper) model.Response {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	mapper := googleToolNameMapper{}
+	if len(mappers) > 0 {
+		observe.GlobalTrace("if: len(mappers) > 0")
+		mapper = mappers[0]
+	}
 	result := model.Response{Model: modelName}
 	if resp.UsageMetadata != nil {
 		observe.GlobalTrace("if: resp.UsageMetadata != nil")
@@ -723,7 +833,7 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string) mo
 					id = model.NewUUID()
 				}
 				argsJSON, _ := json.Marshal(fc.Args)
-				tc := model.ToolCallPart{ID: id, Name: fc.Name, Input: argsJSON}
+				tc := model.ToolCallPart{ID: id, Name: mapper.fromWire(fc.Name), Input: argsJSON}
 				if len(part.ThoughtSignature) > 0 {
 					tc.Signature = string(part.ThoughtSignature)
 				}

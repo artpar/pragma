@@ -32,6 +32,10 @@ tasks {
         untilBuild.set("252.*")
     }
 
+    runIde {
+        jvmArgs("-Didea.trust.all.projects=true")
+    }
+
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
         kotlinOptions {
             jvmTarget = "17"

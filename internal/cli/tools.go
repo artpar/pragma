@@ -152,6 +152,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	}
 	if err := d.Registry.Register(lifecycleTool); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"register lifecycle tool: %w\", err)")
 		return nil, fmt.Errorf("register lifecycle tool: %w", err)
 	}
 
@@ -167,14 +168,20 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 func mcpStatusesForQuery(mgr interface {
 	ServerStatuses() []mcp.ServerStatusInfo
 }) []query.MCPServerStatus {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if mgr == nil {
+		observe.GlobalTrace("if: mgr == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	statuses := mgr.ServerStatuses()
 	out := make([]query.MCPServerStatus, 0, len(statuses))
 	for _, st := range statuses {
+		observe.GlobalTrace("range statuses")
 		out = append(out, query.MCPServerStatus{Name: st.Name, Status: st.Status})
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -233,8 +240,8 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		)
 	}
 
-	if d.McpManager != nil && d.McpManager.HasConnectedResourceServer() {
-		observe.GlobalTrace("if: d.McpManager != nil && d.McpManager.HasConnectedResourceServer()")
+	if d.McpManager != nil {
+		observe.GlobalTrace("if: d.McpManager != nil")
 		tools = append(tools,
 			&toolmcp.ListTool{Manager: d.McpManager},
 			&toolmcp.ReadTool{Manager: d.McpManager},

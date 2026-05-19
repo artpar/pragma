@@ -464,8 +464,10 @@ func (o *Orchestrator) executeSingle(
 	}
 	sessionID, _ := SessionIDFrom(state)
 	if processed, processErr := toolresult.ProcessToolResult(part, call.Name, desc.Flags().MaxResultSizeChars, sessionID); processErr == nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: processErr == nil")
 		part = processed
 	}
+	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart:\t\tpart,\n\tdisplay:\tinvokeResult.Display,\n\tsupplements:\tinv...")
 
 	return singleResult{
 		part:        part,

@@ -114,11 +114,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	apiKey := t.Token
 	if apiKey == "" {
+		observe.TraceCtx(ctx, "websearch", "Tool.Invoke", "if: apiKey == \"\"")
 		apiKey = os.Getenv("BRAVE_SEARCH_API_KEY")
 	}
 	if apiKey == "" {
 		observe.TraceCtx(ctx, "websearch", "Tool.Invoke", "if: apiKey == \"\"")
 		observe.TraceCtx(ctx, "websearch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"BRAVE_SEARCH_API_KEY environment variable is not ...")
+		observe.TraceCtx(ctx, "websearch", "Tool.Invoke", "return: tool.InvokeResult{Content: \"BRAVE_SEARCH_API_KEY environment variable or brav...")
 		return tool.InvokeResult{Content: "BRAVE_SEARCH_API_KEY environment variable or brave.api_key in ~/.pragma/credentials.yml is required. Web search is unavailable."}, nil
 	}
 

@@ -90,6 +90,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 	clients := t.Manager.Clients()
 	status := t.Manager.ServerStatus()
 	if in.Server != "" {
+		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: in.Server != \"\"")
 		if _, ok := clients[in.Server]; !ok {
 			observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: in.Server not connected")
 			if _, configured := status[in.Server]; !configured {
@@ -100,6 +101,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 					available = append(available, name)
 				}
 				observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: not found")
+				observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"server %q not found. Available servers: %v\",...")
 				return tool.InvokeResult{}, fmt.Errorf("server %q not found. Available servers: %v", in.Server, available)
 			}
 		}
@@ -147,6 +149,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.Sta
 	if len(all) == 0 {
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(all) == 0")
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: no resources}, nil")
+		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "return: tool.InvokeResult{Content: \"No resources found. MCP servers may still provide...")
 		return tool.InvokeResult{Content: "No resources found. MCP servers may still provide tools even if they have no resources."}, nil
 	}
 

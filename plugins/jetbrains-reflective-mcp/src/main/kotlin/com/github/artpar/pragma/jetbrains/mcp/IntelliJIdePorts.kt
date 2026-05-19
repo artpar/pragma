@@ -6,10 +6,13 @@ import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.util.Computable
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -301,7 +304,10 @@ private fun String.isHiddenProjectPath(): Boolean =
         contains("/testdata/")
 
 private fun <T> readAction(body: () -> T): T =
-    ApplicationManager.getApplication().runReadAction<T>(body)
+    ProgressManager.getInstance().runProcess(
+        Computable { ApplicationManager.getApplication().runReadAction<T>(body) },
+        EmptyProgressIndicator(),
+    )
 
 private fun PsiElement.toStableValue(project: Project): PsiElementInfo {
     val file = containingFile?.virtualFile

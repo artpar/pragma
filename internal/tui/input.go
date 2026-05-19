@@ -6,12 +6,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+const inputHistoryLimit = 100
+
 // inputComponent wraps a textarea for user message input.
 // The input is always active — never disabled during streaming.
 // This matches pragma behavior where users can type and queue messages
 // while the assistant is responding.
 type inputComponent struct {
-	textarea textarea.Model
+	textarea     textarea.Model
+	history      []string
+	historyIndex int
+	historyDraft string
 }
 
 func newInputComponent() inputComponent {
@@ -28,7 +33,8 @@ func newInputComponent() inputComponent {
 	observe.GlobalTrace("return: inputComponent{\n\ttextarea: ta,\n}")
 
 	return inputComponent{
-		textarea: ta,
+		textarea:     ta,
+		historyIndex: -1,
 	}
 }
 
@@ -50,11 +56,22 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 					observe.GlobalTrace("return: nil")
 					return nil
 				}
+				c.remember(text)
 				c.textarea.Reset()
+				c.historyIndex = -1
+				c.historyDraft = ""
 				observe.GlobalTrace("return: func() tea.Msg {\n\treturn InputSubmittedMsg{Text: text}\n}")
 				return func() tea.Msg {
 					return InputSubmittedMsg{Text: text}
 				}
+			}
+		case tea.KeyUp:
+			if !keyMsg.Alt && c.shouldNavigateHistoryUp() && c.previousHistory() {
+				return nil
+			}
+		case tea.KeyDown:
+			if !keyMsg.Alt && c.shouldNavigateHistoryDown() && c.nextHistory() {
+				return nil
 			}
 
 		}
@@ -62,8 +79,65 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 
 	var cmd tea.Cmd
 	c.textarea, cmd = c.textarea.Update(msg)
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.Type != tea.KeyUp && keyMsg.Type != tea.KeyDown {
+		c.historyIndex = -1
+		c.historyDraft = ""
+	}
 	observe.GlobalTrace("return: cmd")
 	return cmd
+}
+
+func (c *inputComponent) shouldNavigateHistoryUp() bool {
+	return c.historyIndex >= 0 || c.textarea.Line() == 0
+}
+
+func (c *inputComponent) shouldNavigateHistoryDown() bool {
+	return c.historyIndex >= 0 || c.textarea.Line() >= c.textarea.LineCount()-1
+}
+
+func (c *inputComponent) previousHistory() bool {
+	if len(c.history) == 0 {
+		return false
+	}
+	if c.historyIndex < 0 {
+		c.historyDraft = c.textarea.Value()
+		c.historyIndex = len(c.history) - 1
+	} else if c.historyIndex > 0 {
+		c.historyIndex--
+	}
+	c.textarea.SetValue(c.history[c.historyIndex])
+	c.textarea.Focus()
+	return true
+}
+
+func (c *inputComponent) nextHistory() bool {
+	if len(c.history) == 0 || c.historyIndex < 0 {
+		return false
+	}
+	c.historyIndex++
+	if c.historyIndex >= len(c.history) {
+		c.historyIndex = -1
+		c.textarea.SetValue(c.historyDraft)
+		c.historyDraft = ""
+		c.textarea.Focus()
+		return true
+	}
+	c.textarea.SetValue(c.history[c.historyIndex])
+	c.textarea.Focus()
+	return true
+}
+
+func (c *inputComponent) remember(text string) {
+	if text == "" {
+		return
+	}
+	if len(c.history) > 0 && c.history[len(c.history)-1] == text {
+		return
+	}
+	c.history = append(c.history, text)
+	if len(c.history) > inputHistoryLimit {
+		c.history = c.history[len(c.history)-inputHistoryLimit:]
+	}
 }
 
 // View renders the input area. Always shows the textarea (never disabled).
@@ -115,4 +189,6 @@ func (c *inputComponent) Reset() {
 	defer observe.GlobalTrace("exit")
 	c.textarea.Reset()
 	c.textarea.Focus()
+	c.historyIndex = -1
+	c.historyDraft = ""
 }

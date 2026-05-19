@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/artpar/pragma/internal/observe"
 )
@@ -316,6 +318,73 @@ func TestLoadConfig_JetBrainsDiscoveryLatestForWorkspaceChild(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_JetBrainsDiscoverySkipsExpiredLease(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	workDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverName := "jetbrains-" + jetBrainsProjectHash(absWorkDir)
+	writeJetBrainsDiscoveryAt(t, home, jetBrainsProjectHash(absWorkDir)+".json", absWorkDir, serverName, "http://127.0.0.1:49235", time.Now().Add(-time.Hour), 30_000)
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := servers[serverName]; ok {
+		t.Fatalf("expired JetBrains MCP discovery should be ignored")
+	}
+}
+
+func TestLoadConfig_JetBrainsDiscoveryPrefersClosestLiveProject(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	parentDir := filepath.Join(dir, "repo")
+	projectDir := filepath.Join(parentDir, "service")
+	workDir := filepath.Join(projectDir, "pkg")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	absParentDir, err := filepath.Abs(parentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absProjectDir, err := filepath.Abs(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parentServerName := "jetbrains-" + jetBrainsProjectHash(absParentDir)
+	projectServerName := "jetbrains-" + jetBrainsProjectHash(absProjectDir)
+	writeJetBrainsDiscoveryAt(t, home, filepath.Join("projects", jetBrainsProjectHash(absParentDir)+".json"), absParentDir, parentServerName, "http://127.0.0.1:49236", time.Now(), 30_000)
+	writeJetBrainsDiscoveryAt(t, home, filepath.Join("projects", jetBrainsProjectHash(absProjectDir)+".json"), absProjectDir, projectServerName, "http://127.0.0.1:49237", time.Now().Add(-time.Minute), 120_000)
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+
+	servers, err := LoadConfig(workDir, bus)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if _, ok := servers[projectServerName]; !ok {
+		t.Fatalf("expected closest live JetBrains MCP discovery")
+	}
+	if _, ok := servers[parentServerName]; ok {
+		t.Fatalf("did not expect broader parent JetBrains MCP discovery")
+	}
+}
+
 func TestLoadConfig_JetBrainsDiscoverySkipsOtherProject(t *testing.T) {
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
@@ -445,14 +514,26 @@ func TestLoadConfig_NoConfigs(t *testing.T) {
 
 func writeJetBrainsDiscovery(t *testing.T, home, filename, projectPath, serverName, url string) {
 	t.Helper()
+	writeJetBrainsDiscoveryAt(t, home, filename, projectPath, serverName, url, time.Now(), 30_000)
+}
+
+func writeJetBrainsDiscoveryAt(t *testing.T, home, filename, projectPath, serverName, url string, updatedAt time.Time, ttlMS int64) {
+	t.Helper()
 	dir := filepath.Join(home, ".pragma", "jetbrains-mcp")
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, filename)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
 	content := `{
 		"server": "pragma-jetbrains-reflective-mcp",
 		"projectPath": ` + quoteJSON(projectPath) + `,
+		"canonicalProjectPath": ` + quoteJSON(projectPath) + `,
 		"url": ` + quoteJSON(url) + `,
+		"updatedAt": ` + quoteJSON(updatedAt.Format(time.RFC3339Nano)) + `,
+		"ttlMs": ` + fmt.Sprint(ttlMS) + `,
 		"mcpConfig": {
 			"mcpServers": {
 				"` + serverName + `": {
@@ -462,7 +543,7 @@ func writeJetBrainsDiscovery(t *testing.T, home, filename, projectPath, serverNa
 			}
 		}
 	}`
-	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 }

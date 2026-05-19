@@ -583,7 +583,7 @@ func TestRun_StateHandoffPatchToolUpdatesStateAndPreservesResults(t *testing.T) 
 	}
 }
 
-func TestRun_StateHandoffBlocksMutatingToolsUntilInvestigationReady(t *testing.T) {
+func TestRun_StateHandoffDoesNotBlockMutatingTools(t *testing.T) {
 	patchCallID := "tc-patch"
 	mutateCallID := "tc-mutate"
 	mutate := &mutatingTestTool{}
@@ -609,13 +609,13 @@ func TestRun_StateHandoffBlocksMutatingToolsUntilInvestigationReady(t *testing.T
 			t.Fatalf("unexpected error: %v", e.Err)
 		}
 	}
-	if mutate.invoked {
-		t.Fatal("mutating tool was invoked before investigation gate was ready")
+	if !mutate.invoked {
+		t.Fatal("mutating tool was blocked in state-handoff mode")
 	}
 	resultsMsg := engine.store.Snapshot().Conversation.Messages[2]
 	result := resultsMsg.Content[1].(model.ToolResultPart)
-	if !result.IsError || !strings.Contains(result.Content, "change blocked") {
-		t.Fatalf("mutating result = %#v, want change blocked error", result)
+	if result.IsError || result.Content != "mutated" {
+		t.Fatalf("mutating result = %#v, want successful mutation result", result)
 	}
 }
 

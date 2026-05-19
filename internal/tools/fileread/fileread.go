@@ -137,6 +137,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true, MaxResultSizeChars: -1}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true, MaxResultSizeChars: -1}
 }
 

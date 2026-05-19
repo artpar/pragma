@@ -33,6 +33,7 @@ func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
 		fullName = info.Name
 	}
 	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tBuildToolName(...")
+	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tfullName,\n}")
 	return &MCPToolAdapter{
 		client:   client,
 		toolInfo: info,

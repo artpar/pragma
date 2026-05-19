@@ -917,6 +917,7 @@ func (m *Model) loadResumedSession(sessionID string) {
 		}
 	})
 	if m.engine != nil {
+		observe.GlobalTrace("if: m.engine != nil")
 		m.engine.ResetContentReplacementState(sess.ContentReplacements)
 	}
 

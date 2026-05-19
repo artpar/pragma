@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 )
 
@@ -26,11 +27,16 @@ type SessionIDProvider interface {
 }
 
 func SessionIDFrom(state StateSnapshot) (string, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	provider, ok := state.(SessionIDProvider)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: \"\", false")
 		return "", false
 	}
 	id := provider.SessionID()
+	observe.GlobalTrace("return: id, id != \"\"")
 	return id, id != ""
 }
 

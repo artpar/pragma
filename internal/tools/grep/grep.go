@@ -106,6 +106,7 @@ func (t *Tool) Flags() tool.ToolFlags {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
+	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true, MaxResultSizeChars: 20_000}")
 	return tool.ToolFlags{ReadOnly: true, Concurrent: true, MaxResultSizeChars: 20_000}
 }
 
@@ -435,6 +436,7 @@ func buildFilesResult(lines []string, headLimit, offset int, workDir string) str
 	if len(lines) == 0 {
 		observe.GlobalTrace("if: len(lines) == 0")
 		observe.GlobalTrace("return: \"No files found. Try: ...\"")
+		observe.GlobalTrace("return: \"IMPORTANT: No files were found matching this pattern. Do NOT fabricate resul...")
 		return "IMPORTANT: No files were found matching this pattern. Do NOT fabricate results. Try: case-insensitive (-i), partial name, different naming convention, or broader pattern."
 	}
 

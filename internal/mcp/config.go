@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/observe"
@@ -76,9 +77,18 @@ type MCPConfig struct {
 }
 
 type jetBrainsMCPDiscovery struct {
-	ProjectPath string    `json:"projectPath"`
-	URL         string    `json:"url"`
-	MCPConfig   MCPConfig `json:"mcpConfig"`
+	ProjectPath          string    `json:"projectPath"`
+	CanonicalProjectPath string    `json:"canonicalProjectPath"`
+	URL                  string    `json:"url"`
+	MCPConfig            MCPConfig `json:"mcpConfig"`
+	UpdatedAt            string    `json:"updatedAt"`
+	TTLMS                int64     `json:"ttlMs"`
+}
+
+type jetBrainsMCPDiscoveryCandidate struct {
+	projectPath string
+	updatedAt   time.Time
+	servers     map[string]ServerConfig
 }
 
 // LoadConfig loads and merges MCP server configs from multiple scopes.
@@ -208,6 +218,7 @@ func loadJetBrainsMCPDiscovery(workDir string) (map[string]ServerConfig, error) 
 	pragmaHome, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 
@@ -218,53 +229,84 @@ func loadJetBrainsMCPDiscovery(workDir string) (map[string]ServerConfig, error) 
 	}
 
 	dir := filepath.Join(pragmaHome, "jetbrains-mcp")
-	paths := []string{
+	paths, err := filepath.Glob(filepath.Join(dir, "projects", "*.json"))
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
+		return nil, err
+	}
+	paths = append(paths,
 		filepath.Join(dir, jetBrainsProjectHash(absWorkDir)+".json"),
 		filepath.Join(dir, "latest.json"),
-	}
+	)
 
+	var best *jetBrainsMCPDiscoveryCandidate
 	for _, path := range paths {
 		observe.GlobalTrace("range paths")
-		servers, err := loadJetBrainsMCPDiscoveryFile(path, absWorkDir)
+		candidate, err := loadJetBrainsMCPDiscoveryFile(path, absWorkDir, time.Now())
 		if err != nil {
 			observe.GlobalTrace("if: err != nil")
 			if errors.Is(err, os.ErrNotExist) {
 				observe.GlobalTrace("if: errors.Is(err, os.ErrNotExist)")
 				continue
 			}
+			observe.GlobalTrace("return: nil, err")
 			return nil, err
 		}
-		if len(servers) > 0 {
-			observe.GlobalTrace("if: len(servers) > 0")
-			return servers, nil
+		if candidate == nil {
+			observe.GlobalTrace("if: candidate == nil")
+			continue
 		}
+		if best == nil || betterJetBrainsDiscoveryCandidate(*candidate, *best, absWorkDir) {
+			observe.GlobalTrace("if: best == nil || betterJetBrainsDiscoveryCandidate(*candidate, *best, absWorkDir)")
+			best = candidate
+		}
+	}
+	if best != nil {
+		observe.GlobalTrace("if: best != nil")
+		observe.GlobalTrace("return: best.servers, nil")
+		return best.servers, nil
 	}
 	observe.GlobalTrace("return: nil, nil")
 	return nil, nil
 }
 
-func loadJetBrainsMCPDiscoveryFile(path, workDir string) (map[string]ServerConfig, error) {
+func loadJetBrainsMCPDiscoveryFile(path, workDir string, now time.Time) (*jetBrainsMCPDiscoveryCandidate, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 
 	var discovery jetBrainsMCPDiscovery
 	if err := json.Unmarshal(data, &discovery); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse %s: %w\", path, err)")
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
-	projectPath := discovery.ProjectPath
+	if !jetBrainsDiscoveryLeaseLive(discovery, now) {
+		observe.GlobalTrace("if: !jetBrainsDiscoveryLeaseLive(discovery, now)")
+		observe.GlobalTrace("return: nil, nil")
+		return nil, nil
+	}
+
+	projectPath := discovery.CanonicalProjectPath
 	if projectPath == "" {
 		observe.GlobalTrace("if: projectPath == \"\"")
+		projectPath = discovery.ProjectPath
+	}
+	if projectPath == "" {
+		observe.GlobalTrace("if: projectPath == \"\"")
+		observe.GlobalTrace("return: nil, nil")
 		return nil, nil
 	}
 	if !sameOrAncestor(projectPath, workDir) {
 		observe.GlobalTrace("if: !sameOrAncestor(projectPath, workDir)")
+		observe.GlobalTrace("return: nil, nil")
 		return nil, nil
 	}
 
@@ -284,8 +326,74 @@ func loadJetBrainsMCPDiscoveryFile(path, workDir string) (map[string]ServerConfi
 		sc.PreserveToolNames = true
 		servers[name] = sc
 	}
+	updatedAt, _ := time.Parse(time.RFC3339Nano, discovery.UpdatedAt)
 	observe.GlobalTrace("return: servers, nil")
-	return servers, nil
+	observe.GlobalTrace("return: &jetBrainsMCPDiscoveryCandidate{\n\tprojectPath:\tprojectPath,\n\tupdatedAt:\tupdat...")
+	return &jetBrainsMCPDiscoveryCandidate{
+		projectPath: projectPath,
+		updatedAt:   updatedAt,
+		servers:     servers,
+	}, nil
+}
+
+func jetBrainsDiscoveryLeaseLive(discovery jetBrainsMCPDiscovery, now time.Time) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if discovery.UpdatedAt == "" || discovery.TTLMS <= 0 {
+		observe.GlobalTrace("if: discovery.UpdatedAt == \"\" || discovery.TTLMS <= 0")
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, discovery.UpdatedAt)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	observe.GlobalTrace("return: now.Before(updatedAt.Add(time.Duration(discovery.TTLMS) * time.Millisecond))")
+	return now.Before(updatedAt.Add(time.Duration(discovery.TTLMS) * time.Millisecond))
+}
+
+func betterJetBrainsDiscoveryCandidate(candidate, current jetBrainsMCPDiscoveryCandidate, workDir string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	candidateDepth := matchingProjectDepth(candidate.projectPath, workDir)
+	currentDepth := matchingProjectDepth(current.projectPath, workDir)
+	if candidateDepth != currentDepth {
+		observe.GlobalTrace("if: candidateDepth != currentDepth")
+		observe.GlobalTrace("return: candidateDepth > currentDepth")
+		return candidateDepth > currentDepth
+	}
+	observe.GlobalTrace("return: candidate.updatedAt.After(current.updatedAt)")
+	return candidate.updatedAt.After(current.updatedAt)
+}
+
+func matchingProjectDepth(projectPath, workDir string) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	absProject, err := filepath.Abs(projectPath)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		absProject = projectPath
+	}
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		absWorkDir = workDir
+	}
+	rel, err := filepath.Rel(absProject, absWorkDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		observe.GlobalTrace("if: err != nil || rel == \"..\" || strings.HasPrefix(rel, \"..\"+string(filepath.Sepa...")
+		observe.GlobalTrace("return: -1")
+		return -1
+	}
+	if rel == "." {
+		observe.GlobalTrace("if: rel == \".\"")
+		observe.GlobalTrace("return: len(strings.Split(filepath.Clean(absProject), string(filepath.Separator)))")
+		return len(strings.Split(filepath.Clean(absProject), string(filepath.Separator)))
+	}
+	observe.GlobalTrace("return: len(strings.Split(filepath.Clean(absProject), string(filepath.Separator)))")
+	return len(strings.Split(filepath.Clean(absProject), string(filepath.Separator)))
 }
 
 func sameOrAncestor(projectPath, workDir string) bool {
@@ -304,9 +412,11 @@ func sameOrAncestor(projectPath, workDir string) bool {
 	rel, err := filepath.Rel(absProject, absWorkDir)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	observe.GlobalTrace("return: rel == \".\" || rel != \"..\" && !strings.HasPrefix(rel, \"..\"+string(filepath.Separator))")
+	observe.GlobalTrace("return: rel == \".\" || rel != \"..\" && !strings.HasPrefix(rel, \"..\"+string(filepath.Sep...")
 	return rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 

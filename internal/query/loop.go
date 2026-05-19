@@ -134,6 +134,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			tools = e.filterReadOnlyTools(tools)
 		}
 		if e.isStateHandoffMode() {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.isStateHandoffMode()")
 			tools = append([]model.ToolDef{handoffPatchToolDef(), certifyFactToolDef()}, tools...)
 		}
 
@@ -588,95 +589,142 @@ func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemProm
 }
 
 func (e *Engine) isStateHandoffMode() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: e.config.ContextMode == model.ContextModeStateHandoff")
 	return e.config.ContextMode == model.ContextModeStateHandoff
 }
 
 func (e *Engine) messagesForRequest(conv model.Conversation) []model.Message {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !e.isStateHandoffMode() {
+		observe.GlobalTrace("if: !e.isStateHandoffMode()")
+		observe.GlobalTrace("return: conv.APIMessages()")
 		return conv.APIMessages()
 	}
 	api := conv.APIMessages()
 	if len(api) < 2 {
+		observe.GlobalTrace("if: len(api) < 2")
+		observe.GlobalTrace("return: api")
 		return api
 	}
 	last := api[len(api)-1]
 	if last.Role == model.RoleUser && !messageHasToolResult(last) {
+		observe.GlobalTrace("if: last.Role == model.RoleUser && !messageHasToolResult(last)")
 		if exchange, ok := latestToolExchange(api[:len(api)-1]); ok {
+			observe.GlobalTrace("if: ok")
+			observe.GlobalTrace("return: append(boundStateHandoffToolResults(exchange), last)")
 			return append(boundStateHandoffToolResults(exchange), last)
 		}
+		observe.GlobalTrace("return: []model.Message{last}")
 		return []model.Message{last}
 	}
 	if exchange, ok := latestToolExchange(api); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: boundStateHandoffToolResults(exchange)")
 		return boundStateHandoffToolResults(exchange)
 	}
+	observe.GlobalTrace("return: api")
 	return api
 }
 
 func latestToolExchange(api []model.Message) ([]model.Message, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for i := len(api) - 1; i >= 1; i-- {
+		observe.GlobalTrace("for: i >= 1")
 		if api[i].Role != model.RoleUser || !messageHasToolResult(api[i]) {
+			observe.GlobalTrace("if: api[i].Role != model.RoleUser || !messageHasToolResult(api[i])")
 			continue
 		}
 		for j := i - 1; j >= 0; j-- {
+			observe.GlobalTrace("for: j >= 0")
 			if api[j].Role == model.RoleAssistant && messageHasToolCall(api[j]) {
+				observe.GlobalTrace("if: api[j].Role == model.RoleAssistant && messageHasToolCall(api[j])")
+				observe.GlobalTrace("return: []model.Message{api[j], api[i]}, true")
 				return []model.Message{api[j], api[i]}, true
 			}
 		}
 	}
+	observe.GlobalTrace("return: nil, false")
 	return nil, false
 }
 
 func boundStateHandoffToolResults(messages []model.Message) []model.Message {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := make([]model.Message, len(messages))
 	remaining := stateHandoffMaxToolResultBatchChars
 	for i, msg := range messages {
+		observe.GlobalTrace("range messages")
 		out[i] = msg
 		if len(msg.Content) == 0 {
+			observe.GlobalTrace("if: len(msg.Content) == 0")
 			continue
 		}
 		content := make([]model.ContentPart, len(msg.Content))
 		for j, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
 			result, ok := part.(model.ToolResultPart)
 			if !ok {
+				observe.GlobalTrace("if: !ok")
 				content[j] = part
 				continue
 			}
 			limit := stateHandoffMaxToolResultChars
 			if remaining < limit {
+				observe.GlobalTrace("if: remaining < limit")
 				limit = remaining
 			}
 			result.Content = boundToolResultContent(result.Content, limit)
 			remaining -= len(result.Content)
 			if remaining < 0 {
+				observe.GlobalTrace("if: remaining < 0")
 				remaining = 0
 			}
 			content[j] = result
 		}
 		out[i].Content = content
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
 func boundToolResultContent(content string, limit int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if limit <= 0 {
+		observe.GlobalTrace("if: limit <= 0")
+		observe.GlobalTrace("return: fmt.Sprintf(\"[tool result omitted from state-handoff prompt: original_size=%d...")
 		return fmt.Sprintf("[tool result omitted from state-handoff prompt: original_size=%d chars; use focused read/search or CertifyFact for exact facts]", len(content))
 	}
 	if len(content) <= limit {
+		observe.GlobalTrace("if: len(content) <= limit")
+		observe.GlobalTrace("return: content")
 		return content
 	}
 	const suffixBudget = 180
 	if limit <= suffixBudget {
+		observe.GlobalTrace("if: limit <= suffixBudget")
+		observe.GlobalTrace("return: fmt.Sprintf(\"[tool result truncated from %d chars]\", len(content))")
 		return fmt.Sprintf("[tool result truncated from %d chars]", len(content))
 	}
 	keep := limit - suffixBudget
+	observe.GlobalTrace("return: content[:keep] + fmt.Sprintf(\"\\n\\n[tool result truncated for state-handoff pr...")
 	return content[:keep] + fmt.Sprintf("\n\n[tool result truncated for state-handoff prompt: original_size=%d chars, shown_prefix=%d chars; use focused read/search or CertifyFact for exact facts]", len(content), keep)
 }
 
 func (e *Engine) systemWithHandoffState(system model.SystemPrompt, state model.HandoffState) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !e.isStateHandoffMode() {
+		observe.GlobalTrace("if: !e.isStateHandoffMode()")
+		observe.GlobalTrace("return: system")
 		return system
 	}
 	if state.IsZero() {
+		observe.GlobalTrace("if: state.IsZero()")
 		state = model.NewHandoffState("")
 	}
 	block := `# Handoff State Protocol
@@ -692,12 +740,6 @@ Pragma automatically records failed tools and nonzero shell commands in current_
 Do not repeat the same real tool call or same search if the latest tool_result already answered it. Advance next_action to the next distinct step.
 If Grep returns matching files, record those files/evidence and Read the most relevant file next instead of Grep again.
 Do not end the turn with only a plan when the user's coding task still has pending implementation or verification work. Patch the plan into current_handoff_state and call the next real tool in the same response, or mark a concrete blocker.
-Before calling any non-read-only tool such as Edit, Write, Bash, NotebookEdit, or other changing/destructive tools, you MUST first investigate with read-only tools, call CertifyFact to create runtime-verified facts, and patch:
-- /investigation/certified_fact_refs/- with a fact ID returned by CertifyFact.
-- /investigation/observed_contracts/- with the real source/evidence you are relying on, including fact_refs that reference certified facts.
-- /investigation/acceptance_checks/- with the real acceptance command or expected real-input check that will prove the change, including fact_refs that reference certified facts. Use "expected" for the expected result; "expected_result" and "expected_output" are also accepted.
-- /investigation/ready_for_changes to true.
-The runtime blocks non-read-only tools until those fields are present.
 If you rely on nested JSON or log structure, certify it with CertifyFact required_paths before writing code against that structure.
 When calling any real tool, call PatchHandoffState and that real tool in the same response, with PatchHandoffState first.
 If no durable task state changed yet, still call PatchHandoffState first with a minimal current_focus, next_action, or latest_tool_result_interpretation update explaining what you are about to do.
@@ -721,10 +763,14 @@ current_handoff_state:
 	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
 	blocks = append(blocks, system.Blocks...)
 	blocks = append(blocks, model.SystemBlock{Text: block, Cacheable: false})
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
 	return model.SystemPrompt{Blocks: blocks}
 }
 
 func handoffPatchToolDef() model.ToolDef {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: model.ToolDef{\n\tName:\t\t\"PatchHandoffState\",\n\tDescription:\t\"Patch the persiste...")
 	return model.ToolDef{
 		Name:        "PatchHandoffState",
 		Description: "Patch the persistent JSON handoff state. Use this to preserve tool-result interpretation, constraints, completed work, next action, risks, and evidence.",
@@ -749,6 +795,9 @@ func handoffPatchToolDef() model.ToolDef {
 }
 
 func certifyFactToolDef() model.ToolDef {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: model.ToolDef{\n\tName:\t\t\"CertifyFact\",\n\tDescription:\t\"Ask Pragma to verify a c...")
 	return model.ToolDef{
 		Name:        "CertifyFact",
 		Description: "Ask Pragma to verify a concrete fact from runtime evidence. Valid kind values are file_contains, json_shape, jsonl_shape, and tool_result_contains. Only this tool can write certified_facts into handoff state.",
@@ -771,36 +820,33 @@ func certifyFactToolDef() model.ToolDef {
 }
 
 func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPart, snap app.AppState, ch chan<- LoopEvent) tool.ExecuteResult {
+	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "exit")
 	results := make([]model.ToolResultPart, len(calls))
 	displays := make([]string, len(calls))
 	realCalls := make([]model.ToolCallPart, 0, len(calls))
 	realIndexes := make([]int, 0, len(calls))
 
 	for i, call := range calls {
+		observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "range calls")
 		if call.Name != "PatchHandoffState" && call.Name != "CertifyFact" {
+			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "if: call.Name != \"PatchHandoffState\" && call.Name != \"CertifyFact\"")
 			realCalls = append(realCalls, call)
 			realIndexes = append(realIndexes, i)
 			continue
 		}
 		if call.Name == "PatchHandoffState" {
+			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "if: call.Name == \"PatchHandoffState\"")
 			results[i] = e.executeHandoffPatch(call)
 		} else {
+			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "else: call.Name == \"PatchHandoffState\"")
 			results[i] = e.executeCertifyFact(call)
 		}
 	}
 
 	var supplements []model.ContentPart
 	if len(realCalls) > 0 {
-		gateState := e.store.Snapshot().HandoffState
-		filteredCalls, filteredIndexes, blocked := e.filterBlockedChangeCalls(realCalls, realIndexes, gateState)
-		for idx, result := range blocked {
-			results[idx] = result
-		}
-		realCalls = filteredCalls
-		realIndexes = filteredIndexes
-	}
-
-	if len(realCalls) > 0 {
+		observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "if: len(realCalls) > 0")
 		progressCh := make(chan tool.ProgressEvent, 16)
 		wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh, fileState: e.fileState}
 
@@ -833,6 +879,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		}
 
 		for i, r := range execResult.Results {
+			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "range execResult.Results")
 			idx := realIndexes[i]
 			results[idx] = r
 			displays[idx] = execResult.Displays[i]
@@ -841,6 +888,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	}
 
 	e.recordHandoffToolFailures(calls, results, displays)
+	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "return: tool.ExecuteResult{\n\tResults:\tresults,\n\tDisplays:\tdisplays,\n\tSupplements:\tsup...")
 
 	return tool.ExecuteResult{
 		Results:     results,
@@ -849,38 +897,19 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	}
 }
 
-func (e *Engine) filterBlockedChangeCalls(calls []model.ToolCallPart, indexes []int, state model.HandoffState) ([]model.ToolCallPart, []int, map[int]model.ToolResultPart) {
-	if !e.isStateHandoffMode() || state.AllowsChanges() {
-		return calls, indexes, nil
-	}
-	missing := state.ChangeGateMissing()
-	blocked := make(map[int]model.ToolResultPart)
-	allowedCalls := make([]model.ToolCallPart, 0, len(calls))
-	allowedIndexes := make([]int, 0, len(indexes))
-	for i, call := range calls {
-		desc, ok := e.registry.Get(call.Name)
-		if ok && desc.Flags().ReadOnly {
-			allowedCalls = append(allowedCalls, call)
-			allowedIndexes = append(allowedIndexes, indexes[i])
-			continue
-		}
-		blocked[indexes[i]] = model.ToolResultPart{
-			ToolCallID: call.ID,
-			Content:    "change blocked: investigate and patch " + strings.Join(missing, ", ") + " before calling non-read-only tools",
-			IsError:    true,
-		}
-	}
-	return allowedCalls, allowedIndexes, blocked
-}
-
 func (e *Engine) executeHandoffPatch(call model.ToolCallPart) model.ToolResultPart {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	snap := e.store.Snapshot()
 	state := snap.HandoffState
 	if state.IsZero() {
+		observe.GlobalTrace("if: state.IsZero()")
 		state = model.NewHandoffState("")
 	}
 	next, err := model.ApplyHandoffPatch(state, call.Input)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: model.ToolResultPart{\n\tToolCallID:\tcall.ID,\n\tContent:\terr.Error(),\n\tIsError:\t...")
 		return model.ToolResultPart{
 			ToolCallID: call.ID,
 			Content:    err.Error(),
@@ -890,6 +919,7 @@ func (e *Engine) executeHandoffPatch(call model.ToolCallPart) model.ToolResultPa
 	e.store.Update(func(s *app.AppState) {
 		s.HandoffState = next
 	})
+	observe.GlobalTrace("return: model.ToolResultPart{\n\tToolCallID:\tcall.ID,\n\tContent:\t\"handoff state patched\",\n}")
 	return model.ToolResultPart{
 		ToolCallID: call.ID,
 		Content:    "handoff state patched",
@@ -914,15 +944,23 @@ type certifyFactSelector struct {
 }
 
 func (e *Engine) executeCertifyFact(call model.ToolCallPart) model.ToolResultPart {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var in certifyFactInput
 	if err := json.Unmarshal(call.Input, &in); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: invalid inp...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: invalid input: " + err.Error(), IsError: true}
 	}
 	if strings.TrimSpace(in.ID) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(in.ID) == \"\"")
+		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: id is requi...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: id is required", IsError: true}
 	}
 	fact, err := e.certifyFact(in)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: \" + err.Err...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: " + err.Error(), IsError: true}
 	}
 	e.store.Update(func(s *app.AppState) {
@@ -932,37 +970,55 @@ func (e *Engine) executeCertifyFact(call model.ToolCallPart) model.ToolResultPar
 		s.HandoffState.AddCertifiedFact(fact)
 	})
 	data, _ := json.Marshal(fact)
+	observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: string(data)}")
 	return model.ToolResultPart{ToolCallID: call.ID, Content: string(data)}
 }
 
 func (e *Engine) certifyFact(in certifyFactInput) (model.CertifiedFact, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch strings.ToLower(strings.TrimSpace(in.Kind)) {
 	case "file_contains":
+		observe.GlobalTrace("case: \"file_contains\"")
 		return e.certifyFileContains(in)
 	case "json_shape", "jsonl_shape":
+		observe.GlobalTrace("case: \"json_shape\", \"jsonl_shape\"")
 		return e.certifyJSONShape(in)
 	case "tool_result_contains":
+		observe.GlobalTrace("case: \"tool_result_contains\"")
 		return e.certifyToolResultContains(in)
 	default:
+		observe.GlobalTrace("default")
 		return model.CertifiedFact{}, fmt.Errorf("unsupported kind %q; supported kinds: file_contains, json_shape, jsonl_shape, tool_result_contains", in.Kind)
 	}
 }
 
 func (e *Engine) certifyFileContains(in certifyFactInput) (model.CertifiedFact, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(in.Path) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(in.Path) == \"\"")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"path is required\")")
 		return model.CertifiedFact{}, fmt.Errorf("path is required")
 	}
 	if in.Contains == "" {
+		observe.GlobalTrace("if: in.Contains == \"\"")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"contains is required\")")
 		return model.CertifiedFact{}, fmt.Errorf("contains is required")
 	}
 	path := resolveCertifyPath(e.store.Snapshot().CWD, in.Path)
 	data, err := os.ReadFile(path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: model.CertifiedFact{}, err")
 		return model.CertifiedFact{}, err
 	}
 	if !strings.Contains(string(data), in.Contains) {
+		observe.GlobalTrace("if: !strings.Contains(string(data), in.Contains)")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"%s does not contain requested text\", path)")
 		return model.CertifiedFact{}, fmt.Errorf("%s does not contain requested text", path)
 	}
+	observe.GlobalTrace("return: model.CertifiedFact{\n\tID:\t\tin.ID,\n\tKind:\t\t\"file_contains\",\n\tSource:\t\tpath,\n\tC...")
 	return model.CertifiedFact{
 		ID:         in.ID,
 		Kind:       "file_contains",
@@ -975,25 +1031,35 @@ func (e *Engine) certifyFileContains(in certifyFactInput) (model.CertifiedFact, 
 }
 
 func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(in.Path) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(in.Path) == \"\"")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"path is required\")")
 		return model.CertifiedFact{}, fmt.Errorf("path is required")
 	}
 	if len(in.RequiredFields) == 0 && len(in.RequiredPaths) == 0 {
+		observe.GlobalTrace("if: len(in.RequiredFields) == 0 && len(in.RequiredPaths) == 0")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"required_fields or required_paths is requi...")
 		return model.CertifiedFact{}, fmt.Errorf("required_fields or required_paths is required")
 	}
 	path := resolveCertifyPath(e.store.Snapshot().CWD, in.Path)
 	file, err := os.Open(path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: model.CertifiedFact{}, err")
 		return model.CertifiedFact{}, err
 	}
 	defer file.Close()
 
 	required := make(map[string]bool, len(in.RequiredFields))
 	for _, f := range in.RequiredFields {
+		observe.GlobalTrace("range in.RequiredFields")
 		required[f] = false
 	}
 	requiredPaths := make(map[string]bool, len(in.RequiredPaths))
 	for _, p := range in.RequiredPaths {
+		observe.GlobalTrace("range in.RequiredPaths")
 		requiredPaths[p] = false
 	}
 	observed := make(map[string]bool)
@@ -1002,58 +1068,79 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
+		observe.GlobalTrace("for: scanner.Scan()")
 		line := scanner.Bytes()
 		var obj map[string]any
 		if err := json.Unmarshal(line, &obj); err != nil {
+			observe.GlobalTrace("if: err != nil")
 			continue
 		}
 		if !matchesCertifySelector(obj, in.Selector) {
+			observe.GlobalTrace("if: !matchesCertifySelector(obj, in.Selector)")
 			continue
 		}
 		matching++
 		if sample == nil {
+			observe.GlobalTrace("if: sample == nil")
 			sample = append([]byte(nil), line...)
 		}
 		for k := range obj {
+			observe.GlobalTrace("range obj")
 			observed[k] = true
 		}
 		for k := range required {
+			observe.GlobalTrace("range required")
 			if _, ok := obj[k]; ok {
+				observe.GlobalTrace("if: ok")
 				required[k] = true
 			}
 		}
 		for p := range requiredPaths {
+			observe.GlobalTrace("range requiredPaths")
 			if jsonPathExists(obj, p) {
+				observe.GlobalTrace("if: jsonPathExists(obj, p)")
 				requiredPaths[p] = true
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: model.CertifiedFact{}, err")
 		return model.CertifiedFact{}, err
 	}
 	if matching == 0 {
+		observe.GlobalTrace("if: matching == 0")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"no JSONL records matched selector\")")
 		return model.CertifiedFact{}, fmt.Errorf("no JSONL records matched selector")
 	}
 	var missing []string
 	for k, ok := range required {
+		observe.GlobalTrace("range required")
 		if !ok {
+			observe.GlobalTrace("if: !ok")
 			missing = append(missing, k)
 		}
 	}
 	for p, ok := range requiredPaths {
+		observe.GlobalTrace("range requiredPaths")
 		if !ok {
+			observe.GlobalTrace("if: !ok")
 			missing = append(missing, p)
 		}
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
+		observe.GlobalTrace("if: len(missing) > 0")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"missing required fields or paths: %s\", str...")
 		return model.CertifiedFact{}, fmt.Errorf("missing required fields or paths: %s", strings.Join(missing, ", "))
 	}
 	fields := make([]string, 0, len(observed))
 	for k := range observed {
+		observe.GlobalTrace("range observed")
 		fields = append(fields, k)
 	}
 	sort.Strings(fields)
+	observe.GlobalTrace("return: model.CertifiedFact{\n\tID:\t\t\tin.ID,\n\tKind:\t\t\t\"json_shape\",\n\tSource:\t\t\tpath,\n\tC...")
 	return model.CertifiedFact{
 		ID:              in.ID,
 		Kind:            "json_shape",
@@ -1069,22 +1156,34 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 }
 
 func (e *Engine) certifyToolResultContains(in certifyFactInput) (model.CertifiedFact, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(in.ToolCallID) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(in.ToolCallID) == \"\"")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"tool_call_id is required\")")
 		return model.CertifiedFact{}, fmt.Errorf("tool_call_id is required")
 	}
 	if in.Contains == "" {
+		observe.GlobalTrace("if: in.Contains == \"\"")
+		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"contains is required\")")
 		return model.CertifiedFact{}, fmt.Errorf("contains is required")
 	}
 	snap := e.store.Snapshot()
 	for _, msg := range snap.Conversation.Messages {
+		observe.GlobalTrace("range snap.Conversation.Messages")
 		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
 			result, ok := part.(model.ToolResultPart)
 			if !ok || result.ToolCallID != in.ToolCallID {
+				observe.GlobalTrace("if: !ok || result.ToolCallID != in.ToolCallID")
 				continue
 			}
 			if !strings.Contains(result.Content, in.Contains) {
+				observe.GlobalTrace("if: !strings.Contains(result.Content, in.Contains)")
+				observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"tool result %s does not contain requested ...")
 				return model.CertifiedFact{}, fmt.Errorf("tool result %s does not contain requested text", in.ToolCallID)
 			}
+			observe.GlobalTrace("return: model.CertifiedFact{\n\tID:\t\tin.ID,\n\tKind:\t\t\"tool_result_contains\",\n\tSource:\t\t\"...")
 			return model.CertifiedFact{
 				ID:         in.ID,
 				Kind:       "tool_result_contains",
@@ -1097,98 +1196,149 @@ func (e *Engine) certifyToolResultContains(in certifyFactInput) (model.Certified
 			}, nil
 		}
 	}
+	observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"tool result %s not found\", in.ToolCallID)")
 	return model.CertifiedFact{}, fmt.Errorf("tool result %s not found", in.ToolCallID)
 }
 
 func resolveCertifyPath(cwd, path string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.HasPrefix(path, "~/") {
+		observe.GlobalTrace("if: strings.HasPrefix(path, \"~/\")")
 		if home, err := os.UserHomeDir(); err == nil {
+			observe.GlobalTrace("if: err == nil")
 			path = filepath.Join(home, path[2:])
 		}
 	}
 	if filepath.IsAbs(path) {
+		observe.GlobalTrace("if: filepath.IsAbs(path)")
+		observe.GlobalTrace("return: filepath.Clean(path)")
 		return filepath.Clean(path)
 	}
+	observe.GlobalTrace("return: filepath.Clean(filepath.Join(cwd, path))")
 	return filepath.Clean(filepath.Join(cwd, path))
 }
 
 func matchesCertifySelector(obj map[string]any, selector *certifyFactSelector) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if selector == nil || selector.Field == "" {
+		observe.GlobalTrace("if: selector == nil || selector.Field == \"\"")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	got, ok := obj[selector.Field]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: false")
 		return false
 	}
+	observe.GlobalTrace("return: fmt.Sprint(got) == selector.Equals")
 	return fmt.Sprint(got) == selector.Equals
 }
 
 func jsonPathExists(root any, path string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(path) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(path) == \"\"")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	cur := root
 	for _, part := range strings.Split(path, ".") {
+		observe.GlobalTrace("range strings.Split(path, \".\")")
 		if part == "" {
+			observe.GlobalTrace("if: part == \"\"")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 		switch node := cur.(type) {
 		case map[string]any:
+			observe.GlobalTrace("typecase: map[string]any")
 			next, ok := node[part]
 			if !ok {
+				observe.GlobalTrace("return: false")
 				return false
 			}
 			cur = next
 		case []any:
+			observe.GlobalTrace("typecase: []any")
 			idx, err := strconv.Atoi(part)
 			if err != nil || idx < 0 || idx >= len(node) {
+				observe.GlobalTrace("return: false")
 				return false
 			}
 			cur = node[idx]
 		default:
+			observe.GlobalTrace("typedefault")
 			return false
 		}
 	}
+	observe.GlobalTrace("return: true")
 	return true
 }
 
 func certifiedJSONEvidence(matching int, fields, paths []string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var parts []string
 	if len(fields) > 0 {
+		observe.GlobalTrace("if: len(fields) > 0")
 		parts = append(parts, "required fields "+strings.Join(fields, ", "))
 	}
 	if len(paths) > 0 {
+		observe.GlobalTrace("if: len(paths) > 0")
 		parts = append(parts, "required paths "+strings.Join(paths, ", "))
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\"%d matching records with %s\", matching, strings.Join(parts, \" an...")
 	return fmt.Sprintf("%d matching records with %s", matching, strings.Join(parts, " and "))
 }
 
 func copySortedStrings(in []string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := append([]string(nil), in...)
 	sort.Strings(out)
+	observe.GlobalTrace("return: out")
 	return out
 }
 
 func sha256Hex(data []byte) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	sum := sha256.Sum256(data)
+	observe.GlobalTrace("return: fmt.Sprintf(\"%x\", sum[:])")
 	return fmt.Sprintf("%x", sum[:])
 }
 
 func messageHasToolCall(msg model.Message) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, part := range msg.Content {
+		observe.GlobalTrace("range msg.Content")
 		if _, ok := part.(model.ToolCallPart); ok {
+			observe.GlobalTrace("if: ok")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func messageHasToolResult(msg model.Message) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, part := range msg.Content {
+		observe.GlobalTrace("range msg.Content")
 		if _, ok := part.(model.ToolResultPart); ok {
+			observe.GlobalTrace("if: ok")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 

@@ -356,6 +356,39 @@ func TestBuildRequestTools(t *testing.T) {
 	}
 }
 
+func TestBuildRequestToolsMapsDottedNamesForGoogleWire(t *testing.T) {
+	p := &Provider{}
+	toolName := "com.intellij.psi.search.PsiSearchHelper.processElementsWithWord"
+	_, cfg := p.buildRequest(provider.RequestParams{
+		Tools: []model.ToolDef{
+			{Name: toolName, Description: "Search PSI", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		},
+	})
+	if got := cfg.Tools[0].FunctionDeclarations[0].Name; got != "com_intellij_psi_search_PsiSearchHelper_processElementsWithWord" {
+		t.Fatalf("wire tool name = %q", got)
+	}
+}
+
+func TestMessagesToGenaiMapsDottedToolHistoryForGoogleWire(t *testing.T) {
+	toolName := "com.intellij.psi.search.PsiSearchHelper.processElementsWithWord"
+	mapper := newGoogleToolNameMapper([]model.ToolDef{{Name: toolName}})
+	msgs := []model.Message{
+		{Role: model.RoleAssistant, Content: []model.ContentPart{
+			model.ToolCallPart{ID: "call-1", Name: toolName, Input: json.RawMessage(`{"word":"RegisterTools"}`)},
+		}},
+		{Role: model.RoleUser, Content: []model.ContentPart{
+			model.ToolResultPart{ToolCallID: "call-1", Content: `{"result":"ok"}`},
+		}},
+	}
+	contents := messagesToGenai(msgs, mapper)
+	if got := contents[0].Parts[0].FunctionCall.Name; got != "com_intellij_psi_search_PsiSearchHelper_processElementsWithWord" {
+		t.Fatalf("function call name = %q", got)
+	}
+	if got := contents[1].Parts[0].FunctionResponse.Name; got != "com_intellij_psi_search_PsiSearchHelper_processElementsWithWord" {
+		t.Fatalf("function response name = %q", got)
+	}
+}
+
 func TestBuildRequestThinkingEnabled(t *testing.T) {
 	p := &Provider{}
 	_, cfg := p.buildRequest(provider.RequestParams{
@@ -687,6 +720,28 @@ func TestResponseFromGenaiWithToolCalls(t *testing.T) {
 	}
 	if tc.ID != "fc-1" {
 		t.Errorf("tool ID: got %q", tc.ID)
+	}
+}
+
+func TestResponseFromGenaiRestoresDottedToolNameFromGoogleWire(t *testing.T) {
+	toolName := "com.intellij.psi.search.PsiSearchHelper.processElementsWithWord"
+	mapper := newGoogleToolNameMapper([]model.ToolDef{{Name: toolName}})
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Parts: []*genai.Part{
+						{FunctionCall: &genai.FunctionCall{Name: "com_intellij_psi_search_PsiSearchHelper_processElementsWithWord", ID: "fc-1", Args: map[string]any{"word": "RegisterTools"}}},
+					},
+				},
+				FinishReason: genai.FinishReasonStop,
+			},
+		},
+	}
+	result := responseFromGenai(resp, "gemini-2.5-flash", mapper)
+	tc := result.Content[0].(model.ToolCallPart)
+	if tc.Name != toolName {
+		t.Fatalf("tool name = %q", tc.Name)
 	}
 }
 

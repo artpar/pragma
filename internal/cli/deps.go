@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -102,9 +103,13 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	}
 	applyContextDefaults(&cfg)
 	if cfg.ContextMode != model.ContextModeChat && cfg.ContextMode != model.ContextModeStateHandoff {
+		observe.GlobalTrace("if: cfg.ContextMode != model.ContextModeChat && cfg.ContextMode != model.ContextM...")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid context mode %q\", cfg.ContextMode)")
 		return nil, fmt.Errorf("invalid context mode %q", cfg.ContextMode)
 	}
 	if cfg.HandoffSchema != model.HandoffSchemaV1 {
+		observe.GlobalTrace("if: cfg.HandoffSchema != model.HandoffSchemaV1")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid handoff schema %q\", cfg.HandoffSchema)")
 		return nil, fmt.Errorf("invalid handoff schema %q", cfg.HandoffSchema)
 	}
 
@@ -411,27 +416,38 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		fmt.Fprintf(os.Stderr, "warning: load mcp config: %v\n", mcpErr)
 	}
 
+	var mcpCancel context.CancelFunc
+	var mcpWG sync.WaitGroup
 	if len(mcpServers) > 0 {
 		observe.GlobalTrace("if: len(mcpServers) > 0")
-		connectCtx, connectCancel := context.WithTimeout(cmd.Context(), 60*time.Second)
-		connectErrs := mcpManager.ConnectAll(connectCtx, mcpServers)
-		connectCancel()
-
-		for name, err := range connectErrs {
-			observe.GlobalTrace("range connectErrs")
-			fmt.Fprintf(os.Stderr, "warning: mcp server %q: %v\n", name, err)
-		}
-
-		if err := mcpManager.RegisterTools(cmd.Context()); err != nil {
-			observe.GlobalTrace("if: err != nil")
-			fmt.Fprintf(os.Stderr, "warning: register mcp tools: %v\n", err)
-		}
+		mcpManager.ConfigureServers(mcpServers)
+		var mcpCtx context.Context
+		mcpCtx, mcpCancel = context.WithCancel(cmd.Context())
+		mcpWG.Add(1)
+		go func() {
+			defer mcpWG.Done()
+			connectCtx, connectCancel := context.WithTimeout(mcpCtx, 60*time.Second)
+			defer connectCancel()
+			mcpManager.ConnectAllAndRegister(connectCtx, mcpServers)
+		}()
 	}
 
 	watchdog := observe.NewMCPWatchdog(mcpManager.ServerStatus, bus, 30*time.Second)
 	go watchdog.Start(cmd.Context())
 
 	compositeCleanup := func() {
+		if mcpCancel != nil {
+			mcpCancel()
+			done := make(chan struct{})
+			go func() {
+				mcpWG.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
 		mcpManager.DisconnectAll()
 		bus.Drain()
 		for _, fn := range cleanupFns {
@@ -540,10 +556,14 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 }
 
 func applyContextDefaults(cfg *config.Config) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if cfg.ContextMode == "" {
+		observe.GlobalTrace("if: cfg.ContextMode == \"\"")
 		cfg.ContextMode = model.ContextModeStateHandoff
 	}
 	if cfg.HandoffSchema == "" {
+		observe.GlobalTrace("if: cfg.HandoffSchema == \"\"")
 		cfg.HandoffSchema = model.HandoffSchemaV1
 	}
 }

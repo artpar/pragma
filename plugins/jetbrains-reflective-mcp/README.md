@@ -75,6 +75,8 @@ Run the plugin in an IntelliJ sandbox against this repository:
 gradle --no-daemon runIde --args /Users/artpar/workspace/code/pragma
 ```
 
+The sandbox launch passes `-Didea.trust.all.projects=true` so automated and tmux-based tests do not block on IntelliJ's "Trust this project" dialog.
+
 After the IDE starts, inspect the discovery file:
 
 ```bash
