@@ -30,6 +30,9 @@ Thumbs.db
 /bin/
 /dist/
 todo-app/
+plugins/jetbrains-reflective-mcp/gradle/
+plugins/jetbrains-reflective-mcp/gradlew
+plugins/jetbrains-reflective-mcp/gradlew.bat
 
 # Runtime artifacts
 .claude/
