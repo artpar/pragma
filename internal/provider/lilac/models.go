@@ -20,14 +20,17 @@ type ModelInfo struct {
 }
 
 // Sources:
-//   GLM-5.1:  HuggingFace zai-org/GLM-5.1 config.json (max_position_embeddings: 202752)
-//             OpenRouter: max output 131,072
-//   Kimi K2.5: HuggingFace moonshotai/Kimi-K2.5 config.json (max_position_embeddings: 262144)
-//              OpenRouter: max output 65,535
-//   Kimi K2.6: Lilac docs (2026-05-08) — 262K context, image input, tools, reasoning
-//   Gemma 4:   HuggingFace google/gemma-4-31b-it config.json (text_config.max_position_embeddings: 262144)
-//              Google AI docs: 256K context. No official max output stated.
-//   Pricing:   https://docs.getlilac.com/inference/models (2026-05-08 for K2.6)
+//
+//	GLM-5.1:  HuggingFace zai-org/GLM-5.1 config.json (max_position_embeddings: 202752)
+//	          OpenRouter: max output 131,072
+//	Kimi K2.5: HuggingFace moonshotai/Kimi-K2.5 config.json (max_position_embeddings: 262144)
+//	           OpenRouter: max output 65,535
+//	Kimi K2.6: Lilac docs (2026-05-08) — 262K context, image input, tools, reasoning
+//	MiniMax M2.7: Lilac model details (2026-05-19) — 204.8K context, text input/output, tools, reasoning
+//	              Max output selected as 131,072 from provider-reported usage notes.
+//	Gemma 4:   HuggingFace google/gemma-4-31b-it config.json (text_config.max_position_embeddings: 262144)
+//	           Google AI docs: 256K context. No official max output stated.
+//	Pricing:   https://docs.getlilac.com/inference/models (2026-05-08 for K2.6)
 var registry = map[string]ModelInfo{
 	"zai-org/glm-5.1": {
 		ID:                "zai-org/glm-5.1",
@@ -52,6 +55,14 @@ var registry = map[string]ModelInfo{
 		MaxOutput:         65535,
 		Pricing:           model.Pricing{InputPerMToken: 0.70, OutputPerMToken: 3.50, CacheReadPerMToken: 0.20},
 		SupportsVision:    true,
+		SupportsToolUse:   true,
+		SupportsReasoning: true,
+	},
+	"minimaxai/minimax-m2.7": {
+		ID:                "minimaxai/minimax-m2.7",
+		MaxContext:        204800,
+		MaxOutput:         131072,
+		Pricing:           model.Pricing{InputPerMToken: 0.30, OutputPerMToken: 1.20, CacheReadPerMToken: 0.055},
 		SupportsToolUse:   true,
 		SupportsReasoning: true,
 	},
