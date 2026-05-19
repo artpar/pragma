@@ -81,6 +81,11 @@ func TestEventEmissionAtBoundaries(t *testing.T) {
 						emittedEvents[typeSel.Sel.Name] = true
 					}
 				}
+				if argCall, ok := call.Args[0].(*ast.CallExpr); ok {
+					if fn, ok := argCall.Fun.(*ast.SelectorExpr); ok && fn.Sel.Name == "RequestStartedEvent" {
+						emittedEvents["APIRequestStarted"] = true
+					}
+				}
 				return true
 			})
 		}

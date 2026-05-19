@@ -1,8 +1,10 @@
 package observe
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/artpar/pragma/internal/model"
 )
@@ -73,5 +75,64 @@ func TestUnmarshalEventUnknownKind(t *testing.T) {
 	_, err := UnmarshalEvent(data)
 	if err == nil {
 		t.Fatal("expected error for unknown event kind")
+	}
+}
+
+func TestAPIRequestStartedPreservesReplayPayload(t *testing.T) {
+	temp := 0.2
+	schema := json.RawMessage(`{"type":"object","properties":{"ok":{"type":"boolean"}}}`)
+	event := APIRequestStarted{
+		EventHeader:   NewEventHeader("APIRequestStarted", "trace", "span", ""),
+		Model:         "claude-sonnet-4-20250514",
+		MaxTokens:     4096,
+		MessageCount:  1,
+		ToolCount:     1,
+		TokenEstimate: 42,
+		Messages: []model.Message{{
+			ID:        "m1",
+			Role:      model.RoleUser,
+			Content:   []model.ContentPart{model.TextPart{Text: "inspect this"}},
+			Timestamp: time.Unix(1, 0),
+		}},
+		SystemPrompt: model.SystemPrompt{Blocks: []model.SystemBlock{{
+			Text:      "system",
+			Cacheable: true,
+		}}},
+		Tools: []model.ToolDef{{
+			Name:        "Read",
+			Description: "read file",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		}},
+		Temperature:    &temp,
+		Thinking:       &APIThinkingConfig{Enabled: true, BudgetTokens: 1024},
+		ResponseSchema: schema,
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	gotEvent, err := UnmarshalEvent(data)
+	if err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got, ok := gotEvent.(APIRequestStarted)
+	if !ok {
+		t.Fatalf("type: got %T, want APIRequestStarted", gotEvent)
+	}
+	if got.MaxTokens != event.MaxTokens || got.Model != event.Model || len(got.Messages) != 1 || len(got.Tools) != 1 {
+		t.Fatalf("payload counts/model not preserved: %#v", got)
+	}
+	if got.SystemPrompt.Blocks[0].Text != "system" || !got.SystemPrompt.Blocks[0].Cacheable {
+		t.Fatalf("system prompt not preserved: %#v", got.SystemPrompt)
+	}
+	if got.Temperature == nil || *got.Temperature != temp {
+		t.Fatalf("temperature not preserved: %#v", got.Temperature)
+	}
+	if got.Thinking == nil || !got.Thinking.Enabled || got.Thinking.BudgetTokens != 1024 {
+		t.Fatalf("thinking not preserved: %#v", got.Thinking)
+	}
+	if !bytes.Equal(got.ResponseSchema, schema) {
+		t.Fatalf("response schema: got %s want %s", got.ResponseSchema, schema)
 	}
 }

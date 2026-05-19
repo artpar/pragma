@@ -2,13 +2,17 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/pragma/internal/cli"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/provider"
 	replayprov "github.com/artpar/pragma/internal/provider/replay"
 	"github.com/artpar/pragma/internal/tui"
 )
@@ -31,6 +35,7 @@ Modes:
 	cmd.Flags().Bool("deterministic", false, "replay with recorded API responses")
 	cmd.Flags().Int("until-turn", 0, "replay up to N turns")
 	cmd.Flags().Bool("then-live", false, "switch to live provider after --until-turn")
+	cmd.AddCommand(replayExportCmd())
 	return cmd
 }
 
@@ -152,13 +157,13 @@ func replayDeterministic(cmd *cobra.Command, engine *observe.ReplayEngine, until
 		defer d.Cleanup()
 	}
 
-	// Build replay provider, optionally with fallback to real provider
-	var rp *replayprov.Provider
 	if thenLive && untilTurn > 0 {
-		rp = replayprov.New(engine, d.Prov, untilTurn)
-	} else {
-		rp = replayprov.New(engine, nil, 0)
+		return replayLiveFromCheckpoint(cmd, d, engine, untilTurn+1)
 	}
+
+	// Build replay provider from recorded API responses.
+	var rp *replayprov.Provider
+	rp = replayprov.New(engine, nil, 0)
 
 	// Swap provider to replay — all downstream consumers use this
 	d.Prov = rp
@@ -179,6 +184,73 @@ func replayDeterministic(cmd *cobra.Command, engine *observe.ReplayEngine, until
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	events := queryEngine.Run(cmd.Context(), firstPrompt)
 	return cli.ConsumeEngineEvents(events, verbose)
+}
+
+func replayLiveFromCheckpoint(cmd *cobra.Command, d *cli.Deps, engine *observe.ReplayEngine, turn int) error {
+	req, ok := engine.APIRequest(turn)
+	if !ok {
+		return fmt.Errorf("recording lacks request payload for turn %d; rerun with --record after this change to capture exact replay checkpoints", turn)
+	}
+	params := requestParamsFromEvent(req)
+	if cmd.Flags().Changed("model") || cmd.Flags().Changed("provider") {
+		params.Model = d.Cfg.Model
+	}
+	chunks, err := d.Prov.Stream(cmd.Context(), params)
+	if err != nil {
+		return err
+	}
+	resp, err := provider.AccumulateStream(chunks)
+	if err != nil {
+		return err
+	}
+	return printReplayResponse(resp)
+}
+
+func requestParamsFromEvent(req observe.APIRequestStarted) provider.RequestParams {
+	system := req.SystemPrompt
+	if len(system.Blocks) == 0 && req.System != "" {
+		system = model.SystemPrompt{Blocks: []model.SystemBlock{{Text: req.System, Cacheable: true}}}
+	}
+	var thinking *provider.ThinkingConfig
+	if req.Thinking != nil {
+		thinking = &provider.ThinkingConfig{
+			Enabled:      req.Thinking.Enabled,
+			BudgetTokens: req.Thinking.BudgetTokens,
+		}
+	}
+	return provider.RequestParams{
+		Model:          req.Model,
+		MaxTokens:      req.MaxTokens,
+		Messages:       req.Messages,
+		System:         system,
+		Tools:          req.Tools,
+		Temperature:    req.Temperature,
+		Thinking:       thinking,
+		ResponseSchema: req.ResponseSchema,
+	}
+}
+
+func printReplayResponse(resp model.Response) error {
+	for _, part := range resp.Content {
+		switch p := part.(type) {
+		case model.TextPart:
+			fmt.Print(p.Text)
+		case model.ThinkingPart:
+			if p.Text != "" {
+				fmt.Fprint(os.Stderr, p.Text)
+			}
+		case model.ToolCallPart:
+			input := strings.TrimSpace(string(p.Input))
+			if input == "" {
+				input = "{}"
+			}
+			fmt.Fprintf(os.Stderr, "\n[tool: %s %s]\n", p.Name, input)
+		}
+	}
+	if len(resp.Content) > 0 {
+		fmt.Println()
+	}
+	return nil
 }
 
 // extractFirstUserPrompt scans recorded events for the first user message.

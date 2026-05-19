@@ -182,15 +182,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
 
-	p.bus.Emit(observe.APIRequestStarted{
-		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
-		Model:         params.Model,
-		MessageCount:  len(params.Messages),
-		ToolCount:     len(params.Tools),
-		TokenEstimate: shared.EstimateTokens(params),
-		Messages:      params.Messages,
-		System:        shared.SystemText(params.System),
-	})
+	p.bus.Emit(shared.RequestStartedEvent(traceID, spanID, params))
 
 	start := time.Now()
 	var msg *sdk.Message
@@ -236,15 +228,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
 
-	p.bus.Emit(observe.APIRequestStarted{
-		EventHeader:   observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
-		Model:         params.Model,
-		MessageCount:  len(params.Messages),
-		ToolCount:     len(params.Tools),
-		TokenEstimate: shared.EstimateTokens(params),
-		Messages:      params.Messages,
-		System:        shared.SystemText(params.System),
-	})
+	p.bus.Emit(shared.RequestStartedEvent(traceID, spanID, params))
 
 	stream := p.client.Messages.NewStreaming(ctx, wireParams)
 	ch := p.startStream(ctx, stream, mapper, p.bus, traceID, spanID)

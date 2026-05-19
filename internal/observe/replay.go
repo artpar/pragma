@@ -15,6 +15,7 @@ type ReplayEngine struct {
 	events       []Event
 	toolOutputs  map[string]RecordedToolOutput
 	apiResponses map[int]model.Response
+	apiRequests  map[int]APIRequestStarted
 }
 
 // LoadReplay loads a replay from a directory containing events.jsonl,
@@ -23,6 +24,7 @@ func LoadReplay(dir string) (*ReplayEngine, error) {
 	re := &ReplayEngine{
 		toolOutputs:  make(map[string]RecordedToolOutput),
 		apiResponses: make(map[int]model.Response),
+		apiRequests:  make(map[int]APIRequestStarted),
 	}
 
 	// Load events
@@ -30,6 +32,7 @@ func LoadReplay(dir string) (*ReplayEngine, error) {
 	if err := re.loadEvents(eventsPath); err != nil {
 		return nil, fmt.Errorf("load events: %w", err)
 	}
+	re.indexAPIRequests()
 
 	// Load tool outputs (optional)
 	toolDir := filepath.Join(dir, "tool-outputs")
@@ -96,7 +99,7 @@ func LoadEvents(path string) ([]Event, error) {
 
 	var events []Event
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB line buffer
+	scanner.Buffer(make([]byte, 1024*1024), 64*1024*1024)
 	for scanner.Scan() {
 		event, err := UnmarshalEvent(scanner.Bytes())
 		if err != nil {
@@ -137,4 +140,20 @@ func (re *ReplayEngine) ToolOutput(toolCallID string) (string, bool) {
 func (re *ReplayEngine) APIResponse(turn int) (model.Response, bool) {
 	resp, ok := re.apiResponses[turn]
 	return resp, ok
+}
+
+// APIRequest returns the recorded provider request payload for a turn number.
+func (re *ReplayEngine) APIRequest(turn int) (APIRequestStarted, bool) {
+	req, ok := re.apiRequests[turn]
+	return req, ok
+}
+
+func (re *ReplayEngine) indexAPIRequests() {
+	turn := 0
+	for _, ev := range re.events {
+		if req, ok := ev.(APIRequestStarted); ok {
+			turn++
+			re.apiRequests[turn] = req
+		}
+	}
 }

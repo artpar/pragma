@@ -249,10 +249,5 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 func (p *Provider) emitStart(traceID, spanID string, params provider.RequestParams) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	p.bus.Emit(observe.APIRequestStarted{
-		EventHeader: observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
-		Model:       params.Model, MessageCount: len(params.Messages),
-		ToolCount: len(params.Tools), TokenEstimate: shared.EstimateTokens(params),
-		Messages: params.Messages, System: shared.SystemText(params.System),
-	})
+	p.bus.Emit(shared.RequestStartedEvent(traceID, spanID, params))
 }

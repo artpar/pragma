@@ -42,15 +42,28 @@ func (ConversationForked) eventSealed() {}
 
 type APIRequestStarted struct {
 	EventHeader
-	Model         string          `json:"model"`
-	MessageCount  int             `json:"message_count"`
-	ToolCount     int             `json:"tool_count"`
-	TokenEstimate int             `json:"token_estimate"`
-	Messages      []model.Message `json:"messages,omitempty"`
-	System        string          `json:"system,omitempty"`
+	Model          string             `json:"model"`
+	MaxTokens      int                `json:"max_tokens,omitempty"`
+	MessageCount   int                `json:"message_count"`
+	ToolCount      int                `json:"tool_count"`
+	TokenEstimate  int                `json:"token_estimate"`
+	Messages       []model.Message    `json:"messages,omitempty"`
+	System         string             `json:"system,omitempty"`
+	SystemPrompt   model.SystemPrompt `json:"system_prompt,omitempty"`
+	Tools          []model.ToolDef    `json:"tools,omitempty"`
+	Temperature    *float64           `json:"temperature,omitempty"`
+	Thinking       *APIThinkingConfig `json:"thinking,omitempty"`
+	ResponseSchema json.RawMessage    `json:"response_schema,omitempty"`
 }
 
 func (APIRequestStarted) eventSealed() {}
+
+// APIThinkingConfig is the recorded request form of provider thinking config.
+// It lives in observe to avoid importing provider from the observability layer.
+type APIThinkingConfig struct {
+	Enabled      bool `json:"enabled"`
+	BudgetTokens int  `json:"budget_tokens,omitempty"`
+}
 
 type APIStreamChunk struct {
 	EventHeader

@@ -117,3 +117,30 @@ func SystemText(sp model.SystemPrompt) string {
 	observe.GlobalTrace("return: strings.Join(parts, \"\\n\\n\")")
 	return strings.Join(parts, "\n\n")
 }
+
+// RequestStartedEvent builds the full provider-agnostic request payload used by
+// recordings and replay diagnostics.
+func RequestStartedEvent(traceID, spanID string, params provider.RequestParams) observe.APIRequestStarted {
+	var thinking *observe.APIThinkingConfig
+	if params.Thinking != nil {
+		thinking = &observe.APIThinkingConfig{
+			Enabled:      params.Thinking.Enabled,
+			BudgetTokens: params.Thinking.BudgetTokens,
+		}
+	}
+	return observe.APIRequestStarted{
+		EventHeader:    observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
+		Model:          params.Model,
+		MaxTokens:      params.MaxTokens,
+		MessageCount:   len(params.Messages),
+		ToolCount:      len(params.Tools),
+		TokenEstimate:  EstimateTokens(params),
+		Messages:       params.Messages,
+		System:         SystemText(params.System),
+		SystemPrompt:   params.System,
+		Tools:          params.Tools,
+		Temperature:    params.Temperature,
+		Thinking:       thinking,
+		ResponseSchema: params.ResponseSchema,
+	}
+}
