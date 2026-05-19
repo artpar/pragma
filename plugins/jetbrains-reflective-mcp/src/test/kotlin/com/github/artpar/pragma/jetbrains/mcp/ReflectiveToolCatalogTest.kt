@@ -20,6 +20,12 @@ class ReflectiveToolCatalogTest {
         assertTrue("com.intellij.openapi.actionSystem.ActionManager.tryToExecute" in names)
         assertTrue("java.lang.reflect.Method.invoke" in names)
         assertTrue("com.github.artpar.pragma.jetbrains.reflect.Roots.list" in names)
+        assertTrue("ide.file.open" in names)
+        assertTrue("ide.object.call" in names)
+        assertTrue("ide.plugin.list" in names)
+        assertTrue("ide.plugin.install" in names)
+        assertTrue("ide.plugin.self.update" in names)
+        assertTrue("ide.debug.breakpoint.set" in names)
         definitions.forEach { definition ->
             assertTrue((definition["description"] as String).isNotBlank())
             assertEquals("object", (definition["inputSchema"] as Map<*, *>)["type"])
@@ -72,6 +78,21 @@ class ReflectiveToolCatalogTest {
         val annotations = definition["annotations"] as Map<*, *>
         assertEquals(false, annotations["readOnlyHint"])
         assertEquals(true, annotations["destructiveHint"])
+    }
+
+    @Test
+    fun `agent ide file open returns object method catalog`() {
+        val catalog = ReflectiveToolCatalog(FakeIdePorts())
+        val args = JsonObject().apply { addProperty("filePath", "src/Main.kt") }
+
+        val result = catalog.call("ide.file.open", args)
+
+        assertFalse(result["error"] == true)
+        val data = ((result["result"] as Map<*, *>)["data"] as Map<*, *>)
+        val obj = data["object"] as Map<*, *>
+        assertEquals("file1", obj["alias"])
+        assertEquals("File", obj["type"])
+        assertTrue((obj["methods"] as List<*>).isNotEmpty())
     }
 }
 
@@ -126,6 +147,61 @@ class FakeIdePorts : IdePorts {
     override val vfs: VfsPort = object : VfsPort {
         override fun refreshAndFindFileByPath(filePath: String): RefreshFileResult =
             RefreshFileResult(filePath, true, filePath.substringAfterLast('/'), "Kotlin", "kotlin", true)
+    }
+
+    override val agentIde: AgentIdePort = object : AgentIdePort {
+        override fun observe(): Map<String, Any?> = ok("Observed.")
+        override fun capabilities(): Map<String, Any?> = ok("Capabilities.")
+        override fun objects(): Map<String, Any?> = ok("Objects.", mapOf("objects" to emptyList<Any>()))
+        override fun describeObject(input: AgentObjectInput): Map<String, Any?> = ok("Described.", mapOf("object" to fileObject()))
+        override fun callObject(input: AgentObjectCallInput): Map<String, Any?> = ok("Called.", mapOf("method" to input.method))
+        override fun releaseObject(input: AgentObjectInput): Map<String, Any?> = ok("Released.", mapOf("released" to true))
+        override fun openFile(input: AgentFileInput): Map<String, Any?> = ok("Opened.", mapOf("object" to fileObject()))
+        override fun resolveFile(input: AgentFileInput): Map<String, Any?> = ok("Resolved.", mapOf("object" to fileObject()))
+        override fun searchText(input: AgentSearchInput): Map<String, Any?> = ok("Searched.", mapOf("items" to emptyList<Any>()))
+        override fun listPlugins(input: AgentPluginListInput): Map<String, Any?> = ok("Plugins.", mapOf("objects" to listOf(pluginObject())))
+        override fun resolvePlugin(input: AgentPluginInput): Map<String, Any?> = ok("Plugin.", mapOf("object" to pluginObject()))
+        override fun enablePlugin(input: AgentPluginInput): Map<String, Any?> = ok("Enabled.", mapOf("changed" to true))
+        override fun disablePlugin(input: AgentPluginInput): Map<String, Any?> = ok("Disabled.", mapOf("changed" to true))
+        override fun loadPlugin(input: AgentPluginInput): Map<String, Any?> = ok("Loaded.", mapOf("changed" to true))
+        override fun unloadPlugin(input: AgentPluginInput): Map<String, Any?> = ok("Unloaded.", mapOf("changed" to true))
+        override fun installPlugin(input: AgentPluginInstallInput): Map<String, Any?> = ok("Installed.", mapOf("changed" to true))
+        override fun uninstallPlugin(input: AgentPluginInput): Map<String, Any?> = ok("Uninstalled.", mapOf("changed" to true))
+        override fun selfUpdatePlugin(input: AgentPluginSelfUpdateInput): Map<String, Any?> = ok("Self update staged.", mapOf("selfUpdate" to true, "restartRequired" to true))
+        override fun listBreakpoints(): Map<String, Any?> = ok("Breakpoints.", mapOf("objects" to emptyList<Any>()))
+        override fun setBreakpoint(input: AgentBreakpointInput): Map<String, Any?> = ok("Breakpoint set.", mapOf("object" to breakpointObject()))
+        override fun removeBreakpoint(input: AgentBreakpointInput): Map<String, Any?> = ok("Breakpoint removed.", mapOf("removed" to true))
+
+        private fun ok(summary: String, data: Map<String, Any?> = emptyMap()): Map<String, Any?> = mapOf(
+            "ok" to true,
+            "code" to "ok",
+            "summary" to summary,
+            "data" to data,
+            "affordances" to emptyList<Any>(),
+            "limitations" to emptyList<Any>(),
+            "nextBestActions" to emptyList<Any>(),
+        )
+
+        private fun fileObject(): Map<String, Any?> = mapOf(
+            "alias" to "file1",
+            "ref" to "file1",
+            "type" to "File",
+            "methods" to listOf(mapOf("name" to "read", "signature" to "read(): DocumentText", "readOnly" to true)),
+        )
+
+        private fun pluginObject(): Map<String, Any?> = mapOf(
+            "alias" to "plugin1",
+            "ref" to "plugin1",
+            "type" to "Plugin",
+            "methods" to listOf(mapOf("name" to "info", "signature" to "info(): PluginInfo", "readOnly" to true)),
+        )
+
+        private fun breakpointObject(): Map<String, Any?> = mapOf(
+            "alias" to "breakpoint1",
+            "ref" to "breakpoint1",
+            "type" to "Breakpoint",
+            "methods" to listOf(mapOf("name" to "info", "signature" to "info(): BreakpointInfo", "readOnly" to true)),
+        )
     }
 
     override val reflection: ReflectionPort = object : ReflectionPort {

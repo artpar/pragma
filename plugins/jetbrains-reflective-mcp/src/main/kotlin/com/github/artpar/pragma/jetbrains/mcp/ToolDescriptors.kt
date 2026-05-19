@@ -17,6 +17,206 @@ data class RefInput(val ref: String)
 
 fun defaultToolDescriptors(): List<ToolDescriptor<*>> = listOf(
     ToolDescriptor(
+        name = "ide.observe",
+        source = "Agent IDE object interface current project/editor scene",
+        decode = { NoInput },
+        execute = { _, ports -> ports.agentIde.observe() },
+    ),
+    ToolDescriptor(
+        name = "ide.capabilities",
+        source = "Agent IDE object interface capability report",
+        decode = { NoInput },
+        execute = { _, ports -> ports.agentIde.capabilities() },
+    ),
+    ToolDescriptor(
+        name = "ide.object.list",
+        source = "Agent IDE object registry list",
+        decode = { NoInput },
+        execute = { _, ports -> ports.agentIde.objects() },
+    ),
+    ToolDescriptor(
+        name = "ide.object.describe",
+        source = "Agent IDE object method catalog and metadata",
+        inputSchema = objectRefSchema(),
+        decode = { AgentObjectInput(it.stringArg("object")) },
+        execute = { input, ports -> ports.agentIde.describeObject(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.object.call",
+        source = "Agent IDE object method invocation",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "object" to stringProp("Server-assigned object alias such as file1, doc1, editor1, symbol1, or search1."),
+                "method" to stringProp("Method name from the object's method catalog."),
+                "arguments" to anyProp("Method arguments as a JSON object. Defaults to {}."),
+            ),
+            required = listOf("object", "method"),
+        ),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentObjectCallInput(it.stringArg("object"), it.stringArg("method"), it.jsonArg("arguments")) },
+        execute = { input, ports -> ports.agentIde.callObject(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.object.release",
+        source = "Agent IDE object registry release",
+        inputSchema = objectRefSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentObjectInput(it.stringArg("object")) },
+        execute = { input, ports -> ports.agentIde.releaseObject(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.file.open",
+        source = "Agent IDE File object creation through the editor",
+        inputSchema = filePathOnlySchema(),
+        readOnly = false,
+        destructive = false,
+        decode = { AgentFileInput(it.stringArg("filePath")) },
+        execute = { input, ports -> ports.agentIde.openFile(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.file.resolve",
+        source = "Agent IDE File or Directory object creation without opening an editor",
+        inputSchema = filePathOnlySchema(),
+        decode = { AgentFileInput(it.stringArg("filePath")) },
+        execute = { input, ports -> ports.agentIde.resolveFile(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.search.text",
+        source = "Agent IDE indexed text search returning a SearchResult object",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "query" to stringProp("Text or word to search for through the IDE project index."),
+                "scope" to stringProp("Search scope hint. Defaults to project."),
+                "limit" to intProp("Maximum occurrences to return. Defaults to 100."),
+            ),
+            required = listOf("query"),
+        ),
+        decode = { AgentSearchInput(it.stringArg("query"), it.stringArg("scope", "project"), it.intArg("limit", 100).coerceIn(1, 1000)) },
+        execute = { input, ports -> ports.agentIde.searchText(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.list",
+        source = "Agent IDE installed plugin list returning Plugin objects",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "query" to stringProp("Optional plugin id or name substring."),
+                "includeBundled" to boolProp("If true, include bundled JetBrains/platform plugins. Defaults to true."),
+                "includeDisabled" to boolProp("If true, include disabled plugins. Defaults to true."),
+                "limit" to intProp("Maximum plugins to return. Defaults to 200."),
+            ),
+        ),
+        decode = {
+            AgentPluginListInput(
+                query = it.stringArg("query"),
+                includeBundled = it.boolArg("includeBundled", true),
+                includeDisabled = it.boolArg("includeDisabled", true),
+                limit = it.intArg("limit", 200).coerceIn(1, 1000),
+            )
+        },
+        execute = { input, ports -> ports.agentIde.listPlugins(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.resolve",
+        source = "Agent IDE plugin descriptor object creation",
+        inputSchema = pluginIdOnlySchema(),
+        decode = { AgentPluginInput(it.stringArg("pluginId")) },
+        execute = { input, ports -> ports.agentIde.resolvePlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.enable",
+        source = "Agent IDE plugin enable through IntelliJ PluginEnabler",
+        inputSchema = pluginIdOnlySchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentPluginInput(it.stringArg("pluginId")) },
+        execute = { input, ports -> ports.agentIde.enablePlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.disable",
+        source = "Agent IDE plugin disable through IntelliJ PluginEnabler",
+        inputSchema = pluginIdOnlySchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentPluginInput(it.stringArg("pluginId")) },
+        execute = { input, ports -> ports.agentIde.disablePlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.load",
+        source = "Agent IDE dynamic plugin load through IntelliJ DynamicPlugins",
+        inputSchema = pluginIdOnlySchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentPluginInput(it.stringArg("pluginId")) },
+        execute = { input, ports -> ports.agentIde.loadPlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.unload",
+        source = "Agent IDE dynamic plugin unload through IntelliJ DynamicPlugins",
+        inputSchema = pluginIdOnlySchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentPluginInput(it.stringArg("pluginId")) },
+        execute = { input, ports -> ports.agentIde.unloadPlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.install",
+        source = "Agent IDE plugin install from Marketplace plugin id or local ZIP/path",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "pluginId" to stringProp("Marketplace plugin id to install. Use either pluginId or path."),
+                "path" to stringProp("Local plugin artifact path to install. Use either pluginId or path."),
+            ),
+        ),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentPluginInstallInput(it.stringArg("pluginId"), it.stringArg("path")) },
+        execute = { input, ports -> ports.agentIde.installPlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.uninstall",
+        source = "Agent IDE plugin uninstall through IntelliJ PluginInstaller",
+        inputSchema = pluginIdOnlySchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentPluginInput(it.stringArg("pluginId")) },
+        execute = { input, ports -> ports.agentIde.uninstallPlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.plugin.self.update",
+        source = "Agent IDE MCP plugin self-update staged through IntelliJ restart action script",
+        inputSchema = filePathOnlySchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { AgentPluginSelfUpdateInput(it.stringArg("filePath")) },
+        execute = { input, ports -> ports.agentIde.selfUpdatePlugin(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.debug.breakpoints",
+        source = "Agent IDE breakpoint list through IntelliJ XDebuggerManager",
+        decode = { NoInput },
+        execute = { _, ports -> ports.agentIde.listBreakpoints() },
+    ),
+    ToolDescriptor(
+        name = "ide.debug.breakpoint.set",
+        source = "Agent IDE line breakpoint creation through IntelliJ XBreakpointManager",
+        inputSchema = breakpointSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { it.breakpointInput() },
+        execute = { input, ports -> ports.agentIde.setBreakpoint(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.debug.breakpoint.remove",
+        source = "Agent IDE line breakpoint removal through IntelliJ XBreakpointManager",
+        inputSchema = breakpointSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { it.breakpointInput() },
+        execute = { input, ports -> ports.agentIde.removeBreakpoint(input) },
+    ),
+    ToolDescriptor(
         name = "com.intellij.openapi.application.ApplicationInfo.getInstance",
         source = "ApplicationInfo.getInstance(), Project, DumbService",
         decode = { NoInput },
@@ -287,6 +487,15 @@ private fun JsonObject.reflectiveInvocationInput(): ReflectiveInvocationInput =
         dispatchThread = boolArg("dispatchThread", false),
     )
 
+private fun JsonObject.breakpointInput(): AgentBreakpointInput =
+    AgentBreakpointInput(
+        filePath = stringArg("filePath"),
+        line = intArg("line", 1),
+        typeId = stringArg("typeId"),
+        enabled = boolArg("enabled", true),
+        temporary = boolArg("temporary", false),
+    )
+
 private fun reflectiveClassSchema(): Map<String, Any> =
     objectSchema(
         properties = mapOf(
@@ -326,4 +535,34 @@ private fun refSchema(): Map<String, Any> =
     objectSchema(
         properties = mapOf("ref" to stringProp("Reflective object handle.")),
         required = listOf("ref"),
+    )
+
+private fun objectRefSchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf("object" to stringProp("Server-assigned object alias such as file1, doc1, editor1, symbol1, plugin1, or search1.")),
+        required = listOf("object"),
+    )
+
+private fun filePathOnlySchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf("filePath" to stringProp("Absolute or project-relative file path.")),
+        required = listOf("filePath"),
+    )
+
+private fun pluginIdOnlySchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf("pluginId" to stringProp("IntelliJ plugin id.")),
+        required = listOf("pluginId"),
+    )
+
+private fun breakpointSchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf(
+            "filePath" to stringProp("Absolute or project-relative file path."),
+            "line" to intProp("One-based source line number."),
+            "typeId" to stringProp("Optional XLineBreakpointType id. When omitted, the first compatible line breakpoint type is used."),
+            "enabled" to boolProp("If true, enable the breakpoint. Defaults to true."),
+            "temporary" to boolProp("If true, create a temporary breakpoint. Defaults to false."),
+        ),
+        required = listOf("filePath", "line"),
     )

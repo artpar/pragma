@@ -1,8 +1,13 @@
 # Pragma JetBrains Reflective MCP
 
-This plugin runs inside IntelliJ IDEA and exposes a local MCP server backed by IntelliJ APIs. It is intended to replace external LSP and filesystem tooling with direct IDE state, PSI, VFS, editor, inspection, refactoring, run configuration, and action-system access.
+This plugin runs inside IntelliJ IDEA and exposes a local MCP server backed by IntelliJ APIs. It is intended to replace external LSP and filesystem tooling with direct IDE state, PSI, VFS, editor, inspection, refactoring, plugin management, run configuration, and action-system access.
 
-The bridge deliberately does not invent product-level tool names such as `ide_search`. MCP tool names are stable references to either the IntelliJ Platform API surface they call or to the generic reflective bridge used to access that surface.
+The bridge has two layers:
+
+- `ide.*`: a stable agent object interface for everyday engineering work. It returns live objects such as `file1`, `doc1`, `editor1`, `symbol1`, `search1`, and `plugin1`, each with an immediately visible method catalog.
+- Reflective IntelliJ API tools: a lower-level escape hatch for the wider platform surface.
+
+The reflective layer deliberately keeps tool names as stable references to the IntelliJ Platform API surface they call or to the generic reflective bridge used to access that surface.
 
 ## Runtime Contract
 
@@ -37,12 +42,54 @@ The plugin is organized so most behavior can be tested without starting IntelliJ
 | Ports | `Ports.kt` | Small interfaces for fixed IntelliJ capabilities plus the reflective runtime port. |
 | Tool descriptors | `ToolDescriptor.kt`, `ToolDescriptors.kt`, `Schema.kt`, `JsonArgs.kt` | Reflective tool catalog, schemas, argument decoding, and execution. No IntelliJ imports. |
 | MCP protocol | `McpProtocol.kt`, `McpHttpHandler.kt` | JSON-RPC/MCP request handling and HTTP adaptation. |
-| IntelliJ adapter | `IntelliJIdePorts.kt`, `ReflectiveRuntime.kt` | The layers that call IntelliJ Platform APIs directly. |
+| IntelliJ adapter | `IntelliJIdePorts.kt`, `AgentIdeRuntime.kt`, `ReflectiveRuntime.kt` | The layers that call IntelliJ Platform APIs directly. |
 | Startup/service | `McpStartupActivity.kt`, `ReflectiveMcpProjectService.kt`, `plugin.xml` | Project startup, server lifecycle, and discovery file writing. |
 
 This makes the test boundary explicit: unit tests use fake ports and real descriptors, while target API coverage tests verify the actual IntelliJ runtime classes and methods the reflective bridge is expected to expose.
 
-## Current Tools
+## Agent Object Tools
+
+The recommended tools for agents are:
+
+```text
+ide.observe
+ide.capabilities
+ide.object.list
+ide.object.describe
+ide.object.call
+ide.object.release
+ide.file.open
+ide.file.resolve
+ide.search.text
+ide.plugin.list
+ide.plugin.resolve
+ide.plugin.enable
+ide.plugin.disable
+ide.plugin.load
+ide.plugin.unload
+ide.plugin.install
+ide.plugin.uninstall
+ide.plugin.self.update
+ide.debug.breakpoints
+ide.debug.breakpoint.set
+ide.debug.breakpoint.remove
+```
+
+The typical flow is:
+
+1. Call `ide.observe`.
+2. Open or resolve something with `ide.file.*`, `ide.search.text`, or `ide.plugin.*`.
+3. Use the returned object's `methods` catalog.
+4. Call methods through `ide.object.call`.
+5. Release stale or no-longer-needed objects with `ide.object.release`.
+
+See `docs/AGENT_OBJECT_INTERFACE.md` for the object model and method catalogs.
+See `docs/PLUGIN_MANAGEMENT.md` for plugin list, enable, disable, load, unload, install, and uninstall semantics.
+See `docs/DEBUGGING.md` for breakpoint management.
+
+The first install is a harness or IDE responsibility because the MCP server does not exist until the plugin is loaded. Once running, the plugin exposes self-management through `ide.plugin.self.update` plus staged self disable, unload, and uninstall operations that return a restart/reconnect contract for the harness.
+
+## Reflective Tools
 
 The fixed catalog exposes these IntelliJ-shaped MCP tool names:
 
@@ -142,6 +189,7 @@ Tests cover the protocol, descriptor layer, reflective catalog, and target Intel
 - Descriptor execution through fake ports.
 - Destructive metadata for action execution and generic reflective mutation tools.
 - Target IntelliJ classes and method signatures for project, editor, VFS, PSI, search, actions, intentions, diagnostics, inspections, duplication, refactoring, and run/build/test APIs.
+- Agent object tools for files, documents, editors, search results, plugin descriptors, plugin management operations, and debugger breakpoints.
 - Reflective root handles are backed by declared target API coverage.
 
 The coverage rule is strict: if a target API is documented as reachable for agentic development, it must be present in `TargetApiMatrix.kt` and verified by `TargetApiCoverageTest`.

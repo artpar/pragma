@@ -2,6 +2,8 @@
 
 The reflective bridge exposes a small MCP tool set that can reach a large IntelliJ API surface. Agents should discover tools through `tools/list`, call `Protocol.describe`, then work from `Roots.list` and stored object handles.
 
+For normal engineering work, prefer the higher-level `ide.*` object interface documented in `AGENT_OBJECT_INTERFACE.md`. Use this reflective protocol when the object interface does not yet expose a needed IntelliJ API.
+
 ## Value Format
 
 Arguments are JSON values with these special object forms:

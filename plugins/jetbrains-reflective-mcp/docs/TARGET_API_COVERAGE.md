@@ -30,9 +30,11 @@ The test fails when:
 - `psi-navigation`: PSI file lookup, elements, references, text ranges, document mapping.
 - `search-indexes`: file indexes, global scopes, word search, reference search.
 - `actions`: action discovery, metadata, and execution.
+- `plugin-management`: installed plugin descriptors, enable/disable, dynamic load/unload, local or Marketplace install, and uninstall scheduling.
 - `intentions-quickfixes`: intention discovery, availability, invocation, quick-fix conversion.
 - `diagnostics-inspections`: daemon analyzer, inspection profiles, global inspection context, cleanup.
 - `duplicates`: IntelliJ duplicate-code profile and duplicate fragment APIs.
+- `debug-breakpoints`: XDebugger manager, breakpoint manager, registered breakpoint types, line breakpoint mutation.
 - `refactoring`: rename, safe delete, extract method/class/interface, change signature, introduce variable/field, move support.
 - `run-build-test`: run manager, execution manager, program runner utilities.
 

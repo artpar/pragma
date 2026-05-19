@@ -33,6 +33,7 @@ class IntelliJIdePorts(private val project: Project) : IdePorts {
     override val editor: EditorPort = IntelliJEditorPort(project)
     override val psi: PsiPort = IntelliJPsiPort(project)
     override val vfs: VfsPort = IntelliJVfsPort(project)
+    override val agentIde: AgentIdePort = AgentIdeRuntime(project)
     override val reflection: ReflectionPort = ReflectiveRuntime(project)
 }
 
@@ -333,9 +334,9 @@ private fun PsiReference.toReferenceValue(project: Project): ReferenceInfo {
     val element = element
     val file = element.containingFile?.virtualFile
     val doc = element.containingFile?.viewProvider?.document
-    val start = element.textRange.startOffset
-    val line = doc?.getLineNumber(start)?.plus(1)
-    val col = if (doc != null && line != null) start - doc.getLineStartOffset(line - 1) + 1 else null
+    val start = element.textRange?.startOffset
+    val line = if (doc != null && start != null) doc.getLineNumber(start).plus(1) else null
+    val col = if (doc != null && line != null && start != null) start - doc.getLineStartOffset(line - 1) + 1 else null
     return ReferenceInfo(
         referenceClass = javaClass.name,
         canonicalText = canonicalText,
@@ -355,7 +356,10 @@ private fun Project.relativePath(file: VirtualFile): String {
 private fun PsiElement.referenceAtOrParent(offset: Int): PsiReference? {
     var element: PsiElement? = containingFile?.findElementAt(offset)
     while (element != null) {
-        element.findReferenceAt(offset - element.textRange.startOffset)?.let { return it }
+        val range = element.textRange
+        if (range != null && range.containsOffset(offset)) {
+            element.findReferenceAt(offset - range.startOffset)?.let { return it }
+        }
         element.reference?.let { return it }
         element = element.parent
     }

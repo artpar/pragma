@@ -12,7 +12,11 @@ class ToolDescriptor<I : Any>(
     private val execute: (I, IdePorts) -> Any?,
 ) {
     val description: String =
-        "Reflective IntelliJ Platform bridge for $source. The MCP tool name mirrors the platform API/action surface; responses include the originating source when possible."
+        if (name.startsWith("ide.")) {
+            "Agent-oriented IntelliJ IDE object interface for $source. Prefer these ide.* tools for normal software engineering tasks; use reflective tools only when the object method catalog does not cover the task."
+        } else {
+            "Reflective IntelliJ Platform bridge for $source. The MCP tool name mirrors the platform API/action surface; responses include the originating source when possible."
+        }
 
     fun definition(): Map<String, Any> {
         return mapOf(

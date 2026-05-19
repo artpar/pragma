@@ -29,3 +29,5 @@ fun JsonObject.jsonListArg(name: String): List<JsonElement> {
     if (!value.isJsonArray) return emptyList()
     return value.asJsonArray.toList()
 }
+
+fun JsonObject.jsonArg(name: String): JsonElement? = get(name)?.takeUnless { it.isJsonNull }
