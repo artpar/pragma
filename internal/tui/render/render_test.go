@@ -226,6 +226,52 @@ func TestRenderToolOutputUnknownTool(t *testing.T) {
 	}
 }
 
+func TestRenderToolOutputIDEMCPSummarizesEnvelope(t *testing.T) {
+	input := json.RawMessage(`{"filePath":"/tmp/test.go"}`)
+	content := `{"source":"Agent IDE File object creation through the editor","result":{"ok":true,"code":"ok","summary":"Opened /tmp/test.go.","data":{"large":"payload"}}}`
+	result := RenderToolOutput("ide.file.open", input, content, false, 80, "", false)
+	plain := stripANSI(result)
+	if !strings.Contains(plain, "Opened /tmp/test.go.") {
+		t.Fatalf("expected summary, got %q", plain)
+	}
+	if strings.Contains(plain, `"source"`) || strings.Contains(plain, `"data"`) {
+		t.Fatalf("compact IDE output should not show raw JSON, got %q", plain)
+	}
+}
+
+func TestRenderToolOutputPersistedOutput(t *testing.T) {
+	content := `<persisted-output tool_call_id="call_123" bytes="51500" preview_bytes="2000" path="/tmp/out.txt">
+Output too large (50.3KB). Full output saved to: /tmp/out.txt
+
+Preview (first 2KB):
+abc
+...
+</persisted-output>`
+	result := RenderToolOutput("ide.object.call", nil, content, false, 80, "", false)
+	plain := stripANSI(result)
+	if !strings.Contains(plain, "Large tool output saved") {
+		t.Fatalf("expected persisted-output summary, got %q", plain)
+	}
+	if !strings.Contains(plain, "tool_result.read") {
+		t.Fatalf("expected fetch guidance, got %q", plain)
+	}
+	if strings.Contains(plain, "<persisted-output") {
+		t.Fatalf("should not render raw marker, got %q", plain)
+	}
+}
+
+func TestRenderToolOutputToolResultRead(t *testing.T) {
+	content := `{"tool_call_id":"call_123","content":"abcdef","offset_bytes":0,"limit_bytes":6,"next_offset_bytes":6,"has_more":true,"total_bytes":20,"source_path":"/tmp/out.txt"}`
+	result := RenderToolOutput("tool_result.read", nil, content, false, 80, "", false)
+	plain := stripANSI(result)
+	if !strings.Contains(plain, "Read persisted output bytes 0-6 of 20") {
+		t.Fatalf("expected pagination summary, got %q", plain)
+	}
+	if strings.Contains(plain, `"content"`) {
+		t.Fatalf("compact tool_result.read output should not show raw JSON, got %q", plain)
+	}
+}
+
 func TestRenderToolOutputRead(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/test.go","offset":0,"limit":5}`)
 	content := "line1\nline2\nline3\nline4\nline5"

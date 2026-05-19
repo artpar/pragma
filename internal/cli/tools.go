@@ -45,6 +45,7 @@ import (
 	toolteamcreate "github.com/artpar/pragma/internal/tools/teamcreate"
 	toolteamdelete "github.com/artpar/pragma/internal/tools/teamdelete"
 	tooltodo "github.com/artpar/pragma/internal/tools/todo"
+	toolresultread "github.com/artpar/pragma/internal/tools/toolresultread"
 	tooltoolsearch "github.com/artpar/pragma/internal/tools/toolsearch"
 	toolwebfetch "github.com/artpar/pragma/internal/tools/webfetch"
 	toolwebsearch "github.com/artpar/pragma/internal/tools/websearch"
@@ -188,6 +189,9 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if isRuntimeBuiltinTool(name) {
+		return true
+	}
 	if d == nil || d.Toolset == nil {
 		observe.GlobalTrace("if: d == nil || d.Toolset == nil")
 		observe.GlobalTrace("return: true")
@@ -195,6 +199,10 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 	}
 	observe.GlobalTrace("return: d.Toolset.AllowBuiltinTool(name)")
 	return d.Toolset.AllowBuiltinTool(name)
+}
+
+func isRuntimeBuiltinTool(name string) bool {
+	return name == "tool_result.read"
 }
 
 func mcpStatusesForQuery(mgr interface {
@@ -251,6 +259,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 				return d.McpManager.PendingServerNames()
 			},
 		},
+		&toolresultread.Tool{},
 		&toolworktree.EnterTool{},
 		&toolworktree.ExitTool{},
 		&toolcron.CreateTool{Scheduler: d.CronSched},

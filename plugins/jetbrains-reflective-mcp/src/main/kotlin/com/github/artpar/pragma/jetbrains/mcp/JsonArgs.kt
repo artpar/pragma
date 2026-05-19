@@ -1,7 +1,8 @@
 package com.github.artpar.pragma.jetbrains.mcp
 
-import com.google.gson.JsonObject
 import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 
 fun JsonObject.stringArg(name: String, defaultValue: String = ""): String {
     val value = get(name) ?: return defaultValue
@@ -30,4 +31,14 @@ fun JsonObject.jsonListArg(name: String): List<JsonElement> {
     return value.asJsonArray.toList()
 }
 
-fun JsonObject.jsonArg(name: String): JsonElement? = get(name)?.takeUnless { it.isJsonNull }
+fun JsonObject.jsonArg(name: String): JsonElement? {
+    val value = get(name)?.takeUnless { it.isJsonNull } ?: return null
+    return value.parseJsonStringValue()
+}
+
+private fun JsonElement.parseJsonStringValue(): JsonElement {
+    if (!isJsonPrimitive || !asJsonPrimitive.isString) return this
+    val text = asString.trim()
+    if (!text.startsWith("{") && !text.startsWith("[")) return this
+    return runCatching { JsonParser.parseString(text) }.getOrDefault(this)
+}

@@ -1,8 +1,10 @@
 package render
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,6 +26,8 @@ var (
 			Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "86"})
 
 	dimText = lipgloss.NewStyle().Faint(true)
+
+	persistedAttrRe = regexp.MustCompile(`([a-zA-Z_]+)="([^"]*)"`)
 )
 
 // ToolRenderer renders a tool result given context.
@@ -33,28 +37,166 @@ type ToolRenderer func(input json.RawMessage, content string, isError bool, widt
 
 // toolRenderers maps tool names to their specific renderer.
 var toolRenderers = map[string]ToolRenderer{
-	"Bash":            renderBash,
-	"Read":            renderRead,
-	"Edit":            renderEdit,
-	"Write":           renderWrite,
-	"Grep":            renderGrep,
-	"Glob":            renderGlob,
-	"Agent":           renderAgent,
-	"AskUserQuestion": renderAskResult,
-	"LifecycleRun":    renderLifecycleRun,
+	"Bash":             renderBash,
+	"Read":             renderRead,
+	"Edit":             renderEdit,
+	"Write":            renderWrite,
+	"Grep":             renderGrep,
+	"Glob":             renderGlob,
+	"Agent":            renderAgent,
+	"AskUserQuestion":  renderAskResult,
+	"LifecycleRun":     renderLifecycleRun,
+	"tool_result.read": renderToolResultRead,
 }
 
 // RenderToolOutput dispatches to a tool-specific renderer or generic fallback.
 func RenderToolOutput(name string, input json.RawMessage, content string, isError bool, width int, display string, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if isPersistedOutput(content) {
+		return renderPersistedOutput(content, isError, width, verbose)
+	}
 	if renderer, ok := toolRenderers[name]; ok {
 		observe.GlobalTrace("if: ok")
 		observe.GlobalTrace("return: renderer(input, content, isError, width, display, verbose)")
 		return renderer(input, content, isError, width, display, verbose)
 	}
+	if isIDEMCPTool(name) {
+		return renderIDEMCPOutput(name, content, isError, width, verbose)
+	}
 	observe.GlobalTrace("return: WrapWithBracket(content, isError, width, verbose)")
 	return WrapWithBracket(content, isError, width, verbose)
+}
+
+func isIDEMCPTool(name string) bool {
+	return strings.HasPrefix(name, "ide.") ||
+		strings.HasPrefix(name, "com.intellij.") ||
+		strings.HasPrefix(name, "java.") ||
+		strings.HasPrefix(name, "com.github.artpar.pragma.jetbrains.reflect.")
+}
+
+func isPersistedOutput(content string) bool {
+	return strings.HasPrefix(strings.TrimSpace(content), "<persisted-output")
+}
+
+type mcpEnvelope struct {
+	Source string `json:"source"`
+	Result struct {
+		OK      bool            `json:"ok"`
+		Code    string          `json:"code"`
+		Summary string          `json:"summary"`
+		Data    json.RawMessage `json:"data"`
+	} `json:"result"`
+}
+
+func renderIDEMCPOutput(name, content string, isError bool, width int, verbose bool) string {
+	var env mcpEnvelope
+	if err := json.Unmarshal([]byte(content), &env); err != nil || env.Result.Summary == "" {
+		return WrapWithBracket(content, isError, width, verbose)
+	}
+
+	status := env.Result.Summary
+	if env.Result.Code != "" && env.Result.Code != "ok" {
+		status = env.Result.Code + ": " + status
+	}
+	if isError || !env.Result.OK {
+		return bracketErr.Render(BracketPrefix) + errBold.Render(truncateLine(status, width-len(BracketPrefix)))
+	}
+
+	var b strings.Builder
+	b.WriteString(bracketDim.Render(BracketPrefix))
+	b.WriteString(dimText.Render(truncateLine(status, width-len(BracketPrefix))))
+	b.WriteString("\n")
+	if !verbose {
+		appendExpandHint(&b)
+		return strings.TrimRight(b.String(), "\n")
+	}
+
+	pretty := prettyJSON(content)
+	for _, line := range strings.Split(pretty, "\n") {
+		b.WriteString(ContentIndent)
+		b.WriteString(truncateLine(line, width-len(ContentIndent)))
+		b.WriteString("\n")
+	}
+	_ = name
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func prettyJSON(content string) string {
+	var out bytes.Buffer
+	if err := json.Indent(&out, []byte(content), "", "  "); err != nil {
+		return content
+	}
+	return out.String()
+}
+
+func renderPersistedOutput(content string, isError bool, width int, verbose bool) string {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	if len(lines) == 0 {
+		return WrapWithBracket(content, isError, width, verbose)
+	}
+	attrs := persistedAttrs(lines[0])
+	size := attrs["bytes"]
+	if size == "" {
+		size = "unknown"
+	} else {
+		size += " bytes"
+	}
+	callID := attrs["tool_call_id"]
+	previewBytes := attrs["preview_bytes"]
+	if previewBytes == "" {
+		previewBytes = "2000"
+	}
+
+	var b strings.Builder
+	b.WriteString(bracketDim.Render(BracketPrefix))
+	summary := "Large tool output saved (" + size + ")"
+	if callID != "" {
+		summary += " for " + callID
+	}
+	b.WriteString(dimText.Render(truncateLine(summary, width-len(BracketPrefix))))
+	b.WriteString("\n")
+	if callID != "" {
+		hint := fmt.Sprintf("Use tool_result.read({tool_call_id:%q, offset_bytes:%s})", callID, previewBytes)
+		b.WriteString(ContentIndent)
+		b.WriteString(dimText.Render(truncateLine(hint, width-len(ContentIndent))))
+		b.WriteString("\n")
+	}
+
+	if verbose {
+		inPreview := false
+		for _, line := range lines[1:] {
+			if strings.HasPrefix(line, "Preview ") {
+				inPreview = true
+				b.WriteString(ContentIndent)
+				b.WriteString(dimText.Render(line))
+				b.WriteString("\n")
+				continue
+			}
+			if line == "</persisted-output>" {
+				break
+			}
+			if !inPreview || strings.HasPrefix(line, "Output too large") || strings.HasPrefix(line, "Full output saved") {
+				continue
+			}
+			b.WriteString(ContentIndent)
+			b.WriteString(truncateLine(line, width-len(ContentIndent)))
+			b.WriteString("\n")
+		}
+	} else {
+		appendExpandHint(&b)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func persistedAttrs(header string) map[string]string {
+	out := make(map[string]string)
+	for _, match := range persistedAttrRe.FindAllStringSubmatch(header, -1) {
+		if len(match) == 3 {
+			out[match[1]] = match[2]
+		}
+	}
+	return out
 }
 
 // appendExpandHint appends dim "(ctrl+o to expand)" hint to a builder.
@@ -671,6 +813,40 @@ func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ st
 	}
 	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func renderToolResultRead(_ json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
+	if isError {
+		return WrapWithBracket(content, true, width, verbose)
+	}
+	var out struct {
+		Content         string `json:"content"`
+		OffsetBytes     int64  `json:"offset_bytes"`
+		NextOffsetBytes int64  `json:"next_offset_bytes"`
+		HasMore         bool   `json:"has_more"`
+		TotalBytes      int64  `json:"total_bytes"`
+	}
+	if err := json.Unmarshal([]byte(content), &out); err != nil {
+		return WrapWithBracket(content, false, width, verbose)
+	}
+	var b strings.Builder
+	summary := fmt.Sprintf("Read persisted output bytes %d-%d of %d", out.OffsetBytes, out.NextOffsetBytes, out.TotalBytes)
+	if out.HasMore {
+		summary += "; more available"
+	}
+	b.WriteString(bracketDim.Render(BracketPrefix))
+	b.WriteString(dimText.Render(truncateLine(summary, width-len(BracketPrefix))))
+	b.WriteString("\n")
+	if !verbose {
+		appendExpandHint(&b)
+		return strings.TrimRight(b.String(), "\n")
+	}
+	for _, line := range strings.Split(out.Content, "\n") {
+		b.WriteString(ContentIndent)
+		b.WriteString(truncateLine(line, width-len(ContentIndent)))
+		b.WriteString("\n")
+	}
 	return strings.TrimRight(b.String(), "\n")
 }
 

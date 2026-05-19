@@ -16,8 +16,11 @@ func TestProcessToolResultPersistsLargeOutput(t *testing.T) {
 		t.Fatalf("ProcessToolResult: %v", err)
 	}
 
-	if !strings.HasPrefix(got.Content, PersistedOutputTag) {
+	if !strings.HasPrefix(got.Content, "<persisted-output") {
 		t.Fatalf("expected persisted output marker, got %q", got.Content[:min(len(got.Content), 80)])
+	}
+	if !strings.Contains(got.Content, `tool_call_id="toolu-1"`) {
+		t.Fatalf("expected tool_call_id attribute: %q", got.Content[:min(len(got.Content), 160)])
 	}
 	if !strings.Contains(got.Content, "Full output saved to:") {
 		t.Fatalf("expected saved path in replacement: %q", got.Content)
@@ -73,10 +76,10 @@ func TestApplyToolResultBudgetReplacesLargestFreshResult(t *testing.T) {
 	user := got[1]
 	small := user.Content[0].(model.ToolResultPart)
 	large := user.Content[1].(model.ToolResultPart)
-	if strings.HasPrefix(small.Content, PersistedOutputTag) {
+	if strings.HasPrefix(small.Content, "<persisted-output") {
 		t.Fatal("smaller result should remain inline")
 	}
-	if !strings.HasPrefix(large.Content, PersistedOutputTag) {
+	if !strings.HasPrefix(large.Content, "<persisted-output") {
 		t.Fatal("larger result should be replaced")
 	}
 
@@ -131,7 +134,7 @@ func TestApplyToolResultBudgetRetriesAfterPersistFailure(t *testing.T) {
 	if len(records) != 1 || records[0].ToolUseID != "large" {
 		t.Fatalf("retry records = %#v, want one replacement for large", records)
 	}
-	if !strings.HasPrefix(got[1].Content[1].(model.ToolResultPart).Content, PersistedOutputTag) {
+	if !strings.HasPrefix(got[1].Content[1].(model.ToolResultPart).Content, "<persisted-output") {
 		t.Fatal("retry should replace the large result")
 	}
 }

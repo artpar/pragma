@@ -374,7 +374,14 @@ func persistAndBuildReplacement(content, toolUseID, sessionID string) (string, e
 	}
 	preview, hasMore := generatePreview(content, PreviewSizeBytes)
 	var b strings.Builder
-	b.WriteString(PersistedOutputTag)
+	fmt.Fprintf(
+		&b,
+		`<persisted-output tool_call_id=%q bytes=%q preview_bytes=%q path=%q>`,
+		toolUseID,
+		fmt.Sprintf("%d", len(content)),
+		fmt.Sprintf("%d", len(preview)),
+		filepath,
+	)
 	b.WriteByte('\n')
 	fmt.Fprintf(&b, "Output too large (%s). Full output saved to: %s\n\n", formatFileSize(len(content)), filepath)
 	fmt.Fprintf(&b, "Preview (first %s):\n", formatFileSize(PreviewSizeBytes))
@@ -433,6 +440,18 @@ func persistToolResult(content, toolUseID, sessionID string) (string, error) {
 	return path, nil
 }
 
+// PersistedOutputPath returns the session-local persisted tool-result path for a tool call.
+func PersistedOutputPath(sessionID, toolUseID string) (string, error) {
+	if sessionID == "" {
+		return "", fmt.Errorf("session id is required")
+	}
+	sessionsDir, err := config.SessionsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(sessionsDir, sessionID, "tool-results", safeToolUseID(toolUseID)+".txt"), nil
+}
+
 func generatePreview(content string, maxBytes int) (string, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -456,7 +475,7 @@ func isContentAlreadyCompacted(content string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: strings.HasPrefix(content, PersistedOutputTag)")
-	return strings.HasPrefix(content, PersistedOutputTag)
+	return strings.HasPrefix(content, PersistedOutputTag) || strings.HasPrefix(content, "<persisted-output ")
 }
 
 func safeToolUseID(id string) string {

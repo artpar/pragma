@@ -41,13 +41,30 @@ var (
 
 // primaryParams maps tool names to their primary input parameter.
 var primaryParams = map[string]string{
-	"Bash":  "command",
-	"Read":  "file_path",
-	"Edit":  "file_path",
-	"Write": "file_path",
-	"Grep":  "pattern",
-	"Glob":  "pattern",
-	"Agent": "prompt",
+	"Bash":                        "command",
+	"Read":                        "file_path",
+	"Edit":                        "file_path",
+	"Write":                       "file_path",
+	"Grep":                        "pattern",
+	"Glob":                        "pattern",
+	"Agent":                       "prompt",
+	"ide.file.open":               "filePath",
+	"ide.file.resolve":            "filePath",
+	"ide.search.text":             "query",
+	"ide.object.describe":         "object",
+	"ide.object.call":             "method",
+	"ide.object.release":          "object",
+	"ide.plugin.resolve":          "pluginId",
+	"ide.plugin.enable":           "pluginId",
+	"ide.plugin.disable":          "pluginId",
+	"ide.plugin.load":             "pluginId",
+	"ide.plugin.unload":           "pluginId",
+	"ide.plugin.install":          "pluginId",
+	"ide.plugin.uninstall":        "pluginId",
+	"ide.plugin.self.update":      "filePath",
+	"ide.debug.breakpoint.set":    "filePath",
+	"ide.debug.breakpoint.remove": "filePath",
+	"tool_result.read":            "tool_call_id",
 }
 
 // RenderMessage renders a single message for the viewport.

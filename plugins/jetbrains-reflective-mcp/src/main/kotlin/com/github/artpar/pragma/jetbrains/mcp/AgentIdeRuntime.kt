@@ -486,7 +486,7 @@ class AgentIdeRuntime(private val project: Project) : AgentIdePort {
                 ideOk("Appended text.", data = mapOf("lineCount" to doc.lineCount))
             }
             "save" -> {
-                FileDocumentManager.getInstance().saveDocument(doc)
+                runOnEdt { FileDocumentManager.getInstance().saveDocument(doc) }
                 ideOk("Saved document.", data = mapOf("saved" to true))
             }
             "lineInfo" -> {

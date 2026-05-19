@@ -45,6 +45,9 @@ func TestToolsetHidesBuiltinTools(t *testing.T) {
 	if shouldRegisterBuiltinTool(deps, "ListMcpResourcesTool") {
 		t.Fatal("ListMcpResourcesTool should not be registered for idea toolset")
 	}
+	if !shouldRegisterBuiltinTool(deps, "tool_result.read") {
+		t.Fatal("tool_result.read should remain available as runtime plumbing")
+	}
 }
 
 func TestToolsetCanExposeSelectedBuiltins(t *testing.T) {

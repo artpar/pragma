@@ -94,6 +94,24 @@ class ReflectiveToolCatalogTest {
         assertEquals("File", obj["type"])
         assertTrue((obj["methods"] as List<*>).isNotEmpty())
     }
+
+    @Test
+    fun `object call accepts stringified json arguments from model providers`() {
+        val catalog = ReflectiveToolCatalog(FakeIdePorts())
+        val args = JsonObject().apply {
+            addProperty("object", "doc1")
+            addProperty("method", "replace")
+            addProperty("arguments", """{"startLine":25,"startColumn":1,"text":"hello"}""")
+        }
+
+        val result = catalog.call("ide.object.call", args)
+
+        assertFalse(result["error"] == true)
+        val data = (result["result"] as Map<*, *>)["data"] as Map<*, *>
+        assertEquals("replace", data["method"])
+        assertEquals(25, data["startLine"])
+        assertEquals("hello", data["text"])
+    }
 }
 
 class FakeIdePorts : IdePorts {
@@ -154,7 +172,14 @@ class FakeIdePorts : IdePorts {
         override fun capabilities(): Map<String, Any?> = ok("Capabilities.")
         override fun objects(): Map<String, Any?> = ok("Objects.", mapOf("objects" to emptyList<Any>()))
         override fun describeObject(input: AgentObjectInput): Map<String, Any?> = ok("Described.", mapOf("object" to fileObject()))
-        override fun callObject(input: AgentObjectCallInput): Map<String, Any?> = ok("Called.", mapOf("method" to input.method))
+        override fun callObject(input: AgentObjectCallInput): Map<String, Any?> = ok(
+            "Called.",
+            mapOf(
+                "method" to input.method,
+                "startLine" to input.arguments?.asJsonObject?.get("startLine")?.asInt,
+                "text" to input.arguments?.asJsonObject?.get("text")?.asString,
+            ),
+        )
         override fun releaseObject(input: AgentObjectInput): Map<String, Any?> = ok("Released.", mapOf("released" to true))
         override fun openFile(input: AgentFileInput): Map<String, Any?> = ok("Opened.", mapOf("object" to fileObject()))
         override fun resolveFile(input: AgentFileInput): Map<String, Any?> = ok("Resolved.", mapOf("object" to fileObject()))
