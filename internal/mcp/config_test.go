@@ -152,6 +152,8 @@ func TestLoadConfig_GlobalScope(t *testing.T) {
 		t.Error("expected 'analytics' server from global config")
 	} else if srv.Command != "analytics-mcp" {
 		t.Errorf("analytics command = %q, want analytics-mcp", srv.Command)
+	} else if srv.DiscoverySource != "config" {
+		t.Errorf("analytics DiscoverySource = %q, want config", srv.DiscoverySource)
 	}
 }
 

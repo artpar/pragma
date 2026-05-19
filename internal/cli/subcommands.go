@@ -103,6 +103,7 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 		return err
 	}
 	applyToolFilters(cmd, d.Registry)
+	waitForToolsetMCP(cmd.Context(), d)
 
 	compDeps, _ := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)

@@ -33,6 +33,7 @@ import (
 	"github.com/artpar/pragma/internal/sysprompt"
 	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/toolset"
 )
 
 // Deps holds all shared dependencies created by SetupDeps.
@@ -48,6 +49,7 @@ type Deps struct {
 	CostTracker   *model.CostTracker
 	EngineCfg     query.EngineConfig
 	TaskReg       *task.Registry
+	Toolset       *toolset.Compiled
 	McpManager    *mcp.Manager
 	CronSched     *cron.Scheduler
 	HookMgr       *hook.Manager
@@ -111,6 +113,16 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: cfg.HandoffSchema != model.HandoffSchemaV1")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid handoff schema %q\", cfg.HandoffSchema)")
 		return nil, fmt.Errorf("invalid handoff schema %q", cfg.HandoffSchema)
+	}
+	var activeToolset *toolset.Compiled
+	if cfg.Toolset != "" {
+		observe.GlobalTrace("if: cfg.Toolset != \"\"")
+		activeToolset, err = toolset.Resolve(cwd, cfg.Toolset)
+		if err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, err")
+			return nil, err
+		}
 	}
 
 	if cfg.Provider == "google-vertex" {
@@ -409,11 +421,19 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	registry := tool.NewRegistry(bus)
 
 	mcpManager := mcp.NewManager(bus, registry)
+	if activeToolset != nil {
+		observe.GlobalTrace("if: activeToolset != nil")
+		mcpManager.SetToolFilter(activeToolset.AllowMCPTool)
+	}
 
 	mcpServers, mcpErr := mcp.LoadConfig(cwd, bus)
 	if mcpErr != nil {
 		observe.GlobalTrace("if: mcpErr != nil")
 		fmt.Fprintf(os.Stderr, "warning: load mcp config: %v\n", mcpErr)
+	}
+	if activeToolset != nil {
+		observe.GlobalTrace("if: activeToolset != nil")
+		mcpServers = activeToolset.FilterMCPServers(mcpServers)
 	}
 
 	var mcpCancel context.CancelFunc
@@ -469,6 +489,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		CostTracker:   costTracker,
 		EngineCfg:     engineCfg,
 		TaskReg:       taskReg,
+		Toolset:       activeToolset,
 		McpManager:    mcpManager,
 		CronSched:     cronSched,
 		HookMgr:       hookMgr,
@@ -552,6 +573,10 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("permission-mode") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"permission-mode\")")
 		cfg.PermissionMode, _ = cmd.Flags().GetString("permission-mode")
+	}
+	if cmd.Flags().Changed("toolset") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"toolset\")")
+		cfg.Toolset, _ = cmd.Flags().GetString("toolset")
 	}
 }
 

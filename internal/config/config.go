@@ -35,6 +35,7 @@ type Config struct {
 	Record            bool            `json:"record,omitempty"`
 	Permissions       []RawPermission `json:"permissions,omitempty"`
 	PermissionMode    string          `json:"permission_mode,omitempty"`
+	Toolset           string          `json:"toolset,omitempty"`
 }
 
 // ThinkingConfig controls extended thinking / reasoning.
@@ -183,6 +184,9 @@ func merge(base, overlay Config) Config {
 	result.Permissions = deduplicatePermissions(append(result.Permissions, overlay.Permissions...))
 	if overlay.PermissionMode != "" {
 		result.PermissionMode = overlay.PermissionMode
+	}
+	if overlay.Toolset != "" {
+		result.Toolset = overlay.Toolset
 	}
 
 	return result

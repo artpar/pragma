@@ -31,6 +31,10 @@ type ServerConfig struct {
 	// PreserveToolNames exposes remote MCP tool names exactly as advertised.
 	// Use only for trusted servers whose tool names are valid for the selected model provider.
 	PreserveToolNames bool `json:"preserveToolNames,omitempty"`
+
+	// DiscoverySource records where this server came from for runtime filtering.
+	// It is not serialized into MCP config files.
+	DiscoverySource string `json:"-"`
 }
 
 // effectiveType returns the transport type, defaulting to "stdio".
@@ -145,6 +149,9 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 				})
 				continue
 			}
+			if sc.DiscoverySource == "" {
+				sc.DiscoverySource = "config"
+			}
 			merged[name] = sc
 		}
 	}
@@ -177,6 +184,7 @@ func LoadConfig(workDir string, bus *observe.EventBus) (map[string]ServerConfig,
 			})
 			continue
 		}
+		sc.DiscoverySource = "jetbrains"
 		merged[name] = sc
 	}
 	observe.GlobalTrace("return: merged, nil")
@@ -318,12 +326,14 @@ func loadJetBrainsMCPDiscoveryFile(path, workDir string, now time.Time) (*jetBra
 				Type:              "http",
 				URL:               discovery.URL,
 				PreserveToolNames: true,
+				DiscoverySource:   "jetbrains",
 			},
 		}
 	}
 	for name, sc := range servers {
 		observe.GlobalTrace("range servers")
 		sc.PreserveToolNames = true
+		sc.DiscoverySource = "jetbrains"
 		servers[name] = sc
 	}
 	updatedAt, _ := time.Parse(time.RFC3339Nano, discovery.UpdatedAt)

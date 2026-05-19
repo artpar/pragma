@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/tool"
@@ -31,6 +32,9 @@ type ServerStatusInfo struct {
 	Transport string `json:"transport,omitempty"`
 }
 
+// ToolFilter decides whether a remote MCP tool should be registered.
+type ToolFilter func(serverName, toolName string) bool
+
 // Manager handles multiple MCP server connections.
 type Manager struct {
 	clients         map[string]*Client
@@ -38,6 +42,7 @@ type Manager struct {
 	registeredTools map[string][]string     // server name → registered tool names
 	statuses        map[string]string
 	lastErrors      map[string]string
+	toolFilter      ToolFilter
 	mu              sync.RWMutex
 	bus             *observe.EventBus
 	registry        *tool.Registry
@@ -58,6 +63,15 @@ func NewManager(bus *observe.EventBus, registry *tool.Registry) *Manager {
 		bus:             bus,
 		registry:        registry,
 	}
+}
+
+// SetToolFilter limits which MCP tools can be registered.
+func (m *Manager) SetToolFilter(filter ToolFilter) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.toolFilter = filter
 }
 
 // ConfigureServers records MCP servers and marks them pending without opening
@@ -249,10 +263,15 @@ func (m *Manager) registerClientTools(ctx context.Context, name string, client *
 		m.registry.Unregister(toolName)
 	}
 	delete(m.registeredTools, name)
+	filter := m.toolFilter
 	m.mu.Unlock()
 
 	var registered []string
 	for _, info := range tools {
+		if filter != nil && !filter(name, info.Name) {
+			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: filter rejected tool")
+			continue
+		}
 		adapter := NewMCPToolAdapter(client, info)
 		if err := m.registry.Register(adapter); err != nil {
 			m.bus.Emit(observe.ErrorOccurred{
@@ -385,6 +404,70 @@ func (m *Manager) PendingServerNames() []string {
 	sort.Strings(names)
 	observe.GlobalTrace("return: names")
 	return names
+}
+
+// RegisteredToolCount returns the number of currently registered MCP tools.
+func (m *Manager) RegisteredToolCount() int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	count := 0
+	for _, names := range m.registeredTools {
+		observe.GlobalTrace("range m.registeredTools")
+		count += len(names)
+	}
+	observe.GlobalTrace("return: count")
+	return count
+}
+
+// WaitForRegisteredTools briefly waits for async MCP registration to produce tools.
+func (m *Manager) WaitForRegisteredTools(ctx context.Context, timeout time.Duration) bool {
+	observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "exit")
+	if m.RegisteredToolCount() > 0 {
+		observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: true")
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if !m.hasPendingServers() {
+			observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: false")
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: false")
+			return false
+		case <-timer.C:
+			observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: false")
+			return false
+		case <-ticker.C:
+			if m.RegisteredToolCount() > 0 {
+				observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: true")
+				return true
+			}
+		}
+	}
+}
+
+func (m *Manager) hasPendingServers() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, st := range m.statuses {
+		observe.GlobalTrace("range m.statuses")
+		if st == StatusPending {
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
 }
 
 // HasConnectedResourceServer reports whether any connected server supports MCP resources.

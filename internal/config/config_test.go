@@ -129,6 +129,16 @@ func TestMerge(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:    "overlay toolset overrides base",
+			base:    Config{Toolset: "default"},
+			overlay: Config{Toolset: "idea"},
+			check: func(t *testing.T, got Config) {
+				if got.Toolset != "idea" {
+					t.Errorf("Toolset = %q, want idea", got.Toolset)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -239,6 +249,7 @@ func TestJSONRoundTrip(t *testing.T) {
 		StopAfterToolExec: true,
 		Verbose:           true,
 		Record:            true,
+		Toolset:           "idea",
 	}
 
 	data, err := json.Marshal(original)
@@ -256,6 +267,9 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 	if restored.Provider != original.Provider {
 		t.Errorf("Provider = %q, want %q", restored.Provider, original.Provider)
+	}
+	if restored.Toolset != original.Toolset {
+		t.Errorf("Toolset = %q, want %q", restored.Toolset, original.Toolset)
 	}
 	if restored.MaxTokens != original.MaxTokens {
 		t.Errorf("MaxTokens = %d, want %d", restored.MaxTokens, original.MaxTokens)

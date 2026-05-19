@@ -124,6 +124,7 @@ func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
 		"--stop-after-tool-exec",
 		"--context-mode", model.ContextModeStateHandoff,
 		"--handoff-schema", model.HandoffSchemaV1,
+		"--toolset", "idea",
 	}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
@@ -139,6 +140,9 @@ func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
 	}
 	if cfg.HandoffSchema != model.HandoffSchemaV1 {
 		t.Fatalf("HandoffSchema = %q, want %q", cfg.HandoffSchema, model.HandoffSchemaV1)
+	}
+	if cfg.Toolset != "idea" {
+		t.Fatalf("Toolset = %q, want idea", cfg.Toolset)
 	}
 }
 

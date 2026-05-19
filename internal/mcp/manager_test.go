@@ -206,6 +206,64 @@ func TestManager_ConnectAllAndRegisterRegistersTools(t *testing.T) {
 	}
 }
 
+func TestManagerToolFilterRejectsLateMCPRegistration(t *testing.T) {
+	echoTool := server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "echo",
+			Description: "Echoes input",
+			InputSchema: mcp.ToolInputSchema{
+				Type:       "object",
+				Properties: map[string]any{"msg": map[string]any{"type": "string"}},
+			},
+		},
+		Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return mcp.NewToolResultText(req.GetString("msg", "")), nil
+		},
+	}
+	ideaTool := server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "com.intellij.openapi.application.ApplicationInfo.getInstance",
+			Description: "IDE info",
+			InputSchema: mcp.ToolInputSchema{Type: "object"},
+		},
+		Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return mcp.NewToolResultText("ok"), nil
+		},
+	}
+
+	srv, err := mcptest.NewServer(t, echoTool, ideaTool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	bus := observe.NewEventBus(64)
+	defer bus.Drain()
+	registry := tool.NewRegistry(bus)
+	mgr := NewManager(bus, registry)
+	mgr.SetToolFilter(func(serverName, toolName string) bool {
+		return strings.HasPrefix(toolName, "com.intellij.")
+	})
+	wrapper := &Client{
+		name:      "jetbrains",
+		config:    ServerConfig{Command: "test", PreserveToolNames: true},
+		bus:       bus,
+		mcpCli:    srv.Client(),
+		connected: true,
+	}
+	mgr.clients["jetbrains"] = wrapper
+
+	if err := mgr.RegisterTools(context.Background()); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+	if _, ok := registry.Get("echo"); ok {
+		t.Fatal("echo should have been rejected by tool filter")
+	}
+	if _, ok := registry.Get("com.intellij.openapi.application.ApplicationInfo.getInstance"); !ok {
+		t.Fatal("expected IntelliJ tool to be registered")
+	}
+}
+
 func TestManager_ConnectsDiscoveredJetBrainsHTTPServer(t *testing.T) {
 	const reflectiveTool = "com.intellij.openapi.application.ApplicationInfo.getInstance"
 
@@ -246,6 +304,9 @@ func TestManager_ConnectsDiscoveredJetBrainsHTTPServer(t *testing.T) {
 	servers, err := LoadConfig(workDir, bus)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
+	}
+	if servers[serverName].DiscoverySource != "jetbrains" {
+		t.Fatalf("DiscoverySource = %q, want jetbrains", servers[serverName].DiscoverySource)
 	}
 	if errs := mgr.ConnectAll(context.Background(), servers); len(errs) > 0 {
 		t.Fatalf("ConnectAll errors: %v", errs)

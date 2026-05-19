@@ -63,6 +63,10 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
 		subRegistry := tool.NewRegistry(d.Bus)
 		for _, td := range BaseTools(d) {
+			if !shouldRegisterBuiltinTool(d, td.Name()) {
+				observe.GlobalTrace("if: !shouldRegisterBuiltinTool(d, td.Name())")
+				continue
+			}
 			_ = subRegistry.Register(td)
 		}
 		if scopedToolNames != nil {
@@ -86,6 +90,10 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 
 	for _, td := range BaseTools(d) {
 		observe.GlobalTrace("range BaseTools(d)")
+		if !shouldRegisterBuiltinTool(d, td.Name()) {
+			observe.GlobalTrace("if: !shouldRegisterBuiltinTool(d, td.Name())")
+			continue
+		}
 		if err := d.Registry.Register(td); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"register tool %s: %w\", td.Name(), err)")
@@ -101,16 +109,20 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		Provider:       d.Prov,
 		SecondaryModel: SecondaryModelFor(d.Cfg.Provider),
 	}
-	if err := d.Registry.Register(agentTool); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
-		return nil, fmt.Errorf("register agent tool: %w", err)
+	if shouldRegisterBuiltinTool(d, agentTool.Name()) {
+		if err := d.Registry.Register(agentTool); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"register agent tool: %w\", err)")
+			return nil, fmt.Errorf("register agent tool: %w", err)
+		}
 	}
 	askTool := &toolask.Tool{Asker: asker}
-	if err := d.Registry.Register(askTool); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
-		return nil, fmt.Errorf("register ask tool: %w", err)
+	if shouldRegisterBuiltinTool(d, askTool.Name()) {
+		if err := d.Registry.Register(askTool); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"register ask tool: %w\", err)")
+			return nil, fmt.Errorf("register ask tool: %w", err)
+		}
 	}
 
 	skillLoader := skill.NewLoader(d.Cwd)
@@ -120,13 +132,15 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		Bus:           d.Bus,
 		Loader:        skillLoader,
 	}
-	if err := d.Registry.Register(skillTool); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register skill tool: %w\", err)")
-		return nil, fmt.Errorf("register skill tool: %w", err)
+	if shouldRegisterBuiltinTool(d, skillTool.Name()) {
+		if err := d.Registry.Register(skillTool); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"register skill tool: %w\", err)")
+			return nil, fmt.Errorf("register skill tool: %w", err)
+		}
 	}
 
-	if os.Getenv("PRAGMA_REPL") == "1" {
+	if os.Getenv("PRAGMA_REPL") == "1" && shouldRegisterBuiltinTool(d, "REPL") {
 		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_REPL\") == \"1\"")
 		replTool := &toolrepl.Tool{Registry: d.Registry, Bus: d.Bus}
 		if err := d.Registry.Register(replTool); err != nil {
@@ -150,10 +164,12 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		Store:          d.Store,
 		SecondaryModel: SecondaryModelFor(d.Cfg.Provider),
 	}
-	if err := d.Registry.Register(lifecycleTool); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"register lifecycle tool: %w\", err)")
-		return nil, fmt.Errorf("register lifecycle tool: %w", err)
+	if shouldRegisterBuiltinTool(d, lifecycleTool.Name()) {
+		if err := d.Registry.Register(lifecycleTool); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"register lifecycle tool: %w\", err)")
+			return nil, fmt.Errorf("register lifecycle tool: %w", err)
+		}
 	}
 
 	engine := query.NewEngine(d.Prov, d.Registry, orchestrator, d.Store, d.CostTracker, d.Bus, d.EngineCfg)
@@ -163,6 +179,18 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	}
 	observe.GlobalTrace("return: engine, nil")
 	return engine, nil
+}
+
+func shouldRegisterBuiltinTool(d *Deps, name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if d == nil || d.Toolset == nil {
+		observe.GlobalTrace("if: d == nil || d.Toolset == nil")
+		observe.GlobalTrace("return: true")
+		return true
+	}
+	observe.GlobalTrace("return: d.Toolset.AllowBuiltinTool(name)")
+	return d.Toolset.AllowBuiltinTool(name)
 }
 
 func mcpStatusesForQuery(mgr interface {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,6 +124,7 @@ func RunBackground(cmd *cobra.Command) error {
 	addStringFlag("append-system-prompt")
 	addStringFlag("allowed-tools")
 	addStringFlag("disallowed-tools")
+	addStringFlag("toolset")
 	addStringFlag("permission-mode")
 	addStringFlag("context-mode")
 	addStringFlag("handoff-schema")
@@ -240,6 +242,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		return err
 	}
 	applyToolFilters(cmd, d.Registry)
+	waitForToolsetMCP(cmd.Context(), d)
 
 	compDeps, compactor := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
@@ -418,6 +421,10 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			observe.GlobalTrace("return: fmt.Errorf(\"create StructuredOutput tool: %w\", err)")
 			return fmt.Errorf("create StructuredOutput tool: %w", err)
 		}
+		if d.Toolset != nil && !d.Toolset.AllowBuiltinTool(synTool.Name()) {
+			observe.GlobalTrace("if: d.Toolset != nil && !d.Toolset.AllowBuiltinTool(synTool.Name())")
+			return fmt.Errorf("toolset %q does not expose %s; enable includeBuiltinTools and include %s in the toolset tools list", d.Toolset.Name, synTool.Name(), synTool.Name())
+		}
 		if err := d.Registry.Register(synTool); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: fmt.Errorf(\"register StructuredOutput tool: %w\", err)")
@@ -426,6 +433,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	}
 
 	applyToolFilters(cmd, d.Registry)
+	waitForToolsetMCP(cmd.Context(), d)
 
 	compDeps, _ := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
@@ -711,6 +719,16 @@ func applyToolFilters(cmd *cobra.Command, registry *tool.Registry) {
 			registry.Unregister(name)
 		}
 	}
+}
+
+func waitForToolsetMCP(ctx context.Context, d *Deps) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if d == nil || d.Toolset == nil || d.McpManager == nil || !d.Toolset.SelectsMCP() {
+		observe.GlobalTrace("if: d == nil || d.Toolset == nil || d.McpManager == nil || !d.Toolset.SelectsMCP()")
+		return
+	}
+	d.McpManager.WaitForRegisteredTools(ctx, 3*time.Second)
 }
 
 // parseToolList splits a comma-separated tool list, trimming whitespace.
