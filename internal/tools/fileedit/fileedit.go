@@ -256,6 +256,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		nearby := findNearestContext(content, in.OldString)
 		retry := findRetryCandidate(content, in.OldString)
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.%s%s\\nSt...")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.%s%s%s\\n...")
 		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s%s%s\nString: %s", hint, nearby, retry, in.OldString)
 	}
 	count := strings.Count(content, match.OldString)
@@ -278,6 +279,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if updated == content {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: updated == content")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"no changes to make: old_string and new_strin...")
 		return tool.InvokeResult{}, fmt.Errorf("no changes to make: old_string and new_string produce identical file content")
 	}
 
@@ -352,41 +354,60 @@ type editMatch struct {
 }
 
 func normalizeNewString(filePath, newString string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	ext := strings.ToLower(filepath.Ext(filePath))
 	if ext == ".md" || ext == ".mdx" {
+		observe.GlobalTrace("if: ext == \".md\" || ext == \".mdx\"")
+		observe.GlobalTrace("return: newString")
 		return newString
 	}
+	observe.GlobalTrace("return: stripTrailingWhitespace(newString)")
 	return stripTrailingWhitespace(newString)
 }
 
 func stripTrailingWhitespace(s string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	parts := strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' })
 	if len(parts) == 0 && s == "" {
+		observe.GlobalTrace("if: len(parts) == 0 && s == \"\"")
+		observe.GlobalTrace("return: s")
 		return s
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); {
+		observe.GlobalTrace("for: i < len(s)")
 		j := i
 		for j < len(s) && s[j] != '\n' && s[j] != '\r' {
+			observe.GlobalTrace("for: j < len(s) && s[j] != '\\n' && s[j] != '\\r'")
 			j++
 		}
 		b.WriteString(strings.TrimRight(s[i:j], " \t"))
 		if j >= len(s) {
+			observe.GlobalTrace("if: j >= len(s)")
 			break
 		}
 		if s[j] == '\r' && j+1 < len(s) && s[j+1] == '\n' {
+			observe.GlobalTrace("if: s[j] == '\\r' && j+1 < len(s) && s[j+1] == '\\n'")
 			b.WriteString("\r\n")
 			i = j + 2
 		} else {
+			observe.GlobalTrace("else: s[j] == '\\r' && j+1 < len(s) && s[j+1] == '\\n'")
 			b.WriteByte(s[j])
 			i = j + 1
 		}
 	}
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 
 func findEditMatch(content, oldString, newString string) editMatch {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if actualOld, ok := findActualString(content, oldString); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: editMatch{\n\tFound:\t\ttrue,\n\tOldString:\tactualOld,\n\tNewString:\tpreserveQuoteSty...")
 		return editMatch{
 			Found:     true,
 			OldString: actualOld,
@@ -396,8 +417,11 @@ func findEditMatch(content, oldString, newString string) editMatch {
 
 	desanitizedOld, _ := desanitizeMatchString(oldString)
 	if desanitizedOld != oldString {
+		observe.GlobalTrace("if: desanitizedOld != oldString")
 		desanitizedNew, _ := desanitizeMatchString(newString)
 		if actualOld, ok := findActualString(content, desanitizedOld); ok {
+			observe.GlobalTrace("if: ok")
+			observe.GlobalTrace("return: editMatch{\n\tFound:\t\ttrue,\n\tOldString:\tactualOld,\n\tNewString:\tpreserveQuoteSty...")
 			return editMatch{
 				Found:     true,
 				OldString: actualOld,
@@ -405,100 +429,143 @@ func findEditMatch(content, oldString, newString string) editMatch {
 			}
 		}
 	}
+	observe.GlobalTrace("return: editMatch{}")
 
 	return editMatch{}
 }
 
 func findActualString(content, search string) (string, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.Contains(content, search) {
+		observe.GlobalTrace("if: strings.Contains(content, search)")
+		observe.GlobalTrace("return: search, true")
 		return search, true
 	}
 
 	normalizedContent := normalizeQuotes(content)
 	normalizedSearch := normalizeQuotes(search)
 	if !strings.Contains(normalizedContent, normalizedSearch) {
+		observe.GlobalTrace("if: !strings.Contains(normalizedContent, normalizedSearch)")
+		observe.GlobalTrace("return: \"\", false")
 		return "", false
 	}
 	contentRunes := []rune(content)
 	searchLen := len([]rune(search))
 	if searchLen == 0 || searchLen > len(contentRunes) {
+		observe.GlobalTrace("if: searchLen == 0 || searchLen > len(contentRunes)")
+		observe.GlobalTrace("return: \"\", false")
 		return "", false
 	}
 	for i := 0; i+searchLen <= len(contentRunes); i++ {
+		observe.GlobalTrace("for: i+searchLen <= len(contentRunes)")
 		candidate := string(contentRunes[i : i+searchLen])
 		if normalizeQuotes(candidate) == normalizedSearch {
+			observe.GlobalTrace("if: normalizeQuotes(candidate) == normalizedSearch")
+			observe.GlobalTrace("return: candidate, true")
 			return candidate, true
 		}
 	}
+	observe.GlobalTrace("return: \"\", false")
 	return "", false
 }
 
 func normalizeQuotes(s string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r := strings.NewReplacer(
 		leftSingleCurlyQuote, "'",
 		rightSingleCurlyQuote, "'",
 		leftDoubleCurlyQuote, "\"",
 		rightDoubleCurlyQuote, "\"",
 	)
+	observe.GlobalTrace("return: r.Replace(s)")
 	return r.Replace(s)
 }
 
 func desanitizeMatchString(s string) (string, []stringReplacement) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := s
 	applied := make([]stringReplacement, 0)
 	for _, replacement := range desanitizations {
+		observe.GlobalTrace("range desanitizations")
 		next := strings.ReplaceAll(out, replacement.from, replacement.to)
 		if next != out {
+			observe.GlobalTrace("if: next != out")
 			applied = append(applied, replacement)
 			out = next
 		}
 	}
+	observe.GlobalTrace("return: out, applied")
 	return out, applied
 }
 
 func preserveQuoteStyle(oldString, actualOldString, newString string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if oldString == actualOldString {
+		observe.GlobalTrace("if: oldString == actualOldString")
+		observe.GlobalTrace("return: newString")
 		return newString
 	}
 	hasDoubleQuotes := strings.Contains(actualOldString, leftDoubleCurlyQuote) || strings.Contains(actualOldString, rightDoubleCurlyQuote)
 	hasSingleQuotes := strings.Contains(actualOldString, leftSingleCurlyQuote) || strings.Contains(actualOldString, rightSingleCurlyQuote)
 	if !hasDoubleQuotes && !hasSingleQuotes {
+		observe.GlobalTrace("if: !hasDoubleQuotes && !hasSingleQuotes")
+		observe.GlobalTrace("return: newString")
 		return newString
 	}
 	if hasDoubleQuotes {
+		observe.GlobalTrace("if: hasDoubleQuotes")
 		newString = applyCurlyDoubleQuotes(newString)
 	}
 	if hasSingleQuotes {
+		observe.GlobalTrace("if: hasSingleQuotes")
 		newString = applyCurlySingleQuotes(newString)
 	}
+	observe.GlobalTrace("return: newString")
 	return newString
 }
 
 func applyCurlyDoubleQuotes(s string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	runes := []rune(s)
 	var b strings.Builder
 	for i, r := range runes {
+		observe.GlobalTrace("range runes")
 		if r == '"' {
+			observe.GlobalTrace("if: r == '\"'")
 			if isOpeningQuoteContext(runes, i) {
+				observe.GlobalTrace("if: isOpeningQuoteContext(runes, i)")
 				b.WriteString(leftDoubleCurlyQuote)
 			} else {
+				observe.GlobalTrace("else: isOpeningQuoteContext(runes, i)")
 				b.WriteString(rightDoubleCurlyQuote)
 			}
 			continue
 		}
 		b.WriteRune(r)
 	}
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 
 func applyCurlySingleQuotes(s string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	runes := []rune(s)
 	var b strings.Builder
 	for i, r := range runes {
+		observe.GlobalTrace("range runes")
 		if r == '\'' {
+			observe.GlobalTrace("if: r == '\\''")
 			if i > 0 && i < len(runes)-1 && unicode.IsLetter(runes[i-1]) && unicode.IsLetter(runes[i+1]) {
+				observe.GlobalTrace("if: i > 0 && i < len(runes)-1 && unicode.IsLetter(runes[i-1]) && unicode.IsLetter...")
 				b.WriteString(rightSingleCurlyQuote)
 			} else if isOpeningQuoteContext(runes, i) {
+				observe.GlobalTrace("else-if: isOpeningQuoteContext(runes, i)")
 				b.WriteString(leftSingleCurlyQuote)
 			} else {
 				b.WriteString(rightSingleCurlyQuote)
@@ -507,55 +574,79 @@ func applyCurlySingleQuotes(s string) string {
 		}
 		b.WriteRune(r)
 	}
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 
 func isOpeningQuoteContext(runes []rune, index int) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if index == 0 {
+		observe.GlobalTrace("if: index == 0")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	switch runes[index-1] {
 	case ' ', '\t', '\n', '\r', '(', '[', '{', '—', '–':
+		observe.GlobalTrace("case: ' ', '\\t', '\\n', '\\r', '(', '[', '{', '—', '–'")
 		return true
 	default:
+		observe.GlobalTrace("default")
 		return false
 	}
 }
 
 func findRetryCandidate(content, oldString string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	oldLines := strings.Split(oldString, "\n")
 	lineCount := len(oldLines)
 	if lineCount == 0 {
+		observe.GlobalTrace("if: lineCount == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	lines := strings.Split(content, "\n")
 	if lineCount > len(lines) {
+		observe.GlobalTrace("if: lineCount > len(lines)")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 
 	normalizedOld := normalizeEditWhitespace(oldString)
 	candidates := make([]string, 0, 2)
 	for i := 0; i+lineCount <= len(lines); i++ {
+		observe.GlobalTrace("for: i+lineCount <= len(lines)")
 		candidate := strings.Join(lines[i:i+lineCount], "\n")
 		if normalizeEditWhitespace(candidate) == normalizedOld {
+			observe.GlobalTrace("if: normalizeEditWhitespace(candidate) == normalizedOld")
 			candidates = append(candidates, candidate)
 			if len(candidates) > 1 {
+				observe.GlobalTrace("if: len(candidates) > 1")
+				observe.GlobalTrace("return: \"\"")
 				return ""
 			}
 		}
 	}
 	if len(candidates) != 1 {
+		observe.GlobalTrace("if: len(candidates) != 1")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: \"\\nRetry with this exact old_string:\\n```\\n\" + candidates[0] + \"\\n```\"")
 
 	return "\nRetry with this exact old_string:\n```\n" + candidates[0] + "\n```"
 }
 
 func normalizeEditWhitespace(s string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
+		observe.GlobalTrace("range lines")
 		lines[i] = strings.Join(strings.Fields(line), " ")
 	}
+	observe.GlobalTrace("return: strings.TrimSpace(strings.Join(lines, \"\\n\"))")
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 

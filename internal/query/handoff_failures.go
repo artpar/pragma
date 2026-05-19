@@ -185,6 +185,7 @@ func repairConstraintForTool(call model.ToolCallPart, errorType, output string) 
 	case "Edit":
 		observe.GlobalTrace("case: \"Edit\"")
 		if retry := extractEditRetryCandidate(output); retry != "" {
+			observe.GlobalTrace("return: \"Retry the Edit using this exact old_string from the previous Edit error:\\n``...")
 			return "Retry the Edit using this exact old_string from the previous Edit error:\n```\n" + retry + "\n```"
 		}
 		return "Before another Edit, re-read the current file region and use exact current text from the latest Read result."
@@ -206,16 +207,23 @@ func repairConstraintForTool(call model.ToolCallPart, errorType, output string) 
 }
 
 func extractEditRetryCandidate(output string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	const marker = "Retry with this exact old_string:\n```\n"
 	start := strings.Index(output, marker)
 	if start == -1 {
+		observe.GlobalTrace("if: start == -1")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	start += len(marker)
 	end := strings.Index(output[start:], "\n```")
 	if end == -1 {
+		observe.GlobalTrace("if: end == -1")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: strings.Trim(output[start:start+end], \"\\r\\n\")")
 	return strings.Trim(output[start:start+end], "\r\n")
 }
 

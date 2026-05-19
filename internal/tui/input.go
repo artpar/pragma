@@ -30,6 +30,7 @@ func newInputComponent() inputComponent {
 	ta.ShowLineNumbers = false
 	ta.Focus()
 	observe.GlobalTrace("return: inputComponent{\n\ttextarea: ta,\n}")
+	observe.GlobalTrace("return: inputComponent{\n\ttextarea:\tta,\n\thistoryIndex:\t-1,\n}")
 
 	return inputComponent{
 		textarea:     ta,
@@ -65,11 +66,15 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 				}
 			}
 		case tea.KeyUp:
+			observe.GlobalTrace("case: tea.KeyUp")
 			if !keyMsg.Alt && c.shouldNavigateHistoryUp() && c.previousHistory() {
+				observe.GlobalTrace("return: nil")
 				return nil
 			}
 		case tea.KeyDown:
+			observe.GlobalTrace("case: tea.KeyDown")
 			if !keyMsg.Alt && c.shouldNavigateHistoryDown() && c.nextHistory() {
+				observe.GlobalTrace("return: nil")
 				return nil
 			}
 
@@ -79,6 +84,7 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	c.textarea, cmd = c.textarea.Update(msg)
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.Type != tea.KeyUp && keyMsg.Type != tea.KeyDown {
+		observe.GlobalTrace("if: ok && keyMsg.Type != tea.KeyUp && keyMsg.Type != tea.KeyDown")
 		c.historyIndex = -1
 		c.historyDraft = ""
 	}
@@ -87,54 +93,79 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (c *inputComponent) shouldNavigateHistoryUp() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: c.historyIndex >= 0 || c.textarea.Line() == 0")
 	return c.historyIndex >= 0 || c.textarea.Line() == 0
 }
 
 func (c *inputComponent) shouldNavigateHistoryDown() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: c.historyIndex >= 0 || c.textarea.Line() >= c.textarea.LineCount()-1")
 	return c.historyIndex >= 0 || c.textarea.Line() >= c.textarea.LineCount()-1
 }
 
 func (c *inputComponent) previousHistory() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(c.history) == 0 {
+		observe.GlobalTrace("if: len(c.history) == 0")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	if c.historyIndex < 0 {
+		observe.GlobalTrace("if: c.historyIndex < 0")
 		c.historyDraft = c.textarea.Value()
 		c.historyIndex = len(c.history) - 1
 	} else if c.historyIndex > 0 {
+		observe.GlobalTrace("else-if: c.historyIndex > 0")
 		c.historyIndex--
 	}
 	c.textarea.SetValue(c.history[c.historyIndex])
 	c.textarea.Focus()
+	observe.GlobalTrace("return: true")
 	return true
 }
 
 func (c *inputComponent) nextHistory() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(c.history) == 0 || c.historyIndex < 0 {
+		observe.GlobalTrace("if: len(c.history) == 0 || c.historyIndex < 0")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	c.historyIndex++
 	if c.historyIndex >= len(c.history) {
+		observe.GlobalTrace("if: c.historyIndex >= len(c.history)")
 		c.historyIndex = -1
 		c.textarea.SetValue(c.historyDraft)
 		c.historyDraft = ""
 		c.textarea.Focus()
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	c.textarea.SetValue(c.history[c.historyIndex])
 	c.textarea.Focus()
+	observe.GlobalTrace("return: true")
 	return true
 }
 
 func (c *inputComponent) remember(text string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if text == "" {
+		observe.GlobalTrace("if: text == \"\"")
 		return
 	}
 	if len(c.history) > 0 && c.history[len(c.history)-1] == text {
+		observe.GlobalTrace("if: len(c.history) > 0 && c.history[len(c.history)-1] == text")
 		return
 	}
 	c.history = append(c.history, text)
 	if len(c.history) > inputHistoryLimit {
+		observe.GlobalTrace("if: len(c.history) > inputHistoryLimit")
 		c.history = c.history[len(c.history)-inputHistoryLimit:]
 	}
 }

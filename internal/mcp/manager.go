@@ -78,9 +78,12 @@ func (m *Manager) SetToolFilter(filter ToolFilter) {
 // transports. Call this before background connection so status metadata is
 // available immediately at startup.
 func (m *Manager) ConfigureServers(servers map[string]ServerConfig) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for name, cfg := range servers {
+		observe.GlobalTrace("range servers")
 		m.configs[name] = cfg
 		m.statuses[name] = StatusPending
 		delete(m.lastErrors, name)
@@ -91,12 +94,18 @@ func (m *Manager) ConfigureServers(servers map[string]ServerConfig) {
 // Stdio servers connect with a concurrency limit to prevent process exhaustion.
 // Returns per-server errors (does not fail-fast).
 func (m *Manager) ConnectAll(ctx context.Context, servers map[string]ServerConfig) map[string]error {
+	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "exit")
+	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAll", "return: m.connectAll(ctx, servers, false)")
 	return m.connectAll(ctx, servers, false)
 }
 
 // ConnectAllAndRegister connects all servers and registers each server's tools
 // as soon as that server is ready. It is intended for background startup.
 func (m *Manager) ConnectAllAndRegister(ctx context.Context, servers map[string]ServerConfig) map[string]error {
+	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAllAndRegister", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.ConnectAllAndRegister", "exit")
+	observe.TraceCtx(ctx, "mcp", "Manager.ConnectAllAndRegister", "return: m.connectAll(ctx, servers, true)")
 	return m.connectAll(ctx, servers, true)
 }
 
@@ -145,7 +154,9 @@ func (m *Manager) connectAll(ctx context.Context, servers map[string]ServerConfi
 
 				client := NewClient(ns.name, ns.config, m.bus)
 				if err := client.Connect(ctx); err != nil {
+					observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: err != nil")
 					if errors.Is(ctx.Err(), context.Canceled) {
+						observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: errors.Is(ctx.Err(), context.Canceled)")
 						m.mu.Lock()
 						m.statuses[ns.name] = StatusDisconnected
 						m.mu.Unlock()
@@ -174,6 +185,7 @@ func (m *Manager) connectAll(ctx context.Context, servers map[string]ServerConfi
 				delete(m.lastErrors, ns.name)
 				m.mu.Unlock()
 				if registerReadyTools {
+					observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: registerReadyTools")
 					m.registerClientTools(ctx, ns.name, client)
 				}
 			}(ns)
@@ -187,7 +199,9 @@ func (m *Manager) connectAll(ctx context.Context, servers map[string]ServerConfi
 			defer wg.Done()
 			client := NewClient(ns.name, ns.config, m.bus)
 			if err := client.Connect(ctx); err != nil {
+				observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: err != nil")
 				if errors.Is(ctx.Err(), context.Canceled) {
+					observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: errors.Is(ctx.Err(), context.Canceled)")
 					m.mu.Lock()
 					m.statuses[ns.name] = StatusDisconnected
 					m.mu.Unlock()
@@ -209,6 +223,7 @@ func (m *Manager) connectAll(ctx context.Context, servers map[string]ServerConfi
 			delete(m.lastErrors, ns.name)
 			m.mu.Unlock()
 			if registerReadyTools {
+				observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: registerReadyTools")
 				m.registerClientTools(ctx, ns.name, client)
 			}
 		}(ns)
@@ -227,6 +242,7 @@ func (m *Manager) RegisterTools(ctx context.Context) error {
 	m.mu.RLock()
 	clients := make(map[string]*Client, len(m.clients))
 	for name, client := range m.clients {
+		observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "range m.clients")
 		clients[name] = client
 	}
 	m.mu.RUnlock()
@@ -246,8 +262,11 @@ func (m *Manager) RegisterTools(ctx context.Context) error {
 }
 
 func (m *Manager) registerClientTools(ctx context.Context, name string, client *Client) {
+	observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "exit")
 	tools, err := client.ListTools(ctx)
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: err != nil")
 		m.bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
 			Severity:     "warn",
@@ -260,6 +279,7 @@ func (m *Manager) registerClientTools(ctx context.Context, name string, client *
 
 	m.mu.Lock()
 	for _, toolName := range m.registeredTools[name] {
+		observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "range m.registeredTools[name]")
 		m.registry.Unregister(toolName)
 	}
 	delete(m.registeredTools, name)
@@ -268,12 +288,14 @@ func (m *Manager) registerClientTools(ctx context.Context, name string, client *
 
 	var registered []string
 	for _, info := range tools {
+		observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "range tools")
 		if filter != nil && !filter(name, info.Name) {
 			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: filter rejected tool")
 			continue
 		}
 		adapter := NewMCPToolAdapter(client, info)
 		if err := m.registry.Register(adapter); err != nil {
+			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: err != nil")
 			m.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
 				Severity:     "warn",
@@ -282,6 +304,7 @@ func (m *Manager) registerClientTools(ctx context.Context, name string, client *
 				ErrorMessage: fmt.Sprintf("failed to register mcp tool %q: %v", adapter.Name(), err),
 			})
 		} else {
+			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "else: err != nil")
 			registered = append(registered, adapter.Name())
 		}
 	}
