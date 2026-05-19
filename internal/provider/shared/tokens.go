@@ -121,13 +121,17 @@ func SystemText(sp model.SystemPrompt) string {
 // RequestStartedEvent builds the full provider-agnostic request payload used by
 // recordings and replay diagnostics.
 func RequestStartedEvent(traceID, spanID string, params provider.RequestParams) observe.APIRequestStarted {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var thinking *observe.APIThinkingConfig
 	if params.Thinking != nil {
+		observe.GlobalTrace("if: params.Thinking != nil")
 		thinking = &observe.APIThinkingConfig{
 			Enabled:      params.Thinking.Enabled,
 			BudgetTokens: params.Thinking.BudgetTokens,
 		}
 	}
+	observe.GlobalTrace("return: observe.APIRequestStarted{\n\tEventHeader:\tobserve.NewEventHeader(\"APIRequestSt...")
 	return observe.APIRequestStarted{
 		EventHeader:    observe.NewEventHeader("APIRequestStarted", traceID, spanID, ""),
 		Model:          params.Model,

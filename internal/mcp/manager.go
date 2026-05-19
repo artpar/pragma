@@ -457,6 +457,7 @@ func (m *Manager) WaitForRegisteredTools(ctx context.Context, timeout time.Durat
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "for: true")
 		if !m.hasPendingServers() {
 			observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: false")
 			return false
@@ -469,6 +470,7 @@ func (m *Manager) WaitForRegisteredTools(ctx context.Context, timeout time.Durat
 			observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: false")
 			return false
 		case <-ticker.C:
+			observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "select: <-ticker.C")
 			if m.RegisteredToolCount() > 0 {
 				observe.TraceCtx(ctx, "mcp", "Manager.WaitForRegisteredTools", "return: true")
 				return true
