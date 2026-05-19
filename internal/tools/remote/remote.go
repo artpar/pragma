@@ -41,7 +41,7 @@ var inputSchema = json.RawMessage(`{
 	}
 }`)
 
-// Tool manages scheduled remote Pragma agents via the Anthropic CCR API.
+// Tool manages scheduled remote agents via the Anthropic CCR API.
 type Tool struct {
 	HTTPClient  *http.Client
 	BaseURL     string

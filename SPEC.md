@@ -772,7 +772,7 @@ On exit plan mode, write this to:
 
 ## Context
 
-Pragma has ~45,800 GitHub issues. Common pain points:
+Existing agentic coding tools have ~45,800 GitHub issues. Common pain points:
 - MCP servers hang 16+ hours with zero log output and 70 zombie processes
 - Permission denial is literally ignored — user says "No", tool executes anyway, no audit trail
 - 70% quota consumed in an hour with zero mid-session visibility
@@ -934,7 +934,7 @@ All events embed `EventHeader` and implement the sealed interface.
 |---|---|---|
 | `ErrorOccurred` | `Severity string, Component string, ErrorType, ErrorMessage, Stack string` | Any error |
 
-**Permission Audit Events (the audit trail that pragma lacks):**
+**Permission Audit Events (the audit trail that generic agent runtimes can lack):**
 
 | Event | Key Fields | When |
 |---|---|---|
@@ -942,7 +942,7 @@ All events embed `EventHeader` and implement the sealed interface.
 | `PermissionEscalated` | `ToolName, FromDecision, ToDecision, Reason` | Decision overridden |
 | `PermissionDenialEnforced` | `ToolCallID, ToolName, WasExecuted bool` | Denial actually stopped execution |
 
-The `WasExecuted` field on `PermissionDenialEnforced` is the key — it catches the pragma bug where denial is ignored. If `Decision == Deny` but `WasExecuted == true`, the audit log screams.
+The `WasExecuted` field on `PermissionDenialEnforced` is the key — it catches the generic agent runtime bug where denial is ignored. If `Decision == Deny` but `WasExecuted == true`, the audit log screams.
 
 ---
 
@@ -1075,7 +1075,7 @@ func (m *Metrics) HandleEvent(event Event)
 func (m *Metrics) Snapshot() MetricsSnapshot
 ```
 
-`Snapshot()` returns a value copy — displayed in TUI status bar. **Live token/cost visibility** that pragma lacks.
+`Snapshot()` returns a value copy — displayed in TUI status bar. **Live token/cost visibility** that generic agent runtimes can lack.
 
 ```
 type MetricsSnapshot struct {
@@ -1119,7 +1119,7 @@ func (a *Auditor) Trail() []AuditEntry    // full audit trail
 func (a *Auditor) Violations() []AuditEntry  // entries where Decision==deny && WasExecuted==true
 ```
 
-`Violations()` catches the exact bug pragma has — permission denial ignored.
+`Violations()` catches the exact bug generic agent runtime has — permission denial ignored.
 
 ---
 
@@ -1331,7 +1331,7 @@ func RunAllScenarios(t *testing.T, dir string)
 
 ### 6.4 What Scenario Tests Catch
 
-| Scenario | Tests | Pragma Bug It Would Catch |
+| Scenario | Tests | Agent-Runtime Bug It Would Catch |
 |---|---|---|
 | `permission_denial_enforced.yaml` | Deny tool → verify `WasExecuted=false` | Permission bypass (user says No, tool runs) |
 | `mcp_timeout.yaml` | MCP tool hangs → verify timeout event after N seconds | 16-hour MCP hang with no output |
@@ -1551,7 +1551,7 @@ TestPermissionAuditCompleteness:
     FAIL if no bus.Emit(PermissionDenialEnforced{...}) within 10 lines
 ```
 
-This enforces: every permission check produces an audit event. The pragma bug (permission ignored with no audit trail) becomes structurally impossible.
+This enforces: every permission check produces an audit event. The generic agent runtime bug (permission ignored with no audit trail) becomes structurally impossible.
 
 ### 2.4 Tool Registration Completeness Test
 
@@ -1703,7 +1703,7 @@ On approval:
 
 ## Context
 
-Pragma has ~45,800 GitHub issues. Common pain points:
+Existing agentic coding tools have ~45,800 GitHub issues. Common pain points:
 - MCP servers hang 16+ hours with zero log output and 70 zombie processes
 - Permission denial is literally ignored — user says "No", tool executes anyway, no audit trail
 - 70% quota consumed in an hour with zero mid-session visibility
@@ -1865,7 +1865,7 @@ All events embed `EventHeader` and implement the sealed interface.
 |---|---|---|
 | `ErrorOccurred` | `Severity string, Component string, ErrorType, ErrorMessage, Stack string` | Any error |
 
-**Permission Audit Events (the audit trail that pragma lacks):**
+**Permission Audit Events (the audit trail that generic agent runtimes can lack):**
 
 | Event | Key Fields | When |
 |---|---|---|
@@ -1873,7 +1873,7 @@ All events embed `EventHeader` and implement the sealed interface.
 | `PermissionEscalated` | `ToolName, FromDecision, ToDecision, Reason` | Decision overridden |
 | `PermissionDenialEnforced` | `ToolCallID, ToolName, WasExecuted bool` | Denial actually stopped execution |
 
-The `WasExecuted` field on `PermissionDenialEnforced` is the key — it catches the pragma bug where denial is ignored. If `Decision == Deny` but `WasExecuted == true`, the audit log screams.
+The `WasExecuted` field on `PermissionDenialEnforced` is the key — it catches the generic agent runtime bug where denial is ignored. If `Decision == Deny` but `WasExecuted == true`, the audit log screams.
 
 ---
 
@@ -2006,7 +2006,7 @@ func (m *Metrics) HandleEvent(event Event)
 func (m *Metrics) Snapshot() MetricsSnapshot
 ```
 
-`Snapshot()` returns a value copy — displayed in TUI status bar. **Live token/cost visibility** that pragma lacks.
+`Snapshot()` returns a value copy — displayed in TUI status bar. **Live token/cost visibility** that generic agent runtimes can lack.
 
 ```
 type MetricsSnapshot struct {
@@ -2050,7 +2050,7 @@ func (a *Auditor) Trail() []AuditEntry    // full audit trail
 func (a *Auditor) Violations() []AuditEntry  // entries where Decision==deny && WasExecuted==true
 ```
 
-`Violations()` catches the exact bug pragma has — permission denial ignored.
+`Violations()` catches the exact bug generic agent runtime has — permission denial ignored.
 
 ---
 
@@ -2262,7 +2262,7 @@ func RunAllScenarios(t *testing.T, dir string)
 
 ### 6.4 What Scenario Tests Catch
 
-| Scenario | Tests | Pragma Bug It Would Catch |
+| Scenario | Tests | Agent-Runtime Bug It Would Catch |
 |---|---|---|
 | `permission_denial_enforced.yaml` | Deny tool → verify `WasExecuted=false` | Permission bypass (user says No, tool runs) |
 | `mcp_timeout.yaml` | MCP tool hangs → verify timeout event after N seconds | 16-hour MCP hang with no output |

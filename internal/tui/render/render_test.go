@@ -418,7 +418,7 @@ func TestRenderConversationNoSeparators(t *testing.T) {
 		{ID: "2", Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: "Hello"}}},
 	}
 	result := RenderConversation(msgs, md)
-	// No turn separators — clean flow like Pragma
+	// No turn separators; keep the conversation output compact.
 	if strings.Contains(result, "━") {
 		t.Errorf("expected no turn separator in conversation output, got %q", result)
 	}

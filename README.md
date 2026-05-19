@@ -91,6 +91,6 @@ See [SPEC.md](SPEC.md) for the full entity model, provider interface, processes,
 |---|---|
 | `golang.org/x/sync/errgroup` | Concurrent tool execution |
 | `github.com/spf13/cobra` | CLI framework |
-| `github.com/anthropics/anthropic-sdk-go` | Claude API adapter |
+| `github.com/anthropics/anthropic-sdk-go` | Anthropic Messages API adapter |
 | `github.com/charmbracelet/bubbletea` | TUI framework (Phase 6+) |
 | `github.com/mark3labs/mcp-go` | MCP protocol (Phase 11+) |

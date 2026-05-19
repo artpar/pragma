@@ -424,7 +424,7 @@ func (t *timestampTool) InvokedAt() time.Time {
 }
 
 func TestOrchestratorPreservesOrderAcrossSerialAndConcurrentTools(t *testing.T) {
-	// Match Pragma's tool flow: consecutive read-only calls may batch, but
+	// Consecutive read-only calls may batch, but
 	// non-concurrent tools are ordered relative to the surrounding calls.
 	writeTool := &timestampTool{echoTool: *newEchoTool("Write", false)} // serial
 	readTool := &timestampTool{echoTool: *newEchoTool("Read", true)}    // concurrent

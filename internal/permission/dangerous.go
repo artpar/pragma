@@ -18,7 +18,6 @@ var DangerousFiles = []string{
 	".profile",
 	".bash_profile",
 	".mcp.json",
-	".pragma/settings.json",
 	".env",
 }
 
@@ -32,7 +31,6 @@ var DangerousDirs = []string{
 	".git",
 	".vscode",
 	".idea",
-	".pragma",
 	".pragma",
 }
 

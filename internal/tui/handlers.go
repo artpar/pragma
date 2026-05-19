@@ -739,7 +739,7 @@ func (m Model) finishTurn() (Model, tea.Cmd) {
 }
 
 // interruptTurn cancels the streaming context, shows an immediate "Interrupted" message,
-// and finishes the turn. Matches pragma's Esc/Ctrl+C behavior.
+// and finishes the turn.
 func (m Model) interruptTurn() (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

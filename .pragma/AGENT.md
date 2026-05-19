@@ -1,6 +1,6 @@
 # pragma — AI coding assistant CLI
 
-Go port of Pragma. Provider-agnostic: works with Anthropic, Google Gemini, OpenAI, Groq, Lilac.
+Agentic coding assistant CLI. Provider-agnostic: works with Anthropic, Google Gemini, OpenAI, Groq, Lilac.
 
 ## Key directories
 

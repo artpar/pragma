@@ -187,11 +187,11 @@ func TestLoad_ProjectOverride(t *testing.T) {
 	writeJSON(t, globalPath, Config{Model: "global-model", MaxTokens: 4096, Provider: "anthropic"})
 
 	projectDir := filepath.Join(dir, "project")
-	projectClaudeDir := filepath.Join(projectDir, ".pragma")
-	if err := os.MkdirAll(projectClaudeDir, 0o755); err != nil {
+	projectPragmaDir := filepath.Join(projectDir, ".pragma")
+	if err := os.MkdirAll(projectPragmaDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeJSON(t, filepath.Join(projectClaudeDir, "settings.json"), Config{Model: "project-model", MaxTokens: 8192})
+	writeJSON(t, filepath.Join(projectPragmaDir, "settings.json"), Config{Model: "project-model", MaxTokens: 8192})
 
 	cfg, err := loadWithGlobal(globalPath, projectDir)
 	if err != nil {

@@ -10,8 +10,7 @@ const inputHistoryLimit = 100
 
 // inputComponent wraps a textarea for user message input.
 // The input is always active — never disabled during streaming.
-// This matches pragma behavior where users can type and queue messages
-// while the assistant is responding.
+// Users can type and queue messages while the assistant is responding.
 type inputComponent struct {
 	textarea     textarea.Model
 	history      []string

@@ -5,7 +5,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-// Unicode glyphs for visual hierarchy, matching Pragma TS reference.
+// Unicode glyphs for visual hierarchy.
 // Platform-aware where needed (darwin vs linux/windows).
 var (
 	// BlackCircle is the status/spinner indicator.
@@ -18,7 +18,7 @@ const (
 	// Renders as "  ⎿  " — 2 spaces before, 2 after, dimColor.
 	Bracket = "⎿"
 
-	// BracketPrefix is the full bracket with spacing, matching TS reference.
+	// BracketPrefix is the full bracket with spacing.
 	BracketPrefix = "  ⎿  "
 
 	// DiamondOpen indicates a running agent/task.
@@ -28,12 +28,10 @@ const (
 	DiamondFilled = "◆"
 
 	// ThinkGlyph is the thinking indicator (∴ = U+2234 THEREFORE).
-	// Matches pragma TS reference AssistantThinkingMessage.tsx.
 	ThinkGlyph = "∴"
 
 	// TeardropAsterisk is the system message marker (✻ = U+273B).
 	// Used for compaction boundary, scheduled tasks, permission retry.
-	// Matches TS reference constants/figures.ts TEARDROP_ASTERISK.
 	TeardropAsterisk = "✻"
 
 	// ContentIndent is the indentation under a bracket.

@@ -61,7 +61,7 @@ func TestPackageDependencyDAG(t *testing.T) {
 		t.Fatal("could not find project root")
 	}
 
-	// Define illegal import edges per the DAG in AGENT.md
+	// Define illegal import edges per the DAG in AGENT.md.
 	// key = package path suffix (with trailing slash for file matching)
 	// value = packages it must NOT import (no trailing slash — matched via importsPackage)
 	illegal := map[string][]string{
