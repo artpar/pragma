@@ -15,3 +15,5 @@ fun stringProp(description: String): Map<String, Any> = mapOf("type" to "string"
 fun intProp(description: String): Map<String, Any> = mapOf("type" to "integer", "description" to description)
 
 fun boolProp(description: String): Map<String, Any> = mapOf("type" to "boolean", "description" to description)
+
+fun arrayProp(description: String): Map<String, Any> = mapOf("type" to "array", "description" to description)

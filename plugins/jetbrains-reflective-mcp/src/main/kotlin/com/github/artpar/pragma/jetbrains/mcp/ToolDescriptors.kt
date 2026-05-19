@@ -12,6 +12,8 @@ data class ReferencesInput(val position: TextPosition, val limit: Int)
 data class FileNameInput(val name: String)
 data class FilePathInput(val filePath: String)
 data class WordSearchInput(val word: String, val context: String, val limit: Int, val includeHidden: Boolean)
+data class ClassNameInput(val className: String)
+data class RefInput(val ref: String)
 
 fun defaultToolDescriptors(): List<ToolDescriptor<*>> = listOf(
     ToolDescriptor(
@@ -126,6 +128,120 @@ fun defaultToolDescriptors(): List<ToolDescriptor<*>> = listOf(
         decode = { ActionExecuteInput(it.stringArg("actionId"), it.boolArg("now", true)) },
         execute = { input, ports -> ports.actions.tryToExecute(input.actionId, input.now) },
     ),
+    ToolDescriptor(
+        name = "com.github.artpar.pragma.jetbrains.reflect.Protocol.describe",
+        source = "Pragma reflective bridge value protocol and handle lifetime contract",
+        decode = { NoInput },
+        execute = { _, ports -> ports.reflection.protocol() },
+    ),
+    ToolDescriptor(
+        name = "com.github.artpar.pragma.jetbrains.reflect.Roots.list",
+        source = "Project-scoped reflective root object registry",
+        decode = { NoInput },
+        execute = { _, ports -> ports.reflection.roots() },
+    ),
+    ToolDescriptor(
+        name = "java.lang.Class.forName",
+        source = "Class.forName(className)",
+        inputSchema = objectSchema(
+            properties = mapOf("className" to stringProp("Fully qualified JVM class name.")),
+            required = listOf("className"),
+        ),
+        decode = { ClassNameInput(it.stringArg("className")) },
+        execute = { input, ports -> ports.reflection.classForName(input.className) },
+    ),
+    ToolDescriptor(
+        name = "java.lang.Class.describe",
+        source = "Class method and field reflection metadata",
+        inputSchema = reflectiveClassSchema(),
+        decode = { it.reflectiveClassInput() },
+        execute = { input, ports -> ports.reflection.describeClass(input) },
+    ),
+    ToolDescriptor(
+        name = "java.lang.Class.getConstructors",
+        source = "Class constructor reflection metadata",
+        inputSchema = reflectiveClassSchema(),
+        decode = { it.reflectiveClassInput() },
+        execute = { input, ports -> ports.reflection.constructors(input) },
+    ),
+    ToolDescriptor(
+        name = "java.lang.reflect.Field.get",
+        source = "Field.get(target)",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "className" to stringProp("Fully qualified class name for static fields, or fallback target class."),
+                "targetRef" to stringProp("Reflective handle for the target object. Omit for static fields."),
+                "fieldName" to stringProp("Field name."),
+                "storeResult" to boolProp("If true, non-primitive results are stored as handles. Defaults to true."),
+            ),
+            required = listOf("fieldName"),
+        ),
+        decode = {
+            ReflectiveFieldInput(
+                className = it.stringArg("className"),
+                targetRef = it.stringArg("targetRef"),
+                fieldName = it.stringArg("fieldName"),
+                storeResult = it.boolArg("storeResult", true),
+            )
+        },
+        execute = { input, ports -> ports.reflection.getField(input) },
+    ),
+    ToolDescriptor(
+        name = "java.lang.reflect.Constructor.newInstance",
+        source = "Constructor.newInstance(arguments)",
+        inputSchema = reflectiveConstructorSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { it.reflectiveConstructorInput() },
+        execute = { input, ports -> ports.reflection.newInstance(input) },
+    ),
+    ToolDescriptor(
+        name = "java.lang.reflect.Method.invoke",
+        source = "Method.invoke(target, arguments)",
+        inputSchema = reflectiveInvocationSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { it.reflectiveInvocationInput() },
+        execute = { input, ports -> ports.reflection.invoke(input) },
+    ),
+    ToolDescriptor(
+        name = "com.intellij.openapi.application.Application.runReadAction",
+        source = "Application.runReadAction { Method.invoke(...) }",
+        inputSchema = reflectiveInvocationSchema(),
+        decode = { it.reflectiveInvocationInput() },
+        execute = { input, ports -> ports.reflection.invokeReadAction(input) },
+    ),
+    ToolDescriptor(
+        name = "com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction",
+        source = "WriteCommandAction.runWriteCommandAction(project) { Method.invoke(...) }",
+        inputSchema = reflectiveInvocationSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { it.reflectiveInvocationInput() },
+        execute = { input, ports -> ports.reflection.invokeWriteCommand(input) },
+    ),
+    ToolDescriptor(
+        name = "com.github.artpar.pragma.jetbrains.reflect.ObjectStore.list",
+        source = "Reflective object handle registry list",
+        decode = { NoInput },
+        execute = { _, ports -> ports.reflection.handles() },
+    ),
+    ToolDescriptor(
+        name = "com.github.artpar.pragma.jetbrains.reflect.ObjectStore.get",
+        source = "Reflective object handle registry get",
+        inputSchema = refSchema(),
+        decode = { RefInput(it.stringArg("ref")) },
+        execute = { input, ports -> ports.reflection.handle(input.ref) },
+    ),
+    ToolDescriptor(
+        name = "com.github.artpar.pragma.jetbrains.reflect.ObjectStore.release",
+        source = "Reflective object handle registry release",
+        inputSchema = refSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { RefInput(it.stringArg("ref")) },
+        execute = { input, ports -> ports.reflection.release(input.ref) },
+    ),
 )
 
 private fun JsonObject.textPosition(): TextPosition =
@@ -143,3 +259,71 @@ private fun filePositionProperties(): Map<String, Any> = mapOf(
     "line" to intProp("1-based line number."),
     "column" to intProp("1-based column number."),
 )
+
+private fun JsonObject.reflectiveClassInput(): ReflectiveClassInput =
+    ReflectiveClassInput(
+        className = stringArg("className"),
+        ref = stringArg("ref"),
+        includeDeclared = boolArg("includeDeclared", true),
+        limit = intArg("limit", 200).coerceIn(1, 2000),
+    )
+
+private fun JsonObject.reflectiveConstructorInput(): ReflectiveConstructorInput =
+    ReflectiveConstructorInput(
+        className = stringArg("className"),
+        parameterTypes = stringListArg("parameterTypes"),
+        arguments = jsonListArg("arguments"),
+        storeResult = boolArg("storeResult", true),
+    )
+
+private fun JsonObject.reflectiveInvocationInput(): ReflectiveInvocationInput =
+    ReflectiveInvocationInput(
+        className = stringArg("className"),
+        targetRef = stringArg("targetRef"),
+        methodName = stringArg("methodName"),
+        parameterTypes = stringListArg("parameterTypes"),
+        arguments = jsonListArg("arguments"),
+        storeResult = boolArg("storeResult", true),
+        dispatchThread = boolArg("dispatchThread", false),
+    )
+
+private fun reflectiveClassSchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf(
+            "className" to stringProp("Fully qualified JVM class name. Use this or ref."),
+            "ref" to stringProp("Reflective object handle. Use this or className."),
+            "includeDeclared" to boolProp("If true, include declared non-public members. Defaults to true."),
+            "limit" to intProp("Maximum members to return. Defaults to 200."),
+        ),
+    )
+
+private fun reflectiveConstructorSchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf(
+            "className" to stringProp("Fully qualified JVM class name."),
+            "parameterTypes" to arrayProp("Optional JVM parameter type names for overload resolution."),
+            "arguments" to arrayProp("Arguments encoded with the reflective protocol."),
+            "storeResult" to boolProp("If true, non-primitive results are stored as handles. Defaults to true."),
+        ),
+        required = listOf("className"),
+    )
+
+private fun reflectiveInvocationSchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf(
+            "className" to stringProp("Fully qualified JVM class name for static calls, or fallback target class."),
+            "targetRef" to stringProp("Reflective handle for the target object. Omit for static calls."),
+            "methodName" to stringProp("Method name."),
+            "parameterTypes" to arrayProp("Optional JVM parameter type names for overload resolution."),
+            "arguments" to arrayProp("Arguments encoded with the reflective protocol."),
+            "storeResult" to boolProp("If true, non-primitive results are stored as handles. Defaults to true."),
+            "dispatchThread" to boolProp("If true, invoke from the IDE event dispatch thread. Defaults to false."),
+        ),
+        required = listOf("methodName"),
+    )
+
+private fun refSchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf("ref" to stringProp("Reflective object handle.")),
+        required = listOf("ref"),
+    )

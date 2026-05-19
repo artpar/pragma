@@ -18,6 +18,8 @@ class ReflectiveToolCatalogTest {
         assertTrue("com.intellij.psi.PsiReference.resolve" in names)
         assertTrue("com.intellij.psi.search.PsiSearchHelper.processElementsWithWord" in names)
         assertTrue("com.intellij.openapi.actionSystem.ActionManager.tryToExecute" in names)
+        assertTrue("java.lang.reflect.Method.invoke" in names)
+        assertTrue("com.github.artpar.pragma.jetbrains.reflect.Roots.list" in names)
         definitions.forEach { definition ->
             assertTrue((definition["description"] as String).isNotBlank())
             assertEquals("object", (definition["inputSchema"] as Map<*, *>)["type"])
@@ -55,6 +57,17 @@ class ReflectiveToolCatalogTest {
         val catalog = ReflectiveToolCatalog(FakeIdePorts())
         val definition = catalog.toolDefinitions()
             .first { it["name"] == "com.intellij.openapi.actionSystem.ActionManager.tryToExecute" }
+
+        val annotations = definition["annotations"] as Map<*, *>
+        assertEquals(false, annotations["readOnlyHint"])
+        assertEquals(true, annotations["destructiveHint"])
+    }
+
+    @Test
+    fun `generic reflective invocation descriptor is destructive`() {
+        val catalog = ReflectiveToolCatalog(FakeIdePorts())
+        val definition = catalog.toolDefinitions()
+            .first { it["name"] == "java.lang.reflect.Method.invoke" }
 
         val annotations = definition["annotations"] as Map<*, *>
         assertEquals(false, annotations["readOnlyHint"])
@@ -113,6 +126,22 @@ class FakeIdePorts : IdePorts {
     override val vfs: VfsPort = object : VfsPort {
         override fun refreshAndFindFileByPath(filePath: String): RefreshFileResult =
             RefreshFileResult(filePath, true, filePath.substringAfterLast('/'), "Kotlin", "kotlin", true)
+    }
+
+    override val reflection: ReflectionPort = object : ReflectionPort {
+        override fun protocol(): Map<String, Any?> = mapOf("formatVersion" to 1)
+        override fun roots(): Map<String, Any?> = mapOf("roots" to mapOf("root:project" to mapOf("className" to "Project")))
+        override fun classForName(className: String): Map<String, Any?> = mapOf("class" to className)
+        override fun describeClass(input: ReflectiveClassInput): Map<String, Any?> = mapOf("class" to input.className)
+        override fun constructors(input: ReflectiveClassInput): Map<String, Any?> = mapOf("constructors" to emptyList<Any>())
+        override fun getField(input: ReflectiveFieldInput): Map<String, Any?> = mapOf("value" to input.fieldName)
+        override fun newInstance(input: ReflectiveConstructorInput): Map<String, Any?> = mapOf("value" to input.className)
+        override fun invoke(input: ReflectiveInvocationInput): Map<String, Any?> = mapOf("value" to input.methodName)
+        override fun invokeReadAction(input: ReflectiveInvocationInput): Map<String, Any?> = mapOf("value" to input.methodName)
+        override fun invokeWriteCommand(input: ReflectiveInvocationInput): Map<String, Any?> = mapOf("value" to input.methodName)
+        override fun handles(): Map<String, Any?> = mapOf("handles" to emptyMap<String, Any>())
+        override fun handle(ref: String): Map<String, Any?> = mapOf("\$ref" to ref)
+        override fun release(ref: String): Map<String, Any?> = mapOf("released" to true)
     }
 
     private fun element(name: String): PsiElementInfo = PsiElementInfo(

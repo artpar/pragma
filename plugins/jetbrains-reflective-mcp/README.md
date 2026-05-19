@@ -1,8 +1,8 @@
 # Pragma JetBrains Reflective MCP
 
-This plugin runs inside IntelliJ Platform IDEs and exposes a local MCP server backed by IntelliJ APIs. It is intended to replace Pragma's external LSP dependency with direct IDE state, PSI, VFS, editor, and action-system access.
+This plugin runs inside IntelliJ IDEA and exposes a local MCP server backed by IntelliJ APIs. It is intended to replace external LSP and filesystem tooling with direct IDE state, PSI, VFS, editor, inspection, refactoring, run configuration, and action-system access.
 
-The bridge deliberately does not invent product-level tool names such as `ide_search`. MCP tool names are stable references to the IntelliJ Platform API surface they call.
+The bridge deliberately does not invent product-level tool names such as `ide_search`. MCP tool names are stable references to either the IntelliJ Platform API surface they call or to the generic reflective bridge used to access that surface.
 
 ## Runtime Contract
 
@@ -33,18 +33,18 @@ The plugin is organized so most behavior can be tested without starting IntelliJ
 
 | Boundary | Files | Responsibility |
 | --- | --- | --- |
-| Values | `Domain.kt`, `ValueMaps.kt` | Serializable domain values returned through MCP. |
-| Ports | `Ports.kt` | Small interfaces for IntelliJ capabilities used by tool descriptors. |
+| Values | `Domain.kt`, `ValueMaps.kt`, `ReflectiveRuntime.kt` | Serializable values, reflective handles, and JSON boundary values returned through MCP. |
+| Ports | `Ports.kt` | Small interfaces for fixed IntelliJ capabilities plus the reflective runtime port. |
 | Tool descriptors | `ToolDescriptor.kt`, `ToolDescriptors.kt`, `Schema.kt`, `JsonArgs.kt` | Reflective tool catalog, schemas, argument decoding, and execution. No IntelliJ imports. |
 | MCP protocol | `McpProtocol.kt`, `McpHttpHandler.kt` | JSON-RPC/MCP request handling and HTTP adaptation. |
-| IntelliJ adapter | `IntelliJIdePorts.kt` | The only layer that calls IntelliJ Platform APIs directly. |
+| IntelliJ adapter | `IntelliJIdePorts.kt`, `ReflectiveRuntime.kt` | The layers that call IntelliJ Platform APIs directly. |
 | Startup/service | `McpStartupActivity.kt`, `ReflectiveMcpProjectService.kt`, `plugin.xml` | Project startup, server lifecycle, and discovery file writing. |
 
-This makes the test seam explicit: unit tests use fake ports and real descriptors; IntelliJ fixture tests should cover the adapter layer.
+This makes the test boundary explicit: unit tests use fake ports and real descriptors, while target API coverage tests verify the actual IntelliJ runtime classes and methods the reflective bridge is expected to expose.
 
 ## Current Tools
 
-The initial catalog exposes these IntelliJ-shaped MCP tool names:
+The fixed catalog exposes these IntelliJ-shaped MCP tool names:
 
 ```text
 com.intellij.openapi.application.ApplicationInfo.getInstance
@@ -59,14 +59,35 @@ com.intellij.openapi.vfs.LocalFileSystem.refreshAndFindFileByPath
 com.intellij.openapi.actionSystem.ActionManager.tryToExecute
 ```
 
-Read-only and destructive behavior is expressed in tool annotations. `ActionManager.tryToExecute` is marked destructive because actions may mutate IDE or project state.
+The generic reflective catalog adds:
+
+```text
+com.github.artpar.pragma.jetbrains.reflect.Protocol.describe
+com.github.artpar.pragma.jetbrains.reflect.Roots.list
+java.lang.Class.forName
+java.lang.Class.describe
+java.lang.Class.getConstructors
+java.lang.reflect.Field.get
+java.lang.reflect.Constructor.newInstance
+java.lang.reflect.Method.invoke
+com.intellij.openapi.application.Application.runReadAction
+com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction
+com.github.artpar.pragma.jetbrains.reflect.ObjectStore.list
+com.github.artpar.pragma.jetbrains.reflect.ObjectStore.get
+com.github.artpar.pragma.jetbrains.reflect.ObjectStore.release
+```
+
+Read-only and destructive behavior is expressed in MCP tool annotations. Generic method invocation, constructor invocation, write-command invocation, object release, and IDE action execution are marked destructive because they can mutate IDE or project state.
+
+See `docs/REFLECTIVE_PROTOCOL.md` for the JSON value format and handle lifetime rules.
+See `docs/TARGET_API_COVERAGE.md` for the tested IntelliJ API matrix.
 
 ## Development
 
 Run unit tests:
 
 ```bash
-gradle --no-daemon test
+gradle --no-daemon -p plugins/jetbrains-reflective-mcp test
 ```
 
 Run the plugin in an IntelliJ sandbox against this repository:
@@ -107,18 +128,20 @@ curl -s "$URL" \
 Build an installable plugin ZIP:
 
 ```bash
-gradle --no-daemon buildPlugin
+gradle --no-daemon -p plugins/jetbrains-reflective-mcp buildPlugin
 ```
 
 ## Test Coverage
 
-Existing tests cover the pure protocol and descriptor layers:
+Tests cover the protocol, descriptor layer, reflective catalog, and target IntelliJ API matrix:
 
 - MCP `initialize`, `notifications/initialized`, `ping`, `tools/list`, and `tools/call`.
 - Missing tool behavior.
 - Stable unique tool names.
 - Tool schema presence.
 - Descriptor execution through fake ports.
-- Destructive metadata for action execution.
+- Destructive metadata for action execution and generic reflective mutation tools.
+- Target IntelliJ classes and method signatures for project, editor, VFS, PSI, search, actions, intentions, diagnostics, inspections, duplication, refactoring, and run/build/test APIs.
+- Reflective root handles are backed by declared target API coverage.
 
-The next coverage layer should use IntelliJ fixtures for editor, PSI, references, filename index, VFS refresh, and action-system behavior.
+The coverage rule is strict: if a target API is documented as reachable for agentic development, it must be present in `TargetApiMatrix.kt` and verified by `TargetApiCoverageTest`.

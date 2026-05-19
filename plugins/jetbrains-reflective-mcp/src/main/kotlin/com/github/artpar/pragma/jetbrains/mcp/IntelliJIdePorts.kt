@@ -33,6 +33,7 @@ class IntelliJIdePorts(private val project: Project) : IdePorts {
     override val editor: EditorPort = IntelliJEditorPort(project)
     override val psi: PsiPort = IntelliJPsiPort(project)
     override val vfs: VfsPort = IntelliJVfsPort(project)
+    override val reflection: ReflectionPort = ReflectiveRuntime(project)
 }
 
 private class IntelliJApplicationPort(private val project: Project) : ApplicationPort {
