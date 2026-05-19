@@ -5,6 +5,7 @@ data class TargetApi(
     val className: String,
     val methods: List<TargetMethod> = emptyList(),
     val fields: List<String> = emptyList(),
+    val requiredInPlatformRuntime: Boolean = true,
 )
 
 data class TargetMethod(
@@ -469,6 +470,7 @@ val targetApiMatrix: List<TargetApi> = listOf(
     TargetApi(
         category = "refactoring",
         className = "com.intellij.refactoring.extractMethod.ExtractMethodHandler",
+        requiredInPlatformRuntime = false,
         methods = listOf(
             TargetMethod("invoke", listOf("com.intellij.openapi.project.Project", "com.intellij.openapi.editor.Editor", "com.intellij.psi.PsiFile", "com.intellij.openapi.actionSystem.DataContext")),
             TargetMethod("invoke", listOf("com.intellij.openapi.project.Project", "[Lcom.intellij.psi.PsiElement;", "com.intellij.openapi.actionSystem.DataContext")),
@@ -479,11 +481,13 @@ val targetApiMatrix: List<TargetApi> = listOf(
     TargetApi(
         category = "refactoring",
         className = "com.intellij.refactoring.extractclass.ExtractClassHandler",
+        requiredInPlatformRuntime = false,
         methods = listOf(TargetMethod("invoke"), TargetMethod("isEnabledOnElements"), TargetMethod("getRefactoringName", emptyList(), static = true)),
     ),
     TargetApi(
         category = "refactoring",
         className = "com.intellij.refactoring.extractInterface.ExtractInterfaceHandler",
+        requiredInPlatformRuntime = false,
         methods = listOf(TargetMethod("invoke"), TargetMethod("isEnabledOnElements"), TargetMethod("getRefactoringName", emptyList(), static = true)),
     ),
     TargetApi(
@@ -494,11 +498,13 @@ val targetApiMatrix: List<TargetApi> = listOf(
     TargetApi(
         category = "refactoring",
         className = "com.intellij.refactoring.introduceVariable.IntroduceVariableHandler",
+        requiredInPlatformRuntime = false,
         methods = listOf(TargetMethod("invoke"), TargetMethod("generatePreview")),
     ),
     TargetApi(
         category = "refactoring",
         className = "com.intellij.refactoring.introduceField.IntroduceFieldHandler",
+        requiredInPlatformRuntime = false,
         methods = listOf(TargetMethod("invoke"), TargetMethod("getRefactoringNameText", emptyList(), static = true)),
     ),
     TargetApi(

@@ -37,8 +37,8 @@ class TargetApiCoverageTest {
     }
 
     @Test
-    fun `all declared target classes are present in IntelliJ runtime`() {
-        val missing = targetApiMatrix.mapNotNull { api ->
+    fun `all required target classes are present in platform runtime`() {
+        val missing = targetApiMatrix.filter { it.requiredInPlatformRuntime }.mapNotNull { api ->
             runCatching { loadClass(api.className) }
                 .exceptionOrNull()
                 ?.let { "${api.category}: ${api.className} (${it.javaClass.simpleName}: ${it.message})" }
@@ -48,11 +48,14 @@ class TargetApiCoverageTest {
     }
 
     @Test
-    fun `all declared target methods are present with expected static shape`() {
+    fun `available target methods are present with expected static shape`() {
         val missing = mutableListOf<String>()
 
         targetApiMatrix.forEach { api ->
-            val clazz = loadClass(api.className)
+            val clazz = runCatching { loadClass(api.className) }.getOrElse {
+                if (api.requiredInPlatformRuntime) throw it
+                return@forEach
+            }
             api.methods.forEach { spec ->
                 val method = findMethod(clazz, spec)
                 if (method == null) {
@@ -64,6 +67,16 @@ class TargetApiCoverageTest {
         }
 
         assertTrue(missing.isEmpty(), "Missing target methods:\n${missing.joinToString("\n")}")
+    }
+
+    @Test
+    fun `optional target classes may be absent from platform only runtime`() {
+        val optional = targetApiMatrix.filterNot { it.requiredInPlatformRuntime }
+
+        assertTrue(optional.isNotEmpty(), "Expected at least one optional target API")
+        optional.forEach { api ->
+            runCatching { loadClass(api.className) }
+        }
     }
 
     @Test

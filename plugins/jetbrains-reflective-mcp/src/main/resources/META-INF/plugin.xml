@@ -10,7 +10,6 @@
   </description>
 
   <depends>com.intellij.modules.platform</depends>
-  <depends>com.intellij.java</depends>
 
   <extensions defaultExtensionNs="com.intellij">
     <projectService serviceImplementation="com.github.artpar.pragma.jetbrains.mcp.ReflectiveMcpProjectService"/>

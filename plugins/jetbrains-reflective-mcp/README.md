@@ -1,6 +1,6 @@
 # Pragma JetBrains Reflective MCP
 
-This plugin runs inside IntelliJ IDEA and exposes a local MCP server backed by IntelliJ APIs. It is intended to replace external LSP and filesystem tooling with direct IDE state, PSI, VFS, editor, inspection, refactoring, plugin management, run configuration, and action-system access.
+This plugin runs inside JetBrains IDEs and exposes a local MCP server backed by IntelliJ Platform APIs. It is intended to replace external LSP and filesystem tooling with direct IDE state, PSI, VFS, editor, inspection, refactoring, plugin management, run configuration, and action-system access.
 
 The bridge has two layers:
 
@@ -8,6 +8,8 @@ The bridge has two layers:
 - Reflective IntelliJ API tools: a lower-level escape hatch for the wider platform surface.
 
 The reflective layer deliberately keeps tool names as stable references to the IntelliJ Platform API surface they call or to the generic reflective bridge used to access that surface.
+
+The plugin depends only on `com.intellij.modules.platform`, so it can load in non-Java IDEs such as WebStorm. Product-specific surfaces such as run configurations, inspections, duplicate detection, and refactoring are exposed only when the host IDE provides the corresponding platform classes.
 
 ## Runtime Contract
 
