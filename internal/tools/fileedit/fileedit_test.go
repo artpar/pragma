@@ -294,3 +294,123 @@ func TestFileEditTool_RequiresReadForExistingFile(t *testing.T) {
 		t.Errorf("expected read-first error, got: %v", err)
 	}
 }
+
+func TestFileEditTool_NormalizesCurlyQuotesAndPreservesStyle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "quotes.txt")
+	os.WriteFile(path, []byte("msg := “hello”\n"), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{}
+	input, _ := json.Marshal(FileEditInput{
+		FilePath:  path,
+		OldString: `msg := "hello"`,
+		NewString: `msg := "goodbye"`,
+	})
+
+	if _, err := tool.Invoke(context.Background(), input, state); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	content, _ := os.ReadFile(path)
+	if string(content) != "msg := “goodbye”\n" {
+		t.Fatalf("quote style was not preserved: %q", string(content))
+	}
+}
+
+func TestFileEditTool_DesanitizesOldAndNewStrings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tags.txt")
+	os.WriteFile(path, []byte("tag := \"<name>\"\n"), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{}
+	input, _ := json.Marshal(FileEditInput{
+		FilePath:  path,
+		OldString: "<n>",
+		NewString: "</n>",
+	})
+
+	if _, err := tool.Invoke(context.Background(), input, state); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	content, _ := os.ReadFile(path)
+	if string(content) != "tag := \"</name>\"\n" {
+		t.Fatalf("desanitized edit not applied: %q", string(content))
+	}
+}
+
+func TestFileEditTool_StripsTrailingWhitespaceForNonMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plain.txt")
+	os.WriteFile(path, []byte("alpha\n"), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{}
+	input, _ := json.Marshal(FileEditInput{
+		FilePath:  path,
+		OldString: "alpha",
+		NewString: "beta   \nnext\t ",
+	})
+
+	if _, err := tool.Invoke(context.Background(), input, state); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	content, _ := os.ReadFile(path)
+	if string(content) != "beta\nnext\n" {
+		t.Fatalf("trailing whitespace was not stripped: %q", string(content))
+	}
+}
+
+func TestFileEditTool_PreservesMarkdownHardBreakWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "doc.md")
+	os.WriteFile(path, []byte("alpha\n"), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{}
+	input, _ := json.Marshal(FileEditInput{
+		FilePath:  path,
+		OldString: "alpha",
+		NewString: "beta  \nnext  ",
+	})
+
+	if _, err := tool.Invoke(context.Background(), input, state); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	content, _ := os.ReadFile(path)
+	if string(content) != "beta  \nnext  \n" {
+		t.Fatalf("markdown trailing whitespace was not preserved: %q", string(content))
+	}
+}
+
+func TestFileEditTool_NotFoundIncludesExactRetryCandidate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ask.go")
+	actual := "\tfreeText    strings.Builder   // typed text for \"Other\" or plain free-text\n"
+	os.WriteFile(path, []byte(actual), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{}
+	input, _ := json.Marshal(FileEditInput{
+		FilePath:  path,
+		OldString: "\tfreeText    strings.Builder // typed text for \"Other\" or plain free-text",
+		NewString: "\tfreeText    *strings.Builder // typed text for \"Other\" or plain free-text",
+	})
+
+	_, err := tool.Invoke(context.Background(), input, state)
+	if err == nil {
+		t.Fatal("expected string not found error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "Retry with this exact old_string:") {
+		t.Fatalf("missing retry candidate: %s", msg)
+	}
+	if !strings.Contains(msg, strings.TrimSuffix(actual, "\n")) {
+		t.Fatalf("retry candidate does not include actual content: %s", msg)
+	}
+}

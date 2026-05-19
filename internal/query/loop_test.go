@@ -726,6 +726,41 @@ func TestRecordHandoffToolFailuresPromotesVerifiedFeedback(t *testing.T) {
 	}
 }
 
+func TestRecordHandoffToolFailuresUsesEditRetryCandidate(t *testing.T) {
+	engine, _ := newTestEngine(&testProvider{})
+	engine.config.ContextMode = model.ContextModeStateHandoff
+	engine.config.HandoffSchema = model.HandoffSchemaV1
+
+	engine.recordHandoffToolFailures(
+		[]model.ToolCallPart{
+			{
+				ID:    "tc-edit",
+				Name:  "Edit",
+				Input: json.RawMessage(`{"file_path":"internal/tui/ask.go"}`),
+			},
+		},
+		[]model.ToolResultPart{
+			{
+				ToolCallID: "tc-edit",
+				Content:    "string to replace not found in file.\nRetry with this exact old_string:\n```\n\tfreeText    strings.Builder   // typed text\n```\nString: bad",
+				IsError:    true,
+			},
+		},
+		[]string{""},
+	)
+
+	state := engine.store.Snapshot().HandoffState
+	if !strings.Contains(state.NextAction, "Retry the Edit using this exact old_string") {
+		t.Fatalf("NextAction = %q", state.NextAction)
+	}
+	if !strings.Contains(state.NextAction, "\tfreeText    strings.Builder   // typed text") {
+		t.Fatalf("NextAction missing retry candidate: %q", state.NextAction)
+	}
+	if strings.Contains(state.NextAction, "re-read") {
+		t.Fatalf("NextAction should not ask for another blind read: %q", state.NextAction)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

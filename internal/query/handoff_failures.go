@@ -87,7 +87,7 @@ func handoffFailureFromToolResult(call model.ToolCallPart, result model.ToolResu
 		ErrorMessage:          compactOneLine(errorMessage, 500),
 		OutputExcerpt:         compactOneLine(result.Content, 1200),
 		InvalidatedAssumption: invalidatedAssumptionForTool(call, errorType),
-		RepairConstraint:      repairConstraintForTool(call, errorType),
+		RepairConstraint:      repairConstraintForTool(call, errorType, result.Content),
 	}
 	observe.GlobalTrace("return: failure, true")
 	return failure, true
@@ -178,12 +178,15 @@ func invalidatedAssumptionForTool(call model.ToolCallPart, errorType string) str
 	}
 }
 
-func repairConstraintForTool(call model.ToolCallPart, errorType string) string {
+func repairConstraintForTool(call model.ToolCallPart, errorType, output string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch call.Name {
 	case "Edit":
 		observe.GlobalTrace("case: \"Edit\"")
+		if retry := extractEditRetryCandidate(output); retry != "" {
+			return "Retry the Edit using this exact old_string from the previous Edit error:\n```\n" + retry + "\n```"
+		}
 		return "Before another Edit, re-read the current file region and use exact current text from the latest Read result."
 	case "Bash", "PowerShell":
 		observe.GlobalTrace("case: \"Bash\", \"PowerShell\"")
@@ -200,6 +203,20 @@ func repairConstraintForTool(call model.ToolCallPart, errorType string) string {
 		observe.GlobalTrace("default")
 		return fmt.Sprintf("Use the verified %s failure to change the next approach before repeating a similar tool call.", call.Name)
 	}
+}
+
+func extractEditRetryCandidate(output string) string {
+	const marker = "Retry with this exact old_string:\n```\n"
+	start := strings.Index(output, marker)
+	if start == -1 {
+		return ""
+	}
+	start += len(marker)
+	end := strings.Index(output[start:], "\n```")
+	if end == -1 {
+		return ""
+	}
+	return strings.Trim(output[start:start+end], "\r\n")
 }
 
 func appendVerifiedFailure(in []model.HandoffVerifiedFailure, failure model.HandoffVerifiedFailure, limit int) []model.HandoffVerifiedFailure {

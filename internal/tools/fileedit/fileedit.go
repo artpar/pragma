@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -15,6 +16,39 @@ import (
 )
 
 const maxEditFileSize = 1024 * 1024 * 1024 // 1 GiB
+
+const (
+	leftSingleCurlyQuote  = "‘"
+	rightSingleCurlyQuote = "’"
+	leftDoubleCurlyQuote  = "“"
+	rightDoubleCurlyQuote = "”"
+)
+
+type stringReplacement struct {
+	from string
+	to   string
+}
+
+var desanitizations = []stringReplacement{
+	{"<fnr>", "<function_results>"},
+	{"<n>", "<name>"},
+	{"</n>", "</name>"},
+	{"<o>", "<output>"},
+	{"</o>", "</output>"},
+	{"<e>", "<error>"},
+	{"</e>", "</error>"},
+	{"<s>", "<system>"},
+	{"</s>", "</system>"},
+	{"<r>", "<result>"},
+	{"</r>", "</result>"},
+	{"< META_START >", "<META_START>"},
+	{"< META_END >", "<META_END>"},
+	{"< EOT >", "<EOT>"},
+	{"< META >", "<META>"},
+	{"< SOS >", "<SOS>"},
+	{"\n\nH:", "\n\nHuman:"},
+	{"\n\nA:", "\n\nAssistant:"},
+}
 
 // FileEditInput defines the parameters for the FileEdit tool.
 type FileEditInput struct {
@@ -120,6 +154,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 
 	filePath := util.ExpandPath(in.FilePath, state.WorkDir())
+	in.NewString = normalizeNewString(filePath, in.NewString)
 
 	if in.OldString == "" && in.NewString == "" {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.OldString == \"\" && in.NewString == \"\"")
@@ -212,34 +247,41 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		}, nil
 	}
 
-	count := strings.Count(content, in.OldString)
+	match := findEditMatch(content, in.OldString, in.NewString)
 
-	if count == 0 {
+	if !match.Found {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count == 0")
 
 		hint := diagnoseWhitespaceMismatch(content, in.OldString)
 		nearby := findNearestContext(content, in.OldString)
+		retry := findRetryCandidate(content, in.OldString)
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"string to replace not found in file.%s%s\\nSt...")
-		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s%s\nString: %s", hint, nearby, in.OldString)
+		return tool.InvokeResult{}, fmt.Errorf("string to replace not found in file.%s%s%s\nString: %s", hint, nearby, retry, in.OldString)
 	}
+	count := strings.Count(content, match.OldString)
 
 	if count > 1 && !in.ReplaceAll {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: count > 1 && !in.ReplaceAll")
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"found %d matches of the string to replace, b...")
-		return tool.InvokeResult{}, fmt.Errorf("found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, in.OldString)
+		return tool.InvokeResult{}, fmt.Errorf("found %d matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: %s", count, match.OldString)
 	}
 
 	// Perform replacement
 	var updated string
 	if in.ReplaceAll {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.ReplaceAll")
-		updated = strings.ReplaceAll(content, in.OldString, in.NewString)
+		updated = strings.ReplaceAll(content, match.OldString, match.NewString)
 	} else {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "else: in.ReplaceAll")
-		updated = strings.Replace(content, in.OldString, in.NewString, 1)
+		updated = strings.Replace(content, match.OldString, match.NewString, 1)
 	}
 
-	display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, in.ReplaceAll, 3)
+	if updated == content {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: updated == content")
+		return tool.InvokeResult{}, fmt.Errorf("no changes to make: old_string and new_string produce identical file content")
+	}
+
+	display := util.GenerateEditDiff(content, match.OldString, match.NewString, in.FilePath, in.ReplaceAll, 3)
 
 	timestamp, err := tool.FileTimestamp(filePath)
 	if err != nil {
@@ -301,6 +343,220 @@ func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {
 	}
 	observe.GlobalTrace("return: \"\", fmt.Errorf(\"file does not exist: %s. Make sure the path is correct.\", in....")
 	return "", fmt.Errorf("file does not exist: %s. Make sure the path is correct.", in.FilePath)
+}
+
+type editMatch struct {
+	Found     bool
+	OldString string
+	NewString string
+}
+
+func normalizeNewString(filePath, newString string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if ext == ".md" || ext == ".mdx" {
+		return newString
+	}
+	return stripTrailingWhitespace(newString)
+}
+
+func stripTrailingWhitespace(s string) string {
+	parts := strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' })
+	if len(parts) == 0 && s == "" {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		j := i
+		for j < len(s) && s[j] != '\n' && s[j] != '\r' {
+			j++
+		}
+		b.WriteString(strings.TrimRight(s[i:j], " \t"))
+		if j >= len(s) {
+			break
+		}
+		if s[j] == '\r' && j+1 < len(s) && s[j+1] == '\n' {
+			b.WriteString("\r\n")
+			i = j + 2
+		} else {
+			b.WriteByte(s[j])
+			i = j + 1
+		}
+	}
+	return b.String()
+}
+
+func findEditMatch(content, oldString, newString string) editMatch {
+	if actualOld, ok := findActualString(content, oldString); ok {
+		return editMatch{
+			Found:     true,
+			OldString: actualOld,
+			NewString: preserveQuoteStyle(oldString, actualOld, newString),
+		}
+	}
+
+	desanitizedOld, _ := desanitizeMatchString(oldString)
+	if desanitizedOld != oldString {
+		desanitizedNew, _ := desanitizeMatchString(newString)
+		if actualOld, ok := findActualString(content, desanitizedOld); ok {
+			return editMatch{
+				Found:     true,
+				OldString: actualOld,
+				NewString: preserveQuoteStyle(desanitizedOld, actualOld, desanitizedNew),
+			}
+		}
+	}
+
+	return editMatch{}
+}
+
+func findActualString(content, search string) (string, bool) {
+	if strings.Contains(content, search) {
+		return search, true
+	}
+
+	normalizedContent := normalizeQuotes(content)
+	normalizedSearch := normalizeQuotes(search)
+	if !strings.Contains(normalizedContent, normalizedSearch) {
+		return "", false
+	}
+	contentRunes := []rune(content)
+	searchLen := len([]rune(search))
+	if searchLen == 0 || searchLen > len(contentRunes) {
+		return "", false
+	}
+	for i := 0; i+searchLen <= len(contentRunes); i++ {
+		candidate := string(contentRunes[i : i+searchLen])
+		if normalizeQuotes(candidate) == normalizedSearch {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func normalizeQuotes(s string) string {
+	r := strings.NewReplacer(
+		leftSingleCurlyQuote, "'",
+		rightSingleCurlyQuote, "'",
+		leftDoubleCurlyQuote, "\"",
+		rightDoubleCurlyQuote, "\"",
+	)
+	return r.Replace(s)
+}
+
+func desanitizeMatchString(s string) (string, []stringReplacement) {
+	out := s
+	applied := make([]stringReplacement, 0)
+	for _, replacement := range desanitizations {
+		next := strings.ReplaceAll(out, replacement.from, replacement.to)
+		if next != out {
+			applied = append(applied, replacement)
+			out = next
+		}
+	}
+	return out, applied
+}
+
+func preserveQuoteStyle(oldString, actualOldString, newString string) string {
+	if oldString == actualOldString {
+		return newString
+	}
+	hasDoubleQuotes := strings.Contains(actualOldString, leftDoubleCurlyQuote) || strings.Contains(actualOldString, rightDoubleCurlyQuote)
+	hasSingleQuotes := strings.Contains(actualOldString, leftSingleCurlyQuote) || strings.Contains(actualOldString, rightSingleCurlyQuote)
+	if !hasDoubleQuotes && !hasSingleQuotes {
+		return newString
+	}
+	if hasDoubleQuotes {
+		newString = applyCurlyDoubleQuotes(newString)
+	}
+	if hasSingleQuotes {
+		newString = applyCurlySingleQuotes(newString)
+	}
+	return newString
+}
+
+func applyCurlyDoubleQuotes(s string) string {
+	runes := []rune(s)
+	var b strings.Builder
+	for i, r := range runes {
+		if r == '"' {
+			if isOpeningQuoteContext(runes, i) {
+				b.WriteString(leftDoubleCurlyQuote)
+			} else {
+				b.WriteString(rightDoubleCurlyQuote)
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func applyCurlySingleQuotes(s string) string {
+	runes := []rune(s)
+	var b strings.Builder
+	for i, r := range runes {
+		if r == '\'' {
+			if i > 0 && i < len(runes)-1 && unicode.IsLetter(runes[i-1]) && unicode.IsLetter(runes[i+1]) {
+				b.WriteString(rightSingleCurlyQuote)
+			} else if isOpeningQuoteContext(runes, i) {
+				b.WriteString(leftSingleCurlyQuote)
+			} else {
+				b.WriteString(rightSingleCurlyQuote)
+			}
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func isOpeningQuoteContext(runes []rune, index int) bool {
+	if index == 0 {
+		return true
+	}
+	switch runes[index-1] {
+	case ' ', '\t', '\n', '\r', '(', '[', '{', '—', '–':
+		return true
+	default:
+		return false
+	}
+}
+
+func findRetryCandidate(content, oldString string) string {
+	oldLines := strings.Split(oldString, "\n")
+	lineCount := len(oldLines)
+	if lineCount == 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if lineCount > len(lines) {
+		return ""
+	}
+
+	normalizedOld := normalizeEditWhitespace(oldString)
+	candidates := make([]string, 0, 2)
+	for i := 0; i+lineCount <= len(lines); i++ {
+		candidate := strings.Join(lines[i:i+lineCount], "\n")
+		if normalizeEditWhitespace(candidate) == normalizedOld {
+			candidates = append(candidates, candidate)
+			if len(candidates) > 1 {
+				return ""
+			}
+		}
+	}
+	if len(candidates) != 1 {
+		return ""
+	}
+
+	return "\nRetry with this exact old_string:\n```\n" + candidates[0] + "\n```"
+}
+
+func normalizeEditWhitespace(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.Join(strings.Fields(line), " ")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 // findNearestContext searches for the first line of old_string in the file
