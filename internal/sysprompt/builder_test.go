@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestBuild_FullPrompt(t *testing.T) {
@@ -102,4 +104,40 @@ func TestBuild_StaticBlockOrder(t *testing.T) {
 			t.Errorf("block %d should be %s (expected %q)", c.idx, c.name, c.contains)
 		}
 	}
+}
+
+func TestBuild_StaticPromptDoesNotAdvertiseSpecificToolNames(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	builder := New(dir, "test-model", nil)
+	prompt := builder.Build()
+
+	text := systemTextForTest(prompt)
+	for _, name := range []string{
+		"Bash",
+		"Read",
+		"Edit",
+		"Write",
+		"Glob",
+		"Grep",
+		"Agent",
+		"LifecycleRun",
+		"TaskCreate",
+		"AskUserQuestion",
+		"Skill",
+	} {
+		if strings.Contains(text, name) {
+			t.Fatalf("static prompt leaked tool name %q", name)
+		}
+	}
+}
+
+func systemTextForTest(prompt model.SystemPrompt) string {
+	var b strings.Builder
+	for _, block := range prompt.Blocks {
+		b.WriteString(block.Text)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }

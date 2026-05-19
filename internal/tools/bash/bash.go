@@ -68,15 +68,7 @@ const bashDescription = `Executes a given bash command and returns its output.
 
 The working directory persists between commands, but shell state does not. The shell environment is initialized from the user's profile (bash or zsh).
 
-IMPORTANT: Avoid using this tool to run ` + "`find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo`" + ` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user:
-
- - File search: Use Glob (NOT find or ls)
- - Content search: Use Grep (NOT grep or rg)
- - Read files: Use Read (NOT cat/head/tail)
- - Edit files: Use Edit (NOT sed/awk)
- - Write files: Use Write (NOT echo >/cat <<EOF)
- - Communication: Output text directly (NOT echo/printf)
-While the Bash tool can do similar things, it's better to use the built-in tools as they provide a better user experience and make it easier to review tool calls and give permission.
+IMPORTANT: Avoid using this tool for file discovery, content search, file reading, or file editing when the active tool list includes a more specific dedicated tool. Dedicated tools provide a better user experience and make it easier to review calls and permissions. For communication, output text directly instead of using shell output commands.
 
 # Instructions
  - If your command will create new directories or files, first use this tool to run ` + "`ls`" + ` to verify the parent directory exists and is the correct location.
@@ -86,8 +78,8 @@ While the Bash tool can do similar things, it's better to use the built-in tools
  - You can use the ` + "`run_in_background`" + ` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later. You do not need to check the output right away - you'll be notified when it finishes. You do not need to use '&' at the end of the command when using this parameter.
  - Write a clear, concise description of what your command does. For simple commands, keep it brief (5-10 words). For complex commands (piped commands, obscure flags, or anything hard to understand at a glance), include enough context so that the user can understand what your command will do.
  - When issuing multiple commands:
-  - If the commands are independent and can run in parallel, make multiple Bash tool calls in a single message.
-  - If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together.
+  - If the commands are independent and can run in parallel, make multiple shell tool calls in a single message.
+  - If the commands depend on each other and must run sequentially, use a single shell call with '&&' to chain them together.
   - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail.
   - DO NOT use newlines to separate commands (newlines are ok in quoted strings).
  - For git commands:
@@ -131,7 +123,7 @@ Git Safety Protocol:
 
 Important notes:
 - NEVER run additional commands to read or explore code, besides git bash commands
-- NEVER use the TodoWrite or Agent tools
+- Do not switch to unrelated task-management or delegation tools during commit preparation
 - DO NOT push to the remote repository unless the user explicitly asks you to do so
 - IMPORTANT: Never use git commands with the -i flag (like git rebase -i or git add -i) since they require interactive input which is not supported.
 - If there are no changes to commit, do not create an empty commit
@@ -144,7 +136,7 @@ git commit -m "$(cat <<'EOF'
 </example>
 
 # Creating pull requests
-Use the gh command via the Bash tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a Github URL use the gh command to get the information needed.
+Use the gh command through shell execution for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a Github URL use the gh command to get the information needed.
 
 IMPORTANT: When the user asks you to create a pull request, follow these steps carefully:
 
@@ -172,7 +164,7 @@ EOF
 </example>
 
 Important:
-- DO NOT use the TodoWrite or Agent tools
+- Do not switch to unrelated task-management or delegation tools while creating the pull request
 - Return the PR URL when you're done, so the user can see it
 
 # Other common operations

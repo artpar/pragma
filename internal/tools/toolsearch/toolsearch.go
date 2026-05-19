@@ -14,7 +14,7 @@ import (
 )
 
 type toolSearchInput struct {
-	Query      string `json:"query" desc:"Search query — use 'select:Name1,Name2' for exact match, or keywords for fuzzy search"`
+	Query      string `json:"query" desc:"Search query — use 'select:<tool-name>,<tool-name>' for exact match, or keywords for fuzzy search"`
 	MaxResults int    `json:"max_results" desc:"Maximum results to return (default 5)"`
 }
 
@@ -25,7 +25,7 @@ var inputSchema = json.RawMessage(`{
 	"properties": {
 		"query": {
 			"type": "string",
-			"description": "Search query. Use 'select:Name1,Name2' for direct selection, '+keyword' for required terms, or plain keywords for fuzzy search."
+			"description": "Search query. Use 'select:<tool-name>,<tool-name>' for direct selection, '+keyword' for required terms, or plain keywords for fuzzy search."
 		},
 		"max_results": {
 			"type": "integer",
@@ -75,7 +75,7 @@ Deferred tools appear by name in <system-reminder> messages. Until fetched, only
 Result format: each matched tool appears as one <function>{"description": "...", "name": "...", "parameters": {...}}</function> line inside the <functions> block — the same encoding as the tool list at the top of this prompt.
 
 Query forms:
-- "select:Read,Edit,Grep" — fetch these exact tools by name
+- "select:<tool-name>,<tool-name>" — fetch exact tools by name
 - "notebook jupyter" — keyword search, up to max_results best matches
 - "+slack send" — require "slack" in the name, rank by remaining terms`
 

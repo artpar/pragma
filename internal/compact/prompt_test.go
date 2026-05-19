@@ -23,6 +23,11 @@ func TestCompactPrompt(t *testing.T) {
 		if strings.Contains(prompt, "Additional Instructions") {
 			t.Error("should not contain Additional Instructions without custom input")
 		}
+		for _, name := range []string{"Bash", "Read", "Edit", "Write", "Glob", "Grep"} {
+			if strings.Contains(prompt, name) {
+				t.Fatalf("compact prompt leaked tool name %q", name)
+			}
+		}
 	})
 
 	t.Run("with custom instructions", func(t *testing.T) {

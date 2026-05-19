@@ -42,7 +42,7 @@ How this works:
 - This tool does NOT take the plan content as a parameter — it reads the plan from the file
 - The user will see the contents of your plan file when they review it
 
-Important: Do NOT use AskUserQuestion to ask "Is this plan okay?" or "Should I proceed?" — that's exactly what THIS tool does.`
+Important: Do not ask the user "Is this plan okay?" or "Should I proceed?" with another tool — that's exactly what this tool does.`
 
 func (t *ExitTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")

@@ -72,13 +72,13 @@ that benefit from parallel work.
 
 # Workflow
 1. Create team (this tool)
-2. Create tasks via TaskCreate for the team's work items
-3. Spawn teammates via Agent tool to work on tasks
-4. Monitor progress via TaskList/TaskGet
-5. When done, use TeamDelete to clean up
+2. Create tasks for the team's work items
+3. Spawn teammates to work on tasks
+4. Monitor progress with available task-status tools
+5. When done, use the available cleanup tool
 
 # Notes
-- Team = TaskList (1:1 correspondence)
+- Team maps to one task list
 - Each team has a lead agent (you) and zero or more teammates
 - Teammates go idle between turns — this is normal, not an error
 - Task list coordination: check periodically, claim tasks via TaskUpdate

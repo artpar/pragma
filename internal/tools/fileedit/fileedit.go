@@ -103,8 +103,8 @@ func (t *Tool) Description() string {
 const editDescription = `Performs exact string replacements in files.
 
 Usage:
-- You must use your Read tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the → arrow. The line number prefix format is: spaces + line number + →. Everything after the → is the actual file content to match. Never include the line number or → in old_string or new_string.
+- You must use an available file-reading capability at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- When editing text from file-read output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the → arrow. The line number prefix format is: spaces + line number + →. Everything after the → is the actual file content to match. Never include the line number or → in old_string or new_string.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
 - The edit will FAIL if ` + "`old_string`" + ` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use ` + "`replace_all`" + ` to change every instance of ` + "`old_string`" + `.

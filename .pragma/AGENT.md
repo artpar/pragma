@@ -8,9 +8,9 @@ Agentic coding assistant CLI. Provider-agnostic: works with Anthropic, Google Ge
 - `internal/provider/` — Provider interface + adapters: anthropic, google, openai, groq, lilac, replay
 - `internal/query/` — engine loop, orchestrator, streaming, error classification, compaction
 - `internal/tool/` — Tool interface, orchestrator, permission checking
-- `internal/tools/` — tool implementations: each in own package (agent, bash, edit, grep, glob, read, write, lifecycle, mcp, skill, lsp, cron, etc.)
+- `internal/tools/` — tool implementations, each in its own package
 - `internal/tui/` — bubbletea TUI: input, viewport, dialogs, renderers
-- `internal/lifecycle/` — graph executor for structured workflows (LifecycleRun)
+- `internal/lifecycle/` — graph executor for structured workflows
 - `internal/lifecycle/bridge/` — LLM→graph compilation
 - `internal/sysprompt/` — system prompt builder: static blocks + AGENT.md + skills + env
 - `internal/config/` — settings, credentials, paths

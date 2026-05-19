@@ -48,7 +48,7 @@ var inputSchema = json.RawMessage(`{
 		},
 		"tool_name": {
 			"type": "string",
-			"description": "Filter tool events by tool name (e.g. Read, Bash, LifecycleRun)"
+			"description": "Filter tool events by exact tool name"
 		},
 		"since": {
 			"type": "string",

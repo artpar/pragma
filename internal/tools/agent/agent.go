@@ -113,22 +113,22 @@ func (t *Tool) Description() string {
 
 const agentDescription = `Launch a new agent to handle complex, multi-step tasks autonomously.
 
-The Agent tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
+This tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
 
-When using the Agent tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.
+When using this tool, specify a subagent_type parameter to select which agent type to use. If omitted, the general-purpose agent is used.
 
-## When to use Agent
+## When to use this tool
 
-Use Agent when work benefits from autonomous exploration, parallel execution, or isolated context:
+Use this tool when work benefits from autonomous exploration, parallel execution, or isolated context:
 - **Multi-file investigation**: understanding how a feature works across the codebase, tracing call chains, reading 5+ files to build understanding
 - **Parallel subtasks**: launch multiple agents concurrently for independent pieces of work (e.g., "fix tests in pkg A" + "fix tests in pkg B" + "update docs")
 - **Research and analysis**: exploring unfamiliar code, finding all usages of a pattern, auditing for issues across the codebase
 - **Isolated changes**: use worktree isolation for risky refactors that might need to be discarded
 - **Delegated implementation**: when you have a clear task specification and want autonomous execution without consuming main context
 
-When NOT to use Agent:
-- For reading a specific known file — use Read directly
-- For a single targeted search — use Grep or Glob directly
+When NOT to use this tool:
+- For reading a specific known file — use an available file-reading capability directly
+- For a single targeted search — use an available search capability directly
 
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do
@@ -136,11 +136,11 @@ Usage notes:
 - When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.
 - You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will be automatically notified when it completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.
 - **Foreground vs background**: Use foreground (default) when you need the agent's results before you can proceed — e.g., research agents whose findings inform your next steps. Use background when you have genuinely independent work to do in parallel.
-- To continue a previously spawned agent, use SendMessage with the agent's ID or name as the ` + "`to`" + ` field. The agent resumes with its full context preserved. Each Agent invocation starts fresh — provide a complete task description.
+- To continue a previously spawned agent, use the available follow-up messaging capability with the agent's ID or name. The agent resumes with its full context preserved. Each invocation starts fresh — provide a complete task description.
 - Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need.
 - The agent's outputs should generally be trusted
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
-- If the user specifies that they want you to run agents "in parallel", you MUST send a single message with multiple Agent tool use content blocks.
+- If the user specifies that they want you to run agents "in parallel", you MUST send a single message with multiple tool-use content blocks.
 - You can optionally set ` + "`isolation: \"worktree\"`" + ` to run the agent in a temporary git worktree, giving it an isolated copy of the repository. The worktree is automatically cleaned up if the agent makes no changes; if changes are made, the worktree path and branch are returned in the result.
 
 ## Writing the prompt

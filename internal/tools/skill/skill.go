@@ -75,7 +75,7 @@ How to invoke:
 
 Important:
 - Available skills are listed in system-reminder messages in the conversation
-- When a skill matches the user's request, invoke the relevant Skill tool BEFORE generating any other response about the task
+- When a skill matches the user's request, invoke this tool BEFORE generating any other response about the task
 - Do not invoke a skill that is already running`
 
 func (t *Tool) InputSchema() json.RawMessage {

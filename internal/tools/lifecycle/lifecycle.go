@@ -46,7 +46,7 @@ var inputSchema = json.RawMessage(`{
 
 const toolDescription = `Execute a task using a structured workflow with build-test-fix loops, evaluation gates, or multi-perspective analysis. PREFERRED for any multi-step implementation task.
 
-Use LifecycleRun for:
+Use this tool for:
 - Building projects or features: "implement each component, compile after each, fix errors, then run tests and fix until passing"
 - Any task with more than 3 tool calls: wrap it in a lifecycle so errors get caught and retried automatically
 - Retry with reflection: "fix the code, run tests, if tests fail reflect on what went wrong and retry up to 3 times"

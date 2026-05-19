@@ -82,7 +82,7 @@ func (b *Builder) buildSkillBlock() (model.SystemBlock, bool) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("The following skills are available for use with the Skill tool:\n\n")
+	sb.WriteString("The following user-invocable skills are available when the active tool list includes skill execution:\n\n")
 	for _, s := range skills {
 		observe.GlobalTrace("range skills")
 		line := fmt.Sprintf("- %s", s.Name)

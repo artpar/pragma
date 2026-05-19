@@ -103,7 +103,7 @@ const psDescription = `Executes a PowerShell command and returns its output.
 PowerShell Core (pwsh) is cross-platform and available on macOS, Linux, and Windows. On Windows, falls back to Windows PowerShell 5.1 if pwsh is not installed.
 
 # Important Notes
- - Use dedicated tools (Glob, Grep, Read, Edit, Write) instead of PowerShell equivalents when possible.
+ - Use dedicated tools instead of PowerShell equivalents when the active tool list includes a better fit.
  - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). Default is 120000ms (2 minutes).
  - Write a clear, concise description of what your command does.
 
@@ -118,7 +118,7 @@ PowerShell Core (pwsh) is cross-platform and available on macOS, Linux, and Wind
 # Avoid
  - Do NOT use interactive cmdlets: Read-Host, Get-Credential, Out-GridView, Show-Command
  - Do NOT use Start-Sleep for delays >= 2 seconds. If you need to wait, explain why.
- - Do NOT use PowerShell equivalents of dedicated tools (e.g., Select-String instead of Grep)`
+ - Do NOT use PowerShell equivalents of dedicated tools when an active dedicated tool can do the job.`
 
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")

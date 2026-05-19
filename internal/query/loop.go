@@ -745,17 +745,14 @@ When calling any real tool, call PatchHandoffState and that real tool in the sam
 If no durable task state changed yet, still call PatchHandoffState first with a minimal current_focus, next_action, or latest_tool_result_interpretation update explaining what you are about to do.
 PatchHandoffState accepts arbitrary JSON paths and fields. Use whatever structure best preserves progress for the next turn.
 
-Example patch-first response after reading files:
+Example patch-first response before the next available real tool call:
 PatchHandoffState({"ops":[
-  {"op":"replace","path":"/latest_tool_result_interpretation","value":"Read internal/query/loop.go and found the state-handoff prompt builder."},
-  {"op":"add","path":"/files/read/-","value":"internal/query/loop.go"},
-  {"op":"add","path":"/recent_actions/-","value":"Read internal/query/loop.go"},
-  {"op":"add","path":"/todos/-","value":{"id":"inspect-query-loop","task":"Inspect query loop state-handoff request construction","status":"completed"}},
-  {"op":"add","path":"/todos/-","value":{"id":"update-prompt","task":"Update the state-handoff protocol text","status":"in_progress"}},
-  {"op":"replace","path":"/current_focus","value":"Update the handoff prompt requirements."},
-  {"op":"replace","path":"/next_action","value":"Edit the state-handoff protocol text."}
+  {"op":"replace","path":"/latest_tool_result_interpretation","value":"Interpreted the latest concrete result and identified the next distinct action."},
+  {"op":"add","path":"/recent_actions/-","value":"Recorded the latest result interpretation."},
+  {"op":"replace","path":"/current_focus","value":"Continue the user's task with the available tools."},
+  {"op":"replace","path":"/next_action","value":"Call the next available real tool needed for the task."}
 ]})
-Edit(...)
+<next_available_tool_call>
 
 current_handoff_state:
 ` + state.PrettyJSON()

@@ -40,7 +40,7 @@ var inputSchema = json.RawMessage(`{
 				"properties": {
 					"tool": {
 						"type": "string",
-						"description": "Name of the tool to invoke (Read, Write, Edit, Glob, Grep, Bash, NotebookEdit, Agent)"
+						"description": "Name of the available primitive tool to invoke"
 					},
 					"input": {
 						"type": "object",
@@ -76,9 +76,8 @@ func (t *Tool) Description() string {
 
 const replDescription = `Execute one or more primitive tool operations in sequence.
 
-When REPL mode is enabled, individual tools (Read, Write, Edit, Glob, Grep, Bash,
-NotebookEdit, Agent) are batched through this interface. Each operation specifies
-a tool name and its input parameters.
+When REPL mode is enabled, individual primitive tools are batched through this
+interface. Each operation specifies a tool name and its input parameters.
 
 Operations execute sequentially. If one fails, subsequent operations still execute.
 Results are returned as a combined output with separators between each operation.`
