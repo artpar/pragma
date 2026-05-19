@@ -32,6 +32,7 @@ Thumbs.db
 todo-app/
 
 # Runtime artifacts
+.claude/
 .gogent/
 pragma-recording.jsonl
 stress-test/
