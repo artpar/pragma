@@ -88,6 +88,37 @@ func TestFileWriteTool_UpdateExistingFile(t *testing.T) {
 	}
 }
 
+func TestFileWriteToolPatchModeRejectsExistingFileUpdate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "existing.txt")
+	os.WriteFile(path, []byte("old content"), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{PatchMode: true}
+	input, _ := json.Marshal(FileWriteInput{FilePath: path, Content: "new content"})
+
+	_, err := tool.Invoke(context.Background(), input, state)
+	if err == nil {
+		t.Fatal("expected patch mode to reject existing file update")
+	}
+	if !strings.Contains(err.Error(), "use apply_patch") {
+		t.Fatalf("error = %v, want apply_patch guidance", err)
+	}
+}
+
+func TestFileWriteToolPatchModeAllowsNewFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "new.txt")
+
+	tool := &Tool{PatchMode: true}
+	input, _ := json.Marshal(FileWriteInput{FilePath: path, Content: "hello world"})
+
+	if _, err := tool.Invoke(context.Background(), input, newTestState(dir)); err != nil {
+		t.Fatalf("new file write should be allowed: %v", err)
+	}
+}
+
 func TestFileWriteTool_CreateParentDirs(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a", "b", "c", "file.txt")

@@ -131,6 +131,35 @@ package main
 	}
 }
 
+func TestApplyPatchAcceptsBlankContextLines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("package main\n\nfunc main() {\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	patch := `*** Begin Patch
+*** Update File: main.go
+@@
+ package main
+
+ func main() {
+-}
++	println("ok")
++}
+*** End Patch`
+
+	if _, err := ApplyPatchText(context.Background(), patch, dir, testState{workDir: dir}); err != nil {
+		t.Fatalf("ApplyPatchText: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `println("ok")`) {
+		t.Fatalf("patched content = %q", string(data))
+	}
+}
+
 func TestToolInvokeRequiresPatchJSON(t *testing.T) {
 	dir := t.TempDir()
 	input, _ := json.Marshal(Input{Patch: `*** Begin Patch

@@ -37,7 +37,9 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the FileWrite tool.
-type Tool struct{}
+type Tool struct {
+	PatchMode bool
+}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -58,6 +60,7 @@ const writeDescription = `Writes a file to the local filesystem.
 Usage:
 - This tool will overwrite the existing file if there is one at the provided path.
 - If this is an existing file, you MUST use an available file-reading capability first to read the file's contents. This tool will fail if you did not read the file first.
+- When apply_patch is available, use apply_patch for updates to existing source files. Use Write for creating new files or complete rewrites only when explicitly necessary.
 - Prefer an available edit capability for modifying existing files when possible — it only sends the diff. Only use this tool to create new files or for complete rewrites.
 - NEVER create documentation files (*.md) or README files unless explicitly requested by the User.
 - Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.`
@@ -109,6 +112,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	_, err := os.Stat(filePath)
 	isCreate := os.IsNotExist(err)
+	if t.PatchMode && !isCreate {
+		return tool.InvokeResult{}, fmt.Errorf("Write rejected: use apply_patch for updates to existing files when apply_patch is available. Keep Write for new files or explicitly requested full rewrites")
+	}
 
 	// Capture old content before overwriting (needed for diff generation)
 	var oldContent string

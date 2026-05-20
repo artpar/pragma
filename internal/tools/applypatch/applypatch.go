@@ -254,7 +254,10 @@ func Parse(input string) (Patch, error) {
 					continue
 				}
 				if raw == "" {
-					return Patch{}, malformedUpdateLine(path, i+1, raw)
+					chunk.Old = append(chunk.Old, "")
+					chunk.New = append(chunk.New, "")
+					i++
+					continue
 				}
 				switch raw[0] {
 				case ' ':

@@ -255,7 +255,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolfileread.Tool{},
 		&toolapplypatch.Tool{},
 		&toolapplypatch.LegacyTool{},
-		&toolfilewrite.Tool{},
+		&toolfilewrite.Tool{PatchMode: patchModeActive(d)},
 		&toolfileedit.Tool{PatchMode: patchModeActive(d)},
 		&toolbash.Tool{PatchMode: patchModeActive(d)},
 		&toolnotebookedit.Tool{},
