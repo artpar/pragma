@@ -442,13 +442,20 @@ func persistToolResult(content, toolUseID, sessionID string) (string, error) {
 
 // PersistedOutputPath returns the session-local persisted tool-result path for a tool call.
 func PersistedOutputPath(sessionID, toolUseID string) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if sessionID == "" {
+		observe.GlobalTrace("if: sessionID == \"\"")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"session id is required\")")
 		return "", fmt.Errorf("session id is required")
 	}
 	sessionsDir, err := config.SessionsDir()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
+	observe.GlobalTrace("return: filepath.Join(sessionsDir, sessionID, \"tool-results\", safeToolUseID(toolUseID...")
 	return filepath.Join(sessionsDir, sessionID, "tool-results", safeToolUseID(toolUseID)+".txt"), nil
 }
 
@@ -475,6 +482,7 @@ func isContentAlreadyCompacted(content string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: strings.HasPrefix(content, PersistedOutputTag)")
+	observe.GlobalTrace("return: strings.HasPrefix(content, PersistedOutputTag) || strings.HasPrefix(content, ...")
 	return strings.HasPrefix(content, PersistedOutputTag) || strings.HasPrefix(content, "<persisted-output ")
 }
 

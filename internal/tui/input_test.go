@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestInputComponentAlwaysActive(t *testing.T) {
@@ -90,6 +92,104 @@ func TestInputComponentPromptHistoryLimit(t *testing.T) {
 	}
 	if len(ic.history) != inputHistoryLimit {
 		t.Fatalf("history len = %d, want %d", len(ic.history), inputHistoryLimit)
+	}
+}
+
+func TestInputComponentSetHistory(t *testing.T) {
+	ic := newInputComponent()
+	ic.SetHistory([]string{"prior prompt 1", "prior prompt 2"})
+
+	// Verify history is populated
+	if len(ic.history) != 2 {
+		t.Fatalf("history len = %d, want 2", len(ic.history))
+	}
+
+	// Navigate up should show prior prompt 2
+	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := ic.textarea.Value(); got != "prior prompt 2" {
+		t.Fatalf("first up = %q, want prior prompt 2", got)
+	}
+
+	// Navigate up again should show prior prompt 1
+	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := ic.textarea.Value(); got != "prior prompt 1" {
+		t.Fatalf("second up = %q, want prior prompt 1", got)
+	}
+}
+
+func TestInputComponentSetHistoryThenNewPrompts(t *testing.T) {
+	ic := newInputComponent()
+	ic.SetHistory([]string{"prior prompt"})
+
+	// Add a new prompt in this session
+	ic.textarea.SetValue("new prompt")
+	ic.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Up should show new prompt first
+	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := ic.textarea.Value(); got != "new prompt" {
+		t.Fatalf("up after new prompt = %q, want new prompt", got)
+	}
+
+	// Up again should show prior prompt
+	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := ic.textarea.Value(); got != "prior prompt" {
+		t.Fatalf("up again = %q, want prior prompt", got)
+	}
+}
+
+func TestExtractUserPrompts(t *testing.T) {
+	msgs := []model.Message{
+		{
+			Role: model.RoleUser,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "first user prompt"},
+			},
+		},
+		{
+			Role: model.RoleAssistant,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "assistant response"},
+			},
+		},
+		{
+			Role: model.RoleUser,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "second user prompt"},
+			},
+		},
+	}
+
+	prompts := extractUserPrompts(msgs)
+	if len(prompts) != 2 {
+		t.Fatalf("prompts len = %d, want 2", len(prompts))
+	}
+	if prompts[0] != "first user prompt" {
+		t.Fatalf("prompts[0] = %q, want first user prompt", prompts[0])
+	}
+	if prompts[1] != "second user prompt" {
+		t.Fatalf("prompts[1] = %q, want second user prompt", prompts[1])
+	}
+}
+
+func TestExtractUserPromptsIgnoresNonText(t *testing.T) {
+	// Image parts should be ignored for history
+	msgs := []model.Message{
+		{
+			Role: model.RoleUser,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "prompt with image"},
+				model.ImagePart{MimeType: "image/png", Data: []byte("pngdata")},
+			},
+		},
+	}
+
+	prompts := extractUserPrompts(msgs)
+	if len(prompts) != 1 {
+		t.Fatalf("prompts len = %d, want 1", len(prompts))
+	}
+	if prompts[0] != "prompt with image" {
+		t.Fatalf("prompts[0] = %q, want prompt with image", prompts[0])
 	}
 }
 

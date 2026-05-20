@@ -213,6 +213,16 @@ func (c *inputComponent) SetQueued(queued bool) {
 	}
 }
 
+// SetHistory replaces the navigation history with the given entries.
+// Used when opening or resuming a conversation to include prior user prompts.
+func (c *inputComponent) SetHistory(prompts []string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	c.history = prompts
+	c.historyIndex = -1
+	c.historyDraft = ""
+}
+
 // Reset clears the input value and refocuses.
 func (c *inputComponent) Reset() {
 	observe.GlobalTrace("enter")

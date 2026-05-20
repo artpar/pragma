@@ -94,6 +94,7 @@ class AgentIdeRuntime(private val project: Project) : AgentIdePort {
             "taskFamilies" to listOf("files", "editor", "documents", "text_search", "semantic_psi_when_native", "run_configurations", "executions", "actions", "plugins", "debug_breakpoints", "reflection_escape_hatch"),
             "unsupportedFallbacks" to listOf("shell", "external_lsp", "filesystem_tools"),
             "semanticPolicy" to "Semantic tools return native_psi_unavailable when the IDE reports non-semantic PSI such as TextMate.",
+            "editSafetyPolicy" to "replace and replaceOffsets require expectedText or oldText matching the current document range before mutation.",
             "pluginPolicy" to "Plugin load/unload/install/uninstall calls use IntelliJ plugin APIs and report restart_required when the platform cannot apply the change dynamically.",
             "runConfigurationPolicy" to "Run/build/test/debug work should use ide.run.* tools. ActionManager.tryToExecute is only a scheduled UI-action fallback.",
             "reflectiveEscapeHatch" to listOf(
@@ -1440,8 +1441,10 @@ class AgentIdeRuntime(private val project: Project) : AgentIdePort {
         val end = doc.offsetAt(args.intArg("endLine", 1), args.intArg("endColumn", 1), clamp)
             ?: return ideError("invalid_position", "Replacement end is outside the document. Pass clamp:true to clamp to the nearest valid offset.")
         if (end < start) return ideError("invalid_position", "Replacement range end is before start.")
+        val current = doc.charsSequence.subSequence(start, end).toString()
+        validateReplacementExpectedText(args, current)?.let { return it }
         runWrite { doc.replaceString(start, end, args.stringArg("text")) }
-        return ideOk("Replaced text.", data = mapOf("startOffset" to start, "endOffset" to end, "lineCount" to doc.lineCount))
+        return ideOk("Replaced text.", data = mapOf("startOffset" to start, "endOffset" to end, "lineCount" to doc.lineCount, "replacedLength" to current.length))
     }
 
     private fun replaceOffsetsInDocument(doc: Document, args: JsonObject): Map<String, Any?> {
@@ -1451,8 +1454,10 @@ class AgentIdeRuntime(private val project: Project) : AgentIdePort {
             return ideError("invalid_position", "Replacement offsets must be within 0..${doc.textLength}.")
         }
         if (end < start) return ideError("invalid_position", "Replacement range end is before start.")
+        val current = doc.charsSequence.subSequence(start, end).toString()
+        validateReplacementExpectedText(args, current)?.let { return it }
         runWrite { doc.replaceString(start, end, args.stringArg("text")) }
-        return ideOk("Replaced text.", data = mapOf("startOffset" to start, "endOffset" to end, "lineCount" to doc.lineCount))
+        return ideOk("Replaced text.", data = mapOf("startOffset" to start, "endOffset" to end, "lineCount" to doc.lineCount, "replacedLength" to current.length))
     }
 
     private fun appendToFile(file: VirtualFile, text: String): Map<String, Any?> {
@@ -1731,7 +1736,7 @@ class AgentIdeRuntime(private val project: Project) : AgentIdePort {
                     AgentMethod("read", "read(): DocumentText", readOnly = true),
                     AgentMethod("openEditor", "openEditor(): Editor", readOnly = false),
                     AgentMethod("search", "search(query: string, limit?: int): SearchResult", readOnly = true),
-                    AgentMethod("replace", "replace(startLine,startColumn,endLine,endColumn,text): EditResult", readOnly = false),
+                    AgentMethod("replace", "replace(startLine,startColumn,endLine,endColumn,text,expectedText): EditResult", readOnly = false),
                     AgentMethod("append", "append(text: string): EditResult", readOnly = false),
                     AgentMethod("delete", "delete(): DeleteResult", readOnly = false, destructive = true),
                     AgentMethod("diagnostics", "diagnostics(): DiagnosticList", readOnly = true),
@@ -1751,8 +1756,8 @@ class AgentIdeRuntime(private val project: Project) : AgentIdePort {
             )
             "Document" -> listOf(
                 AgentMethod("text", "text(): string", readOnly = true),
-                AgentMethod("replace", "replace(startLine,startColumn,endLine,endColumn,text,clamp?:boolean): EditResult", readOnly = false),
-                AgentMethod("replaceOffsets", "replaceOffsets(startOffset,endOffset,text): EditResult", readOnly = false),
+                AgentMethod("replace", "replace(startLine,startColumn,endLine,endColumn,text,expectedText,clamp?:boolean): EditResult", readOnly = false),
+                AgentMethod("replaceOffsets", "replaceOffsets(startOffset,endOffset,text,expectedText): EditResult", readOnly = false),
                 AgentMethod("append", "append(text: string): EditResult", readOnly = false),
                 AgentMethod("save", "save(): SaveResult", readOnly = false),
                 AgentMethod("lineInfo", "lineInfo(line: int): LineInfo", readOnly = true),

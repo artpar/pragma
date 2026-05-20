@@ -54,6 +54,8 @@ func RenderToolOutput(name string, input json.RawMessage, content string, isErro
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isPersistedOutput(content) {
+		observe.GlobalTrace("if: isPersistedOutput(content)")
+		observe.GlobalTrace("return: renderPersistedOutput(content, isError, width, verbose)")
 		return renderPersistedOutput(content, isError, width, verbose)
 	}
 	if renderer, ok := toolRenderers[name]; ok {
@@ -62,6 +64,8 @@ func RenderToolOutput(name string, input json.RawMessage, content string, isErro
 		return renderer(input, content, isError, width, display, verbose)
 	}
 	if isIDEMCPTool(name) {
+		observe.GlobalTrace("if: isIDEMCPTool(name)")
+		observe.GlobalTrace("return: renderIDEMCPOutput(name, content, isError, width, verbose)")
 		return renderIDEMCPOutput(name, content, isError, width, verbose)
 	}
 	observe.GlobalTrace("return: WrapWithBracket(content, isError, width, verbose)")
@@ -69,6 +73,9 @@ func RenderToolOutput(name string, input json.RawMessage, content string, isErro
 }
 
 func isIDEMCPTool(name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.HasPrefix(name, \"ide.\") ||\n\tstrings.HasPrefix(name, \"com.intellij.\") ...")
 	return strings.HasPrefix(name, "ide.") ||
 		strings.HasPrefix(name, "com.intellij.") ||
 		strings.HasPrefix(name, "java.") ||
@@ -76,6 +83,9 @@ func isIDEMCPTool(name string) bool {
 }
 
 func isPersistedOutput(content string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.HasPrefix(strings.TrimSpace(content), \"<persisted-output\")")
 	return strings.HasPrefix(strings.TrimSpace(content), "<persisted-output")
 }
 
@@ -90,16 +100,23 @@ type mcpEnvelope struct {
 }
 
 func renderIDEMCPOutput(name, content string, isError bool, width int, verbose bool) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var env mcpEnvelope
 	if err := json.Unmarshal([]byte(content), &env); err != nil || env.Result.Summary == "" {
+		observe.GlobalTrace("if: err != nil || env.Result.Summary == \"\"")
+		observe.GlobalTrace("return: WrapWithBracket(content, isError, width, verbose)")
 		return WrapWithBracket(content, isError, width, verbose)
 	}
 
 	status := env.Result.Summary
 	if env.Result.Code != "" && env.Result.Code != "ok" {
+		observe.GlobalTrace("if: env.Result.Code != \"\" && env.Result.Code != \"ok\"")
 		status = env.Result.Code + ": " + status
 	}
 	if isError || !env.Result.OK {
+		observe.GlobalTrace("if: isError || !env.Result.OK")
+		observe.GlobalTrace("return: bracketErr.Render(BracketPrefix) + errBold.Render(truncateLine(status, width-...")
 		return bracketErr.Render(BracketPrefix) + errBold.Render(truncateLine(status, width-len(BracketPrefix)))
 	}
 
@@ -108,43 +125,59 @@ func renderIDEMCPOutput(name, content string, isError bool, width int, verbose b
 	b.WriteString(dimText.Render(truncateLine(status, width-len(BracketPrefix))))
 	b.WriteString("\n")
 	if !verbose {
+		observe.GlobalTrace("if: !verbose")
 		appendExpandHint(&b)
+		observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 		return strings.TrimRight(b.String(), "\n")
 	}
 
 	pretty := prettyJSON(content)
 	for _, line := range strings.Split(pretty, "\n") {
+		observe.GlobalTrace("range strings.Split(pretty, \"\\n\")")
 		b.WriteString(ContentIndent)
 		b.WriteString(truncateLine(line, width-len(ContentIndent)))
 		b.WriteString("\n")
 	}
 	_ = name
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 	return strings.TrimRight(b.String(), "\n")
 }
 
 func prettyJSON(content string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var out bytes.Buffer
 	if err := json.Indent(&out, []byte(content), "", "  "); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: content")
 		return content
 	}
+	observe.GlobalTrace("return: out.String()")
 	return out.String()
 }
 
 func renderPersistedOutput(content string, isError bool, width int, verbose bool) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	if len(lines) == 0 {
+		observe.GlobalTrace("if: len(lines) == 0")
+		observe.GlobalTrace("return: WrapWithBracket(content, isError, width, verbose)")
 		return WrapWithBracket(content, isError, width, verbose)
 	}
 	attrs := persistedAttrs(lines[0])
 	size := attrs["bytes"]
 	if size == "" {
+		observe.GlobalTrace("if: size == \"\"")
 		size = "unknown"
 	} else {
+		observe.GlobalTrace("else: size == \"\"")
 		size += " bytes"
 	}
 	callID := attrs["tool_call_id"]
 	previewBytes := attrs["preview_bytes"]
 	if previewBytes == "" {
+		observe.GlobalTrace("if: previewBytes == \"\"")
 		previewBytes = "2000"
 	}
 
@@ -152,11 +185,13 @@ func renderPersistedOutput(content string, isError bool, width int, verbose bool
 	b.WriteString(bracketDim.Render(BracketPrefix))
 	summary := "Large tool output saved (" + size + ")"
 	if callID != "" {
+		observe.GlobalTrace("if: callID != \"\"")
 		summary += " for " + callID
 	}
 	b.WriteString(dimText.Render(truncateLine(summary, width-len(BracketPrefix))))
 	b.WriteString("\n")
 	if callID != "" {
+		observe.GlobalTrace("if: callID != \"\"")
 		hint := fmt.Sprintf("Use tool_result.read({tool_call_id:%q, offset_bytes:%s})", callID, previewBytes)
 		b.WriteString(ContentIndent)
 		b.WriteString(dimText.Render(truncateLine(hint, width-len(ContentIndent))))
@@ -164,9 +199,12 @@ func renderPersistedOutput(content string, isError bool, width int, verbose bool
 	}
 
 	if verbose {
+		observe.GlobalTrace("if: verbose")
 		inPreview := false
 		for _, line := range lines[1:] {
+			observe.GlobalTrace("range lines[1:]")
 			if strings.HasPrefix(line, "Preview ") {
+				observe.GlobalTrace("if: strings.HasPrefix(line, \"Preview \")")
 				inPreview = true
 				b.WriteString(ContentIndent)
 				b.WriteString(dimText.Render(line))
@@ -174,9 +212,11 @@ func renderPersistedOutput(content string, isError bool, width int, verbose bool
 				continue
 			}
 			if line == "</persisted-output>" {
+				observe.GlobalTrace("if: line == \"</persisted-output>\"")
 				break
 			}
 			if !inPreview || strings.HasPrefix(line, "Output too large") || strings.HasPrefix(line, "Full output saved") {
+				observe.GlobalTrace("if: !inPreview || strings.HasPrefix(line, \"Output too large\") || strings.HasPrefi...")
 				continue
 			}
 			b.WriteString(ContentIndent)
@@ -184,18 +224,25 @@ func renderPersistedOutput(content string, isError bool, width int, verbose bool
 			b.WriteString("\n")
 		}
 	} else {
+		observe.GlobalTrace("else: verbose")
 		appendExpandHint(&b)
 	}
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 	return strings.TrimRight(b.String(), "\n")
 }
 
 func persistedAttrs(header string) map[string]string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := make(map[string]string)
 	for _, match := range persistedAttrRe.FindAllStringSubmatch(header, -1) {
+		observe.GlobalTrace("range persistedAttrRe.FindAllStringSubmatch(header, -1)")
 		if len(match) == 3 {
+			observe.GlobalTrace("if: len(match) == 3")
 			out[match[1]] = match[2]
 		}
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -817,7 +864,11 @@ func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ st
 }
 
 func renderToolResultRead(_ json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if isError {
+		observe.GlobalTrace("if: isError")
+		observe.GlobalTrace("return: WrapWithBracket(content, true, width, verbose)")
 		return WrapWithBracket(content, true, width, verbose)
 	}
 	var out struct {
@@ -828,25 +879,32 @@ func renderToolResultRead(_ json.RawMessage, content string, isError bool, width
 		TotalBytes      int64  `json:"total_bytes"`
 	}
 	if err := json.Unmarshal([]byte(content), &out); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: WrapWithBracket(content, false, width, verbose)")
 		return WrapWithBracket(content, false, width, verbose)
 	}
 	var b strings.Builder
 	summary := fmt.Sprintf("Read persisted output bytes %d-%d of %d", out.OffsetBytes, out.NextOffsetBytes, out.TotalBytes)
 	if out.HasMore {
+		observe.GlobalTrace("if: out.HasMore")
 		summary += "; more available"
 	}
 	b.WriteString(bracketDim.Render(BracketPrefix))
 	b.WriteString(dimText.Render(truncateLine(summary, width-len(BracketPrefix))))
 	b.WriteString("\n")
 	if !verbose {
+		observe.GlobalTrace("if: !verbose")
 		appendExpandHint(&b)
+		observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 		return strings.TrimRight(b.String(), "\n")
 	}
 	for _, line := range strings.Split(out.Content, "\n") {
+		observe.GlobalTrace("range strings.Split(out.Content, \"\\n\")")
 		b.WriteString(ContentIndent)
 		b.WriteString(truncateLine(line, width-len(ContentIndent)))
 		b.WriteString("\n")
 	}
+	observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
 	return strings.TrimRight(b.String(), "\n")
 }
 

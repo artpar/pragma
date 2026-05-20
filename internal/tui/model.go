@@ -1087,6 +1087,7 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 				observe.GlobalTrace("range snap.Conversation.Messages")
 				m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 			}
+			m.input.SetHistory(extractUserPrompts(snap.Conversation.Messages))
 		}
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()

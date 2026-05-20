@@ -144,8 +144,8 @@ Methods:
 - `read()`
 - `openEditor()`
 - `search(query, limit?)`
-- `replace(startLine, startColumn, endLine, endColumn, text, clamp?)`
-- `replaceOffsets(startOffset, endOffset, text)`
+- `replace(startLine, startColumn, endLine, endColumn, text, expectedText, clamp?)`
+- `replaceOffsets(startOffset, endOffset, text, expectedText)`
 - `append(text)`
 - `delete()`
 - `diagnostics()`
@@ -176,12 +176,13 @@ Created by `file.read()`.
 Methods:
 
 - `text()`
-- `replace(startLine, startColumn, endLine, endColumn, text)`
+- `replace(startLine, startColumn, endLine, endColumn, text, expectedText)`
 - `append(text)`
 - `save()`
 - `lineInfo(line)`
 
 Document mutations run through IntelliJ write commands so undo and PSI state remain IDE-native.
+Replacement methods require `expectedText` (or `oldText`) to match the current text in the requested range before the write is applied. If the range is stale or wrong, the call returns `stale_text_range` and leaves the document unchanged.
 
 ### Editor
 
@@ -329,6 +330,7 @@ The response returns `doc1`.
       "startColumn": 1,
       "endLine": 10,
       "endColumn": 20,
+      "expectedText": "val old = current",
       "text": "val next = current"
     }
   }

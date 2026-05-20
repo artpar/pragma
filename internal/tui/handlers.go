@@ -19,6 +19,27 @@ import (
 	"github.com/artpar/pragma/internal/tui/render"
 )
 
+// extractUserPrompts extracts the text of user messages from a conversation.
+// Used to pre-populate input history when opening or resuming a session.
+func extractUserPrompts(messages []model.Message) []string {
+	var prompts []string
+	for _, msg := range messages {
+		if msg.Role != model.RoleUser {
+			continue
+		}
+		var b strings.Builder
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok {
+				b.WriteString(tp.Text)
+			}
+		}
+		if b.Len() > 0 {
+			prompts = append(prompts, b.String())
+		}
+	}
+	return prompts
+}
+
 // handleSlashCommand dispatches a slash command and returns a SlashResultMsg.
 func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
@@ -945,6 +966,7 @@ func (m *Model) loadResumedSession(sessionID string) {
 		observe.GlobalTrace("range sess.Conversation.Messages")
 		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 	}
+	m.input.SetHistory(extractUserPrompts(sess.Conversation.Messages))
 
 	shortID := sessionID
 	if len(shortID) > 8 {

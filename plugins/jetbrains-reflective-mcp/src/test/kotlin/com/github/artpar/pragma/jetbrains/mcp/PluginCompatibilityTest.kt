@@ -1,11 +1,13 @@
 package com.github.artpar.pragma.jetbrains.mcp
 
+import com.google.gson.JsonObject
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PluginCompatibilityTest {
@@ -61,5 +63,20 @@ class PluginCompatibilityTest {
         Files.writeString(ports.resolve("$hash.port"), "99999")
 
         assertEquals(null, readRememberedPort(dir, projectPath))
+    }
+
+    @Test
+    fun `document replacement requires matching expected text`() {
+        val missing = validateReplacementExpectedText(JsonObject(), "current")
+        assertEquals(false, missing?.get("ok"))
+        assertEquals("missing_expected_text", missing?.get("code"))
+
+        val staleArgs = JsonObject().apply { addProperty("expectedText", "old") }
+        val stale = validateReplacementExpectedText(staleArgs, "current")
+        assertEquals(false, stale?.get("ok"))
+        assertEquals("stale_text_range", stale?.get("code"))
+
+        val matchingArgs = JsonObject().apply { addProperty("expectedText", "current") }
+        assertNull(validateReplacementExpectedText(matchingArgs, "current"))
     }
 }
