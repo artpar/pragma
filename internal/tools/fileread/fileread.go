@@ -95,7 +95,9 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the FileRead tool.
-type Tool struct{}
+type Tool struct {
+	PreserveRepeatedContent bool
+}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -242,7 +244,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 	if cache, ok := tool.FileStateCacheFrom(state); ok {
 		observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: ok")
-		if previous, found := cache.Get(filePath); found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Offset) && sameOptionalInt(previous.Limit, result.Limit) && previous.Timestamp == info.ModTime().UnixMilli() {
+		if !t.PreserveRepeatedContent && previousReadUnchanged(cache, filePath, result, info.ModTime().UnixMilli()) {
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Of...")
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: \"File unchanged since last read. The content from ...")
 			return tool.InvokeResult{Content: "File unchanged since last read. The content from the earlier Read tool_result in this conversation is still current — refer to that instead of re-reading."}, nil
@@ -257,6 +259,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
 	observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: result.Display}, nil")
 	return tool.InvokeResult{Content: result.Display}, nil
+}
+
+func previousReadUnchanged(cache *tool.FileStateCache, filePath string, result textReadResult, timestamp int64) bool {
+	previous, found := cache.Get(filePath)
+	return found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Offset) && sameOptionalInt(previous.Limit, result.Limit) && previous.Timestamp == timestamp
 }
 
 func readImage(filePath, mimeType string, size int64) (tool.InvokeResult, error) {

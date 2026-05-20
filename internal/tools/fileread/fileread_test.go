@@ -9,11 +9,22 @@ import (
 	"testing"
 
 	"github.com/artpar/pragma/internal/model"
+	toolpkg "github.com/artpar/pragma/internal/tool"
 )
 
 type testState struct{ dir string }
 
 func (s testState) WorkDir() string { return s.dir }
+
+type cachedTestState struct {
+	dir   string
+	cache *toolpkg.FileStateCache
+}
+
+func (s cachedTestState) WorkDir() string { return s.dir }
+func (s cachedTestState) ReadFileState() *toolpkg.FileStateCache {
+	return s.cache
+}
 
 func TestFileReadTool_BasicRead(t *testing.T) {
 	dir := t.TempDir()
@@ -34,6 +45,33 @@ func TestFileReadTool_BasicRead(t *testing.T) {
 	}
 	if !strings.Contains(result.Content, "3→line three") {
 		t.Errorf("expected line 3, got: %s", result.Content)
+	}
+}
+
+func TestFileReadToolRepeatedReadCanPreserveContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	os.WriteFile(path, []byte("line one\nline two\n"), 0644)
+	state := cachedTestState{dir: dir, cache: toolpkg.NewFileStateCache()}
+	input, _ := json.Marshal(FileReadInput{FilePath: path})
+
+	if _, err := (&Tool{}).Invoke(context.Background(), input, state); err != nil {
+		t.Fatalf("initial read: %v", err)
+	}
+	elided, err := (&Tool{}).Invoke(context.Background(), input, state)
+	if err != nil {
+		t.Fatalf("second read: %v", err)
+	}
+	if !strings.Contains(elided.Content, "File unchanged since last read") {
+		t.Fatalf("expected repeated read to be elided, got: %s", elided.Content)
+	}
+
+	preserved, err := (&Tool{PreserveRepeatedContent: true}).Invoke(context.Background(), input, state)
+	if err != nil {
+		t.Fatalf("preserved read: %v", err)
+	}
+	if !strings.Contains(preserved.Content, "1→line one") {
+		t.Fatalf("expected repeated content in preserve mode, got: %s", preserved.Content)
 	}
 }
 

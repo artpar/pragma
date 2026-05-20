@@ -252,7 +252,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 	tools := []tool.Descriptor{
 		&toolglob.Tool{},
 		&toolgrep.Tool{},
-		&toolfileread.Tool{},
+		&toolfileread.Tool{PreserveRepeatedContent: d != nil && d.Cfg.ContextMode == model.ContextModeStateHandoff},
 		&toolapplypatch.Tool{},
 		&toolapplypatch.LegacyTool{},
 		&toolfilewrite.Tool{PatchMode: patchModeActive(d)},
