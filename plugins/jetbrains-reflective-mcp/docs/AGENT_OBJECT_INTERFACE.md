@@ -12,7 +12,7 @@ The object interface keeps the large reflective escape hatch, but gives agents a
 
 - Observe the current IDE scene.
 - Open or resolve a file through the IDE.
-- Receive `file1`, `doc1`, `editor1`, `symbol1`, `search1`, or `plugin1`.
+- Receive `file1`, `doc1`, `editor1`, `symbol1`, `search1`, `plugin1`, `runConfig1`, `runType1`, or `execution1`.
 - Inspect the object's method catalog.
 - Call methods on that object.
 - Release objects when done.
@@ -30,6 +30,7 @@ ide.object.call
 ide.object.release
 ide.file.open
 ide.file.resolve
+ide.file.create
 ide.search.text
 ide.plugin.list
 ide.plugin.resolve
@@ -43,6 +44,13 @@ ide.plugin.self.update
 ide.debug.breakpoints
 ide.debug.breakpoint.set
 ide.debug.breakpoint.remove
+ide.run.config.types
+ide.run.config.list
+ide.run.config.resolve
+ide.run.config.create
+ide.run.config.update
+ide.run.config.delete
+ide.run.executions
 ```
 
 The `ide.*` tools are not Pragma prompt helpers. They are plugin-side MCP tools returned by `tools/list`.
@@ -72,6 +80,11 @@ When an operation cannot run, the plugin returns `ok: false` with a specific `co
 - `restart_required`: IntelliJ cannot apply the requested plugin operation dynamically.
 - `breakpoint_type_not_found`: no IntelliJ line breakpoint type can be placed at the requested file and line.
 - `breakpoint_not_found`: removal was requested for a line with no matching breakpoint.
+- `run_config_not_found`: the requested run configuration name, id, or object alias was not found.
+- `run_config_factory_not_found`: the requested configuration type or factory is not available in the host IDE.
+- `run_config_invalid`: IntelliJ rejected the run configuration before execution.
+- `executor_not_found`: the host IDE did not expose the requested run/debug executor.
+- `invalid_query`: a text search query was empty or otherwise invalid.
 
 ## Object Metadata
 
@@ -116,18 +129,23 @@ Methods:
 - `observe()`
 - `capabilities()`
 - `openFile(filePath)`
+- `createFile(filePath, text?, overwrite?, openEditor?)`
 - `search(query, limit?)`
+- `runConfigurations(query?, includeTemporary?, limit?)`
+- `runConfigurationTypes(query?, limit?)`
+- `createRunConfiguration(name, typeId, factoryId?, temporary?, patch?)`
 
 ### File
 
-Created by `ide.file.open`, `ide.file.resolve`, directory navigation, or search results.
+Created by `ide.file.open`, `ide.file.resolve`, `ide.file.create`, directory navigation, or search results.
 
 Methods:
 
 - `read()`
 - `openEditor()`
 - `search(query, limit?)`
-- `replace(startLine, startColumn, endLine, endColumn, text)`
+- `replace(startLine, startColumn, endLine, endColumn, text, clamp?)`
+- `replaceOffsets(startOffset, endOffset, text)`
 - `append(text)`
 - `delete()`
 - `diagnostics()`
@@ -148,6 +166,8 @@ Methods:
 - `children()`
 - `find(name)`
 - `search(query, limit?)`
+- `createFile(name, text?, overwrite?, openEditor?)`
+- `createDirectory(name)`
 
 ### Document
 
@@ -171,7 +191,8 @@ Methods:
 
 - `caret()`
 - `selection()`
-- `select(startLine, startColumn, endLine, endColumn)`
+- `select(startLine, startColumn, endLine, endColumn, clamp?)`
+- `selectOffsets(startOffset, endOffset)`
 - `insert(text)`
 - `replaceSelection(text)`
 - `symbolAt()`
@@ -179,7 +200,7 @@ Methods:
 - `removeBreakpoint(line?, typeId?)`
 - `close()`
 
-When `line` is omitted on an editor breakpoint call, the current caret line is used.
+When `line` is omitted on an editor breakpoint call, the current caret line is used. Line/column selections reject out-of-range coordinates by default; pass `clamp: true` only when clamping is intentional. Offset-based methods are preferred for exact edits.
 
 ### Symbol
 
@@ -192,7 +213,7 @@ Methods:
 - `renamePreview(newName)`
 - `renameApply(newName)`
 
-Rename is currently advertised but unavailable through this object layer as `unsupported_refactoring`; the lower-level reflective bridge still exposes IntelliJ refactoring APIs.
+Rename uses IntelliJ `RenameProcessor`. Preview returns the target and discovered usages without mutating the project. Apply runs the refactoring through an IntelliJ write command so undo and PSI state remain IDE-native.
 
 ### SearchResult
 
@@ -205,7 +226,9 @@ Methods:
 - `replaceAllPreview(text)`
 - `replaceAllApply(text)`
 
-Batch replacement is currently advertised but unavailable as `unsupported_method`; callers should open individual files or use reflective APIs for specialized workflows.
+`openItem(index)` uses zero-based indexing to match the returned `items` array.
+
+Batch replacement previews and applies replacements over the current search result set. Apply verifies each hit still matches the original query at its recorded offset before editing, then writes through IntelliJ documents and saves the affected files.
 
 ### Plugin
 
@@ -235,6 +258,49 @@ Methods:
 - `remove()`
 
 Breakpoint creation uses IntelliJ `XDebuggerManager` and registered `XLineBreakpointType` implementations. If `typeId` is omitted, the plugin picks the first registered line breakpoint type that reports `canPutAt(file, line, project)`.
+
+### RunConfigurationType
+
+Created by `ide.run.config.types`.
+
+Methods:
+
+- `info()`
+- `factories()`
+- `template(factoryId?)`
+
+Types and factories come from the host IDE at runtime. A GoLand project exposes Go-related factories if the Go plugin contributes them; a WebStorm project exposes web-related factories if those plugins contribute them. The bridge does not hard-code product-specific run configuration classes.
+
+### RunConfiguration
+
+Created by `ide.run.config.list`, `ide.run.config.resolve`, `ide.run.config.create`, type templates, or clone operations.
+
+Methods:
+
+- `info()`
+- `schema()`
+- `update(patch)`
+- `select()`
+- `run()`
+- `debug()`
+- `clone(name?)`
+- `delete()`
+
+`schema()` reports stable settings fields plus primitive/string public setters discovered on the concrete configuration class. `update(patch)` applies supported fields and returns `applied` and `rejected` lists so agents can see exactly what changed.
+
+`run()` and `debug()` call IntelliJ execution APIs directly. They return an `Execution` object and `scheduledOnly: true`; use `ide.run.executions` or `execution.status()` to inspect process state after the IDE starts the profile.
+
+### Execution
+
+Created by `runConfig.run()`, `runConfig.debug()`, or `ide.run.executions`.
+
+Methods:
+
+- `status()`
+- `console(limit?, offset?)`
+- `stop()`
+
+`ide.run.executions` returns live IntelliJ process handlers when they are running. `console()` returns text captured after the MCP bridge attaches to that process; output emitted before attachment may not be present.
 
 ## Example Flow
 

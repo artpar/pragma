@@ -114,6 +114,7 @@ fun Any?.toBoundaryValue(): Any? {
             "scheduled" to scheduled,
             "context" to context,
             "now" to now,
+            "scheduledOnly" to scheduledOnly,
             "message" to message,
         )
         is UnsupportedResult -> mapOf("supported" to supported, "reason" to reason, "requires" to requires)

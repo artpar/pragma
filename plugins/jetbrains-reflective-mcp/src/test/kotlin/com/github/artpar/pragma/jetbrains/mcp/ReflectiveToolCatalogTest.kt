@@ -21,11 +21,16 @@ class ReflectiveToolCatalogTest {
         assertTrue("java.lang.reflect.Method.invoke" in names)
         assertTrue("com.github.artpar.pragma.jetbrains.reflect.Roots.list" in names)
         assertTrue("ide.file.open" in names)
+        assertTrue("ide.file.create" in names)
         assertTrue("ide.object.call" in names)
         assertTrue("ide.plugin.list" in names)
         assertTrue("ide.plugin.install" in names)
         assertTrue("ide.plugin.self.update" in names)
         assertTrue("ide.debug.breakpoint.set" in names)
+        assertTrue("ide.run.config.types" in names)
+        assertTrue("ide.run.config.list" in names)
+        assertTrue("ide.run.config.create" in names)
+        assertTrue("ide.run.executions" in names)
         definitions.forEach { definition ->
             assertTrue((definition["description"] as String).isNotBlank())
             assertEquals("object", (definition["inputSchema"] as Map<*, *>)["type"])
@@ -183,6 +188,7 @@ class FakeIdePorts : IdePorts {
         override fun releaseObject(input: AgentObjectInput): Map<String, Any?> = ok("Released.", mapOf("released" to true))
         override fun openFile(input: AgentFileInput): Map<String, Any?> = ok("Opened.", mapOf("object" to fileObject()))
         override fun resolveFile(input: AgentFileInput): Map<String, Any?> = ok("Resolved.", mapOf("object" to fileObject()))
+        override fun createFile(input: AgentFileCreateInput): Map<String, Any?> = ok("Created.", mapOf("object" to fileObject(), "path" to input.filePath))
         override fun searchText(input: AgentSearchInput): Map<String, Any?> = ok("Searched.", mapOf("items" to emptyList<Any>()))
         override fun listPlugins(input: AgentPluginListInput): Map<String, Any?> = ok("Plugins.", mapOf("objects" to listOf(pluginObject())))
         override fun resolvePlugin(input: AgentPluginInput): Map<String, Any?> = ok("Plugin.", mapOf("object" to pluginObject()))
@@ -196,6 +202,13 @@ class FakeIdePorts : IdePorts {
         override fun listBreakpoints(): Map<String, Any?> = ok("Breakpoints.", mapOf("objects" to emptyList<Any>()))
         override fun setBreakpoint(input: AgentBreakpointInput): Map<String, Any?> = ok("Breakpoint set.", mapOf("object" to breakpointObject()))
         override fun removeBreakpoint(input: AgentBreakpointInput): Map<String, Any?> = ok("Breakpoint removed.", mapOf("removed" to true))
+        override fun listRunConfigurationTypes(input: AgentRunConfigTypesInput): Map<String, Any?> = ok("Run config types.", mapOf("objects" to listOf(runConfigTypeObject())))
+        override fun listRunConfigurations(input: AgentRunConfigListInput): Map<String, Any?> = ok("Run configs.", mapOf("objects" to listOf(runConfigObject())))
+        override fun resolveRunConfiguration(input: AgentRunConfigResolveInput): Map<String, Any?> = ok("Run config.", mapOf("object" to runConfigObject()))
+        override fun createRunConfiguration(input: AgentRunConfigCreateInput): Map<String, Any?> = ok("Run config created.", mapOf("object" to runConfigObject(), "name" to input.name))
+        override fun updateRunConfiguration(input: AgentRunConfigUpdateInput): Map<String, Any?> = ok("Run config updated.", mapOf("object" to runConfigObject()))
+        override fun deleteRunConfiguration(input: AgentRunConfigResolveInput): Map<String, Any?> = ok("Run config deleted.", mapOf("deleted" to true))
+        override fun listExecutions(): Map<String, Any?> = ok("Executions.", mapOf("objects" to listOf(executionObject())))
 
         private fun ok(summary: String, data: Map<String, Any?> = emptyMap()): Map<String, Any?> = mapOf(
             "ok" to true,
@@ -226,6 +239,27 @@ class FakeIdePorts : IdePorts {
             "ref" to "breakpoint1",
             "type" to "Breakpoint",
             "methods" to listOf(mapOf("name" to "info", "signature" to "info(): BreakpointInfo", "readOnly" to true)),
+        )
+
+        private fun runConfigTypeObject(): Map<String, Any?> = mapOf(
+            "alias" to "runType1",
+            "ref" to "runType1",
+            "type" to "RunConfigurationType",
+            "methods" to listOf(mapOf("name" to "factories", "signature" to "factories(): RunConfigurationFactory[]", "readOnly" to true)),
+        )
+
+        private fun runConfigObject(): Map<String, Any?> = mapOf(
+            "alias" to "runConfig1",
+            "ref" to "runConfig1",
+            "type" to "RunConfiguration",
+            "methods" to listOf(mapOf("name" to "run", "signature" to "run(): Execution", "readOnly" to false)),
+        )
+
+        private fun executionObject(): Map<String, Any?> = mapOf(
+            "alias" to "execution1",
+            "ref" to "execution1",
+            "type" to "Execution",
+            "methods" to listOf(mapOf("name" to "status", "signature" to "status(): ExecutionStatus", "readOnly" to true)),
         )
     }
 

@@ -47,6 +47,7 @@ interface AgentIdePort {
     fun releaseObject(input: AgentObjectInput): Map<String, Any?>
     fun openFile(input: AgentFileInput): Map<String, Any?>
     fun resolveFile(input: AgentFileInput): Map<String, Any?>
+    fun createFile(input: AgentFileCreateInput): Map<String, Any?>
     fun searchText(input: AgentSearchInput): Map<String, Any?>
     fun listPlugins(input: AgentPluginListInput): Map<String, Any?>
     fun resolvePlugin(input: AgentPluginInput): Map<String, Any?>
@@ -60,6 +61,13 @@ interface AgentIdePort {
     fun listBreakpoints(): Map<String, Any?>
     fun setBreakpoint(input: AgentBreakpointInput): Map<String, Any?>
     fun removeBreakpoint(input: AgentBreakpointInput): Map<String, Any?>
+    fun listRunConfigurationTypes(input: AgentRunConfigTypesInput): Map<String, Any?>
+    fun listRunConfigurations(input: AgentRunConfigListInput): Map<String, Any?>
+    fun resolveRunConfiguration(input: AgentRunConfigResolveInput): Map<String, Any?>
+    fun createRunConfiguration(input: AgentRunConfigCreateInput): Map<String, Any?>
+    fun updateRunConfiguration(input: AgentRunConfigUpdateInput): Map<String, Any?>
+    fun deleteRunConfiguration(input: AgentRunConfigResolveInput): Map<String, Any?>
+    fun listExecutions(): Map<String, Any?>
 }
 
 interface ReflectionPort {
@@ -119,6 +127,13 @@ data class AgentObjectCallInput(
 
 data class AgentFileInput(val filePath: String)
 
+data class AgentFileCreateInput(
+    val filePath: String,
+    val text: String,
+    val overwrite: Boolean,
+    val openEditor: Boolean,
+)
+
 data class AgentSearchInput(
     val query: String,
     val scope: String,
@@ -147,4 +162,36 @@ data class AgentBreakpointInput(
     val typeId: String,
     val enabled: Boolean,
     val temporary: Boolean,
+)
+
+data class AgentRunConfigTypesInput(
+    val query: String,
+    val limit: Int,
+)
+
+data class AgentRunConfigListInput(
+    val query: String,
+    val includeTemporary: Boolean,
+    val limit: Int,
+)
+
+data class AgentRunConfigResolveInput(
+    val name: String,
+    val configId: String,
+    val objectRef: String,
+)
+
+data class AgentRunConfigCreateInput(
+    val name: String,
+    val typeId: String,
+    val factoryId: String,
+    val temporary: Boolean,
+    val patch: JsonElement?,
+)
+
+data class AgentRunConfigUpdateInput(
+    val name: String,
+    val configId: String,
+    val objectRef: String,
+    val patch: JsonElement?,
 )

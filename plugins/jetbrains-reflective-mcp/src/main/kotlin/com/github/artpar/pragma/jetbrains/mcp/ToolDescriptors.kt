@@ -11,6 +11,7 @@ data class FilePositionInput(val position: TextPosition)
 data class ReferencesInput(val position: TextPosition, val limit: Int)
 data class FileNameInput(val name: String)
 data class FilePathInput(val filePath: String)
+data class FileCreateInput(val filePath: String, val text: String, val overwrite: Boolean, val openEditor: Boolean)
 data class WordSearchInput(val word: String, val context: String, val limit: Int, val includeHidden: Boolean)
 data class ClassNameInput(val className: String)
 data class RefInput(val ref: String)
@@ -81,6 +82,30 @@ fun defaultToolDescriptors(): List<ToolDescriptor<*>> = listOf(
         inputSchema = filePathOnlySchema(),
         decode = { AgentFileInput(it.stringArg("filePath")) },
         execute = { input, ports -> ports.agentIde.resolveFile(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.file.create",
+        source = "Agent IDE file creation through IntelliJ VFS and document APIs",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "filePath" to stringProp("Absolute path or project-relative path for the file to create."),
+                "text" to stringProp("Initial file content. Defaults to empty string."),
+                "overwrite" to boolProp("If true, replace an existing file's content. Defaults to false."),
+                "openEditor" to boolProp("If true, open the created file in the editor. Defaults to false."),
+            ),
+            required = listOf("filePath"),
+        ),
+        readOnly = false,
+        destructive = false,
+        decode = {
+            AgentFileCreateInput(
+                filePath = it.stringArg("filePath"),
+                text = it.stringArg("text"),
+                overwrite = it.boolArg("overwrite"),
+                openEditor = it.boolArg("openEditor"),
+            )
+        },
+        execute = { input, ports -> ports.agentIde.createFile(input) },
     ),
     ToolDescriptor(
         name = "ide.search.text",
@@ -215,6 +240,102 @@ fun defaultToolDescriptors(): List<ToolDescriptor<*>> = listOf(
         destructive = true,
         decode = { it.breakpointInput() },
         execute = { input, ports -> ports.agentIde.removeBreakpoint(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.run.config.types",
+        source = "Agent IDE run configuration type and factory discovery through IntelliJ RunManager",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "query" to stringProp("Optional type id, display name, factory id, or factory name substring."),
+                "limit" to intProp("Maximum configuration types to return. Defaults to 200."),
+            ),
+        ),
+        decode = { AgentRunConfigTypesInput(it.stringArg("query"), it.intArg("limit", 200).coerceIn(1, 1000)) },
+        execute = { input, ports -> ports.agentIde.listRunConfigurationTypes(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.run.config.list",
+        source = "Agent IDE run configuration list returning RunConfiguration objects",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "query" to stringProp("Optional configuration name, type id, or factory id substring."),
+                "includeTemporary" to boolProp("If true, include temporary run configurations. Defaults to true."),
+                "limit" to intProp("Maximum configurations to return. Defaults to 200."),
+            ),
+        ),
+        decode = {
+            AgentRunConfigListInput(
+                query = it.stringArg("query"),
+                includeTemporary = it.boolArg("includeTemporary", true),
+                limit = it.intArg("limit", 200).coerceIn(1, 1000),
+            )
+        },
+        execute = { input, ports -> ports.agentIde.listRunConfigurations(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.run.config.resolve",
+        source = "Agent IDE run configuration object resolution by name, id, or object alias",
+        inputSchema = runConfigResolveSchema(),
+        decode = { it.runConfigResolveInput() },
+        execute = { input, ports -> ports.agentIde.resolveRunConfiguration(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.run.config.create",
+        source = "Agent IDE run configuration creation through RunManager and ConfigurationFactory",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "name" to stringProp("New run configuration name."),
+                "typeId" to stringProp("ConfigurationType id from ide.run.config.types."),
+                "factoryId" to stringProp("ConfigurationFactory id from ide.run.config.types. If omitted, the first matching factory is used."),
+                "temporary" to boolProp("If true, create a temporary configuration. Defaults to false."),
+                "patch" to anyProp("Optional generic patch applied to settings/configuration properties after creation."),
+            ),
+            required = listOf("name", "typeId"),
+        ),
+        readOnly = false,
+        destructive = true,
+        decode = {
+            AgentRunConfigCreateInput(
+                name = it.stringArg("name"),
+                typeId = it.stringArg("typeId"),
+                factoryId = it.stringArg("factoryId"),
+                temporary = it.boolArg("temporary", false),
+                patch = it.jsonArg("patch"),
+            )
+        },
+        execute = { input, ports -> ports.agentIde.createRunConfiguration(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.run.config.update",
+        source = "Agent IDE run configuration update through RunManager and discovered setters",
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "name" to stringProp("Run configuration name. Use name, configId, or object."),
+                "configId" to stringProp("RunnerAndConfigurationSettings unique id. Use name, configId, or object."),
+                "object" to stringProp("RunConfiguration object alias. Use name, configId, or object."),
+                "patch" to anyProp("Patch object. Supported keys are returned by RunConfiguration.schema()."),
+            ),
+            required = listOf("patch"),
+        ),
+        readOnly = false,
+        destructive = true,
+        decode = { it.runConfigUpdateInput() },
+        execute = { input, ports -> ports.agentIde.updateRunConfiguration(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.run.config.delete",
+        source = "Agent IDE run configuration deletion through RunManager",
+        inputSchema = runConfigResolveSchema(),
+        readOnly = false,
+        destructive = true,
+        decode = { it.runConfigResolveInput() },
+        execute = { input, ports -> ports.agentIde.deleteRunConfiguration(input) },
+    ),
+    ToolDescriptor(
+        name = "ide.run.executions",
+        source = "Agent IDE running process list through ExecutionManager",
+        decode = { NoInput },
+        execute = { _, ports -> ports.agentIde.listExecutions() },
     ),
     ToolDescriptor(
         name = "com.intellij.openapi.application.ApplicationInfo.getInstance",
@@ -496,6 +617,21 @@ private fun JsonObject.breakpointInput(): AgentBreakpointInput =
         temporary = boolArg("temporary", false),
     )
 
+private fun JsonObject.runConfigResolveInput(): AgentRunConfigResolveInput =
+    AgentRunConfigResolveInput(
+        name = stringArg("name"),
+        configId = stringArg("configId"),
+        objectRef = stringArg("object"),
+    )
+
+private fun JsonObject.runConfigUpdateInput(): AgentRunConfigUpdateInput =
+    AgentRunConfigUpdateInput(
+        name = stringArg("name"),
+        configId = stringArg("configId"),
+        objectRef = stringArg("object"),
+        patch = jsonArg("patch"),
+    )
+
 private fun reflectiveClassSchema(): Map<String, Any> =
     objectSchema(
         properties = mapOf(
@@ -565,4 +701,13 @@ private fun breakpointSchema(): Map<String, Any> =
             "temporary" to boolProp("If true, create a temporary breakpoint. Defaults to false."),
         ),
         required = listOf("filePath", "line"),
+    )
+
+private fun runConfigResolveSchema(): Map<String, Any> =
+    objectSchema(
+        properties = mapOf(
+            "name" to stringProp("Run configuration name. Use name, configId, or object."),
+            "configId" to stringProp("RunnerAndConfigurationSettings unique id. Use name, configId, or object."),
+            "object" to stringProp("RunConfiguration object alias. Use name, configId, or object."),
+        ),
     )

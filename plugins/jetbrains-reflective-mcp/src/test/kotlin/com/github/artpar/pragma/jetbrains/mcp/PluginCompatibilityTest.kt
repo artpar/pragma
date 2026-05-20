@@ -2,7 +2,9 @@ package com.github.artpar.pragma.jetbrains.mcp
 
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -21,5 +23,43 @@ class PluginCompatibilityTest {
 
         assertFalse("plugins.set(listOf(\"java\"))" in build)
         assertFalse("plugins = [\"java\"]" in build)
+    }
+
+    @Test
+    fun `plugin lifecycle mutations are dispatched on EDT`() {
+        val source = Files.readString(Path.of("src/main/kotlin/com/github/artpar/pragma/jetbrains/mcp/AgentIdeRuntime.kt"))
+
+        assertTrue("runOnEdt { PluginEnabler.getInstance().enable" in source)
+        assertTrue("runOnEdt { PluginEnabler.getInstance().disable" in source)
+        assertTrue("runOnEdt { PluginInstaller.installAndLoadDynamicPlugin" in source)
+        assertTrue("runOnEdt { PluginInstaller.prepareToUninstall" in source)
+        assertTrue("runOnEdt { InstalledPluginsState.getInstance().isRestartRequired = true }" in source)
+        assertFalse("val changed = PluginEnabler.getInstance().enable" in source)
+        assertFalse("val changed = PluginEnabler.getInstance().disable" in source)
+        assertFalse("PluginInstaller.prepareToUninstall(impl)" in source.replace("runOnEdt { PluginInstaller.prepareToUninstall(impl) }", ""))
+    }
+
+    @Test
+    fun `remembered project ports are read from stable per project file`() {
+        val dir = createTempDirectory("pragma-mcp-discovery")
+        val projectPath = "/tmp/example-web-project"
+        val hash = sha256(projectPath).take(16)
+        val ports = dir.resolve("ports")
+        Files.createDirectories(ports)
+        Files.writeString(ports.resolve("$hash.port"), "59901")
+
+        assertEquals(59901, readRememberedPort(dir, projectPath))
+    }
+
+    @Test
+    fun `invalid remembered project ports are ignored`() {
+        val dir = createTempDirectory("pragma-mcp-discovery")
+        val projectPath = "/tmp/example-web-project"
+        val hash = sha256(projectPath).take(16)
+        val ports = dir.resolve("ports")
+        Files.createDirectories(ports)
+        Files.writeString(ports.resolve("$hash.port"), "99999")
+
+        assertEquals(null, readRememberedPort(dir, projectPath))
     }
 }

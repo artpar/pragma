@@ -422,6 +422,25 @@ val targetApiMatrix: List<TargetApi> = listOf(
     ),
     TargetApi(
         category = "diagnostics-inspections",
+        className = "com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl",
+        methods = listOf(
+            TargetMethod("getHighlights", listOf("com.intellij.openapi.editor.Document", "com.intellij.lang.annotation.HighlightSeverity", "com.intellij.openapi.project.Project"), static = true),
+            TargetMethod("isAllAnalysisFinished", listOf("com.intellij.psi.PsiFile")),
+        ),
+    ),
+    TargetApi(
+        category = "diagnostics-inspections",
+        className = "com.intellij.codeInsight.daemon.impl.HighlightInfo",
+        methods = listOf(
+            TargetMethod("getDescription", emptyList()),
+            TargetMethod("getSeverity", emptyList()),
+            TargetMethod("getInspectionToolId", emptyList()),
+            TargetMethod("getStartOffset", emptyList()),
+            TargetMethod("getEndOffset", emptyList()),
+        ),
+    ),
+    TargetApi(
+        category = "diagnostics-inspections",
         className = "com.intellij.profile.codeInspection.InspectionProjectProfileManager",
         methods = listOf(
             TargetMethod("getInstance", listOf("com.intellij.openapi.project.Project"), static = true),
@@ -465,6 +484,27 @@ val targetApiMatrix: List<TargetApi> = listOf(
             TargetMethod("createRename", listOf("com.intellij.psi.PsiElement", "java.lang.String")),
             TargetMethod("createRename", listOf("com.intellij.psi.PsiElement", "java.lang.String", "boolean", "boolean")),
             TargetMethod("createSafeDelete", listOf("[Lcom.intellij.psi.PsiElement;")),
+        ),
+    ),
+    TargetApi(
+        category = "refactoring",
+        className = "com.intellij.refactoring.rename.RenameProcessor",
+        methods = listOf(
+            TargetMethod("findUsages", emptyList()),
+            TargetMethod("performRefactoring", listOf("[Lcom.intellij.usageView.UsageInfo;")),
+            TargetMethod("setSearchInComments", listOf("boolean")),
+            TargetMethod("setSearchTextOccurrences", listOf("boolean")),
+        ),
+    ),
+    TargetApi(
+        category = "refactoring",
+        className = "com.intellij.usageView.UsageInfo",
+        methods = listOf(
+            TargetMethod("getElement", emptyList()),
+            TargetMethod("getVirtualFile", emptyList()),
+            TargetMethod("getSegment", emptyList()),
+            TargetMethod("isValid", emptyList()),
+            TargetMethod("isNonCodeUsage", emptyList()),
         ),
     ),
     TargetApi(
@@ -520,7 +560,68 @@ val targetApiMatrix: List<TargetApi> = listOf(
             TargetMethod("getAllSettings", emptyList()),
             TargetMethod("getAllConfigurationsList", emptyList()),
             TargetMethod("getSelectedConfiguration", emptyList()),
+            TargetMethod("setSelectedConfiguration", listOf("com.intellij.execution.RunnerAndConfigurationSettings")),
             TargetMethod("findConfigurationByName", listOf("java.lang.String")),
+            TargetMethod("createConfiguration", listOf("java.lang.String", "com.intellij.execution.configurations.ConfigurationFactory")),
+            TargetMethod("createConfiguration", listOf("com.intellij.execution.configurations.RunConfiguration", "com.intellij.execution.configurations.ConfigurationFactory")),
+            TargetMethod("getConfigurationTemplate", listOf("com.intellij.execution.configurations.ConfigurationFactory")),
+            TargetMethod("addConfiguration", listOf("com.intellij.execution.RunnerAndConfigurationSettings")),
+            TargetMethod("removeConfiguration", listOf("com.intellij.execution.RunnerAndConfigurationSettings")),
+            TargetMethod("setTemporaryConfiguration", listOf("com.intellij.execution.RunnerAndConfigurationSettings")),
+            TargetMethod("suggestUniqueName", listOf("java.lang.String", "com.intellij.execution.configurations.ConfigurationType")),
+        ),
+    ),
+    TargetApi(
+        category = "run-build-test",
+        className = "com.intellij.execution.RunnerAndConfigurationSettings",
+        methods = listOf(
+            TargetMethod("getType", emptyList()),
+            TargetMethod("getFactory", emptyList()),
+            TargetMethod("getConfiguration", emptyList()),
+            TargetMethod("getName", emptyList()),
+            TargetMethod("setName", listOf("java.lang.String")),
+            TargetMethod("getUniqueID", emptyList()),
+            TargetMethod("setTemporary", listOf("boolean")),
+            TargetMethod("checkSettings", emptyList()),
+            TargetMethod("checkSettings", listOf("com.intellij.execution.Executor")),
+            TargetMethod("setEditBeforeRun", listOf("boolean")),
+            TargetMethod("setActivateToolWindowBeforeRun", listOf("boolean")),
+            TargetMethod("setFocusToolWindowBeforeRun", listOf("boolean")),
+            TargetMethod("storeInLocalWorkspace", emptyList()),
+            TargetMethod("storeInDotIdeaFolder", emptyList()),
+            TargetMethod("storeInArbitraryFileInProject", listOf("java.lang.String")),
+        ),
+    ),
+    TargetApi(
+        category = "run-build-test",
+        className = "com.intellij.execution.configurations.ConfigurationType",
+        methods = listOf(
+            TargetMethod("getId", emptyList()),
+            TargetMethod("getDisplayName", emptyList()),
+            TargetMethod("getConfigurationTypeDescription", emptyList()),
+            TargetMethod("getConfigurationFactories", emptyList()),
+        ),
+    ),
+    TargetApi(
+        category = "run-build-test",
+        className = "com.intellij.execution.configurations.ConfigurationFactory",
+        methods = listOf(
+            TargetMethod("getId", emptyList()),
+            TargetMethod("getName", emptyList()),
+            TargetMethod("getType", emptyList()),
+            TargetMethod("isApplicable", listOf("com.intellij.openapi.project.Project")),
+            TargetMethod("createTemplateConfiguration", listOf("com.intellij.openapi.project.Project")),
+        ),
+    ),
+    TargetApi(
+        category = "run-build-test",
+        className = "com.intellij.execution.configurations.RunConfiguration",
+        methods = listOf(
+            TargetMethod("setName", listOf("java.lang.String")),
+            TargetMethod("clone", emptyList()),
+            TargetMethod("checkConfiguration", emptyList()),
+            TargetMethod("isAllowRunningInParallel", emptyList()),
+            TargetMethod("setAllowRunningInParallel", listOf("boolean")),
         ),
     ),
     TargetApi(
@@ -536,6 +637,28 @@ val targetApiMatrix: List<TargetApi> = listOf(
     TargetApi(
         category = "run-build-test",
         className = "com.intellij.execution.ProgramRunnerUtil",
-        methods = listOf(TargetMethod("executeConfiguration", static = true), TargetMethod("executeConfigurationAsync", static = true), TargetMethod("getRunner", static = true)),
+        methods = listOf(
+            TargetMethod("executeConfiguration", listOf("com.intellij.openapi.project.Project", "com.intellij.execution.RunnerAndConfigurationSettings", "com.intellij.execution.Executor"), static = true),
+            TargetMethod("executeConfigurationAsync", static = true),
+            TargetMethod("getRunner", static = true),
+        ),
+    ),
+    TargetApi(
+        category = "run-build-test",
+        className = "com.intellij.execution.ExecutorRegistry",
+        methods = listOf(
+            TargetMethod("getInstance", emptyList(), static = true),
+            TargetMethod("getExecutorById", listOf("java.lang.String")),
+        ),
+    ),
+    TargetApi(
+        category = "run-build-test",
+        className = "com.intellij.execution.process.ProcessHandler",
+        methods = listOf(
+            TargetMethod("destroyProcess", emptyList()),
+            TargetMethod("isProcessTerminated", emptyList()),
+            TargetMethod("isProcessTerminating", emptyList()),
+            TargetMethod("getExitCode", emptyList()),
+        ),
     ),
 )

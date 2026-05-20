@@ -96,12 +96,13 @@ class ReflectiveRuntime(private val project: Project) : ReflectionPort {
     }
 
     override fun getField(input: ReflectiveFieldInput): Map<String, Any?> {
-        val target = input.targetRef.takeIf { it.isNotBlank() }?.let { store.get(it) }
+        val target = input.targetRef.takeIf { it.isNotBlank() }?.let { store.find(it) }
         val clazz = input.className.takeIf { it.isNotBlank() }?.let { classForNameStrict(it) }
+            ?: (target as? Class<*>)
             ?: target?.javaClass
             ?: error("className or targetRef is required")
         val field = clazz.findField(input.fieldName)
-        val value = field.get(target)
+        val value = field.get(if (Modifier.isStatic(field.modifiers)) null else target)
         return reflectiveResult(value, input.storeResult)
     }
 
@@ -322,7 +323,17 @@ private class ReflectiveObjectStore {
         return ref
     }
 
-    fun get(ref: String): Any = refs[ref] ?: error("Unknown reflective handle: $ref")
+    fun get(ref: String): Any = find(ref) ?: error("Unknown reflective handle: $ref")
+
+    fun find(ref: String): Any? =
+        refs[ref]
+            ?: refs.values.firstOrNull { it.toString() == ref }
+            ?: refs.values.firstOrNull { value ->
+                runCatching {
+                    val nameMethod = value.javaClass.methods.firstOrNull { it.name == "getName" && it.parameterCount == 0 }
+                    nameMethod?.invoke(value)?.toString() == ref
+                }.getOrDefault(false)
+            }
 
     fun roots(): List<String> = roots.sorted()
 

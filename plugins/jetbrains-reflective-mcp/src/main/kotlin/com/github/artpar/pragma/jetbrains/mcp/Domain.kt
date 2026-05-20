@@ -140,6 +140,7 @@ data class ActionExecutionResult(
     val scheduled: Boolean,
     val context: String?,
     val now: Boolean,
+    val scheduledOnly: Boolean = true,
     val message: String? = null,
 )
 

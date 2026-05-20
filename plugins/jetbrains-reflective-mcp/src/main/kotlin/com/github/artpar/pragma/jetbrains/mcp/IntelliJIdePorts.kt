@@ -85,7 +85,14 @@ private class IntelliJActionPort(private val project: Project) : ActionPort {
         ApplicationManager.getApplication().invokeLater {
             ActionManager.getInstance().tryToExecute(action, null, component, ActionPlaces.UNKNOWN, now)
         }
-        return ActionExecutionResult(actionId, scheduled = true, context = "selectedTextEditor", now = now)
+        return ActionExecutionResult(
+            actionId,
+            scheduled = true,
+            context = "selectedTextEditor",
+            now = now,
+            scheduledOnly = true,
+            message = "Action was scheduled through the UI action system; completion and result are not observable through this fallback tool.",
+        )
     }
 }
 

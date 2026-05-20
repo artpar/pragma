@@ -28,9 +28,10 @@ class ReflectiveMcpProjectService(private val project: Project) : Disposable {
     fun start() {
         if (server != null || project.isDisposed) return
 
-        val port = System.getProperty("pragma.jetbrains.mcp.port")?.toIntOrNull() ?: 0
+        val canonicalProjectPath = project.canonicalProjectPath()
+        val port = configuredPort() ?: readRememberedPort(canonicalProjectPath) ?: 0
         val bindAddress = InetAddress.getByName("127.0.0.1")
-        val httpServer = HttpServer.create(InetSocketAddress(bindAddress, port), 0)
+        val httpServer = createServer(bindAddress, port)
         val registry = ReflectiveToolCatalog(IntelliJIdePorts(project))
         httpServer.createContext("/", McpHttpHandler(project, registry))
         httpServer.executor = executor
@@ -47,13 +48,14 @@ class ReflectiveMcpProjectService(private val project: Project) : Disposable {
 
     private fun writeStatus(port: Int, registry: ReflectiveToolRegistryView) {
         val home = System.getProperty("user.home") ?: return
-        val basePath = project.basePath ?: project.name
-        val canonicalProjectPath = Path.of(basePath).toAbsolutePath().normalize().toString()
+        val canonicalProjectPath = project.canonicalProjectPath()
         val hash = sha256(canonicalProjectPath).take(16)
         val dir = Path.of(home, ".pragma", "jetbrains-mcp")
         val projectsDir = dir.resolve("projects")
+        val portsDir = dir.resolve("ports")
         Files.createDirectories(dir)
         Files.createDirectories(projectsDir)
+        Files.createDirectories(portsDir)
         val appInfo = ApplicationInfo.getInstance()
         val url = "http://127.0.0.1:$port"
         val body = """
@@ -85,6 +87,7 @@ class ReflectiveMcpProjectService(private val project: Project) : Disposable {
         """.trimIndent()
         Files.writeString(dir.resolve("$hash.json"), body)
         Files.writeString(projectsDir.resolve("$hash.json"), body)
+        Files.writeString(portsDir.resolve("$hash.port"), port.toString())
         Files.writeString(dir.resolve("latest.json"), body)
     }
 
@@ -111,9 +114,36 @@ class ReflectiveMcpProjectService(private val project: Project) : Disposable {
     init {
         Disposer.register(project, this)
     }
+
+    private fun configuredPort(): Int? =
+        System.getProperty("pragma.jetbrains.mcp.port")?.toIntOrNull()?.takeIf { it in 1..65535 }
+
+    private fun readRememberedPort(canonicalProjectPath: String): Int? {
+        val home = System.getProperty("user.home") ?: return null
+        return readRememberedPort(Path.of(home, ".pragma", "jetbrains-mcp"), canonicalProjectPath)
+    }
+
+    private fun createServer(bindAddress: InetAddress, preferredPort: Int): HttpServer =
+        runCatching { HttpServer.create(InetSocketAddress(bindAddress, preferredPort), 0) }
+            .getOrElse {
+                if (preferredPort == 0) throw it
+                HttpServer.create(InetSocketAddress(bindAddress, 0), 0)
+            }
 }
 
-private fun sha256(value: String): String {
+internal fun readRememberedPort(discoveryDir: Path, canonicalProjectPath: String): Int? {
+    val hash = sha256(canonicalProjectPath).take(16)
+    return runCatching {
+        Files.readString(discoveryDir.resolve("ports").resolve("$hash.port")).trim().toIntOrNull()
+    }.getOrNull()?.takeIf { it in 1..65535 }
+}
+
+internal fun Project.canonicalProjectPath(): String {
+    val basePath = basePath ?: name
+    return Path.of(basePath).toAbsolutePath().normalize().toString()
+}
+
+internal fun sha256(value: String): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
     return digest.joinToString("") { "%02x".format(it) }
 }

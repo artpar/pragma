@@ -34,6 +34,8 @@ The file includes the project path, IDE version, selected port, HTTP URL, and a 
 
 Pragma should consume this file, register the HTTP MCP server, and preserve the tool names as reported by `tools/list`.
 
+The plugin also records a per-project port hint under `~/.pragma/jetbrains-mcp/ports/` and tries to bind that same port on the next startup. If the remembered port is unavailable, it falls back to a free loopback port and updates discovery metadata.
+
 ## Boundaries
 
 The plugin is organized so most behavior can be tested without starting IntelliJ.
@@ -62,6 +64,7 @@ ide.object.call
 ide.object.release
 ide.file.open
 ide.file.resolve
+ide.file.create
 ide.search.text
 ide.plugin.list
 ide.plugin.resolve
@@ -75,12 +78,19 @@ ide.plugin.self.update
 ide.debug.breakpoints
 ide.debug.breakpoint.set
 ide.debug.breakpoint.remove
+ide.run.config.types
+ide.run.config.list
+ide.run.config.resolve
+ide.run.config.create
+ide.run.config.update
+ide.run.config.delete
+ide.run.executions
 ```
 
 The typical flow is:
 
 1. Call `ide.observe`.
-2. Open or resolve something with `ide.file.*`, `ide.search.text`, or `ide.plugin.*`.
+2. Open or resolve something with `ide.file.*`, `ide.search.text`, `ide.plugin.*`, or `ide.run.*`.
 3. Use the returned object's `methods` catalog.
 4. Call methods through `ide.object.call`.
 5. Release stale or no-longer-needed objects with `ide.object.release`.
@@ -88,6 +98,8 @@ The typical flow is:
 See `docs/AGENT_OBJECT_INTERFACE.md` for the object model and method catalogs.
 See `docs/PLUGIN_MANAGEMENT.md` for plugin list, enable, disable, load, unload, install, and uninstall semantics.
 See `docs/DEBUGGING.md` for breakpoint management.
+
+Run, build, test, and debug workflows should use `ide.run.*`, not `ActionManager.tryToExecute`. The run tools read and mutate IntelliJ `RunManager` configurations directly, discover host IDE configuration types and factories at runtime, and return `RunConfiguration` and `Execution` objects with method catalogs. This lets GoLand, WebStorm, IDEA, and other JetBrains IDEs expose the profiles contributed by their installed plugins without hard dependencies in this bridge.
 
 The first install is a harness or IDE responsibility because the MCP server does not exist until the plugin is loaded. Once running, the plugin exposes self-management through `ide.plugin.self.update` plus staged self disable, unload, and uninstall operations that return a restart/reconnect contract for the harness.
 
@@ -107,6 +119,8 @@ com.intellij.psi.search.FilenameIndex.getVirtualFilesByName
 com.intellij.openapi.vfs.LocalFileSystem.refreshAndFindFileByPath
 com.intellij.openapi.actionSystem.ActionManager.tryToExecute
 ```
+
+`ActionManager.tryToExecute` is a fallback for UI actions. It returns `scheduledOnly: true` because the IntelliJ action system does not provide a stable completion result through this call.
 
 The generic reflective catalog adds:
 
@@ -190,8 +204,9 @@ Tests cover the protocol, descriptor layer, reflective catalog, and target Intel
 - Tool schema presence.
 - Descriptor execution through fake ports.
 - Destructive metadata for action execution and generic reflective mutation tools.
-- Target IntelliJ classes and method signatures for project, editor, VFS, PSI, search, actions, intentions, diagnostics, inspections, duplication, refactoring, and run/build/test APIs.
-- Agent object tools for files, documents, editors, search results, plugin descriptors, plugin management operations, and debugger breakpoints.
+- Target IntelliJ classes and method signatures for project, editor, VFS, PSI, search, actions, intentions, diagnostics, inspections, duplication, refactoring, run/build/test APIs, execution APIs, and process control.
+- Agent object tools for files, documents, editors, search results, plugin descriptors, plugin management operations, debugger breakpoints, run configuration types, run configurations, and executions.
+- Object-layer diagnostics, rename preview/apply, and search-result batch replacement backed by IntelliJ daemon highlights, refactoring, and document APIs.
 - Reflective root handles are backed by declared target API coverage.
 
 The coverage rule is strict: if a target API is documented as reachable for agentic development, it must be present in `TargetApiMatrix.kt` and verified by `TargetApiCoverageTest`.
