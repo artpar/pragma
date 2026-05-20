@@ -84,7 +84,9 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the FileEdit tool.
-type Tool struct{}
+type Tool struct {
+	PatchMode bool
+}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -105,7 +107,8 @@ const editDescription = `Performs exact string replacements in files.
 Usage:
 - You must use an available file-reading capability at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
 - When editing text from file-read output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the → arrow. The line number prefix format is: spaces + line number + →. Everything after the → is the actual file content to match. Never include the line number or → in old_string or new_string.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- Use this only for small single-site exact replacements. When apply_patch is available, use apply_patch for multi-line or multi-file code edits.
+- Prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
 - The edit will FAIL if ` + "`old_string`" + ` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use ` + "`replace_all`" + ` to change every instance of ` + "`old_string`" + `.
 - Use ` + "`replace_all`" + ` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.`
@@ -151,6 +154,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.FilePath == \"\"")
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"file_path is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
+	}
+	if t.PatchMode && isMultilineEdit(in) {
+		return tool.InvokeResult{}, fmt.Errorf("Edit rejected: use apply_patch for multi-line edits when apply_patch is available. Keep Edit for one-line exact replacements only")
 	}
 
 	filePath := util.ExpandPath(in.FilePath, state.WorkDir())
@@ -321,6 +327,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
 		Display: display,
 	}, nil
+}
+
+func isMultilineEdit(in FileEditInput) bool {
+	return strings.Contains(in.OldString, "\n") || strings.Contains(in.NewString, "\n")
 }
 
 func handleNonexistentFile(filePath string, in FileEditInput) (string, error) {

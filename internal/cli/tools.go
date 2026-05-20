@@ -71,6 +71,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 			}
 			_ = subRegistry.Register(td)
 		}
+		subRegistry.SetHidden(map[string]bool{toolapplypatch.LegacyToolName: true})
 		if scopedToolNames != nil {
 			subRegistry = subRegistry.Scoped(scopedToolNames)
 		}
@@ -102,6 +103,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 			return nil, fmt.Errorf("register tool %s: %w", td.Name(), err)
 		}
 	}
+	d.Registry.SetHidden(map[string]bool{toolapplypatch.LegacyToolName: true})
 
 	agentTool := &toolagent.Tool{
 		EngineFactory:  engineFactory,
@@ -191,6 +193,8 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isRuntimeBuiltinTool(name) {
+		observe.GlobalTrace("if: isRuntimeBuiltinTool(name)")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	if d == nil || d.Toolset == nil {
@@ -198,11 +202,24 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 		observe.GlobalTrace("return: true")
 		return true
 	}
+	if name == toolapplypatch.ToolName && d.Toolset.AllowBuiltinTool(toolapplypatch.LegacyToolName) {
+		return true
+	}
+	if name == toolapplypatch.LegacyToolName && d.Toolset.AllowBuiltinTool(toolapplypatch.ToolName) {
+		return true
+	}
 	observe.GlobalTrace("return: d.Toolset.AllowBuiltinTool(name)")
 	return d.Toolset.AllowBuiltinTool(name)
 }
 
+func patchModeActive(d *Deps) bool {
+	return shouldRegisterBuiltinTool(d, toolapplypatch.ToolName) || shouldRegisterBuiltinTool(d, toolapplypatch.LegacyToolName)
+}
+
 func isRuntimeBuiltinTool(name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: name == \"tool_result.read\"")
 	return name == "tool_result.read"
 }
 
@@ -237,9 +254,10 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolgrep.Tool{},
 		&toolfileread.Tool{},
 		&toolapplypatch.Tool{},
+		&toolapplypatch.LegacyTool{},
 		&toolfilewrite.Tool{},
-		&toolfileedit.Tool{},
-		&toolbash.Tool{},
+		&toolfileedit.Tool{PatchMode: patchModeActive(d)},
+		&toolbash.Tool{PatchMode: patchModeActive(d)},
 		&toolnotebookedit.Tool{},
 		&toolwebfetch.Tool{Provider: d.Prov, Bus: d.Bus, SecondaryModel: SecondaryModelFor(d.Cfg.Provider)},
 		&tooltaskcreate.Tool{Tasks: d.TaskReg},

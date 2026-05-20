@@ -34,7 +34,7 @@ func TestBashTool_ExitCode(t *testing.T) {
 		t.Fatalf("unexpected error: %v (result should not be a Go error)", err)
 	}
 
-	if !strings.Contains(result.Content,"Exit code 42") {
+	if !strings.Contains(result.Content, "Exit code 42") {
 		t.Errorf("expected 'Exit code 42', got: %q", result.Content)
 	}
 }
@@ -48,10 +48,10 @@ func TestBashTool_StderrMerged(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"out") {
+	if !strings.Contains(result.Content, "out") {
 		t.Errorf("expected stdout in output, got: %q", result.Content)
 	}
-	if !strings.Contains(result.Content,"err") {
+	if !strings.Contains(result.Content, "err") {
 		t.Errorf("expected stderr in output, got: %q", result.Content)
 	}
 }
@@ -66,7 +66,7 @@ func TestBashTool_WorkingDirectory(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,dir) {
+	if !strings.Contains(result.Content, dir) {
 		t.Errorf("expected working dir %s in output, got: %q", dir, result)
 	}
 }
@@ -81,7 +81,7 @@ func TestBashTool_Timeout(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"timed out") {
+	if !strings.Contains(result.Content, "timed out") {
 		t.Errorf("expected timeout message, got: %q", result.Content)
 	}
 }
@@ -106,7 +106,7 @@ func TestBashTool_CommandNotFound(t *testing.T) {
 	}
 
 	// Should contain exit code (127 for command not found)
-	if !strings.Contains(result.Content,"Exit code") {
+	if !strings.Contains(result.Content, "Exit code") {
 		t.Errorf("expected exit code in output, got: %q", result.Content)
 	}
 }
@@ -149,7 +149,34 @@ func TestBashTool_MultilineOutput(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"line1") || !strings.Contains(result.Content,"line3") {
+	if !strings.Contains(result.Content, "line1") || !strings.Contains(result.Content, "line3") {
 		t.Errorf("expected all lines, got: %q", result.Content)
+	}
+}
+
+func TestBashToolPatchModeRejectsSourceMutation(t *testing.T) {
+	tool := &Tool{PatchMode: true}
+	input, _ := json.Marshal(BashInput{Command: "sed -i '' 's/old/new/' main.go"})
+
+	_, err := tool.Invoke(context.Background(), input, testState{t.TempDir()})
+	if err == nil {
+		t.Fatal("expected patch mode to reject sed -i")
+	}
+	if !strings.Contains(err.Error(), "Use apply_patch") {
+		t.Fatalf("error = %v, want apply_patch guidance", err)
+	}
+}
+
+func TestBashToolPatchModeAllowsShellApplyPatch(t *testing.T) {
+	dir := t.TempDir()
+	tool := &Tool{PatchMode: true}
+	input, _ := json.Marshal(BashInput{Command: "apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: x.txt\n+x\n*** End Patch\nPATCH"})
+
+	result, err := tool.Invoke(context.Background(), input, testState{dir})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if !strings.Contains(result.Content, "Applied patch successfully") {
+		t.Fatalf("result = %q", result.Content)
 	}
 }

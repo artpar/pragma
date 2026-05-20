@@ -31,12 +31,17 @@ var inputSchema = json.RawMessage(`{
 	}
 }`)
 
+const (
+	ToolName       = "apply_patch"
+	LegacyToolName = "ApplyPatch"
+)
+
 type Tool struct{}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	return "ApplyPatch"
+	return ToolName
 }
 
 func (t *Tool) Description() string {
@@ -47,20 +52,48 @@ func (t *Tool) Description() string {
 
 const description = `Applies structured file edits after parsing and verifying patch hunks against the current filesystem.
 
-Use this for multi-line or multi-file edits instead of Write or shell redirection. The patch format is:
+Use this for source edits, especially multi-line or multi-file changes. The input is JSON with a single patch string:
+
+{"patch":"*** Begin Patch\n...\n*** End Patch"}
+
+Patch grammar:
+- The first non-empty line must be exactly *** Begin Patch.
+- The last non-empty line must be exactly *** End Patch.
+- Use *** Add File: path, *** Update File: path, or *** Delete File: path.
+- Inside an update hunk, every line must start with one of: space for unchanged context, - for removed lines, + for added lines, or @@ to start a hunk.
+- Unchanged context lines must include the leading space.
+- Do not place standalone *** lines inside update hunks.
+- Read the target range immediately before patching so update hunks match current file content.
+
+Valid examples:
 
 *** Begin Patch
 *** Add File: path
 +new line
+*** End Patch
+
+*** Begin Patch
 *** Update File: path
 @@
  context line
 -old line
 +new line
+ unchanged context
+*** End Patch
+
+*** Begin Patch
 *** Delete File: path
 *** End Patch
 
 Every update hunk must match current file content before any file is written. If verification fails, no files are changed.`
+
+// LegacyTool keeps old saved sessions and local toolsets callable while the
+// model-visible primary tool uses Codex-compatible lowercase naming.
+type LegacyTool struct{ Tool }
+
+func (t *LegacyTool) Name() string {
+	return LegacyToolName
+}
 
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
@@ -79,14 +112,14 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	defer observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "exit")
 	var in Input
 	if err := json.Unmarshal(input, &in); err != nil || strings.TrimSpace(in.Patch) == "" {
-		return checker.Check(ctx, "ApplyPatch", "")
+		return checker.Check(ctx, ToolName, "")
 	}
 	paths, err := PatchPaths(in.Patch)
 	if err != nil {
-		return checker.Check(ctx, "ApplyPatch", "")
+		return checker.Check(ctx, ToolName, "")
 	}
 	sort.Strings(paths)
-	return checker.Check(ctx, "ApplyPatch", strings.Join(paths, "\n"))
+	return checker.Check(ctx, ToolName, strings.Join(paths, "\n"))
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
@@ -221,7 +254,7 @@ func Parse(input string) (Patch, error) {
 					continue
 				}
 				if raw == "" {
-					return Patch{}, fmt.Errorf("update hunk for %s line %d must start with ' ', '+', '-', or '@@'", path, i+1)
+					return Patch{}, malformedUpdateLine(path, i+1, raw)
 				}
 				switch raw[0] {
 				case ' ':
@@ -233,7 +266,7 @@ func Parse(input string) (Patch, error) {
 				case '+':
 					chunk.New = append(chunk.New, raw[1:])
 				default:
-					return Patch{}, fmt.Errorf("update hunk for %s line %d must start with ' ', '+', '-', or '@@'", path, i+1)
+					return Patch{}, malformedUpdateLine(path, i+1, raw)
 				}
 				i++
 			}
@@ -248,6 +281,17 @@ func Parse(input string) (Patch, error) {
 		}
 	}
 	return patch, nil
+}
+
+func malformedUpdateLine(path string, lineNo int, line string) error {
+	display := line
+	if display == "" {
+		display = "<empty line>"
+	}
+	if len(display) > 120 {
+		display = display[:120] + "..."
+	}
+	return fmt.Errorf("update hunk for %s line %d is malformed: %q\nEvery update hunk line must start with ' ', '+', '-', or '@@'. Unchanged context lines need a leading space. Remove stray '***' lines inside update hunks and reread the target range before retrying", path, lineNo, display)
 }
 
 type verifiedChange struct {
@@ -333,7 +377,7 @@ func applyChunks(content string, chunks []Chunk, displayPath string) (string, er
 		}
 		idx := findSubsequence(lines, chunk.Old, cursor)
 		if idx < 0 {
-			return "", fmt.Errorf("update hunk for %s did not match current file content", displayPath)
+			return "", fmt.Errorf("update hunk for %s did not match current file content near:\n%s\nReread the target range, keep unchanged context lines exact, and retry with a smaller hunk if needed", displayPath, formatPatchExcerpt(chunk.Old))
 		}
 		next := make([]string, 0, len(lines)-len(chunk.Old)+len(chunk.New))
 		next = append(next, lines[:idx]...)
@@ -343,6 +387,22 @@ func applyChunks(content string, chunks []Chunk, displayPath string) (string, er
 		cursor = idx + len(chunk.New)
 	}
 	return joinContentLines(lines, trailing), nil
+}
+
+func formatPatchExcerpt(lines []string) string {
+	if len(lines) == 0 {
+		return "<empty hunk>"
+	}
+	if len(lines) > 6 {
+		lines = lines[:6]
+	}
+	var b strings.Builder
+	for _, line := range lines {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func findSubsequence(lines []string, needle []string, start int) int {

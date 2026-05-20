@@ -50,7 +50,9 @@ var inputSchema = json.RawMessage(`{
 }`)
 
 // Tool implements the Bash tool for shell command execution.
-type Tool struct{}
+type Tool struct {
+	PatchMode bool
+}
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
@@ -228,6 +230,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		}
 		return applypatch.ApplyPatchText(ctx, patch, workDir, state)
 	}
+	if t.PatchMode {
+		if reason := sourceMutationReason(in.Command); reason != "" {
+			return tool.InvokeResult{}, fmt.Errorf("Bash rejected: %s. Use apply_patch for source edits when apply_patch is available; Bash remains available for tests and read-only inspection", reason)
+		}
+	}
 
 	timeoutMs := defaultTimeoutMs
 	if in.Timeout != nil {
@@ -297,4 +304,56 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 
 	return tool.InvokeResult{Content: output}, nil
+}
+
+func sourceMutationReason(command string) string {
+	fields := strings.Fields(command)
+	for i, field := range fields {
+		base := filepath.Base(field)
+		switch base {
+		case "sed", "gsed", "perl":
+			if i+1 < len(fields) && strings.HasPrefix(fields[i+1], "-i") {
+				return base + " in-place edits are blocked"
+			}
+		case "tee":
+			return "tee writes are blocked"
+		case "python", "python3", "perl5":
+			if shellContainsWriteIntent(command) {
+				return base + " file-write snippets are blocked"
+			}
+		}
+	}
+
+	normalized := " " + strings.Join(fields, " ") + " "
+	for _, pat := range []string{
+		" cat > ",
+		" cat >> ",
+		" echo > ",
+		" echo >> ",
+		" printf > ",
+		" printf >> ",
+		" tee -a ",
+	} {
+		if strings.Contains(normalized, pat) {
+			return "shell redirection writes are blocked"
+		}
+	}
+	return ""
+}
+
+func shellContainsWriteIntent(command string) bool {
+	lower := strings.ToLower(command)
+	for _, needle := range []string{
+		"write_text(",
+		"write_bytes(",
+		"os.writefile(",
+		"os.remove(",
+		"os.rename(",
+		".write(",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }

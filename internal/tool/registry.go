@@ -97,7 +97,16 @@ func (r *Registry) SetHidden(names map[string]bool) {
 	defer observe.GlobalTrace("exit")
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.hidden = names
+	if r.hidden == nil {
+		r.hidden = make(map[string]bool, len(names))
+	}
+	for name, hidden := range names {
+		if hidden {
+			r.hidden[name] = true
+		} else {
+			delete(r.hidden, name)
+		}
+	}
 }
 
 // List returns all registered tools (excluding hidden ones).
@@ -162,6 +171,12 @@ func (r *Registry) Scoped(names []string) *Registry {
 		if nameSet[name] {
 			observe.GlobalTrace("if: nameSet[name]")
 			scoped.tools[name] = desc
+			if r.hidden[name] {
+				if scoped.hidden == nil {
+					scoped.hidden = make(map[string]bool)
+				}
+				scoped.hidden[name] = true
+			}
 		}
 	}
 	observe.GlobalTrace("return: scoped")

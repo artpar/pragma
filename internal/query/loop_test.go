@@ -321,6 +321,22 @@ func TestRun_IncludesMCPServerStatusInSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestRun_AddsPatchGuidanceOnlyWhenApplyPatchActive(t *testing.T) {
+	provWithPatch := &testProvider{turns: [][]provider.StreamChunk{textChunks("done", model.StopEndTurn)}}
+	engine, _ := newTestEngine(provWithPatch, namedTestTool{name: "apply_patch"})
+	drain(engine.Run(context.Background(), "hi"))
+	if !strings.Contains(systemText(provWithPatch.lastParams.System), "use apply_patch") {
+		t.Fatal("expected dynamic apply_patch guidance")
+	}
+
+	provWithoutPatch := &testProvider{turns: [][]provider.StreamChunk{textChunks("done", model.StopEndTurn)}}
+	engine, _ = newTestEngine(provWithoutPatch, namedTestTool{name: "Edit"})
+	drain(engine.Run(context.Background(), "hi"))
+	if strings.Contains(systemText(provWithoutPatch.lastParams.System), "use apply_patch") {
+		t.Fatal("did not expect apply_patch guidance without apply_patch tool")
+	}
+}
+
 func TestRun_WithThinking(t *testing.T) {
 	prov := &testProvider{
 		turns: [][]provider.StreamChunk{{

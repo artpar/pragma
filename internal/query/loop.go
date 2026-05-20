@@ -148,6 +148,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 		systemForQuery := e.systemWithMCPStatus(snap.Conversation.System)
 		systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
+		systemForQuery = e.systemWithPatchGuidance(systemForQuery, tools)
 
 		if compacted, ok := e.autoCompactBeforeRequest(ctx, ch, resolvedModel, messagesForQuery, systemForQuery, tools); compacted {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compacted")
@@ -157,6 +158,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			snap = e.store.Snapshot()
 			systemForQuery = e.systemWithMCPStatus(snap.Conversation.System)
 			systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
+			systemForQuery = e.systemWithPatchGuidance(systemForQuery, tools)
 		} else if e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools) {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "else-if: e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools)")
 			ch <- ErrorEvent{
@@ -601,6 +603,30 @@ func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemProm
 	blocks = append(blocks, model.SystemBlock{Text: b.String(), Cacheable: false})
 	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
 	return model.SystemPrompt{Blocks: blocks}
+}
+
+func (e *Engine) systemWithPatchGuidance(system model.SystemPrompt, tools []model.ToolDef) model.SystemPrompt {
+	if !toolDefsContain(tools, "apply_patch") {
+		return system
+	}
+	block := `# Patch Editing
+
+When editing source files, use apply_patch. Its JSON input must be {"patch":"..."} with a patch body that starts with *** Begin Patch and ends with *** End Patch.
+
+Inside update hunks, every line must start with a leading space for unchanged context, - for removed lines, + for added lines, or @@ for hunk markers. Do not use Bash redirection, sed, awk, tee, or other shell mutation commands for source edits. If apply_patch fails, fix the patch syntax or reread the target range and retry with a smaller patch instead of switching editing tools. Run focused tests after the last successful edit.`
+	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
+	blocks = append(blocks, system.Blocks...)
+	blocks = append(blocks, model.SystemBlock{Text: block, Cacheable: false})
+	return model.SystemPrompt{Blocks: blocks}
+}
+
+func toolDefsContain(tools []model.ToolDef, name string) bool {
+	for _, tool := range tools {
+		if tool.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) isStateHandoffMode() bool {

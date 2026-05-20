@@ -64,6 +64,15 @@ func TestApplyPatchUpdateAddDelete(t *testing.T) {
 	}
 }
 
+func TestToolNameIsLowercaseApplyPatch(t *testing.T) {
+	if got := (&Tool{}).Name(); got != "apply_patch" {
+		t.Fatalf("Tool.Name() = %q, want apply_patch", got)
+	}
+	if got := (&LegacyTool{}).Name(); got != "ApplyPatch" {
+		t.Fatalf("LegacyTool.Name() = %q, want ApplyPatch", got)
+	}
+}
+
 func TestApplyPatchRejectsStaleUpdateWithoutMutation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.go")
@@ -91,6 +100,34 @@ func TestApplyPatchRejectsStaleUpdateWithoutMutation(t *testing.T) {
 	}
 	if got := string(data); got != original {
 		t.Fatalf("file mutated after failed patch:\n%s", got)
+	}
+}
+
+func TestApplyPatchMalformedUpdateErrorIsActionable(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	patch := `*** Begin Patch
+*** Update File: main.go
+@@
+package main
+*** End Patch`
+
+	_, err := ApplyPatchText(context.Background(), patch, dir, testState{workDir: dir})
+	if err == nil {
+		t.Fatal("expected malformed patch to fail")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"is malformed",
+		"package main",
+		"Unchanged context lines need a leading space",
+		"reread the target range",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q does not contain %q", msg, want)
+		}
 	}
 }
 

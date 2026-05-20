@@ -80,7 +80,7 @@ func isFileMutationTool(registry *tool.Registry, name string) bool {
 		return false
 	}
 	switch name {
-	case "ApplyPatch", "Edit", "Write":
+	case "apply_patch", "ApplyPatch", "Edit", "Write":
 		return true
 	default:
 		return false

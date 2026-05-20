@@ -70,6 +70,48 @@ func TestFileEditTool_BasicReplace(t *testing.T) {
 	}
 }
 
+func TestFileEditToolPatchModeRejectsMultilineEdit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	os.WriteFile(path, []byte("one\ntwo\n"), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{PatchMode: true}
+	input, _ := json.Marshal(FileEditInput{
+		FilePath:  path,
+		OldString: "one\ntwo",
+		NewString: "one\nthree",
+	})
+
+	_, err := tool.Invoke(context.Background(), input, state)
+	if err == nil {
+		t.Fatal("expected multiline edit to be rejected in patch mode")
+	}
+	if !strings.Contains(err.Error(), "use apply_patch") {
+		t.Fatalf("error = %v, want apply_patch guidance", err)
+	}
+}
+
+func TestFileEditToolPatchModeAllowsSingleLineEdit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	os.WriteFile(path, []byte("hello world"), 0644)
+	state := newTestState(dir)
+	markRead(t, state, path)
+
+	tool := &Tool{PatchMode: true}
+	input, _ := json.Marshal(FileEditInput{
+		FilePath:  path,
+		OldString: "hello",
+		NewString: "goodbye",
+	})
+
+	if _, err := tool.Invoke(context.Background(), input, state); err != nil {
+		t.Fatalf("single-line edit should be allowed: %v", err)
+	}
+}
+
 func TestFileEditTool_ReplaceAll(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.txt")

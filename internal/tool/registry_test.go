@@ -17,10 +17,10 @@ type echoTool struct {
 	flags       ToolFlags
 }
 
-func (t *echoTool) Name() string                  { return t.name }
-func (t *echoTool) Description() string            { return t.description }
-func (t *echoTool) InputSchema() json.RawMessage   { return t.schema }
-func (t *echoTool) Flags() ToolFlags               { return t.flags }
+func (t *echoTool) Name() string                 { return t.name }
+func (t *echoTool) Description() string          { return t.description }
+func (t *echoTool) InputSchema() json.RawMessage { return t.schema }
+func (t *echoTool) Flags() ToolFlags             { return t.flags }
 
 func (t *echoTool) Invoke(_ context.Context, input json.RawMessage, _ StateSnapshot) (InvokeResult, error) {
 	return InvokeResult{Content: string(input)}, nil
@@ -92,6 +92,27 @@ func TestRegistryToolDefs(t *testing.T) {
 	}
 	if !names["Bash"] || !names["FileRead"] {
 		t.Errorf("missing tools in defs: %v", names)
+	}
+}
+
+func TestRegistryHiddenToolsExcludedFromToolDefs(t *testing.T) {
+	bus := observe.NewEventBus(100)
+	defer bus.Drain()
+
+	reg := NewRegistry(bus)
+	_ = reg.Register(newEchoTool("apply_patch", false))
+	_ = reg.Register(newEchoTool("ApplyPatch", false))
+	reg.SetHidden(map[string]bool{"ApplyPatch": true})
+
+	defs := reg.ToolDefs()
+	if len(defs) != 1 {
+		t.Fatalf("ToolDefs: got %d, want 1", len(defs))
+	}
+	if defs[0].Name != "apply_patch" {
+		t.Fatalf("ToolDefs[0].Name = %q, want apply_patch", defs[0].Name)
+	}
+	if _, ok := reg.Get("ApplyPatch"); !ok {
+		t.Fatal("hidden alias should remain callable via Get")
 	}
 }
 

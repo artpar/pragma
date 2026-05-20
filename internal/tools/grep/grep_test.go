@@ -30,7 +30,7 @@ func TestGrepTool_BasicMatch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"Found 2 files") {
+	if !strings.Contains(result.Content, "Found 2 files") {
 		t.Errorf("expected 2 files, got: %s", result.Content)
 	}
 }
@@ -51,7 +51,7 @@ func TestGrepTool_ContentMode(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"foo bar") {
+	if !strings.Contains(result.Content, "foo bar") {
 		t.Errorf("expected content with 'foo bar', got: %s", result.Content)
 	}
 }
@@ -72,7 +72,7 @@ func TestGrepTool_CountMode(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"2 total occurrences") {
+	if !strings.Contains(result.Content, "2 total occurrences") {
 		t.Errorf("expected 2 occurrences, got: %s", result.Content)
 	}
 }
@@ -92,8 +92,8 @@ func TestGrepTool_NoMatches(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"No files found") {
-		t.Errorf("expected 'No files found', got: %s", result.Content)
+	if !strings.Contains(result.Content, "No files were found") {
+		t.Errorf("expected 'No files were found', got: %s", result.Content)
 	}
 }
 
@@ -114,7 +114,7 @@ func TestGrepTool_CaseInsensitive(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"Found 1 file") {
+	if !strings.Contains(result.Content, "Found 1 file") {
 		t.Errorf("expected 1 file match, got: %s", result.Content)
 	}
 }
@@ -136,7 +136,7 @@ func TestGrepTool_GlobFilter(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"Found 1 file") {
+	if !strings.Contains(result.Content, "Found 1 file") {
 		t.Errorf("expected 1 file (filtered to .go), got: %s", result.Content)
 	}
 }
@@ -156,7 +156,7 @@ func TestGrepTool_PatternStartingWithDash(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"Found 1 file") {
+	if !strings.Contains(result.Content, "Found 1 file") {
 		t.Errorf("expected match for pattern starting with dash, got: %s", result.Content)
 	}
 }
@@ -190,10 +190,10 @@ func TestGrepTool_HeadLimit(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(result.Content,"Found 3 files") {
+	if !strings.Contains(result.Content, "Found 3 files") {
 		t.Errorf("expected 3 files (head_limit), got: %s", result.Content)
 	}
-	if !strings.Contains(result.Content,"limit: 3") {
+	if !strings.Contains(result.Content, "limit: 3") {
 		t.Errorf("expected limit info, got: %s", result.Content)
 	}
 }
