@@ -218,8 +218,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("command is required")
 	}
 	if patch, patchWorkDir, ok, err := applypatch.ExtractShellApplyPatch(in.Command); err != nil {
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	} else if ok {
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "else-if: ok")
 		workDir := state.WorkDir()
 		if patchWorkDir != "" {
 			if filepath.IsAbs(patchWorkDir) {
@@ -231,7 +234,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return applypatch.ApplyPatchText(ctx, patch, workDir, state)
 	}
 	if t.PatchMode {
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: t.PatchMode")
 		if reason := sourceMutationReason(in.Command); reason != "" {
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: reason != \"\"")
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"Bash rejected: %s. Use apply_patch for sourc...")
 			return tool.InvokeResult{}, fmt.Errorf("Bash rejected: %s. Use apply_patch for source edits when apply_patch is available; Bash remains available for tests and read-only inspection", reason)
 		}
 	}
@@ -307,18 +313,26 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 }
 
 func sourceMutationReason(command string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	fields := strings.Fields(command)
 	for i, field := range fields {
+		observe.GlobalTrace("range fields")
 		base := filepath.Base(field)
 		switch base {
 		case "sed", "gsed", "perl":
+			observe.GlobalTrace("case: \"sed\", \"gsed\", \"perl\"")
 			if i+1 < len(fields) && strings.HasPrefix(fields[i+1], "-i") {
+				observe.GlobalTrace("return: base + \" in-place edits are blocked\"")
 				return base + " in-place edits are blocked"
 			}
 		case "tee":
+			observe.GlobalTrace("case: \"tee\"")
 			return "tee writes are blocked"
 		case "python", "python3", "perl5":
+			observe.GlobalTrace("case: \"python\", \"python3\", \"perl5\"")
 			if shellContainsWriteIntent(command) {
+				observe.GlobalTrace("return: base + \" file-write snippets are blocked\"")
 				return base + " file-write snippets are blocked"
 			}
 		}
@@ -334,14 +348,20 @@ func sourceMutationReason(command string) string {
 		" printf >> ",
 		" tee -a ",
 	} {
+		observe.GlobalTrace("range []string{\n\t\" cat > \",\n\t\" cat >> \",\n\t\" echo > \",\n\t\" echo >> \",\n\t\" printf > \",\n...")
 		if strings.Contains(normalized, pat) {
+			observe.GlobalTrace("if: strings.Contains(normalized, pat)")
+			observe.GlobalTrace("return: \"shell redirection writes are blocked\"")
 			return "shell redirection writes are blocked"
 		}
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }
 
 func shellContainsWriteIntent(command string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	lower := strings.ToLower(command)
 	for _, needle := range []string{
 		"write_text(",
@@ -351,9 +371,13 @@ func shellContainsWriteIntent(command string) bool {
 		"os.rename(",
 		".write(",
 	} {
+		observe.GlobalTrace("range []string{\n\t\"write_text(\",\n\t\"write_bytes(\",\n\t\"os.writefile(\",\n\t\"os.remove(\",\n\t...")
 		if strings.Contains(lower, needle) {
+			observe.GlobalTrace("if: strings.Contains(lower, needle)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }

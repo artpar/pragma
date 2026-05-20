@@ -262,7 +262,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 }
 
 func previousReadUnchanged(cache *tool.FileStateCache, filePath string, result textReadResult, timestamp int64) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	previous, found := cache.Get(filePath)
+	observe.GlobalTrace("return: found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Of...")
 	return found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Offset) && sameOptionalInt(previous.Limit, result.Limit) && previous.Timestamp == timestamp
 }
 

@@ -203,9 +203,13 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 		return true
 	}
 	if name == toolapplypatch.ToolName && d.Toolset.AllowBuiltinTool(toolapplypatch.LegacyToolName) {
+		observe.GlobalTrace("if: name == toolapplypatch.ToolName && d.Toolset.AllowBuiltinTool(toolapplypatch....")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	if name == toolapplypatch.LegacyToolName && d.Toolset.AllowBuiltinTool(toolapplypatch.ToolName) {
+		observe.GlobalTrace("if: name == toolapplypatch.LegacyToolName && d.Toolset.AllowBuiltinTool(toolapply...")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	observe.GlobalTrace("return: d.Toolset.AllowBuiltinTool(name)")
@@ -213,6 +217,9 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 }
 
 func patchModeActive(d *Deps) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: shouldRegisterBuiltinTool(d, toolapplypatch.ToolName) || shouldRegisterBuilti...")
 	return shouldRegisterBuiltinTool(d, toolapplypatch.ToolName) || shouldRegisterBuiltinTool(d, toolapplypatch.LegacyToolName)
 }
 

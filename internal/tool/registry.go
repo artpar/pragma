@@ -98,12 +98,16 @@ func (r *Registry) SetHidden(names map[string]bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.hidden == nil {
+		observe.GlobalTrace("if: r.hidden == nil")
 		r.hidden = make(map[string]bool, len(names))
 	}
 	for name, hidden := range names {
+		observe.GlobalTrace("range names")
 		if hidden {
+			observe.GlobalTrace("if: hidden")
 			r.hidden[name] = true
 		} else {
+			observe.GlobalTrace("else: hidden")
 			delete(r.hidden, name)
 		}
 	}
@@ -172,7 +176,9 @@ func (r *Registry) Scoped(names []string) *Registry {
 			observe.GlobalTrace("if: nameSet[name]")
 			scoped.tools[name] = desc
 			if r.hidden[name] {
+				observe.GlobalTrace("if: r.hidden[name]")
 				if scoped.hidden == nil {
+					observe.GlobalTrace("if: scoped.hidden == nil")
 					scoped.hidden = make(map[string]bool)
 				}
 				scoped.hidden[name] = true

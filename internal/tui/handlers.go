@@ -22,21 +22,29 @@ import (
 // extractUserPrompts extracts the text of user messages from a conversation.
 // Used to pre-populate input history when opening or resuming a session.
 func extractUserPrompts(messages []model.Message) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var prompts []string
 	for _, msg := range messages {
+		observe.GlobalTrace("range messages")
 		if msg.Role != model.RoleUser {
+			observe.GlobalTrace("if: msg.Role != model.RoleUser")
 			continue
 		}
 		var b strings.Builder
 		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
 			if tp, ok := part.(model.TextPart); ok {
+				observe.GlobalTrace("if: ok")
 				b.WriteString(tp.Text)
 			}
 		}
 		if b.Len() > 0 {
+			observe.GlobalTrace("if: b.Len() > 0")
 			prompts = append(prompts, b.String())
 		}
 	}
+	observe.GlobalTrace("return: prompts")
 	return prompts
 }
 

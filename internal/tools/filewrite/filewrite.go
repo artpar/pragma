@@ -113,6 +113,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	_, err := os.Stat(filePath)
 	isCreate := os.IsNotExist(err)
 	if t.PatchMode && !isCreate {
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: t.PatchMode && !isCreate")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"Write rejected: use apply_patch for updates ...")
 		return tool.InvokeResult{}, fmt.Errorf("Write rejected: use apply_patch for updates to existing files when apply_patch is available. Keep Write for new files or explicitly requested full rewrites")
 	}
 

@@ -606,7 +606,11 @@ func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemProm
 }
 
 func (e *Engine) systemWithPatchGuidance(system model.SystemPrompt, tools []model.ToolDef) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !toolDefsContain(tools, "apply_patch") {
+		observe.GlobalTrace("if: !toolDefsContain(tools, \"apply_patch\")")
+		observe.GlobalTrace("return: system")
 		return system
 	}
 	block := `# Patch Editing
@@ -617,15 +621,22 @@ Inside update hunks, every line must start with a leading space for unchanged co
 	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
 	blocks = append(blocks, system.Blocks...)
 	blocks = append(blocks, model.SystemBlock{Text: block, Cacheable: false})
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
 	return model.SystemPrompt{Blocks: blocks}
 }
 
 func toolDefsContain(tools []model.ToolDef, name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, tool := range tools {
+		observe.GlobalTrace("range tools")
 		if tool.Name == name {
+			observe.GlobalTrace("if: tool.Name == name")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 

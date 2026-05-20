@@ -156,6 +156,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("file_path is required")
 	}
 	if t.PatchMode && isMultilineEdit(in) {
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: t.PatchMode && isMultilineEdit(in)")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"Edit rejected: use apply_patch for multi-lin...")
 		return tool.InvokeResult{}, fmt.Errorf("Edit rejected: use apply_patch for multi-line edits when apply_patch is available. Keep Edit for one-line exact replacements only")
 	}
 
@@ -330,6 +332,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 }
 
 func isMultilineEdit(in FileEditInput) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.Contains(in.OldString, \"\\n\") || strings.Contains(in.NewString, \"\\n\")")
 	return strings.Contains(in.OldString, "\n") || strings.Contains(in.NewString, "\n")
 }
 
