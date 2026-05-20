@@ -139,6 +139,52 @@ func (m *mutatingTestTool) Flags() tool.ToolFlags {
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
+type namedTestTool struct {
+	name     string
+	content  string
+	readOnly bool
+}
+
+func (n namedTestTool) Name() string        { return n.name }
+func (n namedTestTool) Description() string { return "test tool " + n.name }
+func (n namedTestTool) InputSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object"}`)
+}
+func (n namedTestTool) Invoke(_ context.Context, _ json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	return tool.InvokeResult{Content: n.content}, nil
+}
+func (n namedTestTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	return checker.Check(context.Background(), n.name, "")
+}
+func (n namedTestTool) Flags() tool.ToolFlags {
+	return tool.ToolFlags{ReadOnly: n.readOnly, Concurrent: false}
+}
+
+type bashOutputTool struct {
+	outputs map[string]string
+}
+
+func (b bashOutputTool) Name() string        { return "Bash" }
+func (b bashOutputTool) Description() string { return "test bash" }
+func (b bashOutputTool) InputSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"}}}`)
+}
+func (b bashOutputTool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(input, &args); err != nil {
+		return tool.InvokeResult{}, err
+	}
+	return tool.InvokeResult{Content: b.outputs[args.Command]}, nil
+}
+func (b bashOutputTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	return checker.Check(context.Background(), "Bash", "")
+}
+func (b bashOutputTool) Flags() tool.ToolFlags {
+	return tool.ToolFlags{ReadOnly: true, Concurrent: false}
+}
+
 // newTestEngine creates an Engine wired for testing.
 func newTestEngine(prov provider.Provider, tools ...tool.Descriptor) (*Engine, *model.CostTracker) {
 	bus := observe.NewEventBus(256)
@@ -440,6 +486,125 @@ func TestRun_StopAfterToolExec(t *testing.T) {
 	}
 	if _, ok := msgs[2].Content[0].(model.ToolResultPart); !ok {
 		t.Fatalf("message[2] content[0] = %T, want ToolResultPart", msgs[2].Content[0])
+	}
+}
+
+func TestRun_BlocksCompletionAfterMutationUntilValidation(t *testing.T) {
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: "write-1", Name: "Write"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "write-1", JSONDelta: `{}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
+			},
+			textChunks("done too early", model.StopEndTurn),
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: "bash-1", Name: "Bash"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "bash-1", JSONDelta: `{"command":"go test ./internal/query"}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
+			},
+			textChunks("done after validation", model.StopEndTurn),
+		},
+	}
+	engine, _ := newTestEngine(
+		prov,
+		namedTestTool{name: "Write", content: "updated"},
+		namedTestTool{name: "Bash", content: "ok", readOnly: true},
+	)
+	events := drain(engine.Run(context.Background(), "change a file"))
+
+	var complete *TurnCompleteEvent
+	var text string
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case TextEvent:
+			text += e.Text
+		case TurnCompleteEvent:
+			ev := e
+			complete = &ev
+		case ErrorEvent:
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+	if complete == nil {
+		t.Fatal("expected completion after validation")
+	}
+	if !strings.Contains(text, "done after validation") {
+		t.Fatalf("expected final validated response, text=%q", text)
+	}
+	if prov.callIdx != 4 {
+		t.Fatalf("provider calls = %d, want 4", prov.callIdx)
+	}
+	history := engine.store.Snapshot().Conversation.APIMessages()
+	foundGate := false
+	for _, msg := range history {
+		if messageText(msg) != "" && strings.Contains(messageText(msg), "completion validation required") {
+			foundGate = true
+			break
+		}
+	}
+	if !foundGate {
+		t.Fatal("expected completion validation prompt in conversation")
+	}
+}
+
+func TestRun_NoTestsToRunDoesNotSatisfyValidation(t *testing.T) {
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: "write-1", Name: "Write"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "write-1", JSONDelta: `{}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
+			},
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: "bash-1", Name: "Bash"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "bash-1", JSONDelta: `{"command":"go test ./internal/tui -run TestHistory"}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
+			},
+			textChunks("done too early", model.StopEndTurn),
+			{
+				{ToolCallStart: &model.ToolCallPart{ID: "bash-2", Name: "Bash"}},
+				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "bash-2", JSONDelta: `{"command":"go test ./internal/query"}`}},
+				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
+			},
+			textChunks("done after real validation", model.StopEndTurn),
+		},
+	}
+	engine, _ := newTestEngine(
+		prov,
+		namedTestTool{name: "Write", content: "updated"},
+		bashOutputTool{outputs: map[string]string{
+			"go test ./internal/tui -run TestHistory": "testing: warning: no tests to run\nPASS",
+			"go test ./internal/query":                "ok",
+		}},
+	)
+	events := drain(engine.Run(context.Background(), "change a file"))
+
+	var complete bool
+	for _, ev := range events {
+		switch ev.(type) {
+		case TurnCompleteEvent:
+			complete = true
+		case ErrorEvent:
+			t.Fatalf("unexpected error: %v", ev.(ErrorEvent).Err)
+		}
+	}
+	if !complete {
+		t.Fatal("expected completion")
+	}
+	if prov.callIdx != 5 {
+		t.Fatalf("provider calls = %d, want 5", prov.callIdx)
+	}
+	history := engine.store.Snapshot().Conversation.APIMessages()
+	var sawNoOpFeedback bool
+	for _, msg := range history {
+		if strings.Contains(messageText(msg), "no tests to run do not satisfy") {
+			sawNoOpFeedback = true
+			break
+		}
+	}
+	if !sawNoOpFeedback {
+		t.Fatal("expected no-op validation feedback in conversation")
 	}
 }
 

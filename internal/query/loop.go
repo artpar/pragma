@@ -89,6 +89,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 	malformedRetries := 0
 	const maxMalformedRetries = 3
+	validationState := &completionValidationState{}
 	turnCount := 0
 	for turnCount < maxTurns {
 		observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("turn %d/%d", turnCount+1, maxTurns))
@@ -281,6 +282,19 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		switch response.StopReason {
 		case model.StopEndTurn:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn")
+			if validationState.shouldBlockCompletion(response.Content) {
+				correctionMsg := model.Message{
+					ID:        model.NewUUID(),
+					Role:      model.RoleUser,
+					Content:   []model.ContentPart{model.TextPart{Text: validationState.completionPrompt()}},
+					Timestamp: time.Now(),
+				}
+				e.store.Update(func(s *app.AppState) {
+					s.Conversation.Append(correctionMsg)
+				})
+				turnCount++
+				continue
+			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
 
@@ -370,6 +384,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				resultParts = append(resultParts, r)
 			}
 			resultParts = append(resultParts, execResult.Supplements...)
+			resultParts = append(resultParts, validationState.observeToolBatch(e.registry, toolCalls, execResult.Results, execResult.Displays)...)
 
 			remaining := maxTurns - turnCount - 1
 			warningThreshold := maxTurns / 5

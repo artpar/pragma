@@ -15,6 +15,7 @@ import (
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/tool"
 	toolagent "github.com/artpar/pragma/internal/tools/agent"
+	toolapplypatch "github.com/artpar/pragma/internal/tools/applypatch"
 	toolask "github.com/artpar/pragma/internal/tools/ask"
 	toolbash "github.com/artpar/pragma/internal/tools/bash"
 	toolbrief "github.com/artpar/pragma/internal/tools/brief"
@@ -235,6 +236,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolglob.Tool{},
 		&toolgrep.Tool{},
 		&toolfileread.Tool{},
+		&toolapplypatch.Tool{},
 		&toolfilewrite.Tool{},
 		&toolfileedit.Tool{},
 		&toolbash.Tool{},

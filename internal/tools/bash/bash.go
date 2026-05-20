@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/tools/applypatch"
 )
 
 const (
@@ -212,6 +214,19 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: in.Command == \"\"")
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"command is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("command is required")
+	}
+	if patch, patchWorkDir, ok, err := applypatch.ExtractShellApplyPatch(in.Command); err != nil {
+		return tool.InvokeResult{}, err
+	} else if ok {
+		workDir := state.WorkDir()
+		if patchWorkDir != "" {
+			if filepath.IsAbs(patchWorkDir) {
+				workDir = patchWorkDir
+			} else {
+				workDir = filepath.Join(state.WorkDir(), patchWorkDir)
+			}
+		}
+		return applypatch.ApplyPatchText(ctx, patch, workDir, state)
 	}
 
 	timeoutMs := defaultTimeoutMs
