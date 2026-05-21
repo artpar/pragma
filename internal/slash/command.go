@@ -60,6 +60,10 @@ type Deps struct {
 	// Session + skill support — nil-safe.
 	SessionStore *session.Store
 	SkillLoader  *skill.Loader
+
+	// TUI-local support — nil-safe.
+	LatestAssistantText func() string
+	ClipboardWrite      func(string) error
 }
 
 type McpServerStatus struct {

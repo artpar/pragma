@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/artpar/pragma/internal/app"
@@ -48,6 +49,29 @@ func extractUserPrompts(messages []model.Message) []string {
 	return prompts
 }
 
+func latestAssistantText(store *app.StateStore) string {
+	if store == nil {
+		return ""
+	}
+	messages := store.Snapshot().Conversation.Messages
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != model.RoleAssistant || msg.Flags.IsInternal || msg.Flags.IsMeta {
+			continue
+		}
+		var parts []string
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok && strings.TrimSpace(tp.Text) != "" {
+				parts = append(parts, tp.Text)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "\n")
+		}
+	}
+	return ""
+}
+
 // handleSlashCommand dispatches a slash command and returns a SlashResultMsg.
 func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
@@ -64,6 +88,15 @@ func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
 
 	slashCmds := m.slashCmds
 	slashDeps := m.slashDeps
+	if slashDeps.LatestAssistantText == nil {
+		store := m.store
+		slashDeps.LatestAssistantText = func() string {
+			return latestAssistantText(store)
+		}
+	}
+	if slashDeps.ClipboardWrite == nil {
+		slashDeps.ClipboardWrite = clipboard.WriteAll
+	}
 	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(m.ctx, name, trimmedArg...")
 	return m, func() tea.Msg {
 		result, err := slashCmds.Execute(m.ctx, name, trimmedArgs, slashDeps)

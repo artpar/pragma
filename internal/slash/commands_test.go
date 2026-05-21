@@ -2,6 +2,7 @@ package slash
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -87,6 +88,66 @@ func TestHandleCostEmpty(t *testing.T) {
 	}
 }
 
+func TestHandleCopyWritesLatestAssistantText(t *testing.T) {
+	var copied string
+	deps := Deps{
+		LatestAssistantText: func() string { return "latest assistant message" },
+		ClipboardWrite: func(text string) error {
+			copied = text
+			return nil
+		},
+	}
+
+	result, err := handleCopy(context.Background(), "", deps)
+	if err != nil {
+		t.Fatalf("handleCopy error: %v", err)
+	}
+	if copied != "latest assistant message" {
+		t.Fatalf("copied = %q, want latest assistant message", copied)
+	}
+	if !strings.Contains(result.DisplayText, "Copied") {
+		t.Fatalf("display = %q, want copied status", result.DisplayText)
+	}
+}
+
+func TestHandleCopyNoAssistantMessage(t *testing.T) {
+	deps := Deps{
+		LatestAssistantText: func() string { return "  " },
+		ClipboardWrite:      func(string) error { return nil },
+	}
+
+	result, err := handleCopy(context.Background(), "", deps)
+	if err != nil {
+		t.Fatalf("handleCopy error: %v", err)
+	}
+	if !strings.Contains(result.DisplayText, "No assistant message") {
+		t.Fatalf("display = %q, want no assistant message status", result.DisplayText)
+	}
+}
+
+func TestHandleCopyClipboardFailure(t *testing.T) {
+	wantErr := errors.New("clipboard unavailable")
+	deps := Deps{
+		LatestAssistantText: func() string { return "message" },
+		ClipboardWrite:      func(string) error { return wantErr },
+	}
+
+	_, err := handleCopy(context.Background(), "", deps)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("handleCopy error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestHandleCopyUnavailableOutsideTUI(t *testing.T) {
+	result, err := handleCopy(context.Background(), "", Deps{})
+	if err != nil {
+		t.Fatalf("handleCopy error: %v", err)
+	}
+	if !strings.Contains(result.DisplayText, "interactive TUI") {
+		t.Fatalf("display = %q, want TUI-only status", result.DisplayText)
+	}
+}
+
 func TestHandleHelp(t *testing.T) {
 	// Use Registry.Execute so deps.Commands is populated
 	r := NewRegistry()
@@ -102,6 +163,9 @@ func TestHandleHelp(t *testing.T) {
 	}
 	if !strings.Contains(result.DisplayText, "/exit") {
 		t.Error("help should list /exit")
+	}
+	if !strings.Contains(result.DisplayText, "/copy") {
+		t.Error("help should list /copy")
 	}
 }
 

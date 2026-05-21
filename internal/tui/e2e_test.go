@@ -47,6 +47,82 @@ func newTestModel() Model {
 	})
 }
 
+func TestModelRoutesPromptHistoryKeysToInput(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updated.(Model)
+	m.input.SetHistory([]string{"first prompt", "second prompt"})
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if got := m.input.textarea.Value(); got != "second prompt" {
+		t.Fatalf("first up = %q, want second prompt", got)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if got := m.input.textarea.Value(); got != "first prompt" {
+		t.Fatalf("second up = %q, want first prompt", got)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model)
+	if got := m.input.textarea.Value(); got != "second prompt" {
+		t.Fatalf("down = %q, want second prompt", got)
+	}
+}
+
+func TestModelAltArrowsScrollWithoutChangingHistory(t *testing.T) {
+	m := newTestModel()
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updated.(Model)
+	m.input.SetHistory([]string{"first prompt", "second prompt"})
+	m.input.textarea.SetValue("draft")
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp, Alt: true})
+	m = updated.(Model)
+	if got := m.input.textarea.Value(); got != "draft" {
+		t.Fatalf("alt-up changed input to %q, want draft", got)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown, Alt: true})
+	m = updated.(Model)
+	if got := m.input.textarea.Value(); got != "draft" {
+		t.Fatalf("alt-down changed input to %q, want draft", got)
+	}
+}
+
+func TestLatestAssistantTextUsesMostRecentAssistantText(t *testing.T) {
+	m := newTestModel()
+	m.store.Update(func(s *app.AppState) {
+		s.Conversation.Append(model.Message{
+			ID:      model.NewUUID(),
+			Role:    model.RoleAssistant,
+			Content: []model.ContentPart{model.TextPart{Text: "older answer"}},
+		})
+		s.Conversation.Append(model.Message{
+			ID:   model.NewUUID(),
+			Role: model.RoleUser,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "not copied"},
+			},
+		})
+		s.Conversation.Append(model.Message{
+			ID:   model.NewUUID(),
+			Role: model.RoleAssistant,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "latest"},
+				model.ToolCallPart{Name: "Read"},
+				model.TextPart{Text: "answer"},
+			},
+		})
+	})
+
+	if got := latestAssistantText(m.store); got != "latest\nanswer" {
+		t.Fatalf("latestAssistantText = %q, want latest\\nanswer", got)
+	}
+}
+
 // runTUIWithKeys starts a real bubbletea program with real keystroke bytes,
 // waits for it to finish, and returns the final output.
 func runTUIWithKeys(t *testing.T, keys string) string {

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,6 +18,12 @@ type inputComponent struct {
 	history      []string
 	historyIndex int
 	historyDraft string
+
+	searchActive  bool
+	searchQuery   string
+	searchDraft   string
+	searchMatches []int
+	searchIndex   int
 }
 
 func newInputComponent() inputComponent {
@@ -45,6 +53,15 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		observe.GlobalTrace("if: ok")
+		if c.searchActive {
+			if c.updateHistorySearch(keyMsg) {
+				return nil
+			}
+		} else if keyMsg.Type == tea.KeyCtrlR {
+			c.startHistorySearch()
+			return nil
+		}
+
 		switch keyMsg.Type {
 		case tea.KeyEnter:
 			observe.GlobalTrace("case: tea.KeyEnter")
@@ -60,6 +77,7 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 				c.textarea.Reset()
 				c.historyIndex = -1
 				c.historyDraft = ""
+				c.resetHistorySearch()
 				observe.GlobalTrace("return: func() tea.Msg {\n\treturn InputSubmittedMsg{Text: text}\n}")
 				return func() tea.Msg {
 					return InputSubmittedMsg{Text: text}
@@ -87,6 +105,7 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 		observe.GlobalTrace("if: ok && keyMsg.Type != tea.KeyUp && keyMsg.Type != tea.KeyDown")
 		c.historyIndex = -1
 		c.historyDraft = ""
+		c.resetHistorySearch()
 	}
 	observe.GlobalTrace("return: cmd")
 	return cmd
@@ -96,14 +115,123 @@ func (c *inputComponent) shouldNavigateHistoryUp() bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: c.historyIndex >= 0 || c.textarea.Line() == 0")
-	return c.historyIndex >= 0 || c.textarea.Line() == 0
+	return c.historyIndex >= 0 || c.textarea.Value() == "" || c.textarea.Line() == 0
 }
 
 func (c *inputComponent) shouldNavigateHistoryDown() bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: c.historyIndex >= 0 || c.textarea.Line() >= c.textarea.LineCount()-1")
-	return c.historyIndex >= 0 || c.textarea.Line() >= c.textarea.LineCount()-1
+	return c.historyIndex >= 0 || c.textarea.Value() == "" || c.textarea.Line() >= c.textarea.LineCount()-1
+}
+
+func (c *inputComponent) startHistorySearch() {
+	c.searchActive = true
+	c.searchDraft = c.textarea.Value()
+	c.searchQuery = ""
+	c.refreshSearchMatches()
+	c.applySearchMatch()
+}
+
+func (c *inputComponent) updateHistorySearch(keyMsg tea.KeyMsg) bool {
+	switch keyMsg.Type {
+	case tea.KeyCtrlR:
+		c.cycleSearchMatch(1)
+		return true
+	case tea.KeyUp:
+		c.cycleSearchMatch(1)
+		return true
+	case tea.KeyDown:
+		c.cycleSearchMatch(-1)
+		return true
+	case tea.KeyEnter:
+		c.acceptHistorySearch()
+		return true
+	case tea.KeyEsc:
+		c.cancelHistorySearch()
+		return true
+	case tea.KeyBackspace, tea.KeyCtrlH:
+		if c.searchQuery != "" {
+			runes := []rune(c.searchQuery)
+			c.searchQuery = string(runes[:len(runes)-1])
+			c.refreshSearchMatches()
+			c.applySearchMatch()
+		}
+		return true
+	case tea.KeySpace:
+		c.searchQuery += " "
+		c.refreshSearchMatches()
+		c.applySearchMatch()
+		return true
+	}
+
+	if len(keyMsg.Runes) > 0 {
+		c.searchQuery += string(keyMsg.Runes)
+		c.refreshSearchMatches()
+		c.applySearchMatch()
+		return true
+	}
+	return false
+}
+
+func (c *inputComponent) refreshSearchMatches() {
+	c.searchMatches = c.searchMatches[:0]
+	query := strings.ToLower(c.searchQuery)
+	for i := len(c.history) - 1; i >= 0; i-- {
+		if query == "" || strings.Contains(strings.ToLower(c.history[i]), query) {
+			c.searchMatches = append(c.searchMatches, i)
+		}
+	}
+	if c.searchIndex >= len(c.searchMatches) {
+		c.searchIndex = 0
+	}
+	if c.searchIndex < 0 {
+		c.searchIndex = 0
+	}
+}
+
+func (c *inputComponent) applySearchMatch() {
+	if len(c.searchMatches) == 0 {
+		c.textarea.SetValue(c.searchDraft)
+		c.textarea.Focus()
+		return
+	}
+	c.textarea.SetValue(c.history[c.searchMatches[c.searchIndex]])
+	c.textarea.Focus()
+}
+
+func (c *inputComponent) cycleSearchMatch(delta int) {
+	if len(c.searchMatches) == 0 {
+		return
+	}
+	c.searchIndex = (c.searchIndex + delta + len(c.searchMatches)) % len(c.searchMatches)
+	c.applySearchMatch()
+}
+
+func (c *inputComponent) acceptHistorySearch() {
+	c.searchActive = false
+	c.searchQuery = ""
+	c.searchDraft = ""
+	c.searchMatches = nil
+	c.searchIndex = 0
+	c.historyIndex = -1
+	c.historyDraft = ""
+	c.textarea.Focus()
+}
+
+func (c *inputComponent) cancelHistorySearch() {
+	draft := c.searchDraft
+	c.resetHistorySearch()
+	c.textarea.SetValue(draft)
+	c.textarea.Focus()
+}
+
+func (c *inputComponent) resetHistorySearch() {
+	c.searchActive = false
+	c.searchQuery = ""
+	c.searchDraft = ""
+	c.searchMatches = nil
+	c.searchIndex = 0
 }
 
 func (c *inputComponent) previousHistory() bool {
@@ -221,6 +349,7 @@ func (c *inputComponent) SetHistory(prompts []string) {
 	c.history = prompts
 	c.historyIndex = -1
 	c.historyDraft = ""
+	c.resetHistorySearch()
 }
 
 // Reset clears the input value and refocuses.
@@ -231,4 +360,5 @@ func (c *inputComponent) Reset() {
 	c.textarea.Focus()
 	c.historyIndex = -1
 	c.historyDraft = ""
+	c.resetHistorySearch()
 }

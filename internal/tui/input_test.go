@@ -138,6 +138,61 @@ func TestInputComponentSetHistoryThenNewPrompts(t *testing.T) {
 	}
 }
 
+func TestInputComponentReverseSearchAcceptsMatch(t *testing.T) {
+	ic := newInputComponent()
+	ic.SetHistory([]string{"inspect auth flow", "fix prompt history", "copy assistant message"})
+
+	ic.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	typeRunes(&ic, "history")
+	if got := ic.textarea.Value(); got != "fix prompt history" {
+		t.Fatalf("search match = %q, want fix prompt history", got)
+	}
+
+	ic.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := ic.textarea.Value(); got != "fix prompt history" {
+		t.Fatalf("accepted search = %q, want fix prompt history", got)
+	}
+
+	cmd := ic.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("accepted search should submit on second enter")
+	}
+}
+
+func TestInputComponentReverseSearchCyclesAndCancels(t *testing.T) {
+	ic := newInputComponent()
+	ic.SetHistory([]string{"older copy task", "middle history task", "newer copy task"})
+	ic.textarea.SetValue("draft")
+
+	ic.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	typeRunes(&ic, "copy")
+	if got := ic.textarea.Value(); got != "newer copy task" {
+		t.Fatalf("first search match = %q, want newer copy task", got)
+	}
+
+	ic.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	if got := ic.textarea.Value(); got != "older copy task" {
+		t.Fatalf("cycled search match = %q, want older copy task", got)
+	}
+
+	ic.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if got := ic.textarea.Value(); got != "draft" {
+		t.Fatalf("cancelled search = %q, want draft", got)
+	}
+}
+
+func TestInputComponentReverseSearchNoMatchKeepsDraft(t *testing.T) {
+	ic := newInputComponent()
+	ic.SetHistory([]string{"previous prompt"})
+	ic.textarea.SetValue("draft")
+
+	ic.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	typeRunes(&ic, "zzz")
+	if got := ic.textarea.Value(); got != "draft" {
+		t.Fatalf("no-match search = %q, want draft", got)
+	}
+}
+
 func TestExtractUserPrompts(t *testing.T) {
 	msgs := []model.Message{
 		{
@@ -190,6 +245,12 @@ func TestExtractUserPromptsIgnoresNonText(t *testing.T) {
 	}
 	if prompts[0] != "prompt with image" {
 		t.Fatalf("prompts[0] = %q, want prompt with image", prompts[0])
+	}
+}
+
+func typeRunes(ic *inputComponent, text string) {
+	for _, r := range text {
+		ic.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 }
 

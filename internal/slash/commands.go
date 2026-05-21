@@ -28,6 +28,12 @@ func registerBuiltins(r *Registry) {
 		Handle:      handleClear,
 	})
 	r.Register(Command{
+		Name:        "copy",
+		Description: "Copy the latest assistant message",
+		Handle:      handleCopy,
+		Type:        TypeLocal,
+	})
+	r.Register(Command{
 		Name:        "help",
 		Aliases:     []string{"?"},
 		Description: "Show available commands",
@@ -195,6 +201,20 @@ func handleClear(_ context.Context, _ string, deps Deps) (Result, error) {
 		ClearConversation: true,
 		DisplayText:       "Conversation cleared.",
 	}, nil
+}
+
+func handleCopy(_ context.Context, _ string, deps Deps) (Result, error) {
+	if deps.LatestAssistantText == nil || deps.ClipboardWrite == nil {
+		return Result{DisplayText: "Copy is only available in the interactive TUI."}, nil
+	}
+	text := deps.LatestAssistantText()
+	if strings.TrimSpace(text) == "" {
+		return Result{DisplayText: "No assistant message to copy."}, nil
+	}
+	if err := deps.ClipboardWrite(text); err != nil {
+		return Result{}, fmt.Errorf("copy failed: %w", err)
+	}
+	return Result{DisplayText: "Copied latest assistant message."}, nil
 }
 
 func handleCost(_ context.Context, _ string, deps Deps) (Result, error) {
