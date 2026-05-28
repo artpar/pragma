@@ -30,6 +30,7 @@ import (
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/tool"
+	toolapplypatch "github.com/artpar/pragma/internal/tools/applypatch"
 	toolsynthetic "github.com/artpar/pragma/internal/tools/synthetic"
 	"github.com/artpar/pragma/internal/tui"
 )
@@ -473,12 +474,24 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			observe.GlobalTrace("typecase: query.TextEvent")
 			if !hasStructuredOutput {
 				fmt.Fprint(out, e.Text)
+				flushWriter(out)
 			}
 		case query.ThinkingEvent:
 			observe.GlobalTrace("typecase: query.ThinkingEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprint(os.Stderr, e.Text)
+				flushWriter(os.Stderr)
 			}
+		case query.ModelRequestEvent:
+			observe.GlobalTrace("typecase: query.ModelRequestEvent")
+			fmt.Fprintf(os.Stderr, "[model request: %s attempt %d]\n", e.Model, e.Attempt)
+			flushWriter(os.Stderr)
+			sessionSaveFn()
+		case query.ModelResponseEvent:
+			observe.GlobalTrace("typecase: query.ModelResponseEvent")
+			fmt.Fprintf(os.Stderr, "[model response: %s stop=%s]\n", e.Model, e.StopReason)
+			flushWriter(os.Stderr)
+			sessionSaveFn()
 		case query.ToolCallEvent:
 			observe.GlobalTrace("typecase: query.ToolCallEvent")
 			if hasStructuredOutput && e.Call.Name == "StructuredOutput" {
@@ -490,30 +503,40 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			} else {
 				fmt.Fprintf(os.Stderr, "  ⏺ %s\n", e.Call.Name)
 			}
+			flushWriter(os.Stderr)
+			sessionSaveFn()
 		case query.ToolResultEvent:
 			observe.GlobalTrace("typecase: query.ToolResultEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
+				flushWriter(os.Stderr)
 			}
+			sessionSaveFn()
 		case query.CompactionEvent:
 			observe.GlobalTrace("typecase: query.CompactionEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
+				flushWriter(os.Stderr)
 			}
+			sessionSaveFn()
 		case query.TurnCompleteEvent:
 			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 			turnCount++
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[turn %d complete, %d tool calls]\n", turnCount, turnToolCount)
+				flushWriter(os.Stderr)
 			}
 			turnToolCount = 0
 			if !hasStructuredOutput {
 				fmt.Fprintln(out)
+				flushWriter(out)
 			}
+			sessionSaveFn()
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
 			if e.Guidance != "" {
 				fmt.Fprintf(os.Stderr, "Hint: %s\n", e.Guidance)
+				flushWriter(os.Stderr)
 			}
 			sessionSaveFn()
 			sessionCloseFn()
@@ -535,6 +558,12 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	fmt.Fprintf(os.Stderr, "\ntotal cost: $%.6f\n", d.CostTracker.TotalUSD())
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+func flushWriter(w io.Writer) {
+	if f, ok := w.(*os.File); ok {
+		_ = f.Sync()
+	}
 }
 
 // RunListSessions lists all saved sessions.
@@ -717,6 +746,32 @@ func applyToolFilters(cmd *cobra.Command, registry *tool.Registry) {
 		for _, name := range disallowed {
 			observe.GlobalTrace("range disallowed")
 			registry.Unregister(name)
+		}
+	}
+
+	if !hasExposedPatchTool(registry) {
+		setPatchMode(registry, false)
+	}
+}
+
+func hasExposedPatchTool(registry *tool.Registry) bool {
+	for _, desc := range registry.List() {
+		switch desc.Name() {
+		case toolapplypatch.ToolName, toolapplypatch.LegacyToolName:
+			return true
+		}
+	}
+	return false
+}
+
+type patchModeSetter interface {
+	SetPatchMode(bool)
+}
+
+func setPatchMode(registry *tool.Registry, enabled bool) {
+	for _, desc := range registry.List() {
+		if setter, ok := desc.(patchModeSetter); ok {
+			setter.SetPatchMode(enabled)
 		}
 	}
 }

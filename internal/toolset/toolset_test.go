@@ -143,6 +143,9 @@ func TestCompiledBuiltinAndMCPResourceExposure(t *testing.T) {
 	if !mixed.AllowBuiltinTool("ListMcpResourcesTool") {
 		t.Fatal("ListMcpResourcesTool should be allowed")
 	}
+	if mixed.AllowBuiltinTool("ReadMcpResourceTool") {
+		t.Fatal("ReadMcpResourceTool should be rejected")
+	}
 	if mixed.AllowBuiltinTool("Bash") {
 		t.Fatal("Bash should be rejected because it does not match tools")
 	}

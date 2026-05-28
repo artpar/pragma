@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 type testState struct{ dir string }
@@ -81,6 +82,25 @@ func TestBashTool_Timeout(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	if !strings.Contains(result.Content, "timed out") {
+		t.Errorf("expected timeout message, got: %q", result.Content)
+	}
+}
+
+func TestBashTool_TimeoutWithBackgroundChildHoldingPipe(t *testing.T) {
+	tool := &Tool{}
+	timeout := 500
+	input, _ := json.Marshal(BashInput{Command: "sleep 60 & wait", Timeout: &timeout})
+
+	start := time.Now()
+	result, err := tool.Invoke(context.Background(), input, testState{t.TempDir()})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("timeout took too long: %s", elapsed)
+	}
 	if !strings.Contains(result.Content, "timed out") {
 		t.Errorf("expected timeout message, got: %q", result.Content)
 	}

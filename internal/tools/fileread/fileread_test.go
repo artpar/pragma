@@ -62,7 +62,7 @@ func TestFileReadToolRepeatedReadCanPreserveContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second read: %v", err)
 	}
-	if !strings.Contains(elided.Content, "File unchanged since last read") {
+	if elided.Content != "File unchanged since last read." {
 		t.Fatalf("expected repeated read to be elided, got: %s", elided.Content)
 	}
 
@@ -72,6 +72,21 @@ func TestFileReadToolRepeatedReadCanPreserveContent(t *testing.T) {
 	}
 	if !strings.Contains(preserved.Content, "1→line one") {
 		t.Fatalf("expected repeated content in preserve mode, got: %s", preserved.Content)
+	}
+}
+
+func TestFileReadToolDescriptionIsMechanical(t *testing.T) {
+	description := (&Tool{}).Description()
+	for _, forbidden := range []string{
+		"speculatively",
+		"parallel",
+		"ALWAYS",
+		"Assume this tool",
+		"Usage:",
+	} {
+		if strings.Contains(description, forbidden) {
+			t.Fatalf("description contains behavioral guidance %q: %s", forbidden, description)
+		}
 	}
 }
 

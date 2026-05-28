@@ -12,6 +12,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/provider/anyllm"
+	"github.com/artpar/pragma/internal/provider/rawcapture"
 	"github.com/artpar/pragma/internal/provider/shared"
 	"github.com/mozilla-ai/any-llm-go/config"
 	"github.com/mozilla-ai/any-llm-go/providers"
@@ -53,6 +54,9 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 	if pc.baseURL != "" {
 		observe.GlobalTrace("if: pc.baseURL != \"\"")
 		cfgOpts = append(cfgOpts, config.WithBaseURL(pc.baseURL))
+	}
+	if client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute); ok {
+		cfgOpts = append(cfgOpts, config.WithHTTPClient(client))
 	}
 	inner, err := oai.New(cfgOpts...)
 	if err != nil {
@@ -123,6 +127,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	defer observe.TraceCtx(ctx, "openai", "Provider.Complete", "exit")
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
+	ctx = rawcapture.WithTrace(ctx, traceID, spanID)
 	p.emitStart(traceID, spanID, params)
 	start := time.Now()
 
@@ -158,6 +163,7 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 	defer observe.TraceCtx(ctx, "openai", "Provider.Stream", "exit")
 	traceID := observe.NewTraceID()
 	spanID := observe.NewSpanID()
+	ctx = rawcapture.WithTrace(ctx, traceID, spanID)
 	p.emitStart(traceID, spanID, params)
 
 	llmParams := anyllm.RequestToParams(params)

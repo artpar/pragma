@@ -753,14 +753,14 @@ func TestCacheHitOnRetry(t *testing.T) {
 	}
 }
 
-// Simulate tool set change mid-session (e.g., plan mode toggle).
+// Simulate tool set change mid-session.
 func TestCacheInvalidatedByToolChange(t *testing.T) {
 	sys := makeSystemInstruction(40_000)
 	conv := makeConversation(5, 500)
 	stable, _ := splitStablePrefix(conv)
 
 	fullTools := makeTools(50)
-	readOnlyTools := makeTools(10) // plan mode: fewer tools
+	readOnlyTools := makeTools(10)
 
 	h1 := hashPrefix(stable, sys, fullTools)
 	h2 := hashPrefix(stable, sys, readOnlyTools)

@@ -264,6 +264,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		observe.GlobalTrace("if: appendPrompt != \"\"")
 		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
 	}
+	sysPrompt = applySystemPromptToolFilters(cmd, sysPrompt)
 
 	// Conversation (new or resumed)
 	var conv model.Conversation
@@ -502,6 +503,69 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		SessionWriter: sessionWriter,
 		Cleanup:       compositeCleanup,
 	}, nil
+}
+
+func applySystemPromptToolFilters(cmd *cobra.Command, prompt model.SystemPrompt) model.SystemPrompt {
+	if updatePlanAvailable(cmd) {
+		return prompt
+	}
+	for i := range prompt.Blocks {
+		prompt.Blocks[i].Text = stripUnavailableUpdatePlanGuidance(prompt.Blocks[i].Text)
+	}
+	return prompt
+}
+
+func updatePlanAvailable(cmd *cobra.Command) bool {
+	allowedStr, _ := cmd.Flags().GetString("allowed-tools")
+	if allowedStr != "" {
+		allowed := parseToolList(allowedStr)
+		found := false
+		for _, name := range allowed {
+			if name == "update_plan" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	disallowedStr, _ := cmd.Flags().GetString("disallowed-tools")
+	if disallowedStr != "" {
+		for _, name := range parseToolList(disallowedStr) {
+			if name == "update_plan" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func stripUnavailableUpdatePlanGuidance(text string) string {
+	text = strings.ReplaceAll(
+		text,
+		"- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n",
+		"- Communicate with the user by streaming thinking & responses.\n",
+	)
+	text = removeMarkdownSection(text, "## Planning", "## Task execution")
+	text = removeMarkdownSection(text, "## `update_plan`", "")
+	return text
+}
+
+func removeMarkdownSection(text, start, end string) string {
+	startIdx := strings.Index(text, start)
+	if startIdx < 0 {
+		return text
+	}
+	endIdx := len(text)
+	if end != "" {
+		searchFrom := startIdx + len(start)
+		if idx := strings.Index(text[searchFrom:], end); idx >= 0 {
+			endIdx = searchFrom + idx
+		}
+	}
+	return strings.TrimRight(text[:startIdx], "\n") + "\n\n" + strings.TrimLeft(text[endIdx:], "\n")
 }
 
 // ApplyFlagOverrides applies CLI flag values to the config.

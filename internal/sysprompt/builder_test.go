@@ -25,37 +25,27 @@ func TestBuild_FullPrompt(t *testing.T) {
 	builder := New(filepath.Join(dir, "proj"), "test-model", nil)
 	prompt := builder.Build()
 
-	// 7 static + 1 AGENT.md + 1 env = 9 blocks
-	if len(prompt.Blocks) != 9 {
-		t.Fatalf("got %d blocks, want 9", len(prompt.Blocks))
+	if len(prompt.Blocks) != 3 {
+		t.Fatalf("got %d blocks, want 3", len(prompt.Blocks))
 	}
 
-	// First 2 blocks NOT cacheable (identity + system rules — avoids Anthropic 4-block cache_control limit)
-	// Blocks 2-6 cacheable (using-tools, doing-tasks, actions-with-care, tone/style, output-efficiency)
-	for i := 0; i < 2; i++ {
-		if prompt.Blocks[i].Cacheable {
-			t.Errorf("block %d should NOT be cacheable", i)
-		}
-	}
-	for i := 2; i < 7; i++ {
-		if !prompt.Blocks[i].Cacheable {
-			t.Errorf("block %d should be cacheable", i)
-		}
+	if prompt.Blocks[0].Cacheable {
+		t.Error("Codex prompt block should not be cacheable")
 	}
 
 	// AGENT.md block should not be cacheable
-	if prompt.Blocks[7].Cacheable {
+	if prompt.Blocks[1].Cacheable {
 		t.Error("AGENT.md block should not be cacheable")
 	}
-	if !strings.Contains(prompt.Blocks[7].Text, "test project rule") {
+	if !strings.Contains(prompt.Blocks[1].Text, "test project rule") {
 		t.Error("AGENT.md block should contain project rule")
 	}
 
 	// Env block should not be cacheable
-	if prompt.Blocks[8].Cacheable {
+	if prompt.Blocks[2].Cacheable {
 		t.Error("env block should not be cacheable")
 	}
-	if !strings.Contains(prompt.Blocks[8].Text, "Platform:") {
+	if !strings.Contains(prompt.Blocks[2].Text, "Platform:") {
 		t.Error("env block should contain platform info")
 	}
 }
@@ -67,42 +57,24 @@ func TestBuild_NoAgentMD(t *testing.T) {
 	builder := New(dir, "test-model", nil)
 	prompt := builder.Build()
 
-	// 7 static + 0 AGENT.md + 1 env = 8 blocks
-	if len(prompt.Blocks) != 8 {
-		t.Fatalf("got %d blocks, want 8 (no AGENT.md)", len(prompt.Blocks))
+	if len(prompt.Blocks) != 2 {
+		t.Fatalf("got %d blocks, want 2 (no AGENT.md)", len(prompt.Blocks))
 	}
 
-	// All static blocks present
-	if !strings.Contains(prompt.Blocks[0].Text, "pragma") {
-		t.Error("identity block should mention pragma")
+	if prompt.Blocks[0].Text != codexDefaultPrompt {
+		t.Error("static prompt should match Codex default prompt")
 	}
 }
 
-func TestBuild_StaticBlockOrder(t *testing.T) {
+func TestBuild_StaticPromptIsCodexDefault(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
 	builder := New(dir, "test-model", nil)
 	prompt := builder.Build()
 
-	checks := []struct {
-		idx      int
-		contains string
-		name     string
-	}{
-		{0, "AI coding assistant", "identity"},
-		{1, "System", "system rules"},
-		{2, "Using your tools", "using tools"},
-		{3, "Doing tasks", "doing tasks"},
-		{4, "Executing actions with care", "actions with care"},
-		{5, "Tone and style", "tone & style"},
-		{6, "Output efficiency", "output efficiency"},
-	}
-
-	for _, c := range checks {
-		if !strings.Contains(prompt.Blocks[c.idx].Text, c.contains) {
-			t.Errorf("block %d should be %s (expected %q)", c.idx, c.name, c.contains)
-		}
+	if prompt.Blocks[0].Text != codexDefaultPrompt {
+		t.Fatal("static prompt does not match embedded Codex default prompt")
 	}
 }
 

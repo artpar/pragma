@@ -124,7 +124,7 @@ For structured questions:
 
 Usage notes:
 - Use this tool sparingly — prefer making reasonable decisions autonomously
-- In plan mode, use this tool to clarify requirements BEFORE finalizing your plan. Do NOT use this tool to ask "Is my plan ready?" — use ExitPlanMode for plan approval.`
+- Use this tool to clarify requirements before making changes when the answer materially affects the implementation.`
 
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")

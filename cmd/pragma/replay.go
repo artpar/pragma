@@ -36,6 +36,7 @@ Modes:
 	cmd.Flags().Int("until-turn", 0, "replay up to N turns")
 	cmd.Flags().Bool("then-live", false, "switch to live provider after --until-turn")
 	cmd.AddCommand(replayExportCmd())
+	cmd.AddCommand(replayRawHTTPCmd())
 	return cmd
 }
 

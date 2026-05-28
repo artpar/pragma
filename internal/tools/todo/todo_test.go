@@ -9,7 +9,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 )
 
-func TestTodoWrite(t *testing.T) {
+func TestUpdatePlan(t *testing.T) {
 	newStore := func() *app.StateStore {
 		return app.NewStateStore(app.AppState{
 			Conversation: model.NewConversation(model.SystemPrompt{}, "test", "test", "/tmp"),
@@ -19,8 +19,8 @@ func TestTodoWrite(t *testing.T) {
 
 	t.Run("name and flags", func(t *testing.T) {
 		tool := &Tool{Store: newStore()}
-		if tool.Name() != "TodoWrite" {
-			t.Fatalf("expected TodoWrite, got %s", tool.Name())
+		if tool.Name() != "update_plan" {
+			t.Fatalf("expected update_plan, got %s", tool.Name())
 		}
 		if tool.Flags().ReadOnly {
 			t.Fatal("expected not read-only")
@@ -119,6 +119,18 @@ func TestTodoWrite(t *testing.T) {
 		_, err := tool.Invoke(context.Background(), input, nil)
 		if err == nil {
 			t.Fatal("expected error for empty content")
+		}
+	})
+
+	t.Run("multiple in progress rejected", func(t *testing.T) {
+		tool := &Tool{Store: newStore()}
+		input := json.RawMessage(`{"todos": [
+			{"content": "A", "status": "in_progress"},
+			{"content": "B", "status": "in_progress"}
+		]}`)
+		_, err := tool.Invoke(context.Background(), input, nil)
+		if err == nil {
+			t.Fatal("expected error for multiple in_progress items")
 		}
 	})
 

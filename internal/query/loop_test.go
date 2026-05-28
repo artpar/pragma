@@ -505,7 +505,7 @@ func TestRun_StopAfterToolExec(t *testing.T) {
 	}
 }
 
-func TestRun_BlocksCompletionAfterMutationUntilValidation(t *testing.T) {
+func TestRun_EndTurnCompletesAfterMutationWithoutValidationGate(t *testing.T) {
 	prov := &testProvider{
 		turns: [][]provider.StreamChunk{
 			{
@@ -513,19 +513,12 @@ func TestRun_BlocksCompletionAfterMutationUntilValidation(t *testing.T) {
 				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "write-1", JSONDelta: `{}`}},
 				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
 			},
-			textChunks("done too early", model.StopEndTurn),
-			{
-				{ToolCallStart: &model.ToolCallPart{ID: "bash-1", Name: "Bash"}},
-				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "bash-1", JSONDelta: `{"command":"go test ./internal/query"}`}},
-				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
-			},
-			textChunks("done after validation", model.StopEndTurn),
+			textChunks("done", model.StopEndTurn),
 		},
 	}
 	engine, _ := newTestEngine(
 		prov,
 		namedTestTool{name: "Write", content: "updated"},
-		namedTestTool{name: "Bash", content: "ok", readOnly: true},
 	)
 	events := drain(engine.Run(context.Background(), "change a file"))
 
@@ -543,13 +536,13 @@ func TestRun_BlocksCompletionAfterMutationUntilValidation(t *testing.T) {
 		}
 	}
 	if complete == nil {
-		t.Fatal("expected completion after validation")
+		t.Fatal("expected completion")
 	}
-	if !strings.Contains(text, "done after validation") {
-		t.Fatalf("expected final validated response, text=%q", text)
+	if !strings.Contains(text, "done") {
+		t.Fatalf("expected final response, text=%q", text)
 	}
-	if prov.callIdx != 4 {
-		t.Fatalf("provider calls = %d, want 4", prov.callIdx)
+	if prov.callIdx != 2 {
+		t.Fatalf("provider calls = %d, want 2", prov.callIdx)
 	}
 	history := engine.store.Snapshot().Conversation.APIMessages()
 	foundGate := false
@@ -559,12 +552,12 @@ func TestRun_BlocksCompletionAfterMutationUntilValidation(t *testing.T) {
 			break
 		}
 	}
-	if !foundGate {
-		t.Fatal("expected completion validation prompt in conversation")
+	if foundGate {
+		t.Fatal("did not expect completion validation prompt in conversation")
 	}
 }
 
-func TestRun_NoTestsToRunDoesNotSatisfyValidation(t *testing.T) {
+func TestRun_FailedValidationCommandDoesNotInjectCompletionGate(t *testing.T) {
 	prov := &testProvider{
 		turns: [][]provider.StreamChunk{
 			{
@@ -577,13 +570,7 @@ func TestRun_NoTestsToRunDoesNotSatisfyValidation(t *testing.T) {
 				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "bash-1", JSONDelta: `{"command":"go test ./internal/tui -run TestHistory"}`}},
 				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
 			},
-			textChunks("done too early", model.StopEndTurn),
-			{
-				{ToolCallStart: &model.ToolCallPart{ID: "bash-2", Name: "Bash"}},
-				{ToolCallInputDelta: &provider.ToolCallDelta{ToolCallID: "bash-2", JSONDelta: `{"command":"go test ./internal/query"}`}},
-				{Done: &provider.StreamDone{StopReason: model.StopToolUse}},
-			},
-			textChunks("done after real validation", model.StopEndTurn),
+			textChunks("done", model.StopEndTurn),
 		},
 	}
 	engine, _ := newTestEngine(
@@ -591,7 +578,6 @@ func TestRun_NoTestsToRunDoesNotSatisfyValidation(t *testing.T) {
 		namedTestTool{name: "Write", content: "updated"},
 		bashOutputTool{outputs: map[string]string{
 			"go test ./internal/tui -run TestHistory": "testing: warning: no tests to run\nPASS",
-			"go test ./internal/query":                "ok",
 		}},
 	)
 	events := drain(engine.Run(context.Background(), "change a file"))
@@ -608,8 +594,8 @@ func TestRun_NoTestsToRunDoesNotSatisfyValidation(t *testing.T) {
 	if !complete {
 		t.Fatal("expected completion")
 	}
-	if prov.callIdx != 5 {
-		t.Fatalf("provider calls = %d, want 5", prov.callIdx)
+	if prov.callIdx != 3 {
+		t.Fatalf("provider calls = %d, want 3", prov.callIdx)
 	}
 	history := engine.store.Snapshot().Conversation.APIMessages()
 	var sawNoOpFeedback bool
@@ -619,8 +605,8 @@ func TestRun_NoTestsToRunDoesNotSatisfyValidation(t *testing.T) {
 			break
 		}
 	}
-	if !sawNoOpFeedback {
-		t.Fatal("expected no-op validation feedback in conversation")
+	if sawNoOpFeedback {
+		t.Fatal("did not expect no-op validation feedback in conversation")
 	}
 }
 
@@ -687,6 +673,54 @@ func TestRun_StateHandoffSendsLatestToolExchangeOnly(t *testing.T) {
 	}
 	if !foundPatchTool {
 		t.Fatalf("PatchHandoffState tool missing from state-handoff request")
+	}
+}
+
+func TestRun_ChatModeExcludesHandoffToolsAndSystemText(t *testing.T) {
+	prov := &testProvider{
+		turns: [][]provider.StreamChunk{textChunks("done", model.StopEndTurn)},
+	}
+	engine, _ := newTestEngine(prov, echoTool{})
+
+	events := drain(engine.Run(context.Background(), "Finish the task"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+
+	for _, td := range prov.lastParams.Tools {
+		if td.Name == "PatchHandoffState" || td.Name == "CertifyFact" {
+			t.Fatalf("chat mode exposed handoff tool %q", td.Name)
+		}
+	}
+	sys := systemText(prov.lastParams.System)
+	if strings.Contains(sys, "PatchHandoffState") || strings.Contains(sys, "current_handoff_state") {
+		t.Fatalf("chat mode leaked handoff system text:\n%s", sys)
+	}
+}
+
+func TestExecuteToolBatchRejectsHandoffToolsOutsideStateHandoff(t *testing.T) {
+	engine, _ := newTestEngine(&testProvider{})
+	calls := []model.ToolCallPart{
+		{ID: "patch-call", Name: "PatchHandoffState", Input: json.RawMessage(`{"ops":[]}`)},
+		{ID: "certify-call", Name: "CertifyFact", Input: json.RawMessage(`{"id":"x","kind":"tool_result_contains"}`)},
+	}
+
+	result := engine.executeToolBatch(context.Background(), calls, engine.store.Snapshot(), nil)
+	if len(result.Results) != 2 {
+		t.Fatalf("results = %d, want 2", len(result.Results))
+	}
+	for _, got := range result.Results {
+		if !got.IsError {
+			t.Fatalf("handoff tool result should be an error: %#v", got)
+		}
+		if !strings.Contains(got.Content, "only available in state-handoff") {
+			t.Fatalf("unexpected rejection content: %q", got.Content)
+		}
+	}
+	if !engine.store.Snapshot().HandoffState.IsZero() {
+		t.Fatal("handoff state should not be created outside state-handoff mode")
 	}
 }
 
@@ -1289,11 +1323,7 @@ func TestRun_PauseTurnExceedsTurns(t *testing.T) {
 	}
 }
 
-func TestRun_TurnBudgetWarning(t *testing.T) {
-	// Verify that the engine injects a warning when reaching 80% of maxTurns.
-	// With maxTurns=10, warningThreshold = 10/5 = 2.
-	// Warning fires when remaining == 2, i.e., when turnCount==7 (before increment to 8).
-	// That means the 8th tool-call turn's result includes the warning.
+func TestRun_DoesNotInjectTurnBudgetWarning(t *testing.T) {
 	maxTurns := 10
 
 	toolCallID := "tc-echo"
@@ -1343,7 +1373,7 @@ func TestRun_TurnBudgetWarning(t *testing.T) {
 		}
 	}
 
-	// Inspect conversation messages for the turn budget warning
+	// Inspect conversation messages for Pragma-only turn budget guidance.
 	snap := engine.store.Snapshot()
 	msgs := snap.Conversation.APIMessages()
 
@@ -1353,15 +1383,12 @@ func TestRun_TurnBudgetWarning(t *testing.T) {
 			if tp, ok := part.(model.TextPart); ok {
 				if strings.Contains(tp.Text, "turns remaining") {
 					foundWarning = true
-					if !strings.Contains(tp.Text, "2 turns remaining") {
-						t.Errorf("warning text = %q, expected '2 turns remaining'", tp.Text)
-					}
 				}
 			}
 		}
 	}
-	if !foundWarning {
-		t.Error("expected turn budget warning at 80% usage (turn 8 of 10), but not found in conversation")
+	if foundWarning {
+		t.Error("did not expect turn budget warning in conversation")
 	}
 }
 

@@ -27,6 +27,22 @@ type ThinkingEvent struct {
 
 func (ThinkingEvent) loopEventSealed() {}
 
+// ModelRequestEvent signals that a provider request is starting.
+type ModelRequestEvent struct {
+	Model   string
+	Attempt int
+}
+
+func (ModelRequestEvent) loopEventSealed() {}
+
+// ModelResponseEvent signals that a provider request returned.
+type ModelResponseEvent struct {
+	Model      string
+	StopReason model.StopReason
+}
+
+func (ModelResponseEvent) loopEventSealed() {}
+
 // ToolCallEvent signals a tool call is about to be executed.
 type ToolCallEvent struct {
 	Call model.ToolCallPart

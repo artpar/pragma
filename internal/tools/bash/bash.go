@@ -31,7 +31,6 @@ type BashInput struct {
 var inputSchema = json.RawMessage(`{
 	"type": "object",
 	"additionalProperties": false,
-	"additionalProperties": false,
 	"required": ["command"],
 	"properties": {
 		"command": {
@@ -52,6 +51,10 @@ var inputSchema = json.RawMessage(`{
 // Tool implements the Bash tool for shell command execution.
 type Tool struct {
 	PatchMode bool
+}
+
+func (t *Tool) SetPatchMode(enabled bool) {
+	t.PatchMode = enabled
 }
 
 func (t *Tool) Name() string {
@@ -79,7 +82,6 @@ IMPORTANT: Avoid using this tool for file discovery, content search, file readin
  - Always quote file paths that contain spaces with double quotes in your command (e.g., cd "path with spaces/file.txt")
  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of ` + "`cd`" + `. You may use ` + "`cd`" + ` if the User explicitly requests it.
  - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, your command will timeout after 120000ms (2 minutes).
- - You can use the ` + "`run_in_background`" + ` parameter to run the command in the background. Only use this if you don't need the result immediately and are OK being notified when the command completes later. You do not need to check the output right away - you'll be notified when it finishes. You do not need to use '&' at the end of the command when using this parameter.
  - Write a clear, concise description of what your command does. For simple commands, keep it brief (5-10 words). For complex commands (piped commands, obscure flags, or anything hard to understand at a glance), include enough context so that the user can understand what your command will do.
  - When issuing multiple commands:
   - If the commands are independent and can run in parallel, make multiple shell tool calls in a single message.
@@ -92,9 +94,7 @@ IMPORTANT: Avoid using this tool for file discovery, content search, file readin
   - Never skip hooks (--no-verify) or bypass signing (--no-gpg-sign, -c commit.gpgsign=false) unless the user has explicitly asked for it. If a hook fails, investigate and fix the underlying issue.
  - Avoid unnecessary ` + "`sleep`" + ` commands:
   - Do not sleep between commands that can run immediately — just run them.
-  - If your command is long running and you would like to be notified when it finishes — use ` + "`run_in_background`" + `. No sleep needed.
   - Do not retry failing commands in a sleep loop — diagnose the root cause.
-  - If waiting for a background task you started with ` + "`run_in_background`" + `, you will be notified when it completes — do not poll.
   - If you must poll an external process, use a check command (e.g. ` + "`gh run view`" + `) rather than sleeping first.
   - If you must sleep, keep the duration short (1-5 seconds) to avoid blocking the user.
 
@@ -262,6 +262,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", in.Command)
 	cmd.Dir = state.WorkDir()
+	cmd.WaitDelay = 5 * time.Second
 
 	setProcAttr(cmd)
 

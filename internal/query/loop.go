@@ -58,6 +58,8 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
+	e.runMiniSWELoop(ctx, userMessage, ch)
+	return
 
 	defer func() {
 		if e.hookMgr != nil {
@@ -89,7 +91,6 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 	malformedRetries := 0
 	const maxMalformedRetries = 3
-	validationState := &completionValidationState{}
 	turnCount := 0
 	for turnCount < maxTurns {
 		observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("turn %d/%d", turnCount+1, maxTurns))
@@ -130,10 +131,6 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 
 		tools := e.registry.ToolDefs()
-		if snap.PlanMode {
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: snap.PlanMode")
-			tools = e.filterReadOnlyTools(tools)
-		}
 		if e.isStateHandoffMode() {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.isStateHandoffMode()")
 			tools = append([]model.ToolDef{handoffPatchToolDef(), certifyFactToolDef()}, tools...)
@@ -190,6 +187,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 		for attempt := range maxStreamRetries + 1 {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("stream attempt %d/%d", attempt+1, maxStreamRetries+1))
+			ch <- ModelRequestEvent{Model: resolvedModel, Attempt: attempt + 1}
 
 			var streamErr error
 			chunks, err := e.provider.Stream(ctx, params)
@@ -203,6 +201,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 			if streamErr == nil {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: streamErr == nil")
+				ch <- ModelResponseEvent{Model: resolvedModel, StopReason: response.StopReason}
 				break
 			}
 
@@ -284,19 +283,6 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		switch response.StopReason {
 		case model.StopEndTurn:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn")
-			if validationState.shouldBlockCompletion(response.Content) {
-				correctionMsg := model.Message{
-					ID:        model.NewUUID(),
-					Role:      model.RoleUser,
-					Content:   []model.ContentPart{model.TextPart{Text: validationState.completionPrompt()}},
-					Timestamp: time.Now(),
-				}
-				e.store.Update(func(s *app.AppState) {
-					s.Conversation.Append(correctionMsg)
-				})
-				turnCount++
-				continue
-			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
 
@@ -377,27 +363,11 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 
 			execResult := e.executeToolBatch(ctx, toolCalls, snap, ch)
 
-			for i, r := range execResult.Results {
-				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i]}
-			}
-
 			resultParts := make([]model.ContentPart, 0, len(execResult.Results)+len(execResult.Supplements))
 			for _, r := range execResult.Results {
 				resultParts = append(resultParts, r)
 			}
 			resultParts = append(resultParts, execResult.Supplements...)
-			resultParts = append(resultParts, validationState.observeToolBatch(e.registry, toolCalls, execResult.Results, execResult.Displays)...)
-
-			remaining := maxTurns - turnCount - 1
-			warningThreshold := maxTurns / 5
-			if warningThreshold < 2 {
-				warningThreshold = 2
-			}
-			if remaining == warningThreshold {
-				resultParts = append(resultParts, model.TextPart{
-					Text: fmt.Sprintf("[system: %d turns remaining out of %d. Wrap up your current task or summarize progress.]", remaining, maxTurns),
-				})
-			}
 
 			resultMsg := model.Message{
 				ID:        model.NewUUID(),
@@ -408,6 +378,9 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			e.store.Update(func(s *app.AppState) {
 				s.Conversation.Append(resultMsg)
 			})
+			for i, r := range execResult.Results {
+				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i]}
+			}
 			if e.config.StopAfterToolExec {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.config.StopAfterToolExec")
 				ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
@@ -882,6 +855,14 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "if: call.Name != \"PatchHandoffState\" && call.Name != \"CertifyFact\"")
 			realCalls = append(realCalls, call)
 			realIndexes = append(realIndexes, i)
+			continue
+		}
+		if !e.isStateHandoffMode() {
+			results[i] = model.ToolResultPart{
+				ToolCallID: call.ID,
+				Content:    call.Name + " is only available in state-handoff context mode",
+				IsError:    true,
+			}
 			continue
 		}
 		if call.Name == "PatchHandoffState" {
@@ -1627,24 +1608,6 @@ func (e *Engine) consumeStream(
 		StopReason: done.StopReason,
 		Usage:      done.Usage,
 	}, nil
-}
-
-// filterReadOnlyTools returns only tool defs whose Flags().ReadOnly is true.
-// Used in plan mode to restrict the LLM to non-mutating tools.
-func (e *Engine) filterReadOnlyTools(tools []model.ToolDef) []model.ToolDef {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	filtered := make([]model.ToolDef, 0, len(tools))
-	for _, td := range tools {
-		observe.GlobalTrace("range tools")
-		desc, ok := e.registry.Get(td.Name)
-		if ok && desc.Flags().ReadOnly {
-			observe.GlobalTrace("if: ok && desc.Flags().ReadOnly")
-			filtered = append(filtered, td)
-		}
-	}
-	observe.GlobalTrace("return: filtered")
-	return filtered
 }
 
 // extractToolCalls filters ToolCallPart values from a slice of ContentParts.

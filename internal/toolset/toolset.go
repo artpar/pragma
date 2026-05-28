@@ -18,7 +18,6 @@ import (
 
 const (
 	resourceListTool = "ListMcpResourcesTool"
-	resourceReadTool = "ReadMcpResourceTool"
 )
 
 // File is the top-level reusable toolset configuration file.
@@ -266,8 +265,8 @@ func (c *Compiled) matchesTool(name string) bool {
 func isMCPResourceTool(name string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: name == resourceListTool || name == resourceReadTool")
-	return name == resourceListTool || name == resourceReadTool
+	observe.GlobalTrace("return: name == resourceListTool")
+	return name == resourceListTool
 }
 
 func matchGlob(pattern, name string) bool {

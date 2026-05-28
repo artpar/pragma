@@ -22,14 +22,12 @@ import (
 	toolconfig "github.com/artpar/pragma/internal/tools/config"
 	toolcron "github.com/artpar/pragma/internal/tools/cron"
 	toolfileedit "github.com/artpar/pragma/internal/tools/fileedit"
-	toolfileread "github.com/artpar/pragma/internal/tools/fileread"
 	toolfilewrite "github.com/artpar/pragma/internal/tools/filewrite"
 	toolglob "github.com/artpar/pragma/internal/tools/glob"
 	toolgrep "github.com/artpar/pragma/internal/tools/grep"
 	toollifecycle "github.com/artpar/pragma/internal/tools/lifecycle"
 	toolmcp "github.com/artpar/pragma/internal/tools/mcp"
 	toolnotebookedit "github.com/artpar/pragma/internal/tools/notebookedit"
-	toolplan "github.com/artpar/pragma/internal/tools/plan"
 	toolpowershell "github.com/artpar/pragma/internal/tools/powershell"
 	toolremote "github.com/artpar/pragma/internal/tools/remote"
 	toolrepl "github.com/artpar/pragma/internal/tools/repl"
@@ -255,11 +253,10 @@ func mcpStatusesForQuery(mgr interface {
 func BaseTools(d *Deps) []tool.Descriptor {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: []tool.Descriptor{\n\t&toolglob.Tool{},\n\t&toolgrep.Tool{},\n\t&toolfileread.Tool{...")
+	observe.GlobalTrace("return: []tool.Descriptor{\n\t&toolglob.Tool{},\n\t&toolgrep.Tool{},\n\t&toolapplypatch.Tool{...")
 	tools := []tool.Descriptor{
 		&toolglob.Tool{},
 		&toolgrep.Tool{},
-		&toolfileread.Tool{PreserveRepeatedContent: d != nil && d.Cfg.ContextMode == model.ContextModeStateHandoff},
 		&toolapplypatch.Tool{},
 		&toolapplypatch.LegacyTool{},
 		&toolfilewrite.Tool{PatchMode: patchModeActive(d)},
@@ -275,8 +272,6 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&tooltaskoutput.Tool{Tasks: d.TaskReg},
 		&toolsleep.Tool{},
 		&tooltodo.Tool{Store: d.Store},
-		&toolplan.EnterTool{Store: d.Store},
-		&toolplan.ExitTool{Store: d.Store},
 		&tooltoolsearch.Tool{
 			Registry: d.Registry,
 			PendingMCPServers: func() []string {
@@ -312,7 +307,6 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		observe.GlobalTrace("if: d.McpManager != nil")
 		tools = append(tools,
 			&toolmcp.ListTool{Manager: d.McpManager},
-			&toolmcp.ReadTool{Manager: d.McpManager},
 		)
 	}
 

@@ -56,8 +56,8 @@ type Tool struct {
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"TodoWrite\"")
-	return "TodoWrite"
+	observe.GlobalTrace("return: \"update_plan\"")
+	return "update_plan"
 }
 func (t *Tool) Description() string {
 	observe.GlobalTrace("enter")
@@ -66,32 +66,13 @@ func (t *Tool) Description() string {
 	return todoDescription
 }
 
-const todoDescription = `Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user. It also helps the user understand the progress of the task and overall progress of their requests.
+const todoDescription = `Updates the task plan.
+Provide a list of plan items, each with a step and status.
+At most one step can be in_progress at a time.
 
-## When to Use This Tool
+Use this to keep an up-to-date, step-by-step plan for non-trivial tasks. Do not use it for simple or single-step work.
 
-1. Complex multi-step tasks — when a task requires 3 or more distinct steps or actions
-2. Non-trivial tasks — tasks that require careful planning or multiple operations
-3. User explicitly requests a todo list
-4. User provides multiple tasks — numbered or comma-separated list
-5. After receiving new instructions — immediately capture requirements as todos
-6. When you start working on a task — mark it as in_progress BEFORE beginning work. Only have one todo as in_progress at a time
-7. After completing a task — mark it as completed and add any new follow-up tasks discovered during implementation
-
-## When NOT to Use This Tool
-
-1. There is only a single, straightforward task
-2. The task is trivial and tracking provides no organizational benefit
-3. The task can be completed in fewer than 3 trivial steps
-4. The task is purely conversational or informational
-
-NOTE: do not use this tool if there is only one trivial task. Just do the task directly.
-
-## Important
-
-- Each call REPLACES the entire todo list — always include all items (completed and pending)
-- Statuses: "pending", "in_progress", "completed"
-- When all items are marked "completed", the list is automatically cleared`
+Each call replaces the entire plan. Statuses are pending, in_progress, and completed.`
 
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
@@ -109,8 +90,8 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "exit")
-	observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "return: checker.Check(ctx, \"TodoWrite\", \"\")")
-	return checker.Check(ctx, "TodoWrite", "")
+	observe.TraceCtx(ctx, "todo", "Tool.CheckPerm", "return: checker.Check(ctx, \"update_plan\", \"\")")
+	return checker.Check(ctx, "update_plan", "")
 }
 
 func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
@@ -137,6 +118,15 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 			observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"empty content for todo %d\", i)")
 			return tool.InvokeResult{}, fmt.Errorf("empty content for todo %d", i)
 		}
+	}
+	inProgressCount := 0
+	for _, item := range in.Todos {
+		if item.Status == "in_progress" {
+			inProgressCount++
+		}
+	}
+	if inProgressCount > 1 {
+		return tool.InvokeResult{}, fmt.Errorf("only one plan item can be in_progress")
 	}
 
 	snap := t.Store.Snapshot()
