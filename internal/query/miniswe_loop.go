@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -354,48 +356,93 @@ type miniSWEBashResult struct {
 }
 
 func runMiniSWEBash(ctx context.Context, workDir, command string) (miniSWEBashResult, bool) {
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = workDir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
-	var combined bytes.Buffer
-	cmd.Stdout = &combined
-	cmd.Stderr = &combined
-
-	if err := cmd.Start(); err != nil {
+	outputReader, outputWriter, err := os.Pipe()
+	if err != nil {
 		return miniSWEBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
+	defer outputReader.Close()
+
+	var combined bytes.Buffer
+	var combinedMu sync.Mutex
+	snapshotOutput := func() string {
+		combinedMu.Lock()
+		defer combinedMu.Unlock()
+		return combined.String()
+	}
+
+	cmd.Stdout = outputWriter
+	cmd.Stderr = outputWriter
+
+	if err := cmd.Start(); err != nil {
+		outputWriter.Close()
+		return miniSWEBashResult{ReturnCode: -1, Output: err.Error()}, false
+	}
+	outputWriter.Close()
 
 	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
 	}()
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := outputReader.Read(buf)
+			if n > 0 {
+				combinedMu.Lock()
+				combined.Write(buf[:n])
+				combinedMu.Unlock()
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
 
-	var err error
+	var waitErr error
 	timedOut := false
+	timer := time.NewTimer(miniSWECommandTimeout)
+	defer timer.Stop()
 	select {
-	case err = <-done:
-	case <-time.After(miniSWECommandTimeout):
+	case waitErr = <-done:
+		select {
+		case <-readDone:
+		case <-timer.C:
+			timedOut = true
+		case <-ctx.Done():
+			timedOut = true
+		}
+	case <-timer.C:
 		timedOut = true
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = cmd.Process.Kill()
 		}
-		err = <-done
 	case <-ctx.Done():
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			_ = cmd.Process.Kill()
 		}
-		err = <-done
+		return miniSWEBashResult{ReturnCode: -1, Output: snapshotOutput()}, false
+	}
+	if timedOut {
+		select {
+		case waitErr = <-done:
+		case <-time.After(100 * time.Millisecond):
+		}
+		return miniSWEBashResult{ReturnCode: -1, Output: snapshotOutput()}, true
 	}
 
-	output := combined.String()
+	output := snapshotOutput()
 	result := miniSWEBashResult{Output: output}
-	if err == nil {
+	if waitErr == nil {
 		result.ReturnCode = 0
 		return result, timedOut
 	}
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if errors.As(waitErr, &exitErr) {
 		result.ReturnCode = exitErr.ExitCode()
 		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
 			result.ReturnCode = -int(status.Signal())
@@ -406,7 +453,7 @@ func runMiniSWEBash(ctx context.Context, workDir, command string) (miniSWEBashRe
 	if result.Output != "" {
 		result.Output += "\n"
 	}
-	result.Output += err.Error()
+	result.Output += waitErr.Error()
 	return result, timedOut
 }
 
