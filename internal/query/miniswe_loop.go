@@ -82,10 +82,7 @@ print(hello)
 EOF
 ` + "```" + `
 
-### Edit files with sed:
-
-` + "```bash" + `
-# Replace all occurrences
+` + "### Edit files with sed:```bash\n" + `# Replace all occurrences
 sed -i 's/old_string/new_string/g' filename.py
 
 # Replace only first occurrence
@@ -191,7 +188,7 @@ func (e *Engine) runMiniSWELoop(ctx context.Context, userMessage string, ch chan
 		assistantMsg := model.Message{
 			ID:        model.NewUUID(),
 			Role:      model.RoleAssistant,
-			Content:   response.Content,
+			Content:   miniSWEReplayContent(response.Content),
 			Timestamp: time.Now(),
 		}
 		e.store.Update(func(s *app.AppState) {
@@ -330,6 +327,17 @@ func responseText(response model.Response) string {
 		}
 	}
 	return b.String()
+}
+
+func miniSWEReplayContent(content []model.ContentPart) []model.ContentPart {
+	out := make([]model.ContentPart, 0, len(content))
+	for _, part := range content {
+		if _, ok := part.(model.ThinkingPart); ok {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }
 
 func extractMiniSWECommand(text string) (string, int) {

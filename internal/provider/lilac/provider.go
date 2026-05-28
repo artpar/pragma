@@ -2,9 +2,12 @@
 package lilac
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,6 +20,8 @@ import (
 	"github.com/mozilla-ai/any-llm-go/config"
 	"github.com/mozilla-ai/any-llm-go/providers"
 	oai "github.com/mozilla-ai/any-llm-go/providers/openai"
+	oaisdk "github.com/openai/openai-go"
+	"github.com/openai/openai-go/packages/param"
 )
 
 const defaultBaseURL = "https://api.getlilac.com/v1"
@@ -26,6 +31,9 @@ type Provider struct {
 	inner      providers.Provider
 	bus        *observe.EventBus
 	maxRetries int
+	apiKey     string
+	baseURL    string
+	httpClient *http.Client
 }
 
 // Option configures the Provider.
@@ -57,17 +65,48 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		config.WithBaseURL(pc.baseURL),
 		config.WithTimeout(10 * time.Minute),
 	}
+	httpClient := &http.Client{Timeout: 10 * time.Minute}
 	if client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute); ok {
+		httpClient = client
 		cfgOpts = append(cfgOpts, config.WithHTTPClient(client))
 	}
-	inner, err := oai.New(cfgOpts...)
+	inner, err := oai.NewCompatible(oai.CompatibleConfig{
+		Capabilities: providers.Capabilities{
+			Completion:          true,
+			CompletionImage:     true,
+			CompletionPDF:       false,
+			CompletionReasoning: true,
+			CompletionStreaming: true,
+			CompletionTools:     true,
+			Embedding:           false,
+			ListModels:          false,
+		},
+		DefaultBaseURL:                 pc.baseURL,
+		Name:                           "lilac",
+		RequireAPIKey:                  true,
+		ChatCompletionRequestTransform: transformLilacRequest,
+	}, cfgOpts...)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"lilac: create provider: %w\", err)")
 		return nil, fmt.Errorf("lilac: create provider: %w", err)
 	}
 	observe.GlobalTrace("return: &Provider{inner: inner, bus: bus, maxRetries: 10}, nil")
-	return &Provider{inner: inner, bus: bus, maxRetries: 10}, nil
+	return &Provider{
+		inner:      inner,
+		bus:        bus,
+		maxRetries: 10,
+		apiKey:     apiKey,
+		baseURL:    pc.baseURL,
+		httpClient: httpClient,
+	}, nil
+}
+
+func transformLilacRequest(req *oaisdk.ChatCompletionNewParams) {
+	if req.MaxCompletionTokens.Valid() {
+		req.MaxTokens = oaisdk.Int(req.MaxCompletionTokens.Value)
+	}
+	req.MaxCompletionTokens = param.Opt[int64]{}
 }
 
 func (p *Provider) Name() string {
@@ -165,7 +204,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	var comp *providers.ChatCompletion
 	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, lilacClassify, func() error {
 		var reqErr error
-		comp, reqErr = p.inner.Completion(ctx, llmParams)
+		comp, reqErr = p.completeDirect(ctx, llmParams)
 		return reqErr
 	})
 	if err != nil {
@@ -193,6 +232,162 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	})
 	observe.TraceCtx(ctx, "lilac", "Provider.Complete", "return: resp, nil")
 	return resp, nil
+}
+
+type chatCompletionRequest struct {
+	Messages          []providers.Message       `json:"messages"`
+	Model             string                    `json:"model"`
+	MaxTokens         *int                      `json:"max_tokens,omitempty"`
+	Temperature       *float64                  `json:"temperature,omitempty"`
+	TopP              *float64                  `json:"top_p,omitempty"`
+	Stop              []string                  `json:"stop,omitempty"`
+	Tools             []providers.Tool          `json:"tools,omitempty"`
+	ToolChoice        any                       `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                     `json:"parallel_tool_calls,omitempty"`
+	ResponseFormat    *providers.ResponseFormat `json:"response_format,omitempty"`
+	ReasoningEffort   providers.ReasoningEffort `json:"reasoning_effort,omitempty"`
+	Seed              *int                      `json:"seed,omitempty"`
+	User              string                    `json:"user,omitempty"`
+	Stream            bool                      `json:"stream,omitempty"`
+	StreamOptions     *providers.StreamOptions  `json:"stream_options,omitempty"`
+}
+
+func (p *Provider) completeDirect(ctx context.Context, params providers.CompletionParams) (*providers.ChatCompletion, error) {
+	reqBody := chatCompletionRequest{
+		Messages:          params.Messages,
+		Model:             params.Model,
+		MaxTokens:         params.MaxTokens,
+		Temperature:       params.Temperature,
+		TopP:              params.TopP,
+		Stop:              params.Stop,
+		Tools:             params.Tools,
+		ToolChoice:        params.ToolChoice,
+		ParallelToolCalls: params.ParallelToolCalls,
+		ResponseFormat:    params.ResponseFormat,
+		ReasoningEffort:   params.ReasoningEffort,
+		Seed:              params.Seed,
+		User:              params.User,
+		Stream:            params.Stream,
+		StreamOptions:     params.StreamOptions,
+	}
+
+	var body bytes.Buffer
+	enc := json.NewEncoder(&body)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(reqBody); err != nil {
+		return nil, fmt.Errorf("lilac: encode chat completion request: %w", err)
+	}
+	bodyBytes := bytes.TrimSuffix(body.Bytes(), []byte("\n"))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/chat/completions", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("lilac: create chat completion request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	httpClient := p.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("lilac: read chat completion response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("lilac: status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var wire completionResponse
+	if err := json.Unmarshal(respBody, &wire); err != nil {
+		return nil, fmt.Errorf("lilac: decode chat completion response: %w", err)
+	}
+	return wire.toAnyLLM(), nil
+}
+
+type completionResponse struct {
+	ID                string             `json:"id"`
+	Object            string             `json:"object"`
+	Created           int64              `json:"created"`
+	Model             string             `json:"model"`
+	Choices           []completionChoice `json:"choices"`
+	Usage             *providers.Usage   `json:"usage,omitempty"`
+	SystemFingerprint string             `json:"system_fingerprint,omitempty"`
+}
+
+type completionChoice struct {
+	Index        int               `json:"index"`
+	Message      completionMessage `json:"message"`
+	FinishReason string            `json:"finish_reason,omitempty"`
+}
+
+type completionMessage struct {
+	Role      string               `json:"role"`
+	Content   *string              `json:"content"`
+	ToolCalls []providers.ToolCall `json:"tool_calls,omitempty"`
+	Reasoning flexibleReasoning    `json:"reasoning,omitempty"`
+}
+
+type flexibleReasoning struct {
+	value *providers.Reasoning
+}
+
+func (r *flexibleReasoning) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, []byte("null")) {
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		r.value = &providers.Reasoning{Content: text}
+		return nil
+	}
+	var reasoning providers.Reasoning
+	if err := json.Unmarshal(data, &reasoning); err != nil {
+		return err
+	}
+	r.value = &reasoning
+	return nil
+}
+
+func (r flexibleReasoning) MarshalJSON() ([]byte, error) {
+	if r.value == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(r.value)
+}
+
+func (r completionResponse) toAnyLLM() *providers.ChatCompletion {
+	choices := make([]providers.Choice, 0, len(r.Choices))
+	for _, choice := range r.Choices {
+		msg := providers.Message{
+			Role:      choice.Message.Role,
+			ToolCalls: choice.Message.ToolCalls,
+		}
+		if choice.Message.Content != nil {
+			msg.Content = *choice.Message.Content
+		}
+		choices = append(choices, providers.Choice{
+			Index:        choice.Index,
+			Message:      msg,
+			FinishReason: choice.FinishReason,
+		})
+	}
+	return &providers.ChatCompletion{
+		ID:                r.ID,
+		Object:            r.Object,
+		Created:           r.Created,
+		Model:             r.Model,
+		Choices:           choices,
+		Usage:             r.Usage,
+		SystemFingerprint: r.SystemFingerprint,
+	}
 }
 
 func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<-chan provider.StreamChunk, error) {

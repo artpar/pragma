@@ -33,6 +33,16 @@ func TestMiniSWESystemUsesServerGuidanceFromExistingPrompt(t *testing.T) {
 	}
 }
 
+func TestMiniSWEInstancePromptMatchesMiniSWEYamlSedBoundary(t *testing.T) {
+	prompt := miniSWEInstancePrompt("do the task", "/work")
+	if !strings.Contains(prompt, "### Edit files with sed:```bash\n# Replace all occurrences") {
+		t.Fatalf("instance prompt does not match Mini-SWE YAML whitespace at sed boundary")
+	}
+	if strings.Contains(prompt, "### Edit files with sed:\n\n```bash") {
+		t.Fatalf("instance prompt has hand-copied whitespace drift before sed example")
+	}
+}
+
 func TestExtractMiniSWECommandMatchesMiniSWERegex(t *testing.T) {
 	command, count := extractMiniSWECommand("THOUGHT: x\n\n```bash\nls -la\n```")
 	if count != 1 || command != "ls -la" {
@@ -47,6 +57,19 @@ func TestExtractMiniSWECommandMatchesMiniSWERegex(t *testing.T) {
 	_, count = extractMiniSWECommand("```bash\nls\n```\n```bash\npwd\n```")
 	if count != 2 {
 		t.Fatalf("multi action count = %d, want 2", count)
+	}
+}
+
+func TestMiniSWEReplayContentDropsReasoning(t *testing.T) {
+	content := miniSWEReplayContent([]model.ContentPart{
+		model.ThinkingPart{Text: "provider reasoning"},
+		model.TextPart{Text: "THOUGHT: visible\n```bash\nls\n```"},
+	})
+	if len(content) != 1 {
+		t.Fatalf("content length = %d, want 1", len(content))
+	}
+	if text, ok := content[0].(model.TextPart); !ok || !strings.Contains(text.Text, "THOUGHT: visible") {
+		t.Fatalf("content[0] = %#v, want visible text", content[0])
 	}
 }
 

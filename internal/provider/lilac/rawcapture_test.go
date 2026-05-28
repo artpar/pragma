@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/artpar/pragma/internal/model"
@@ -38,7 +39,7 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 			"object": "chat.completion",
 			"created": 1,
 			"model": "minimaxai/minimax-m2.7",
-			"choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+			"choices": [{"index": 0, "message": {"role": "assistant", "content": "ok", "reasoning": "thinking"}, "finish_reason": "stop"}],
 			"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
 		}`))
 	}))
@@ -51,11 +52,14 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	temp := 0.0
 	resp, err := p.Complete(context.Background(), provider.RequestParams{
-		Model: "minimaxai/minimax-m2.7",
+		Model:       "minimaxai/minimax-m2.7",
+		MaxTokens:   16384,
+		Temperature: &temp,
 		Messages: []model.Message{{
 			Role:    model.RoleUser,
-			Content: []model.ContentPart{model.TextPart{Text: "hello"}},
+			Content: []model.ContentPart{model.TextPart{Text: "hello <tag> a && b > c"}},
 		}},
 	})
 	if err != nil {
@@ -64,11 +68,36 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 	if resp.StopReason != model.StopEndTurn {
 		t.Fatalf("stop reason = %s", resp.StopReason)
 	}
+	if len(resp.Content) != 1 {
+		t.Fatalf("response content length = %d, want 1", len(resp.Content))
+	}
+	if text, ok := resp.Content[0].(model.TextPart); !ok || text.Text != "ok" {
+		t.Fatalf("response content[0] = %#v, want text ok", resp.Content[0])
+	}
 
 	captureDir := onlyRawCaptureDir(t, captureRoot)
 	requestBody := readRawCaptureFile(t, filepath.Join(captureDir, "request.json"))
 	if !json.Valid([]byte(requestBody)) {
 		t.Fatalf("captured request is not JSON: %q", requestBody)
+	}
+	var requestPayload map[string]any
+	if err := json.Unmarshal([]byte(requestBody), &requestPayload); err != nil {
+		t.Fatal(err)
+	}
+	if got := requestPayload["max_tokens"]; got != float64(16384) {
+		t.Fatalf("max_tokens = %v, want 16384", got)
+	}
+	if got := requestPayload["temperature"]; got != float64(0) {
+		t.Fatalf("temperature = %v, want 0", got)
+	}
+	if _, ok := requestPayload["max_completion_tokens"]; ok {
+		t.Fatal("request used max_completion_tokens; Mini-SWE sends max_tokens")
+	}
+	if strings.Contains(requestBody, `\u003c`) || strings.Contains(requestBody, `\u003e`) || strings.Contains(requestBody, `\u0026`) {
+		t.Fatalf("request body contains HTML-escaped JSON: %q", requestBody)
+	}
+	if !strings.Contains(requestBody, "hello <tag> a && b > c") {
+		t.Fatalf("request body does not contain literal prompt bytes: %q", requestBody)
 	}
 	var headers map[string][]string
 	readRawCaptureJSON(t, filepath.Join(captureDir, "request.headers.json"), &headers)
