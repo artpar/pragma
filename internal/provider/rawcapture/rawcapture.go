@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -82,12 +84,43 @@ func HTTPClientFromEnv(timeout time.Duration) (*http.Client, bool) {
 	}
 	base := http.DefaultTransport
 	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
-		base = tr.Clone()
+		cloned := tr.Clone()
+		applyCustomRootCAs(cloned)
+		base = cloned
 	}
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: NewTransport(dir, base),
 	}, true
+}
+
+func applyCustomRootCAs(tr *http.Transport) {
+	certPath := strings.TrimSpace(os.Getenv("SSL_CERT_FILE"))
+	if certPath == "" {
+		certPath = strings.TrimSpace(os.Getenv("REQUESTS_CA_BUNDLE"))
+	}
+	if certPath == "" {
+		return
+	}
+
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(certPEM) {
+		return
+	}
+
+	tlsConfig := &tls.Config{RootCAs: pool}
+	if tr.TLSClientConfig != nil {
+		tlsConfig = tr.TLSClientConfig.Clone()
+		tlsConfig.RootCAs = pool
+	}
+	tr.TLSClientConfig = tlsConfig
 }
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {

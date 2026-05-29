@@ -90,6 +90,9 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 	if got := requestPayload["temperature"]; got != float64(0) {
 		t.Fatalf("temperature = %v, want 0", got)
 	}
+	if !strings.Contains(requestBody, `"temperature":0.0`) {
+		t.Fatalf("temperature raw JSON = %q, want 0.0 token", requestBody)
+	}
 	if _, ok := requestPayload["max_completion_tokens"]; ok {
 		t.Fatal("request used max_completion_tokens; Mini-SWE sends max_tokens")
 	}

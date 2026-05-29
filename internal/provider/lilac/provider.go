@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -238,7 +240,7 @@ type chatCompletionRequest struct {
 	Messages          []providers.Message       `json:"messages"`
 	Model             string                    `json:"model"`
 	MaxTokens         *int                      `json:"max_tokens,omitempty"`
-	Temperature       *float64                  `json:"temperature,omitempty"`
+	Temperature       *temperatureParam         `json:"temperature,omitempty"`
 	TopP              *float64                  `json:"top_p,omitempty"`
 	Stop              []string                  `json:"stop,omitempty"`
 	Tools             []providers.Tool          `json:"tools,omitempty"`
@@ -252,12 +254,33 @@ type chatCompletionRequest struct {
 	StreamOptions     *providers.StreamOptions  `json:"stream_options,omitempty"`
 }
 
+type temperatureParam float64
+
+func formatTemperatureParam(value *float64) *temperatureParam {
+	if value == nil {
+		return nil
+	}
+	temperature := temperatureParam(*value)
+	return &temperature
+}
+
+func (t temperatureParam) MarshalJSON() ([]byte, error) {
+	value := float64(t)
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil, fmt.Errorf("unsupported temperature value %v", value)
+	}
+	if math.Trunc(value) == value {
+		return []byte(strconv.FormatFloat(value, 'f', 1, 64)), nil
+	}
+	return []byte(strconv.FormatFloat(value, 'f', -1, 64)), nil
+}
+
 func (p *Provider) completeDirect(ctx context.Context, params providers.CompletionParams) (*providers.ChatCompletion, error) {
 	reqBody := chatCompletionRequest{
 		Messages:          params.Messages,
 		Model:             params.Model,
 		MaxTokens:         params.MaxTokens,
-		Temperature:       params.Temperature,
+		Temperature:       formatTemperatureParam(params.Temperature),
 		TopP:              params.TopP,
 		Stop:              params.Stop,
 		Tools:             params.Tools,
