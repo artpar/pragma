@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/cookiejar"
 	"strconv"
 	"strings"
 	"time"
@@ -67,9 +68,14 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		config.WithBaseURL(pc.baseURL),
 		config.WithTimeout(10 * time.Minute),
 	}
-	httpClient := &http.Client{Timeout: 10 * time.Minute}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, fmt.Errorf("lilac: create cookie jar: %w", err)
+	}
+	httpClient := &http.Client{Timeout: 10 * time.Minute, Jar: jar}
 	if client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute); ok {
 		httpClient = client
+		httpClient.Jar = jar
 		cfgOpts = append(cfgOpts, config.WithHTTPClient(client))
 	}
 	inner, err := oai.NewCompatible(oai.CompatibleConfig{
@@ -309,6 +315,7 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	setOpenAICompatibleHeaders(req)
 
 	httpClient := p.httpClient
 	if httpClient == nil {
@@ -333,6 +340,20 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 		return nil, fmt.Errorf("lilac: decode chat completion response: %w", err)
 	}
 	return wire.toAnyLLM(), nil
+}
+
+func setOpenAICompatibleHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", "OpenAI/Python 2.38.0")
+	req.Header.Set("X-Stainless-Lang", "python")
+	req.Header.Set("X-Stainless-Package-Version", "2.38.0")
+	req.Header.Set("X-Stainless-OS", "Linux")
+	req.Header.Set("X-Stainless-Arch", "arm64")
+	req.Header.Set("X-Stainless-Runtime", "CPython")
+	req.Header.Set("X-Stainless-Runtime-Version", "3.12.12")
+	req.Header.Set("X-Stainless-Async", "false")
+	req.Header.Set("X-Stainless-Raw-Response", "true")
+	req.Header.Set("X-Stainless-Retry-Count", "0")
+	req.Header.Set("X-Stainless-Read-Timeout", "600.0")
 }
 
 type completionResponse struct {
