@@ -58,8 +58,10 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
-	e.runMiniSWELoop(ctx, userMessage, ch)
-	return
+	if os.Getenv("PRAGMA_LEGACY_TOOL_LOOP") != "1" {
+		e.runMiniSWELoop(ctx, userMessage, ch)
+		return
+	}
 
 	defer func() {
 		if e.hookMgr != nil {
