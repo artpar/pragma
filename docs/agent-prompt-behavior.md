@@ -194,6 +194,35 @@ Rule:
 - Treat local validation and persona reports as diagnostic evidence.
 - Do not call a run solved because the model says it is complete.
 
+## Hard Subproblems Can Replace The Checklist
+
+Observed in SWE-bench Pro task
+`instance_flipt-io__flipt-0fd09def402258834b9d6c0eaa6d3b4ab93b4446`:
+the architect correctly identified config fixture and test updates, including
+`internal/config/testdata/authentication/kubernetes.yml`, but the implementer
+lost that checklist after protobuf generation became difficult.
+
+The exact trigger was toolchain friction. The implementer tried
+`which buf || go install github.com/bufbuild/buf/cmd/buf@latest`; installation
+failed because `buf@v1.70.0` required Go `>= 1.25.10` while the benchmark image
+had Go `1.24.3` with `GOTOOLCHAIN=local`. The model then hand-edited generated
+protobuf files for many turns. That generated-code repair became the center of
+gravity, and the model never returned to the architect's full requirement list.
+
+Failure pattern:
+
+- The model starts from a good handoff.
+- A technically noisy subproblem appears.
+- The model spends many turns making that subproblem compile.
+- Once local compile or visible tests look good, the model reports completion.
+- Earlier checklist items that were not part of the noisy subproblem are skipped.
+
+Prompt implication: implementer and repair personas need an explicit final
+reconciliation step before writing their report. The report should map each
+task or handoff requirement to concrete evidence, not only summarize files
+touched and commands run. Visible local tests and grep summaries are not enough
+when the handoff named specific fixtures, configs, or call sites.
+
 ## Long-Running Commands Need Prompt Awareness
 
 The command environment now soft-waits and returns active process/log
@@ -221,3 +250,5 @@ needs to be killed immediately.
 - Do not rely on "do not implement" alone.
 - Test prompt mutations against captured real API payloads.
 - Judge success with the benchmark evaluator, not model confidence.
+- Require final checklist-to-evidence reconciliation before implementation or
+  repair reports are written.
