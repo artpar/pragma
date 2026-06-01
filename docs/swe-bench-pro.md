@@ -67,6 +67,24 @@ Default Pragma settings:
 
 Extra Pragma flags can be passed through `PRAGMA_EXTRA_ARGS`.
 
+For orchestration runs, the runner mounts the repo-local YAML directories into
+the benchmark container:
+
+| Host path | Container path |
+|---|---|
+| `orchestrations/` | `/pragma/orchestrations` |
+| `personas/` | `/pragma/personas` |
+
+Example:
+
+```bash
+PRAGMA_EXTRA_ARGS='orchestration run /pragma/orchestrations/architect-implementer-prosecutor.yaml --persona-dir /pragma/personas' \
+tools/run_swebench_pro_instance.py \
+  --instance-id instance_flipt-io__flipt-507170da0f7f4da330f6732bffdf11c4df7fc192 \
+  --pull-image \
+  --evaluate
+```
+
 ## Outputs
 
 Outputs are written under:
