@@ -2,10 +2,21 @@ name: architect-implementer-prosecutor
 initial: architect
 states:
   - id: architect
+    persona: architect
   - id: implementer
+    persona: implementer
   - id: prosecutor
+    persona: prosecutor
+    event:
+      from_file:
+        path: /tmp/pragma/prosecutor-verdict.md
+        rules:
+          - contains: "Decision:\nAPPROVE"
+            event: approve
+          - contains: "Decision:\nBLOCK"
+            event: block
   - id: repair
-  - id: prosecutor_final
+    persona: repair
   - id: done
     terminal: true
 transitions:
@@ -23,10 +34,4 @@ transitions:
     to: repair
   - event: complete
     from: [repair]
-    to: prosecutor_final
-  - event: approve
-    from: [prosecutor_final]
-    to: done
-  - event: block
-    from: [prosecutor_final]
-    to: done
+    to: prosecutor

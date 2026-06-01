@@ -10,16 +10,29 @@ import (
 
 const (
 	EventComplete = "complete"
-	EventApprove  = "approve"
-	EventBlock    = "block"
-
-	StateDone = "done"
 )
 
 // State is one orchestration node. Execution semantics live outside the graph.
 type State struct {
 	ID       string `yaml:"id"`
 	Terminal bool   `yaml:"terminal,omitempty"`
+	Persona  string `yaml:"persona,omitempty"`
+	Event    Event  `yaml:"event,omitempty"`
+}
+
+type Event struct {
+	Default  string         `yaml:"default,omitempty"`
+	FromFile *FileEventRule `yaml:"from_file,omitempty"`
+}
+
+type FileEventRule struct {
+	Path  string      `yaml:"path"`
+	Rules []TextEvent `yaml:"rules"`
+}
+
+type TextEvent struct {
+	Contains string `yaml:"contains"`
+	Event    string `yaml:"event"`
 }
 
 type Transition struct {
@@ -122,5 +135,62 @@ func validate(def Definition) (map[string]State, error) {
 		}
 	}
 
+	transitionsByStateEvent := make(map[string]map[string]bool)
+	for _, tr := range def.Transitions {
+		for _, from := range tr.From {
+			if _, ok := transitionsByStateEvent[from]; !ok {
+				transitionsByStateEvent[from] = make(map[string]bool)
+			}
+			transitionsByStateEvent[from][tr.Event] = true
+		}
+	}
+
+	for _, state := range states {
+		if state.Terminal {
+			continue
+		}
+		for _, event := range emittedEvents(state) {
+			if !transitionsByStateEvent[state.ID][event] {
+				return nil, fmt.Errorf("orchestration %q state %q can emit event %q but has no matching transition", def.Name, state.ID, event)
+			}
+		}
+		if state.Event.FromFile != nil {
+			if state.Event.FromFile.Path == "" {
+				return nil, fmt.Errorf("orchestration %q state %q file event requires a path", def.Name, state.ID)
+			}
+			if len(state.Event.FromFile.Rules) == 0 {
+				return nil, fmt.Errorf("orchestration %q state %q file event requires at least one rule", def.Name, state.ID)
+			}
+			for _, rule := range state.Event.FromFile.Rules {
+				if rule.Contains == "" {
+					return nil, fmt.Errorf("orchestration %q state %q file event rule requires contains text", def.Name, state.ID)
+				}
+				if rule.Event == "" {
+					return nil, fmt.Errorf("orchestration %q state %q file event rule requires an event", def.Name, state.ID)
+				}
+			}
+		}
+	}
+
 	return states, nil
+}
+
+func emittedEvents(state State) []string {
+	events := make([]string, 0, 1+len(fileEventRules(state)))
+	if state.Event.Default != "" {
+		events = append(events, state.Event.Default)
+	} else if state.Event.FromFile == nil {
+		events = append(events, EventComplete)
+	}
+	for _, rule := range fileEventRules(state) {
+		events = append(events, rule.Event)
+	}
+	return events
+}
+
+func fileEventRules(state State) []TextEvent {
+	if state.Event.FromFile == nil {
+		return nil
+	}
+	return state.Event.FromFile.Rules
 }

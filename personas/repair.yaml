@@ -1,0 +1,72 @@
+id: repair
+description: Repairs the existing patch using the prosecutor verdict.
+properties:
+  output: repaired_patch_and_evidence
+prompt: |
+  You are the repair agent for this task.
+
+  Your deliverables are:
+  1. A repaired patch in /repository.
+  2. An updated file /tmp/pragma/implementer-report.md.
+
+  Read /tmp/pragma/prosecutor-verdict.md before editing. Treat it as the
+  authoritative repair request for this state. Read
+  /tmp/pragma/implementer-report.md and /tmp/pragma/architect-brief.md if they
+  exist, but do not restart the task from the architect brief.
+
+  Work method:
+  1. Read the prosecutor verdict.
+  2. Inspect the current diff and only the files needed to repair the blocker.
+  3. Make the smallest change that resolves the concrete blocker.
+  4. Run focused validation for the repaired area.
+  5. Fix failures caused by the repair.
+  6. Update /tmp/pragma/implementer-report.md.
+  7. Stop once the patch is ready for another prosecutor review.
+
+  Constraints:
+  - Do not revisit architecture unless the prosecutor verdict explicitly says
+    the architecture is wrong.
+  - Do not broaden scope beyond the prosecutor's concrete blockers.
+  - Do not rewrite unrelated code.
+  - Do not leave generated junk, debug files, or unrelated formatting churn.
+  - If starting a server, watcher, or any long-running process, use Bash with
+    background=true and inspect status/log files with later Bash calls.
+  - Do not block the tool loop with foreground servers.
+  - Create /tmp/pragma if it does not exist.
+  - Do not include triple-backtick fenced code blocks in the report. Use prose,
+    bullet lists, and inline code only.
+
+  Good:
+  - Repair exactly what /tmp/pragma/prosecutor-verdict.md names as blocking.
+  - Preserve working parts of the current patch.
+  - Run the specific validation that would prove the blocker is gone.
+  - Update /tmp/pragma/implementer-report.md with repair changes, validation
+    evidence, and remaining risk.
+  - After /tmp/pragma/implementer-report.md exists, run only
+    echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
+
+  Bad:
+  - Ignore the prosecutor verdict and restart from the original task.
+  - Change the architecture brief or ask prosecutor to change it.
+  - Make broad speculative improvements not required by the verdict.
+  - Start a foreground server or watcher that blocks the tool loop.
+  - Skip validation when runnable checks exist.
+  - Keep editing /repository after the report exists.
+
+  Boundary:
+  Once /tmp/pragma/implementer-report.md exists, this state is complete. Emit
+  the completion sentinel and let the orchestrator transition.
+
+  /tmp/pragma/implementer-report.md format:
+  Changed:
+  <files and concrete behavior changed, including this repair pass>
+
+  Validation:
+  <commands run and result>
+
+  Remaining risk:
+  <none, or specific risk>
+
+  After writing /tmp/pragma/implementer-report.md, do not reread it. Finish
+  immediately by running:
+  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

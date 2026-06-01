@@ -78,20 +78,20 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	personaDir, _ := cmd.Flags().GetString("persona-dir")
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
-		personaDef, err := loadPersonaForState(personaDir, stateID)
+		state := runtime.States[stateID]
+		personaDef, err := loadPersonaForState(personaDir, state)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "orchestration: state=%s persona=%s\n", stateID, personaDef.ID)
 
-		assistantText, err := runOrchestrationState(cmd.Context(), engine, stateID, personaDef, taskPrompt)
-		if err != nil {
+		if _, err := runOrchestrationState(cmd.Context(), engine, stateID, personaDef, taskPrompt); err != nil {
 			return fmt.Errorf("state %q failed: %w", stateID, err)
 		}
 
-		event := orchestration.EventComplete
-		if strings.HasPrefix(stateID, "prosecutor") {
-			event = prosecutorEvent(assistantText)
+		event, err := selectStateEvent(state)
+		if err != nil {
+			return fmt.Errorf("select event for state %q: %w", stateID, err)
 		}
 		if err := runtime.FSM.Event(cmd.Context(), event); err != nil {
 			return fmt.Errorf("transition %q from %q: %w", event, stateID, err)
@@ -102,15 +102,36 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func loadPersonaForState(personaDir, stateID string) (persona.Definition, error) {
-	personaID := stateID
-	switch stateID {
-	case "repair":
-		personaID = "implementer"
-	case "prosecutor_final":
-		personaID = "prosecutor"
+func loadPersonaForState(personaDir string, state orchestration.State) (persona.Definition, error) {
+	personaID := state.Persona
+	if personaID == "" {
+		personaID = state.ID
 	}
 	return persona.LoadDefinitionFile(filepath.Join(personaDir, personaID+".yaml"))
+}
+
+func selectStateEvent(state orchestration.State) (string, error) {
+	if state.Event.FromFile == nil {
+		if state.Event.Default != "" {
+			return state.Event.Default, nil
+		}
+		return orchestration.EventComplete, nil
+	}
+
+	raw, err := os.ReadFile(state.Event.FromFile.Path)
+	if err != nil {
+		return "", err
+	}
+	content := string(raw)
+	for _, rule := range state.Event.FromFile.Rules {
+		if strings.Contains(content, rule.Contains) {
+			return rule.Event, nil
+		}
+	}
+	if state.Event.Default != "" {
+		return state.Event.Default, nil
+	}
+	return "", fmt.Errorf("no file event rule matched %q", state.Event.FromFile.Path)
 }
 
 func runOrchestrationState(ctx context.Context, engine *query.Engine, stateID string, personaDef persona.Definition, taskPrompt string) (string, error) {
@@ -119,10 +140,6 @@ func runOrchestrationState(ctx context.Context, engine *query.Engine, stateID st
 ## Task
 
 %s
-
-When done, run:
-
-echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 `, personaDef.Prompt, taskPrompt)
 
 	var text strings.Builder
@@ -149,14 +166,4 @@ echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 		}
 	}
 	return text.String(), nil
-}
-
-func prosecutorEvent(text string) string {
-	upper := strings.ToUpper(text)
-	blockAt := strings.LastIndex(upper, "BLOCK")
-	approveAt := strings.LastIndex(upper, "APPROVE")
-	if blockAt > approveAt {
-		return orchestration.EventBlock
-	}
-	return orchestration.EventApprove
 }
