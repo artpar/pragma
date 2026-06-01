@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ const (
 	defaultTimeoutMs = 120_000 // 2 minutes
 	maxTimeoutMs     = 600_000 // 10 minutes
 )
+
+var foregroundWait = 30 * time.Second
 
 // BashInput defines the parameters for the Bash tool.
 type BashInput struct {
@@ -86,7 +89,8 @@ IMPORTANT: Avoid using this tool for file discovery, content search, file readin
  - If your command will create new directories or files, first use this tool to run ` + "`ls`" + ` to verify the parent directory exists and is the correct location.
  - Always quote file paths that contain spaces with double quotes in your command (e.g., cd "path with spaces/file.txt")
  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of ` + "`cd`" + `. You may use ` + "`cd`" + ` if the User explicitly requests it.
- - You may specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). By default, your command will timeout after 120000ms (2 minutes).
+ - Foreground commands wait up to 30 seconds for immediate output. If a command is still running after that, the tool returns with the PID, active processes, status file, and stdout/stderr log paths so you can continue working and inspect it later.
+ - You may specify an optional hard timeout in milliseconds (up to 600000ms / 10 minutes). By default, commands are killed after 120000ms (2 minutes) if they are still running.
  - Write a clear, concise description of what your command does. For simple commands, keep it brief (5-10 words). For complex commands (piped commands, obscure flags, or anything hard to understand at a glance), include enough context so that the user can understand what your command will do.
  - When issuing multiple commands:
   - If the commands are independent and can run in parallel, make multiple shell tool calls in a single message.
@@ -275,9 +279,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, "bash", "-c", in.Command)
+	command := commandForShellRun(in.Command)
+	cmd := exec.CommandContext(cmdCtx, "bash", "-c", command)
 	cmd.Dir = state.WorkDir()
 	cmd.WaitDelay = 5 * time.Second
 
@@ -287,16 +291,42 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if err != nil {
 		return tool.InvokeResult{}, fmt.Errorf("open stdout log: %w", err)
 	}
-	defer stdoutFile.Close()
 	stderrFile, err := os.OpenFile(files.Stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
+		stdoutFile.Close()
 		return tool.InvokeResult{}, fmt.Errorf("open stderr log: %w", err)
 	}
-	defer stderrFile.Close()
 	cmd.Stdout = stdoutFile
 	cmd.Stderr = stderrFile
 
-	err = cmd.Run()
+	if err := cmd.Start(); err != nil {
+		cancel()
+		stdoutFile.Close()
+		stderrFile.Close()
+		return tool.InvokeResult{}, fmt.Errorf("start command: %w", err)
+	}
+
+	pid := cmd.Process.Pid
+	_ = os.WriteFile(files.Status, []byte(fmt.Sprintf("running\npid=%d\nstarted=%s\n", pid, time.Now().Format(time.RFC3339))), 0o644)
+	done := make(chan error, 1)
+	go func() {
+		defer cancel()
+		err := cmd.Wait()
+		stdoutFile.Close()
+		stderrFile.Close()
+		writeCommandStatus(files, pid, timeout, cmdCtx, err)
+		done <- err
+	}()
+
+	select {
+	case err = <-done:
+		cancel()
+	case <-time.After(foregroundWait):
+		content := runningCommandContent("Command is still running after "+foregroundWait.String()+".", pid, files)
+		return tool.InvokeResult{Content: content, Display: "background"}, nil
+	case <-cmdCtx.Done():
+		err = <-done
+	}
 
 	output := strings.TrimRight(readCommandOutput(files), "\n")
 
@@ -404,32 +434,43 @@ func (t *Tool) invokeBackground(command string, timeout time.Duration, workDir s
 		defer stderrFile.Close()
 
 		err := cmd.Wait()
-		status := "exited"
-		detail := "exit_code=0"
-		if cmdCtx.Err() == context.DeadlineExceeded {
-			status = "timeout"
-			detail = fmt.Sprintf("timeout_ms=%d", timeout.Milliseconds())
-		} else if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				detail = fmt.Sprintf("exit_code=%d", exitErr.ExitCode())
-			} else {
-				status = "error"
-				detail = fmt.Sprintf("error=%s", err.Error())
-			}
-		}
-		_ = os.WriteFile(files.Status, []byte(fmt.Sprintf("%s\npid=%d\n%s\nended=%s\n", status, pid, detail, time.Now().Format(time.RFC3339))), 0o644)
+		writeCommandStatus(files, pid, timeout, cmdCtx, err)
 	}()
 
-	content := fmt.Sprintf(`Started background command.
+	content := runningCommandContent("Started background command.", pid, files)
+	return tool.InvokeResult{Content: content, Display: "background"}, nil
+}
+
+func writeCommandStatus(files commandFiles, pid int, timeout time.Duration, cmdCtx context.Context, err error) {
+	status := "exited"
+	detail := "exit_code=0"
+	if cmdCtx.Err() == context.DeadlineExceeded {
+		status = "timeout"
+		detail = fmt.Sprintf("timeout_ms=%d", timeout.Milliseconds())
+	} else if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			detail = fmt.Sprintf("exit_code=%d", exitErr.ExitCode())
+		} else {
+			status = "error"
+			detail = fmt.Sprintf("error=%s", err.Error())
+		}
+	}
+	_ = os.WriteFile(files.Status, []byte(fmt.Sprintf("%s\npid=%d\n%s\nended=%s\n", status, pid, detail, time.Now().Format(time.RFC3339))), 0o644)
+}
+
+func runningCommandContent(prefix string, pid int, files commandFiles) string {
+	return fmt.Sprintf(`%s
 PID: %d
 Command: %s
 Status: %s
 Stdout: %s
 Stderr: %s
 
+Active processes:
+%s
+
 Poll with: cat %q
-Inspect logs with: tail -100 %q %q`, pid, files.Command, files.Status, files.Stdout, files.Stderr, files.Status, files.Stdout, files.Stderr)
-	return tool.InvokeResult{Content: content, Display: "background"}, nil
+Inspect logs with: tail -100 %q %q`, prefix, pid, files.Command, files.Status, files.Stdout, files.Stderr, processGroupSummary(pid), files.Status, files.Stdout, files.Stderr)
 }
 
 func readCommandOutput(files commandFiles) string {
@@ -443,8 +484,23 @@ func readCommandOutput(files commandFiles) string {
 	return strings.Join(parts, "\n")
 }
 
+func processGroupSummary(pid int) string {
+	out, err := exec.Command("ps", "-o", "pid,ppid,pgid,stat,etime,comm,args", "-g", strconv.Itoa(pid)).Output()
+	if err != nil || len(out) == 0 {
+		return fmt.Sprintf("pid=%d", pid)
+	}
+	return strings.TrimRight(string(out), "\n")
+}
+
 func commandMayUseBackground(command string) bool {
 	return strings.Contains(command, "&")
+}
+
+func commandForShellRun(command string) string {
+	if !commandMayUseBackground(command) {
+		return command
+	}
+	return command + "\n__pragma_status=$?\ndisown -a 2>/dev/null || true\nexit $__pragma_status"
 }
 
 func appendLogPaths(output string, files commandFiles) string {

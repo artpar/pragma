@@ -1,6 +1,7 @@
 package query
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,53 @@ func TestRunPragmaLoopBashTimeoutUsesPragmaLoopTemplatePath(t *testing.T) {
 	}
 }
 
+func TestRunPragmaLoopBashSoftWaitReturnsRunningProcess(t *testing.T) {
+	oldWait := pragmaLoopForegroundWait
+	oldTimeout := pragmaLoopCommandTimeout
+	pragmaLoopForegroundWait = 50 * time.Millisecond
+	pragmaLoopCommandTimeout = 2 * time.Second
+	defer func() {
+		pragmaLoopForegroundWait = oldWait
+		pragmaLoopCommandTimeout = oldTimeout
+	}()
+
+	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "sleep 1; echo done")
+	if timedOut {
+		t.Fatal("command hard-timed out")
+	}
+	for _, want := range []string{"Command is still running", "Active processes:", "Status:", "Stdout:", "Stderr:"} {
+		if !strings.Contains(result.Output, want) {
+			t.Fatalf("output missing %q: %q", want, result.Output)
+		}
+	}
+
+	statusPath := pragmaLoopFieldPath(result.Output, "Status:")
+	stdoutPath := pragmaLoopFieldPath(result.Output, "Stdout:")
+	if statusPath == "" || stdoutPath == "" {
+		t.Fatalf("missing paths in output: %s", result.Output)
+	}
+
+	var status string
+	for i := 0; i < 30; i++ {
+		data, _ := os.ReadFile(statusPath)
+		status = string(data)
+		if strings.Contains(status, "exited") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(status, "exited") || !strings.Contains(status, "exit_code=0") {
+		t.Fatalf("status = %q", status)
+	}
+	stdout, err := os.ReadFile(stdoutPath)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	if !strings.Contains(string(stdout), "done") {
+		t.Fatalf("stdout = %q, want command to complete after soft wait", stdout)
+	}
+}
+
 func TestRunPragmaLoopBashUsesPipefail(t *testing.T) {
 	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "false | true")
 	if timedOut {
@@ -126,4 +174,14 @@ func TestRunPragmaLoopBashUsesPipefail(t *testing.T) {
 	if result.ReturnCode == 0 {
 		t.Fatalf("return code = 0, want non-zero with pipefail; output=%q", result.Output)
 	}
+}
+
+func pragmaLoopFieldPath(content, prefix string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
 }

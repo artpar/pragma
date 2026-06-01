@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -125,6 +126,82 @@ func TestBashTool_BackgroundChildDoesNotHoldToolOpen(t *testing.T) {
 	}
 	if !strings.Contains(result.Content, "Stdout:") || !strings.Contains(result.Content, "Stderr:") {
 		t.Fatalf("expected log paths for backgrounding command, got %q", result.Content)
+	}
+}
+
+func TestBashTool_AndOrBackgroundJobDoesNotHoldToolOpen(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(script, []byte("#!/usr/bin/env bash\nsleep 2\necho late\n"), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	tool := &Tool{}
+	command := "chmod +x run.sh && ./run.sh &\nsleep 0.1\necho ready"
+	input, _ := json.Marshal(BashInput{Command: command})
+
+	start := time.Now()
+	result, err := tool.Invoke(context.Background(), input, testState{dir})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("command waited for background and-or job: %s", elapsed)
+	}
+	if !strings.Contains(result.Content, "ready") {
+		t.Fatalf("expected foreground output, got %q", result.Content)
+	}
+}
+
+func TestBashTool_SoftWaitReturnsRunningCommand(t *testing.T) {
+	oldWait := foregroundWait
+	foregroundWait = 100 * time.Millisecond
+	t.Cleanup(func() { foregroundWait = oldWait })
+
+	tool := &Tool{}
+	timeout := 2_000
+	input, _ := json.Marshal(BashInput{Command: "sleep 1; echo done", Timeout: &timeout})
+
+	start := time.Now()
+	result, err := tool.Invoke(context.Background(), input, testState{t.TempDir()})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("soft wait blocked too long: %s", elapsed)
+	}
+	for _, want := range []string{"Command is still running", "Active processes:", "Status:", "Stdout:", "Stderr:"} {
+		if !strings.Contains(result.Content, want) {
+			t.Fatalf("result missing %q: %s", want, result.Content)
+		}
+	}
+
+	statusPath := fieldPath(result.Content, "Status:")
+	stdoutPath := fieldPath(result.Content, "Stdout:")
+	if statusPath == "" || stdoutPath == "" {
+		t.Fatalf("missing paths in result: %s", result.Content)
+	}
+
+	var status string
+	for i := 0; i < 30; i++ {
+		data, _ := os.ReadFile(statusPath)
+		status = string(data)
+		if strings.Contains(status, "exited") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(status, "exited") || !strings.Contains(status, "exit_code=0") {
+		t.Fatalf("status = %q", status)
+	}
+	stdout, err := os.ReadFile(stdoutPath)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	if !strings.Contains(string(stdout), "done") {
+		t.Fatalf("stdout = %q, want command to complete after soft wait", stdout)
 	}
 }
 

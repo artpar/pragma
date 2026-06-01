@@ -1,15 +1,15 @@
 package query
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -57,6 +57,7 @@ This workflows should be done step-by-step so that you can iterate on your chang
 4. Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
    Every command starts in the current working directory. To run in a different directory, use ` + "`cd /path/to/working/dir && command`" + `.
    You can prefix environment variables directly before a command, such as ` + "`MY_ENV_VAR=MY_VALUE command`" + `, or write/load environment variables from files
+5. Commands wait up to 30 seconds for immediate output. If a command is still running after that, it is not killed; you will receive the PID, active processes, status file, and stdout/stderr log paths so you can continue and inspect it later.
 
 <system_information>
 %s
@@ -131,6 +132,7 @@ to proceed in two steps, first writing TRIPLEBACKTICKSBASH, then replacing them 
 var pragmaLoopBashBlockRE = regexp.MustCompile("(?s)```bash\\s*\\n(.*?)\\n```")
 
 var pragmaLoopCommandTimeout = 300 * time.Second
+var pragmaLoopForegroundWait = 30 * time.Second
 
 func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	defer func() {
@@ -358,86 +360,78 @@ type pragmaLoopBashResult struct {
 }
 
 func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool) {
-	cmd := exec.Command("bash", "-o", "pipefail", "-c", command)
+	cmdCtx, cancel := context.WithTimeout(ctx, pragmaLoopCommandTimeout)
+	shellCommand := commandForPragmaLoopShellRun(command)
+	cmd := exec.CommandContext(cmdCtx, "bash", "-o", "pipefail", "-c", shellCommand)
 	cmd.Dir = workDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 
-	outputReader, outputWriter, err := os.Pipe()
+	files, err := newPragmaLoopCommandFiles(command)
 	if err != nil {
 		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
-	defer outputReader.Close()
-
-	var combined bytes.Buffer
-	var combinedMu sync.Mutex
-	snapshotOutput := func() string {
-		combinedMu.Lock()
-		defer combinedMu.Unlock()
-		return combined.String()
-	}
-
-	cmd.Stdout = outputWriter
-	cmd.Stderr = outputWriter
-
-	if err := cmd.Start(); err != nil {
-		outputWriter.Close()
+	stdoutFile, err := os.OpenFile(files.stdout, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		cancel()
 		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
-	outputWriter.Close()
+	stderrFile, err := os.OpenFile(files.stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		cancel()
+		stdoutFile.Close()
+		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
+	}
+	cmd.Stdout = stdoutFile
+	cmd.Stderr = stderrFile
+
+	if err := cmd.Start(); err != nil {
+		cancel()
+		stdoutFile.Close()
+		stderrFile.Close()
+		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
+	}
+	pid := cmd.Process.Pid
+	_ = os.WriteFile(files.status, []byte(fmt.Sprintf("running\npid=%d\nstarted=%s\n", pid, time.Now().Format(time.RFC3339))), 0o644)
 
 	done := make(chan error, 1)
 	go func() {
-		done <- cmd.Wait()
-	}()
-	readDone := make(chan struct{})
-	go func() {
-		defer close(readDone)
-		buf := make([]byte, 32*1024)
-		for {
-			n, readErr := outputReader.Read(buf)
-			if n > 0 {
-				combinedMu.Lock()
-				combined.Write(buf[:n])
-				combinedMu.Unlock()
-			}
-			if readErr != nil {
-				return
-			}
-		}
+		defer cancel()
+		err := cmd.Wait()
+		stdoutFile.Close()
+		stderrFile.Close()
+		writePragmaLoopCommandStatus(files.status, pid, cmdCtx, err)
+		done <- err
 	}()
 
 	var waitErr error
 	timedOut := false
-	timer := time.NewTimer(pragmaLoopCommandTimeout)
-	defer timer.Stop()
+	softTimer := time.NewTimer(pragmaLoopForegroundWait)
+	defer softTimer.Stop()
 	select {
 	case waitErr = <-done:
-		select {
-		case <-readDone:
-		case <-timer.C:
-			timedOut = true
-		case <-ctx.Done():
-			timedOut = true
-		}
-	case <-timer.C:
+		cancel()
+	case <-softTimer.C:
+		output := strings.TrimRight(readPragmaLoopCommandOutput(files), "\n")
+		output = appendPragmaLoopRunningProcess(output, pid, files)
+		return pragmaLoopBashResult{ReturnCode: -1, Output: output}, false
+	case <-cmdCtx.Done():
 		timedOut = true
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-	case <-ctx.Done():
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		return pragmaLoopBashResult{ReturnCode: -1, Output: snapshotOutput()}, false
-	}
-	if timedOut {
 		select {
 		case waitErr = <-done:
 		case <-time.After(100 * time.Millisecond):
 		}
-		return pragmaLoopBashResult{ReturnCode: -1, Output: snapshotOutput()}, true
+	}
+	if timedOut {
+		return pragmaLoopBashResult{ReturnCode: -1, Output: readPragmaLoopCommandOutput(files)}, true
 	}
 
-	output := snapshotOutput()
+	output := readPragmaLoopCommandOutput(files)
 	result := pragmaLoopBashResult{Output: output}
 	if waitErr == nil {
 		result.ReturnCode = 0
@@ -457,6 +451,98 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	}
 	result.Output += waitErr.Error()
 	return result, timedOut
+}
+
+type pragmaLoopCommandFiles struct {
+	dir     string
+	command string
+	stdout  string
+	stderr  string
+	status  string
+}
+
+func newPragmaLoopCommandFiles(command string) (pragmaLoopCommandFiles, error) {
+	base := filepath.Join(os.TempDir(), "pragma-loop-bash")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return pragmaLoopCommandFiles{}, fmt.Errorf("create pragma loop log directory: %w", err)
+	}
+	dir, err := os.MkdirTemp(base, "cmd-")
+	if err != nil {
+		return pragmaLoopCommandFiles{}, fmt.Errorf("create pragma loop command directory: %w", err)
+	}
+	files := pragmaLoopCommandFiles{
+		dir:     dir,
+		command: filepath.Join(dir, "command.sh"),
+		stdout:  filepath.Join(dir, "stdout.log"),
+		stderr:  filepath.Join(dir, "stderr.log"),
+		status:  filepath.Join(dir, "status.txt"),
+	}
+	if err := os.WriteFile(files.command, []byte(command), 0o644); err != nil {
+		return pragmaLoopCommandFiles{}, fmt.Errorf("write pragma loop command log: %w", err)
+	}
+	return files, nil
+}
+
+func readPragmaLoopCommandOutput(files pragmaLoopCommandFiles) string {
+	var parts []string
+	if stdout, err := os.ReadFile(files.stdout); err == nil && len(stdout) > 0 {
+		parts = append(parts, string(stdout))
+	}
+	if stderr, err := os.ReadFile(files.stderr); err == nil && len(stderr) > 0 {
+		parts = append(parts, string(stderr))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func writePragmaLoopCommandStatus(statusPath string, pid int, cmdCtx context.Context, err error) {
+	status := "exited"
+	detail := "exit_code=0"
+	if cmdCtx.Err() == context.DeadlineExceeded {
+		status = "timeout"
+		detail = fmt.Sprintf("timeout_ms=%d", pragmaLoopCommandTimeout.Milliseconds())
+	} else if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			detail = fmt.Sprintf("exit_code=%d", exitErr.ExitCode())
+		} else {
+			status = "error"
+			detail = fmt.Sprintf("error=%s", err.Error())
+		}
+	}
+	_ = os.WriteFile(statusPath, []byte(fmt.Sprintf("%s\npid=%d\n%s\nended=%s\n", status, pid, detail, time.Now().Format(time.RFC3339))), 0o644)
+}
+
+func appendPragmaLoopRunningProcess(output string, pid int, files pragmaLoopCommandFiles) string {
+	if output != "" {
+		output += "\n"
+	}
+	return output + fmt.Sprintf(`Command is still running after %s.
+PID: %d
+Command: %s
+Status: %s
+Stdout: %s
+Stderr: %s
+
+Active processes:
+%s
+
+Poll with: cat %q
+Inspect logs with: tail -100 %q %q`, pragmaLoopForegroundWait, pid, files.command, files.status, files.stdout, files.stderr, pragmaLoopProcessGroupSummary(pid), files.status, files.stdout, files.stderr)
+}
+
+func pragmaLoopProcessGroupSummary(pid int) string {
+	out, err := exec.Command("ps", "-o", "pid,ppid,pgid,stat,etime,comm,args", "-g", strconv.Itoa(pid)).Output()
+	if err != nil || len(out) == 0 {
+		return fmt.Sprintf("pid=%d", pid)
+	}
+	return strings.TrimRight(string(out), "\n")
+}
+
+func commandForPragmaLoopShellRun(command string) string {
+	if !strings.Contains(command, "&") {
+		return command
+	}
+	return command + "\n__pragma_status=$?\ndisown -a 2>/dev/null || true\nexit $__pragma_status"
 }
 
 func formatPragmaLoopObservation(result pragmaLoopBashResult) string {
