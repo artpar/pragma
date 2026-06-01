@@ -94,7 +94,7 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 		t.Fatalf("temperature raw JSON = %q, want 0.0 token", requestBody)
 	}
 	if _, ok := requestPayload["max_completion_tokens"]; ok {
-		t.Fatal("request used max_completion_tokens; Mini-SWE sends max_tokens")
+		t.Fatal("request used max_completion_tokens; Pragma loop sends max_tokens")
 	}
 	if strings.Contains(requestBody, `\u003c`) || strings.Contains(requestBody, `\u003e`) || strings.Contains(requestBody, `\u0026`) {
 		t.Fatalf("request body contains HTML-escaped JSON: %q", requestBody)

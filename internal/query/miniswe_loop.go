@@ -19,7 +19,7 @@ import (
 	"github.com/artpar/pragma/internal/provider"
 )
 
-const miniSWESystemPrompt = `You are a helpful assistant that can interact with a computer.
+const pragmaLoopSystemPrompt = `You are a helpful assistant that can interact with a computer.
 
 Your response must contain exactly ONE bash code block with ONE command (or commands connected with && or ||).
 Include a THOUGHT section before your command where you explain your reasoning process.
@@ -35,7 +35,7 @@ your_command_here
 
 Failure to follow these rules will cause your response to be rejected.`
 
-const miniSWEInstanceSuffix = `
+const pragmaLoopInstanceSuffix = `
 
 You can execute bash commands and edit/create files to implement the necessary changes.
 
@@ -53,8 +53,10 @@ This workflows should be done step-by-step so that you can iterate on your chang
 
 1. Every response must contain exactly one action
 2. The action must be enclosed in triple backticks
-3. Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
-   However, you can prefix any action with ` + "`MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...`" + ` or write/load environment variables from files
+3. Current working directory: %s
+4. Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
+   Every command starts in the current working directory. To run in a different directory, use ` + "`cd /path/to/working/dir && command`" + `.
+   You can prefix environment variables directly before a command, such as ` + "`MY_ENV_VAR=MY_VALUE command`" + `, or write/load environment variables from files
 
 <system_information>
 %s
@@ -110,7 +112,7 @@ nl -ba filename.py | sed -n '10,20p'
 anything
 ` + "```"
 
-const miniSWEFormatErrorTemplate = `Please always provide EXACTLY ONE action in triple backticks, found %d actions.
+const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE action in triple backticks, found %d actions.
 If you want to end the task, please issue the following command: ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`" + `
 without any other command. YOU HAVE TO PUT IT in triple backticks like any other command.
 Else, please format your response exactly as follows:
@@ -126,11 +128,11 @@ Here are some thoughts about why you want to perform the action.
 Note: In rare cases, if you need to reference a similar format in your command, you might have
 to proceed in two steps, first writing TRIPLEBACKTICKSBASH, then replacing them with ` + "```bash" + `.`
 
-var miniSWEBashBlockRE = regexp.MustCompile("(?s)```bash\\s*\\n(.*?)\\n```")
+var pragmaLoopBashBlockRE = regexp.MustCompile("(?s)```bash\\s*\\n(.*?)\\n```")
 
-var miniSWECommandTimeout = 30 * time.Second
+var pragmaLoopCommandTimeout = 300 * time.Second
 
-func (e *Engine) runMiniSWELoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
+func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	defer func() {
 		if e.hookMgr != nil {
 			hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -145,11 +147,11 @@ func (e *Engine) runMiniSWELoop(ctx context.Context, userMessage string, ch chan
 	}
 
 	snap := e.store.Snapshot()
-	system := miniSWESystemFromExisting(snap.Conversation.System)
+	system := pragmaLoopSystemFromExisting(snap.Conversation.System)
 	userMsg := model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
-		Content:   []model.ContentPart{model.TextPart{Text: miniSWEInstancePrompt(userMessage, snap.CWD)}},
+		Content:   []model.ContentPart{model.TextPart{Text: pragmaLoopInstancePrompt(userMessage, snap.CWD)}},
 		Timestamp: time.Now(),
 	}
 	e.store.Update(func(s *app.AppState) {
@@ -180,7 +182,7 @@ func (e *Engine) runMiniSWELoop(ctx context.Context, userMessage string, ch chan
 		}
 
 		ch <- ModelRequestEvent{Model: resolvedModel, Attempt: 1}
-		response, err := e.completeMiniSWEResponse(ctx, params, ch)
+		response, err := e.completePragmaLoopResponse(ctx, params, ch)
 		if err != nil {
 			ch <- ErrorEvent{Err: err}
 			return
@@ -190,7 +192,7 @@ func (e *Engine) runMiniSWELoop(ctx context.Context, userMessage string, ch chan
 		assistantMsg := model.Message{
 			ID:        model.NewUUID(),
 			Role:      model.RoleAssistant,
-			Content:   miniSWEReplayContent(response.Content),
+			Content:   pragmaLoopReplayContent(response.Content),
 			Timestamp: time.Now(),
 		}
 		e.store.Update(func(s *app.AppState) {
@@ -206,29 +208,29 @@ func (e *Engine) runMiniSWELoop(ctx context.Context, userMessage string, ch chan
 		}
 
 		assistantText := responseText(response)
-		command, actionCount := extractMiniSWECommand(assistantText)
+		command, actionCount := extractPragmaLoopCommand(assistantText)
 		if actionCount != 1 {
-			e.appendMiniSWEUserMessage(fmt.Sprintf(miniSWEFormatErrorTemplate, actionCount))
+			e.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, actionCount))
 			continue
 		}
 
-		result, timedOut := runMiniSWEBash(ctx, snap.CWD, command)
+		result, timedOut := runPragmaLoopBash(ctx, snap.CWD, command)
 		if timedOut {
-			e.appendMiniSWEUserMessage(formatMiniSWETimeout(command, result.Output))
+			e.appendPragmaLoopUserMessage(formatPragmaLoopTimeout(command, result.Output))
 			continue
 		}
-		if submitted, message := miniSWESubmitted(result); submitted {
-			e.appendMiniSWEUserMessage(message)
+		if submitted, message := pragmaLoopSubmitted(result); submitted {
+			e.appendPragmaLoopUserMessage(message)
 			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
 			return
 		}
-		e.appendMiniSWEUserMessage(formatMiniSWEObservation(result))
+		e.appendPragmaLoopUserMessage(formatPragmaLoopObservation(result))
 	}
 
 	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
 }
 
-func (e *Engine) completeMiniSWEResponse(ctx context.Context, params provider.RequestParams, ch chan<- LoopEvent) (model.Response, error) {
+func (e *Engine) completePragmaLoopResponse(ctx context.Context, params provider.RequestParams, ch chan<- LoopEvent) (model.Response, error) {
 	const maxStreamRetries = 10
 	const maxConsecutiveOverloaded = 3
 	var consecutiveOverloaded int
@@ -278,7 +280,7 @@ func (e *Engine) completeMiniSWEResponse(ctx context.Context, params provider.Re
 	return model.Response{}, errors.New("model request failed")
 }
 
-func (e *Engine) appendMiniSWEUserMessage(text string) {
+func (e *Engine) appendPragmaLoopUserMessage(text string) {
 	msg := model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
@@ -290,12 +292,12 @@ func (e *Engine) appendMiniSWEUserMessage(text string) {
 	})
 }
 
-func miniSWEInstancePrompt(task, cwd string) string {
-	return "Please solve this task: " + task + fmt.Sprintf(miniSWEInstanceSuffix, miniSWESystemInformation(cwd))
+func pragmaLoopInstancePrompt(task, cwd string) string {
+	return "Please solve this task: " + task + fmt.Sprintf(pragmaLoopInstanceSuffix, cwd, pragmaLoopSystemInformation(cwd))
 }
 
-func miniSWESystemFromExisting(existing model.SystemPrompt) model.SystemPrompt {
-	text := miniSWESystemPrompt
+func pragmaLoopSystemFromExisting(existing model.SystemPrompt) model.SystemPrompt {
+	text := pragmaLoopSystemPrompt
 	for _, block := range existing.Blocks {
 		if strings.Contains(block.Text, "## Server Commands") {
 			text += "\n\n\n" + block.Text
@@ -305,7 +307,7 @@ func miniSWESystemFromExisting(existing model.SystemPrompt) model.SystemPrompt {
 	return model.SystemPrompt{Blocks: []model.SystemBlock{{Text: text, Cacheable: false}}}
 }
 
-func miniSWESystemInformation(cwd string) string {
+func pragmaLoopSystemInformation(cwd string) string {
 	out, err := exec.Command("uname", "-srmv").Output()
 	if err != nil {
 		return cwd
@@ -331,7 +333,7 @@ func responseText(response model.Response) string {
 	return b.String()
 }
 
-func miniSWEReplayContent(content []model.ContentPart) []model.ContentPart {
+func pragmaLoopReplayContent(content []model.ContentPart) []model.ContentPart {
 	out := make([]model.ContentPart, 0, len(content))
 	for _, part := range content {
 		if _, ok := part.(model.ThinkingPart); ok {
@@ -342,26 +344,26 @@ func miniSWEReplayContent(content []model.ContentPart) []model.ContentPart {
 	return out
 }
 
-func extractMiniSWECommand(text string) (string, int) {
-	matches := miniSWEBashBlockRE.FindAllStringSubmatch(text, -1)
+func extractPragmaLoopCommand(text string) (string, int) {
+	matches := pragmaLoopBashBlockRE.FindAllStringSubmatch(text, -1)
 	if len(matches) != 1 {
 		return "", len(matches)
 	}
 	return strings.TrimSpace(matches[0][1]), 1
 }
 
-type miniSWEBashResult struct {
+type pragmaLoopBashResult struct {
 	ReturnCode int
 	Output     string
 }
 
-func runMiniSWEBash(ctx context.Context, workDir, command string) (miniSWEBashResult, bool) {
+func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool) {
 	cmd := exec.Command("sh", "-c", command)
 	cmd.Dir = workDir
 
 	outputReader, outputWriter, err := os.Pipe()
 	if err != nil {
-		return miniSWEBashResult{ReturnCode: -1, Output: err.Error()}, false
+		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
 	defer outputReader.Close()
 
@@ -378,7 +380,7 @@ func runMiniSWEBash(ctx context.Context, workDir, command string) (miniSWEBashRe
 
 	if err := cmd.Start(); err != nil {
 		outputWriter.Close()
-		return miniSWEBashResult{ReturnCode: -1, Output: err.Error()}, false
+		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
 	outputWriter.Close()
 
@@ -405,7 +407,7 @@ func runMiniSWEBash(ctx context.Context, workDir, command string) (miniSWEBashRe
 
 	var waitErr error
 	timedOut := false
-	timer := time.NewTimer(miniSWECommandTimeout)
+	timer := time.NewTimer(pragmaLoopCommandTimeout)
 	defer timer.Stop()
 	select {
 	case waitErr = <-done:
@@ -425,18 +427,18 @@ func runMiniSWEBash(ctx context.Context, workDir, command string) (miniSWEBashRe
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
-		return miniSWEBashResult{ReturnCode: -1, Output: snapshotOutput()}, false
+		return pragmaLoopBashResult{ReturnCode: -1, Output: snapshotOutput()}, false
 	}
 	if timedOut {
 		select {
 		case waitErr = <-done:
 		case <-time.After(100 * time.Millisecond):
 		}
-		return miniSWEBashResult{ReturnCode: -1, Output: snapshotOutput()}, true
+		return pragmaLoopBashResult{ReturnCode: -1, Output: snapshotOutput()}, true
 	}
 
 	output := snapshotOutput()
-	result := miniSWEBashResult{Output: output}
+	result := pragmaLoopBashResult{Output: output}
 	if waitErr == nil {
 		result.ReturnCode = 0
 		return result, timedOut
@@ -457,7 +459,7 @@ func runMiniSWEBash(ctx context.Context, workDir, command string) (miniSWEBashRe
 	return result, timedOut
 }
 
-func formatMiniSWEObservation(result miniSWEBashResult) string {
+func formatPragmaLoopObservation(result pragmaLoopBashResult) string {
 	if len(result.Output) < 10_000 {
 		return fmt.Sprintf("<returncode>%d</returncode>\n<output>\n%s</output>", result.ReturnCode, result.Output)
 	}
@@ -481,7 +483,7 @@ If you really need to see something from the full command's output, you can redi
 </output_tail>`, result.ReturnCode, result.Output[:5000], elidedChars, result.Output[len(result.Output)-5000:])
 }
 
-func formatMiniSWETimeout(command, output string) string {
+func formatPragmaLoopTimeout(command, output string) string {
 	var body string
 	if len(output) < 10_000 {
 		body = fmt.Sprintf("<output>\n%s\n</output>", output)
@@ -501,7 +503,7 @@ The output of the command was:
 Please try another command and make sure to avoid those requiring interactive input.`, command, body)
 }
 
-func miniSWESubmitted(result miniSWEBashResult) (bool, string) {
+func pragmaLoopSubmitted(result pragmaLoopBashResult) (bool, string) {
 	lines := strings.SplitAfter(strings.TrimLeft(result.Output, "\r\n\t "), "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
 		return false, ""

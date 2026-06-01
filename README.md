@@ -19,7 +19,74 @@ go run ./cmd/pragma -p "Explain Go channels" \
 
 ## Status
 
-**Phase 3 complete** — pragma is runnable. Non-interactive mode works end-to-end: config loading, streaming agentic loop with tool execution, Cobra CLI.
+**Pragma loop baseline** — pragma is runnable. The default query loop currently follows the Pragma single bash action loop. The older provider tool-calling loop is retained only for comparison and can be enabled with `PRAGMA_LEGACY_TOOL_LOOP=1`.
+
+## Constraint Decay / SWE Benchmark
+
+Pragma is run against the Constraint Decay SWE benchmark from the sibling checkout, not from this repo directly:
+
+```bash
+cd /Users/artpar/workspace/code/constraint-decay
+
+PRAGMA_PATH=/Users/artpar/workspace/code/pragma \
+AGENT=pragma_agent \
+TASK=node/node-express-openapi-unconstrained.json \
+LLM_API_KEY="$LILAC_API_KEY" \
+LLM_MODEL=minimaxai/minimax-m2.7 \
+tools/run_miniswe_with_capture.sh
+```
+
+The benchmark adapter is `runtime/agents/pragma_agent.py` in `constraint-decay`. It builds this checkout with `go build -o /tmp/pragma-bin ./cmd/pragma`, then runs Pragma inside the benchmark container against `/repository`.
+
+Default Pragma benchmark settings from the adapter:
+
+| Setting | Value |
+|---|---|
+| Provider | `lilac` |
+| Model | `$LLM_MODEL`, default `minimaxai/minimax-m2.7` |
+| Permission mode | `bypassPermissions` |
+| Context mode | `chat` |
+| Allowed tools | `Bash` |
+| Temperature | `$PRAGMA_TEMPERATURE`, default `0` |
+| Max turns | `$PRAGMA_MAX_TURNS`, default `200` |
+
+Useful overrides:
+
+```bash
+PRAGMA_MAX_TURNS=300
+PRAGMA_TEMPERATURE=0
+PRAGMA_EXTRA_ARGS="--verbose"
+```
+
+Outputs are written under `constraint-decay/data/results/<runtime>/pragma_agent/<model>/<task>/<timestamp>/run_0/`. The capture wrapper also prints:
+
+- `result_run_dir`
+- `raw_http_dir`
+- `raw_http_calls`
+
+For Pragma runs, raw HTTP captures are stored in the run directory under `raw-http-pragma/`, and Pragma logs/session files are under `pragma-home/.pragma/`.
+
+Pragma code is not pushed to `origin` as part of benchmark runs. Keep benchmark validation local unless an explicit push is requested.
+
+## SWE-bench Pro
+
+The official SWE-bench Pro harness is cloned locally at `/Users/artpar/workspace/code/SWE-bench_Pro-os`. Use the repo-local runner for one-instance smoke runs:
+
+```bash
+tools/run_swebench_pro_instance.py --prepare-only
+```
+
+For a real patch-generation run:
+
+```bash
+tools/run_swebench_pro_instance.py \
+  --instance-id instance_flipt-io__flipt-507170da0f7f4da330f6732bffdf11c4df7fc192 \
+  --pull-image
+```
+
+The runner uses `LLM_API_KEY`, `LILAC_API_KEY`, or the Lilac entry in `~/.pragma/credentials.yml`.
+
+Add `--evaluate` to run the official local-Docker evaluator on the generated patch. See [docs/swe-bench-pro.md](docs/swe-bench-pro.md) for the full workflow, output paths, and scaling notes.
 
 ## CLI Flags
 
