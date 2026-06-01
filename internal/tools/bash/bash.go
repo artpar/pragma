@@ -1,10 +1,10 @@
 package bash
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -25,6 +25,7 @@ const (
 type BashInput struct {
 	Command     string `json:"command" desc:"The shell command to execute"`
 	Timeout     *int   `json:"timeout,omitempty" desc:"Optional timeout in milliseconds (max 600000)"`
+	Background  bool   `json:"background,omitempty" desc:"Run the command detached and return immediately with process status and log file paths"`
 	Description string `json:"description,omitempty" desc:"Clear, concise description of what this command does"`
 }
 
@@ -40,6 +41,10 @@ var inputSchema = json.RawMessage(`{
 		"timeout": {
 			"type": "number",
 			"description": "Optional timeout in milliseconds (max 600000)"
+		},
+		"background": {
+			"type": "boolean",
+			"description": "Run the command detached and return immediately with process status and log file paths"
 		},
 		"description": {
 			"type": "string",
@@ -257,6 +262,18 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 
 	timeout := time.Duration(timeoutMs) * time.Millisecond
+	files, err := newCommandFiles()
+	if err != nil {
+		return tool.InvokeResult{}, err
+	}
+	if writeErr := os.WriteFile(files.Command, []byte(in.Command), 0o644); writeErr != nil {
+		return tool.InvokeResult{}, fmt.Errorf("write command log: %w", writeErr)
+	}
+
+	if in.Background {
+		return t.invokeBackground(in.Command, timeout, state.WorkDir(), files)
+	}
+
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -266,14 +283,22 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	setProcAttr(cmd)
 
-	// Capture combined stdout+stderr (merged fd, like TS)
-	var combined bytes.Buffer
-	cmd.Stdout = &combined
-	cmd.Stderr = &combined
+	stdoutFile, err := os.OpenFile(files.Stdout, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return tool.InvokeResult{}, fmt.Errorf("open stdout log: %w", err)
+	}
+	defer stdoutFile.Close()
+	stderrFile, err := os.OpenFile(files.Stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return tool.InvokeResult{}, fmt.Errorf("open stderr log: %w", err)
+	}
+	defer stderrFile.Close()
+	cmd.Stdout = stdoutFile
+	cmd.Stderr = stderrFile
 
-	err := cmd.Run()
+	err = cmd.Run()
 
-	output := strings.TrimRight(combined.String(), "\n")
+	output := strings.TrimRight(readCommandOutput(files), "\n")
 
 	output = strings.TrimLeft(output, "\n")
 
@@ -286,6 +311,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				output += "\n"
 			}
 			output += fmt.Sprintf("Command timed out after %dms", timeoutMs)
+			output = appendLogPaths(output, files)
 			display := fmt.Sprintf("timeout:%d", timeoutMs)
 			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output, Display: display}, nil")
 			return tool.InvokeResult{Content: output, Display: display}, nil
@@ -309,8 +335,123 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("execute command: %w", err)
 	}
 	observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
+	if commandMayUseBackground(in.Command) {
+		output = appendLogPaths(output, files)
+	}
 
 	return tool.InvokeResult{Content: output}, nil
+}
+
+type commandFiles struct {
+	Dir     string
+	Command string
+	Stdout  string
+	Stderr  string
+	Status  string
+}
+
+func newCommandFiles() (commandFiles, error) {
+	base := filepath.Join(os.TempDir(), "pragma-bash")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return commandFiles{}, fmt.Errorf("create bash log directory: %w", err)
+	}
+	dir, err := os.MkdirTemp(base, "cmd-")
+	if err != nil {
+		return commandFiles{}, fmt.Errorf("create bash command directory: %w", err)
+	}
+	return commandFiles{
+		Dir:     dir,
+		Command: filepath.Join(dir, "command.sh"),
+		Stdout:  filepath.Join(dir, "stdout.log"),
+		Stderr:  filepath.Join(dir, "stderr.log"),
+		Status:  filepath.Join(dir, "status.txt"),
+	}, nil
+}
+
+func (t *Tool) invokeBackground(command string, timeout time.Duration, workDir string, files commandFiles) (tool.InvokeResult, error) {
+	cmdCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	cmd := exec.CommandContext(cmdCtx, "bash", "-c", command)
+	cmd.Dir = workDir
+	cmd.WaitDelay = 5 * time.Second
+	setProcAttr(cmd)
+
+	stdoutFile, err := os.OpenFile(files.Stdout, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		cancel()
+		return tool.InvokeResult{}, fmt.Errorf("open stdout log: %w", err)
+	}
+	stderrFile, err := os.OpenFile(files.Stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		cancel()
+		stdoutFile.Close()
+		return tool.InvokeResult{}, fmt.Errorf("open stderr log: %w", err)
+	}
+	cmd.Stdout = stdoutFile
+	cmd.Stderr = stderrFile
+
+	if err := cmd.Start(); err != nil {
+		cancel()
+		stdoutFile.Close()
+		stderrFile.Close()
+		return tool.InvokeResult{}, fmt.Errorf("start background command: %w", err)
+	}
+
+	pid := cmd.Process.Pid
+	_ = os.WriteFile(files.Status, []byte(fmt.Sprintf("running\npid=%d\nstarted=%s\n", pid, time.Now().Format(time.RFC3339))), 0o644)
+	go func() {
+		defer cancel()
+		defer stdoutFile.Close()
+		defer stderrFile.Close()
+
+		err := cmd.Wait()
+		status := "exited"
+		detail := "exit_code=0"
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			status = "timeout"
+			detail = fmt.Sprintf("timeout_ms=%d", timeout.Milliseconds())
+		} else if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				detail = fmt.Sprintf("exit_code=%d", exitErr.ExitCode())
+			} else {
+				status = "error"
+				detail = fmt.Sprintf("error=%s", err.Error())
+			}
+		}
+		_ = os.WriteFile(files.Status, []byte(fmt.Sprintf("%s\npid=%d\n%s\nended=%s\n", status, pid, detail, time.Now().Format(time.RFC3339))), 0o644)
+	}()
+
+	content := fmt.Sprintf(`Started background command.
+PID: %d
+Command: %s
+Status: %s
+Stdout: %s
+Stderr: %s
+
+Poll with: cat %q
+Inspect logs with: tail -100 %q %q`, pid, files.Command, files.Status, files.Stdout, files.Stderr, files.Status, files.Stdout, files.Stderr)
+	return tool.InvokeResult{Content: content, Display: "background"}, nil
+}
+
+func readCommandOutput(files commandFiles) string {
+	var parts []string
+	if stdout, err := os.ReadFile(files.Stdout); err == nil && len(stdout) > 0 {
+		parts = append(parts, string(stdout))
+	}
+	if stderr, err := os.ReadFile(files.Stderr); err == nil && len(stderr) > 0 {
+		parts = append(parts, string(stderr))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func commandMayUseBackground(command string) bool {
+	return strings.Contains(command, "&")
+}
+
+func appendLogPaths(output string, files commandFiles) string {
+	if output != "" {
+		output += "\n"
+	}
+	return output + fmt.Sprintf("Logs:\nStdout: %s\nStderr: %s", files.Stdout, files.Stderr)
 }
 
 func sourceMutationReason(command string) string {

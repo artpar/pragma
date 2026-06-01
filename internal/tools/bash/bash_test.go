@@ -3,6 +3,7 @@ package bash
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -106,6 +107,73 @@ func TestBashTool_TimeoutWithBackgroundChildHoldingPipe(t *testing.T) {
 	}
 }
 
+func TestBashTool_BackgroundChildDoesNotHoldToolOpen(t *testing.T) {
+	tool := &Tool{}
+	input, _ := json.Marshal(BashInput{Command: "sh -c 'sleep 2; echo late' & echo ready"})
+
+	start := time.Now()
+	result, err := tool.Invoke(context.Background(), input, testState{t.TempDir()})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("command waited for background child: %s", elapsed)
+	}
+	if !strings.Contains(result.Content, "ready") {
+		t.Fatalf("expected foreground output, got %q", result.Content)
+	}
+	if !strings.Contains(result.Content, "Stdout:") || !strings.Contains(result.Content, "Stderr:") {
+		t.Fatalf("expected log paths for backgrounding command, got %q", result.Content)
+	}
+}
+
+func TestBashTool_ExplicitBackgroundReturnsStatusAndLogs(t *testing.T) {
+	tool := &Tool{}
+	input, _ := json.Marshal(BashInput{Command: "sleep 0.1; echo done", Background: true})
+
+	start := time.Now()
+	result, err := tool.Invoke(context.Background(), input, testState{t.TempDir()})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("background command blocked: %s", elapsed)
+	}
+	for _, want := range []string{"Started background command", "Status:", "Stdout:", "Stderr:"} {
+		if !strings.Contains(result.Content, want) {
+			t.Fatalf("result missing %q: %s", want, result.Content)
+		}
+	}
+
+	statusPath := fieldPath(result.Content, "Status:")
+	stdoutPath := fieldPath(result.Content, "Stdout:")
+	if statusPath == "" || stdoutPath == "" {
+		t.Fatalf("missing paths in result: %s", result.Content)
+	}
+
+	var status string
+	for i := 0; i < 20; i++ {
+		data, _ := os.ReadFile(statusPath)
+		status = string(data)
+		if strings.Contains(status, "exited") {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !strings.Contains(status, "exited") || !strings.Contains(status, "exit_code=0") {
+		t.Fatalf("status = %q", status)
+	}
+	stdout, err := os.ReadFile(stdoutPath)
+	if err != nil {
+		t.Fatalf("read stdout log: %v", err)
+	}
+	if strings.TrimSpace(string(stdout)) != "done" {
+		t.Fatalf("stdout log = %q", stdout)
+	}
+}
+
 func TestBashTool_MissingCommand(t *testing.T) {
 	tool := &Tool{}
 	input, _ := json.Marshal(BashInput{})
@@ -199,4 +267,14 @@ func TestBashToolPatchModeAllowsShellApplyPatch(t *testing.T) {
 	if !strings.Contains(result.Content, "Applied patch successfully") {
 		t.Fatalf("result = %q", result.Content)
 	}
+}
+
+func fieldPath(content, prefix string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
 }

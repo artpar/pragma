@@ -310,7 +310,7 @@ exit 0
             "-v",
             f"{output_dir}:/pragma-out",
             image,
-            "-lc",
+            "-c",
             container_script,
         ],
         repo_root,

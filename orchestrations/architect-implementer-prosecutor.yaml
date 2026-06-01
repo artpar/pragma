@@ -1,0 +1,32 @@
+name: architect-implementer-prosecutor
+initial: architect
+states:
+  - id: architect
+  - id: implementer
+  - id: prosecutor
+  - id: repair
+  - id: prosecutor_final
+  - id: done
+    terminal: true
+transitions:
+  - event: complete
+    from: [architect]
+    to: implementer
+  - event: complete
+    from: [implementer]
+    to: prosecutor
+  - event: approve
+    from: [prosecutor]
+    to: done
+  - event: block
+    from: [prosecutor]
+    to: repair
+  - event: complete
+    from: [repair]
+    to: prosecutor_final
+  - event: approve
+    from: [prosecutor_final]
+    to: done
+  - event: block
+    from: [prosecutor_final]
+    to: done

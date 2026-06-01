@@ -31,6 +31,7 @@ func main() {
 	root.AddCommand(auditCmd())
 	root.AddCommand(metricsCmd())
 	root.AddCommand(lifecycleCmd())
+	root.AddCommand(orchestrationCmd())
 
 	// Register CLI subcommands from slash command registry (commit, review, init, doctor, etc.)
 	slashCmds := slash.NewRegistry()

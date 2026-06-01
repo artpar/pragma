@@ -358,7 +358,7 @@ type pragmaLoopBashResult struct {
 }
 
 func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool) {
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.Command("bash", "-o", "pipefail", "-c", command)
 	cmd.Dir = workDir
 
 	outputReader, outputWriter, err := os.Pipe()

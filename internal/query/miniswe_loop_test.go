@@ -117,3 +117,13 @@ func TestRunPragmaLoopBashTimeoutUsesPragmaLoopTemplatePath(t *testing.T) {
 		t.Fatalf("timeout message = %q", message)
 	}
 }
+
+func TestRunPragmaLoopBashUsesPipefail(t *testing.T) {
+	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "false | true")
+	if timedOut {
+		t.Fatal("command timed out")
+	}
+	if result.ReturnCode == 0 {
+		t.Fatalf("return code = 0, want non-zero with pipefail; output=%q", result.Output)
+	}
+}
