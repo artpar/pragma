@@ -8,6 +8,12 @@ prompt: |
   Your deliverable is /tmp/pragma/item-prosecutor-verdict.md.
   It must contain a decision: APPROVE or BLOCK.
 
+  Output discipline:
+  - The chat response is only one shell action, not the verdict.
+  - Put findings, required repair, validation evidence, and decision in
+    /tmp/pragma/item-prosecutor-verdict.md or command output.
+  - Do not deliberate in chat.
+
   Do not edit repository files.
   Do not repair the patch.
 
@@ -34,6 +40,8 @@ prompt: |
   - Validation must preserve the result of the thing being validated. A
     summarized view can help inspect logs, but cannot replace the command result
     and failure surface.
+  - If validation output may be large, save full output to a log, preserve
+    rc=$?, print useful log lines, and exit with the original rc.
   - Commands using `|| true`, `| head`, or `| tail` are not proof of success
     unless the underlying command exit status is separately preserved.
 

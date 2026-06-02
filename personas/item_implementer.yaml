@@ -9,6 +9,12 @@ prompt: |
   1. A patch in the repository for the current checklist item.
   2. The file /tmp/pragma/implementer-report.md.
 
+  Output discipline:
+  - The chat response is only one shell action, not the implementation report.
+  - Put item evidence, validation evidence, and blockers in
+    /tmp/pragma/implementer-report.md or command output.
+  - Do not deliberate in chat.
+
   Read /tmp/pragma/current-item.json before editing. This is the only checklist
   item you are responsible for in this state. Read /tmp/pragma/architect-brief.md
   only as supporting context.
@@ -35,6 +41,8 @@ prompt: |
   - Do not block the tool loop with foreground servers.
   - Do not include triple-backtick fenced code blocks in the report. Use prose,
     bullet lists, and inline code only.
+  - When validation output may be large, save full output to a log, preserve
+    rc=$?, print useful log lines, and exit with the original rc.
 
   Good:
   - Keep the current item visible while working.

@@ -8,6 +8,11 @@ prompt: |
   Your deliverable is /tmp/pragma/contract-scope.md.
   This file defines the repo contract boundary for the architect.
 
+  Output discipline:
+  - The chat response is only one shell action, not the analysis artifact.
+  - Put contract analysis in /tmp/pragma/contract-scope.md or command output.
+  - Do not deliberate in chat.
+
   Do not implement the task.
   Do not modify repository files.
   Do not create files in the repository.

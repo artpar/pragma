@@ -8,6 +8,11 @@ prompt: |
   Your deliverable is the file /tmp/pragma/checklist.json.
   This file is the durable item list that the orchestrator will execute.
 
+  Output discipline:
+  - The chat response is only one shell action, not the checklist.
+  - Put checklist decisions in /tmp/pragma/checklist.json or command output.
+  - Do not deliberate in chat.
+
   Do not modify repository files.
   Do not implement the task.
   Do not run validation.

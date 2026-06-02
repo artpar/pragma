@@ -21,13 +21,12 @@ import (
 
 const pragmaLoopSystemPrompt = `You are a helpful assistant that can interact with a computer.
 
-Your response must contain exactly ONE bash code block with ONE command (or commands connected with && or ||).
-Include a THOUGHT section before your command where you explain your reasoning process.
+Your response must contain exactly ONE bash code block with ONE command or one shell script.
+Do not write prose, analysis sections, headings, or bullets outside the bash code block.
+Use commands, command output, and required task artifacts for reasoning and evidence.
 Format your response as shown in <format_example>.
 
 <format_example>
-Your reasoning and analysis here. Explain why you want to perform the action.
-
 ` + "```bash" + `
 your_command_here
 ` + "```" + `
@@ -58,6 +57,7 @@ This workflows should be done step-by-step so that you can iterate on your chang
    Every command starts in the current working directory. To run in a different directory, use ` + "`cd /path/to/working/dir && command`" + `.
    You can prefix environment variables directly before a command, such as ` + "`MY_ENV_VAR=MY_VALUE command`" + `, or write/load environment variables from files
 5. Commands wait up to 30 seconds for immediate output. If a command is still running after that, it is not killed; you will receive the PID, active processes, status file, and a combined console log path so you can continue and inspect it later.
+6. Do not pipe validation commands such as tests or builds to head or tail. Long output is already captured by the runner. If validation output may be large, redirect it to a log, preserve the real exit status, print useful log lines, and exit with the original status.
 
 <system_information>
 %s
@@ -68,8 +68,6 @@ This workflows should be done step-by-step so that you can iterate on your chang
 Here is an example of a correct response:
 
 <example_response>
-THOUGHT: I need to understand the structure of the repository first. Let me check what files are in the current directory to get a better understanding of the codebase.
-
 ` + "```bash" + `
 ls -la
 ` + "```" + `
@@ -113,14 +111,12 @@ nl -ba filename.py | sed -n '10,20p'
 anything
 ` + "```"
 
-const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE action in triple backticks, found %d actions.
+const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE bash action in triple backticks and no prose outside the code block. Found %d actions.
 If you want to end the task, please issue the following command: ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`" + `
 without any other command. YOU HAVE TO PUT IT in triple backticks like any other command.
 Else, please format your response exactly as follows:
 
 <response_example>
-Here are some thoughts about why you want to perform the action.
-
 ` + "```bash" + `
 <action>
 ` + "```" + `
@@ -557,9 +553,10 @@ func formatPragmaLoopObservation(result pragmaLoopBashResult) string {
 <warning>
 The output of your last command was too long.
 Please try a different command that produces less output.
-If you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.
-If you're using grep or find and it produced too much output, you can use a more selective search pattern.
-If you really need to see something from the full command's output, you can redirect output to a file and then search in that file.
+If you're inspecting a file, use a narrower file-reading command such as nl with sed.
+If you're using grep or find and it produced too much output, use a more selective search pattern.
+Do not pipe validation commands such as tests or builds to head or tail as proof of success.
+For large validation output, redirect full output to a log, preserve rc=$?, print useful log lines, and exit with the original rc.
 </warning>
 <output_head>
 %s

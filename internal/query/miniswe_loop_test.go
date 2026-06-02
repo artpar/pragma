@@ -1,6 +1,7 @@
 package query
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -23,6 +24,9 @@ func TestPragmaLoopSystemUsesServerGuidanceFromExistingPrompt(t *testing.T) {
 	if strings.Contains(text, "codex prompt") {
 		t.Fatal("system prompt included Codex prompt")
 	}
+	if strings.Contains(text, "THOUGHT") || strings.Contains(text, "reasoning process") || strings.Contains(text, "Your reasoning and analysis") {
+		t.Fatalf("system prompt still teaches prose reasoning before actions: %q", text)
+	}
 	if !strings.Contains(text, "## Server Commands") {
 		t.Fatal("system prompt did not include server guidance")
 	}
@@ -42,11 +46,25 @@ func TestPragmaLoopInstancePromptMatchesPragmaLoopYamlSedBoundary(t *testing.T) 
 	if strings.Contains(prompt, "MY_ENV_VAR=MY_VALUE cd /path/to/working/dir") {
 		t.Fatalf("instance prompt contains invalid env/cd example: %q", prompt)
 	}
+	if strings.Contains(prompt, "THOUGHT") || strings.Contains(prompt, "Here are some thoughts") {
+		t.Fatalf("instance prompt still contains reasoning prose examples: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Do not pipe validation commands such as tests or builds to head or tail") {
+		t.Fatalf("instance prompt does not include validation output discipline: %q", prompt)
+	}
 	if !strings.Contains(prompt, "### Edit files with sed:```bash\n# Replace all occurrences") {
 		t.Fatalf("instance prompt does not match Pragma loop YAML whitespace at sed boundary")
 	}
 	if strings.Contains(prompt, "### Edit files with sed:\n\n```bash") {
 		t.Fatalf("instance prompt has hand-copied whitespace drift before sed example")
+	}
+
+	msg := fmt.Sprintf(pragmaLoopFormatErrorTemplate, 0)
+	if strings.Contains(msg, "THOUGHT") || strings.Contains(msg, "thoughts") {
+		t.Fatalf("format error still asks for reasoning prose: %q", msg)
+	}
+	if !strings.Contains(msg, "no prose outside the code block") {
+		t.Fatalf("format error does not restate action-only contract: %q", msg)
 	}
 }
 

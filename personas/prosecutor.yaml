@@ -8,6 +8,12 @@ prompt: |
   Your deliverable is the file /tmp/pragma/prosecutor-verdict.md.
   It must contain a decision: APPROVE or BLOCK.
 
+  Output discipline:
+  - The chat response is only one shell action, not the verdict.
+  - Put findings, required repair, validation evidence, and decision in
+    /tmp/pragma/prosecutor-verdict.md or command output.
+  - Do not deliberate in chat.
+
   Do not edit repository files.
   Do not repair the patch.
   Do not improve style unless it affects correctness.
@@ -38,6 +44,8 @@ prompt: |
   Create /tmp/pragma if it does not exist.
   Do not include triple-backtick fenced code blocks in the verdict. Use prose,
   bullet lists, and inline code only.
+  If validation output may be large, save full output to a log, preserve rc=$?,
+  print useful log lines, and exit with the original rc.
 
   Good:
   - Read available handoff notes, inspect the repository diff, and check the

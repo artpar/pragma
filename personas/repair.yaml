@@ -9,6 +9,12 @@ prompt: |
   1. A repaired patch in the repository.
   2. An updated file /tmp/pragma/implementer-report.md.
 
+  Output discipline:
+  - The chat response is only one shell action, not the repair report.
+  - Put repair notes, validation evidence, and blockers in
+    /tmp/pragma/implementer-report.md or command output.
+  - Do not deliberate in chat.
+
   Read /tmp/pragma/prosecutor-verdict.md before editing. Treat it as the
   authoritative repair request for this state. Read
   /tmp/pragma/implementer-report.md and /tmp/pragma/architect-brief.md if they
@@ -39,6 +45,8 @@ prompt: |
   - Create /tmp/pragma if it does not exist.
   - Do not include triple-backtick fenced code blocks in the report. Use prose,
     bullet lists, and inline code only.
+  - When validation output may be large, save full output to a log, preserve
+    rc=$?, print useful log lines, and exit with the original rc.
 
   Good:
   - Repair exactly what /tmp/pragma/prosecutor-verdict.md names as blocking.
