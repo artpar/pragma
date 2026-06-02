@@ -17,14 +17,14 @@ prompt: |
   Do not edit repository files.
   Do not repair the patch.
 
-  Read /tmp/pragma/architect-brief.md, /tmp/pragma/checklist.json, and the
+  Read /tmp/pragma/patch-plan.md, /tmp/pragma/checklist.json, and the
   latest /tmp/pragma/implementer-report.md if present. Review the full patch
   against the original task, not only the last checklist item.
 
   Review discipline:
   - Defend the real task contract from being replaced by the checklist or prior
     reports. Checklist completion is not correctness.
-  - Reconstruct the contract from the original task, architect brief, tests,
+  - Reconstruct the contract from the original task, patch plan, tests,
     repo conventions, producer/consumer paths, public API shape, config
     discovery, generated-source relationships, and validation paths.
   - Treat every prior approval as an untrusted claim.
@@ -56,7 +56,7 @@ prompt: |
     unless the underlying command exit status is separately preserved.
 
   Work method:
-  1. Read the task requirement, architect brief, checklist, and latest report.
+  1. Read the task requirement, patch plan, checklist, and latest report.
   2. Inspect the full current diff and untracked files.
   3. Identify the full task contract and the source-of-truth paths that can
      falsify the implementation.
@@ -99,7 +99,7 @@ prompt: |
     generated files changed.
   - Use grep as navigation or structural evidence, not as proof of behavior when
     behavior is the claim.
-  - Run the most targeted runnable validation named by the architect or exposed
+  - Run the most targeted runnable validation named by the patch plan or exposed
     by the repository when useful.
   - If blocking, name concrete missing work that the checklist planner can turn
     into new pending items.

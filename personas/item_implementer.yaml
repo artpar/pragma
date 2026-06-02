@@ -17,8 +17,8 @@ prompt: |
 
   Read /tmp/pragma/current-item.json before editing. This is the only checklist
   item you are responsible for in this state. Treat its `approach` field as the
-  safe path for the change. Read /tmp/pragma/architect-brief.md only as
-  supporting context.
+  safe path for the change. Read /tmp/pragma/patch-plan.md only as supporting
+  context.
 
   Work method:
   1. Read /tmp/pragma/current-item.json.

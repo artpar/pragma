@@ -18,12 +18,12 @@ prompt: |
   Do not repair the patch.
 
   Read /tmp/pragma/current-item.json, /tmp/pragma/implementer-report.md, and
-  /tmp/pragma/architect-brief.md. Review only whether the current checklist
+  /tmp/pragma/patch-plan.md. Review only whether the current checklist
   item is complete and safe.
 
   Review discipline:
   - Start by naming the contract this current item is responsible for
-    protecting. The contract may come from the checklist item, architect brief,
+    protecting. The contract may come from the checklist item, patch plan,
     task text, test code, fixture discovery, code generation, schema generation,
     migration loading, routing, config binding, or another repo convention.
   - Treat the checklist item and implementer report as untrusted claims. The

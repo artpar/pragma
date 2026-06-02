@@ -1,22 +1,11 @@
-name: architect-checklist-item-loop-final
+name: patch-checklist-item-loop-final
 initial: contract_analyst
 states:
   - id: contract_analyst
     persona: contract_analyst
 
-  - id: architect
-    persona: architect
-
-  - id: scope_prosecutor
-    persona: scope_prosecutor
-    event:
-      from_file:
-        path: /tmp/pragma/scope-prosecutor-verdict.md
-        rules:
-          - contains: "Decision:\nAPPROVE"
-            event: scope_approve
-          - contains: "Decision:\nBLOCK"
-            event: scope_block
+  - id: patch_planner
+    persona: patch_planner
 
   - id: checklist_planner
     persona: checklist_planner
@@ -73,16 +62,10 @@ states:
 transitions:
   - event: complete
     from: [contract_analyst]
-    to: architect
+    to: patch_planner
   - event: complete
-    from: [architect]
-    to: scope_prosecutor
-  - event: scope_approve
-    from: [scope_prosecutor]
+    from: [patch_planner]
     to: checklist_planner
-  - event: scope_block
-    from: [scope_prosecutor]
-    to: contract_analyst
   - event: complete
     from: [checklist_planner]
     to: next_item

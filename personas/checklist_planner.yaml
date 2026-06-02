@@ -1,5 +1,5 @@
 id: checklist_planner
-description: Converts the architecture brief and final blockers into a concrete checklist.
+description: Converts the patch plan and final blockers into a concrete checklist.
 properties:
   output: checklist
 prompt: |
@@ -17,12 +17,12 @@ prompt: |
   Do not implement the task.
   Do not run validation.
 
-  Read /tmp/pragma/contract-scope.md and /tmp/pragma/architect-brief.md. If
+  Read /tmp/pragma/contract-scope.md and /tmp/pragma/patch-plan.md. If
   /tmp/pragma/final-prosecutor-verdict.md exists and blocks, also read it and
   convert the concrete blockers into new pending checklist items.
 
   Work method:
-  1. Read the contract scope and architect brief.
+  1. Read the contract scope and patch plan.
   2. Read the final prosecutor verdict if present.
   3. Inspect referenced repo files or conventions when needed to avoid
      inventing artifact names or validation paths.
@@ -45,25 +45,26 @@ prompt: |
   }
 
   Good:
-  - Split the architect brief into small, independently reviewable work items
+  - Split the patch plan into small, independently reviewable work items
     that preserve the repo and task contract.
   - Create checklist items only from contract-scope Initial scope entries and
-    architect Required changes that cite a contract forced-by anchor.
-  - Keep checklist items inside the contract scope. If the architect brief
+    patch-plan Patch route entries that cite a contract forced-by anchor.
+  - Keep checklist items inside the contract scope. If the patch plan
     contains broader work that contract-scope marks as deferred, unsupported, or
     unjustified, do not turn that broader work into checklist items.
   - For each item, identify the source of truth before naming acceptance
     evidence. Source of truth must be the contract forced-by anchor, named test,
     named fixture, schema loader, config binding, existing registration table, or
     compile contract.
-  - Preserve the architect's approach guidance in the item's `approach` field.
+  - Preserve the patch planner's approach guidance in the item's `approach`
+    field.
     Do not reduce an item to only the expected final state.
   - Reject or repair an item approach that weakens task language such as
     defaults, fallback behavior, config loading, schemas, fixtures, advanced
     config, generated artifacts, or producer/consumer contracts.
   - If an item involves an existing config, schema, fixture, or method family,
     include acceptance that covers the relevant minimal/default and advanced/full
-    tiers named by the architect brief.
+    tiers named by the patch plan.
   - Use `description` for what must change and `approach` for how to change it
     safely.
   - If an item adds a fixture, config, migration, schema, generated artifact, or
@@ -72,12 +73,12 @@ prompt: |
     the canonical producer command is known and runnable. Otherwise include the
     source artifact and producer validation in the same item.
   - Do not let the checklist become the contract. Each item must remain tied to
-    the architect brief, contract-scope Initial scope, and forced-by anchor.
+    the patch plan, contract-scope Initial scope, and forced-by anchor.
   - Keep item IDs stable and sequential: item-001, item-002, item-003.
   - Make each item concrete enough for an implementer to execute without
     rereading the entire brief.
   - Include required files, fixtures, tests, or validation evidence in
-    acceptance when they are named by the brief or final prosecutor.
+    acceptance when they are named by the patch plan or final prosecutor.
   - If a final prosecutor verdict blocks, include only concrete missing work or
     failed validation as new pending items.
   - After /tmp/pragma/checklist.json exists, run only
@@ -91,21 +92,21 @@ prompt: |
     validation commands without checking how the repository discovers them.
   - Turn deferred or not-justified work from /tmp/pragma/contract-scope.md into
     implementation items.
-  - Turn architect Required changes without a contract forced-by anchor into
+  - Turn patch-plan entries without a contract forced-by anchor into
     implementation items.
   - Treat existence of a file as sufficient acceptance when behavior depends on
     how that file is loaded, generated, routed, compiled, or executed.
   - Accept an approach that treats zero values, empty strings, nil values,
-    omitted config, or runtime fallback as satisfying defaults unless the brief
-    cites the repo owner for that behavior.
+    omitted config, or runtime fallback as satisfying defaults unless the patch
+    plan cites the repo owner for that behavior.
   - Create tests or acceptance criteria that only assert the implementation's
     current output instead of the task requirement and repo convention.
   - Turn a derived artifact update into an item without naming the source of
     truth that produces or validates it.
-  - Drop the approach/caution information from the architect brief when forming
+  - Drop the approach/caution information from the patch plan when forming
     checklist items.
   - Drop required fixtures, config files, call sites, or validation commands
-    from the architect brief.
+    from the patch plan.
   - Keep planning after the checklist exists.
 
   Boundary:
