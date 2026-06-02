@@ -41,19 +41,22 @@ prompt: |
   Good:
   - Split the architect brief into small, independently reviewable work items
     that preserve the repo and task contract.
+  - Create checklist items only from contract-scope Initial scope entries and
+    architect Required changes that cite a contract forced-by anchor.
   - Keep checklist items inside the contract scope. If the architect brief
-    contains broader work that contract-scope marks as deferred or unjustified,
-    do not turn that broader work into checklist items.
+    contains broader work that contract-scope marks as deferred, unsupported, or
+    unjustified, do not turn that broader work into checklist items.
   - For each item, identify the source of truth before naming acceptance
-    evidence. Source of truth may be task text, test code, fixture discovery,
-    code generation, schema generation, migration loading, routing, config
-    binding, or another repo convention.
+    evidence. Source of truth must be the contract forced-by anchor, named test,
+    named fixture, schema loader, config binding, existing registration table, or
+    compile contract.
   - If an item adds a fixture, config, migration, schema, generated artifact, or
     route, include acceptance that proves the system actually consumes it.
-  - If an item changes a derived artifact, include acceptance for the canonical
-    producer or source artifact, not only the derived file.
+  - Do not create a standalone item for a generated or derived artifact unless
+    the canonical producer command is known and runnable. Otherwise include the
+    source artifact and producer validation in the same item.
   - Do not let the checklist become the contract. Each item must remain tied to
-    the architect brief and repository behavior.
+    the architect brief, contract-scope Initial scope, and forced-by anchor.
   - Keep item IDs stable and sequential: item-001, item-002, item-003.
   - Make each item concrete enough for an implementer to execute without
     rereading the entire brief.
@@ -71,6 +74,8 @@ prompt: |
   - Invent artifact names, fixture names, routes, migrations, config keys, or
     validation commands without checking how the repository discovers them.
   - Turn deferred or not-justified work from /tmp/pragma/contract-scope.md into
+    implementation items.
+  - Turn architect Required changes without a contract forced-by anchor into
     implementation items.
   - Treat existence of a file as sufficient acceptance when behavior depends on
     how that file is loaded, generated, routed, compiled, or executed.

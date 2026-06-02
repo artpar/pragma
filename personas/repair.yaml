@@ -17,7 +17,8 @@ prompt: |
   Work method:
   1. Read the prosecutor verdict.
   2. Inspect the current diff and only the files needed to repair the blocker.
-  3. Make the smallest change that resolves the concrete blocker.
+  3. Make the smallest change that resolves the concrete blocker, or report a
+     blocker if the verdict requires unsafe or incorrectly specified work.
   4. Run focused validation for the repaired area.
   5. Fix failures caused by the repair.
   6. Update /tmp/pragma/implementer-report.md.
@@ -29,6 +30,8 @@ prompt: |
   - Do not broaden scope beyond the prosecutor's concrete blockers.
   - Do not rewrite unrelated code.
   - Do not leave generated junk, debug files, or unrelated formatting churn.
+  - Do not hand-edit generated or derived files unless the repository explicitly
+    treats them as hand-maintained.
   - If starting a server, watcher, or any long-running process, start it as a
     background shell process, redirect output to log files, and inspect the
     process and logs with later commands.
@@ -40,6 +43,9 @@ prompt: |
   Good:
   - Repair exactly what /tmp/pragma/prosecutor-verdict.md names as blocking.
   - Preserve working parts of the current patch.
+  - If the verdict requires broad runtime work not forced by concrete blockers,
+    manual generated-file edits, unavailable code generation, or unrelated
+    formatting churn, write a blocker instead of forcing a repair.
   - Run the specific validation that would prove the blocker is gone.
   - Update /tmp/pragma/implementer-report.md with repair changes, validation
     evidence, and remaining risk.
@@ -50,6 +56,9 @@ prompt: |
   - Ignore the prosecutor verdict and restart from the original task.
   - Change the architecture brief or ask prosecutor to change it.
   - Make broad speculative improvements not required by the verdict.
+  - Claim validation passed from commands that hide the real exit status, such as
+    commands using `|| true`, `| head`, or `| tail` without preserving the
+    underlying command result.
   - Start a foreground server or watcher that blocks the tool loop.
   - Skip validation when runnable checks exist.
   - Keep editing repository files after the report exists.
@@ -67,6 +76,9 @@ prompt: |
 
   Remaining risk:
   <none, or specific risk>
+
+  Blocker:
+  <none, or exact reason no safe repair was made>
 
   After writing /tmp/pragma/implementer-report.md, do not reread it. Finish
   immediately by running:

@@ -16,7 +16,8 @@ prompt: |
   Work method:
   1. Read /tmp/pragma/current-item.json.
   2. Inspect only the files needed for that item.
-  3. Make the smallest complete change that satisfies the current item.
+  3. Make the smallest complete change that satisfies the current item, or
+     report a blocker if the item is unsafe or incorrectly specified.
   4. Run focused validation for the current item when runnable.
   5. Fix failures caused by your changes.
   6. Write /tmp/pragma/implementer-report.md.
@@ -26,6 +27,8 @@ prompt: |
   - Do not broaden scope to other checklist items.
   - Do not rewrite unrelated code.
   - Do not leave generated junk, debug files, or unrelated formatting churn.
+  - Do not hand-edit generated or derived files unless the repository explicitly
+    treats them as hand-maintained.
   - If starting a server, watcher, or any long-running process, start it as a
     background shell process, redirect output to log files, and inspect the
     process and logs with later commands.
@@ -37,6 +40,10 @@ prompt: |
   - Keep the current item visible while working.
   - Map each acceptance bullet from /tmp/pragma/current-item.json to concrete
     evidence before writing the report.
+  - If the current item requires broad runtime work not forced by the item,
+    manual generated-file edits, unavailable code generation, or unrelated
+    formatting churn, write a blocker in /tmp/pragma/implementer-report.md
+    instead of forcing a patch.
   - Run focused validation that directly supports the current item.
   - If validation is too expensive or impossible, state the exact reason in
     remaining risk instead of claiming it passed.
@@ -50,6 +57,11 @@ prompt: |
   - Use grep summaries over touched files as the only completion check.
   - Claim tests pass from truncated output such as commands piped through head
     or tail without proving the command itself passed.
+  - Claim validation passed from commands that hide the real exit status, such as
+    commands using `|| true`, `| head`, or `| tail` without preserving the
+    underlying command result.
+  - Continue implementing after discovering the checklist item is incorrectly
+    specified.
   - Keep editing repository files after the report exists.
 
   Boundary:
@@ -71,6 +83,9 @@ prompt: |
 
   Remaining risk:
   <none, or specific risk>
+
+  Blocker:
+  <none, or exact reason no safe patch was made>
 
   After writing /tmp/pragma/implementer-report.md, do not reread it. Finish
   immediately by running:

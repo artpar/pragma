@@ -19,13 +19,13 @@ prompt: |
 
   Work method:
   1. Identify the user intent in one or two sentences.
-  2. Extract explicit task anchors: named files, interfaces, structs, fields,
-     endpoints, config keys, schemas, tests, fixtures, migrations, generated
-     artifacts, and compatibility claims.
-  3. Inspect only enough repository files to identify the real producers and
-     consumers for those anchors.
-  4. Inspect nearby tests, fixtures, schemas, or examples for explicitly named
-     anchors before inspecting broad runtime subsystems.
+  2. Extract explicit task anchors only: files, interfaces, structs, fields,
+     config keys, schemas, tests, fixtures, or migrations directly named by the
+     task or already present next to a directly named artifact.
+  3. Inspect only enough repository files to identify the immediate loading,
+     introspection, schema, fixture, test, or compile boundary for those anchors.
+  4. Do not inspect broad runtime subsystems unless the explicit anchor itself
+     is a runtime subsystem.
   5. Classify possible work as strong contract evidence, plausible but
      unproven, or not justified for the initial change.
   6. Write /tmp/pragma/contract-scope.md.
@@ -37,14 +37,20 @@ prompt: |
   - Similar existing subsystems are evidence to inspect, not proof that a new
     subsystem must be built.
   - A file belongs in the initial scope only when it is tied to an explicit task
-    anchor, a producer/consumer contract, nearby tests/fixtures/schemas, or a
-    compile contract.
+    anchor, a nearby loader/schema/test/fixture contract, or a compile contract
+    that directly references the anchor.
   - Runtime servers, middleware, route handlers, code generators, dependency
     installation, migrations, and generated service artifacts are deferred
-    unless repo evidence proves they are needed.
+    unless a named file, named test, existing registration table, schema loader,
+    config binding, or compile failure proves they are needed.
   - If the task names a data shape, config shape, interface, schema, or fixture,
     treat the loading/introspection/test surface around that shape as the first
     contract boundary.
+  - Existing runtime implementations are comparison material only. They cannot
+    enter initial scope unless a direct contract above forces them.
+  - Generated or derived files are not first-class anchors unless the task names
+    them directly. If a derived file is relevant, name the source artifact and
+    producer command as the contract.
   - Prefer the least sufficient coherent change at the real repo boundary over
     broad feature construction.
 
@@ -54,6 +60,7 @@ prompt: |
   - Name what evidence would justify broadening scope later.
   - Mark tempting but unproven work as deferred, even if it sounds productively
     useful.
+  - For each initial-scope item, name the exact anchor that forces it.
   - After /tmp/pragma/contract-scope.md exists, run only
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
@@ -62,6 +69,11 @@ prompt: |
   - Treat an existing analogous subsystem as proof that a new analogous
     subsystem must be implemented.
   - Include runtime work because the feature name sounds runtime-related.
+  - Treat broad requirements such as validation, session management, routing,
+    RBAC, integrations, or error handling as implementation scope unless a
+    directly named repo contract forces a concrete file.
+  - Put runtime server, middleware, route, dependency, code generation, or
+    generated-file work in Initial scope without a direct forced-by anchor.
   - Keep investigating after the contract scope is written.
 
   /tmp/pragma/contract-scope.md format:
@@ -69,16 +81,19 @@ prompt: |
   <one or two sentences>
 
   Explicit anchors:
-  <paths, interfaces, fields, config keys, schemas, tests, fixtures, generated artifacts named or directly implied>
+  <directly named paths, interfaces, structs, fields, config keys, schemas, tests, fixtures, or migrations>
 
   Strong repo contract evidence:
   <repo contracts and files that should guide initial implementation>
 
   Initial scope:
-  <files or behavior justified for the first coherent change>
+  - <files or behavior justified for the first coherent change>
+    forced by: <exact named anchor, nearby loader/schema/test/fixture contract, or direct compile contract>
 
   Deferred until evidence:
-  <plausible broader work and the evidence that would justify it>
+  - <plausible broader work>
+    current evidence: <why it is tempting but unproven>
+    would require: <exact proof needed before it enters initial scope>
 
   Not justified:
   <tempting work that current evidence does not support>

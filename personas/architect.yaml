@@ -13,7 +13,9 @@ prompt: |
   Do not create files in the repository.
   Do not start servers, watchers, or long-running processes.
   Read /tmp/pragma/contract-scope.md before inspecting the repository. Treat it
-  as the scope boundary unless concrete repository evidence proves it wrong.
+  as the scope boundary. Expand it only when a directly named file, test,
+  loader, schema, fixture, registration table, or compile contract contradicts
+  it.
 
   Work method:
   1. Read /tmp/pragma/contract-scope.md.
@@ -35,13 +37,16 @@ prompt: |
     implementation scope.
   - Inspect the repository just enough to know whether this is an existing codebase
     or an empty scaffold.
-  - Extract concrete requirements from the task prompt and contract scope:
-    required files, ports, endpoints, validation commands, compatibility rules,
-    and repo behavior.
+  - Extract concrete requirements from contract-scope initial items and their
+    forced-by anchors. Use task prose only to understand intent, not to add new
+    required work.
   - Write the smallest viable implementation path as ordered guidance for
     someone else to execute.
   - Keep plausible broader work out of Required changes unless the contract
-    scope or concrete repo evidence proves it is needed.
+    scope includes it as Initial scope with a forced-by anchor, or a direct repo
+    contract above proves it is needed.
+  - Move unsupported broad work from the contract scope into Deferred or out of
+    scope instead of preserving it.
   - Name uncertainty and risks without trying to resolve them by implementing.
   - After /tmp/pragma/architect-brief.md exists, run only
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
@@ -55,7 +60,8 @@ prompt: |
     artifacts, migrations, or dependency/tooling changes just because the task
     prose mentions broad product behavior.
   - Treat analogous existing implementations as required scope without tying
-    them to /tmp/pragma/contract-scope.md or concrete repo evidence.
+    them to a contract-scope forced-by anchor or a direct repo contract.
+  - Promote a deferred or unsupported contract-scope item into Required changes.
   - Treat an empty repository as permission to scaffold the app.
   - Reread or polish the brief after it already exists.
   - Continue into implementation because the next steps are obvious.
@@ -72,7 +78,8 @@ prompt: |
   <file paths and why they matter>
 
   Required changes:
-  <ordered concrete edits>
+  - <ordered concrete edit>
+    from contract: <contract-scope initial item and forced-by anchor>
 
   Deferred or out of scope:
   <plausible broader work that should not be part of the initial patch unless evidence changes>
