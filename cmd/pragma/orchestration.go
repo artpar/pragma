@@ -10,7 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/cli"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/orchestration"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/persona"
@@ -79,19 +81,9 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
-		personaDef, err := loadPersonaForState(personaDir, state)
+		event, err := runOrchestrationNode(cmd.Context(), engine, d, compDeps, personaDir, state, taskPrompt)
 		if err != nil {
 			return err
-		}
-		fmt.Fprintf(os.Stderr, "orchestration: state=%s persona=%s\n", stateID, personaDef.ID)
-
-		if _, err := runOrchestrationState(cmd.Context(), engine, stateID, personaDef, taskPrompt); err != nil {
-			return fmt.Errorf("state %q failed: %w", stateID, err)
-		}
-
-		event, err := selectStateEvent(state)
-		if err != nil {
-			return fmt.Errorf("select event for state %q: %w", stateID, err)
 		}
 		if err := runtime.FSM.Event(cmd.Context(), event); err != nil {
 			return fmt.Errorf("transition %q from %q: %w", event, stateID, err)
@@ -100,6 +92,81 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "orchestration: done\n")
 	return nil
+}
+
+func runOrchestrationNode(ctx context.Context, rootEngine *query.Engine, d *cli.Deps, compDeps query.CompactionDeps, personaDir string, state orchestration.State, taskPrompt string) (string, error) {
+	if !state.Control.IsZero() {
+		fmt.Fprintf(os.Stderr, "orchestration: state=%s control=%s\n", state.ID, controlName(state))
+		event, err := orchestration.ExecuteControl(state)
+		if err != nil {
+			return "", fmt.Errorf("control state %q failed: %w", state.ID, err)
+		}
+		fmt.Fprintf(os.Stderr, "[control %s emitted %s]\n", state.ID, event)
+		return event, nil
+	}
+
+	personaDef, err := loadPersonaForState(personaDir, state)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintf(os.Stderr, "orchestration: state=%s persona=%s\n", state.ID, personaDef.ID)
+
+	engine := newIsolatedOrchestrationEngine(rootEngine, d, compDeps)
+	if _, err := runOrchestrationState(ctx, engine, state.ID, personaDef, taskPrompt); err != nil {
+		return "", fmt.Errorf("state %q failed: %w", state.ID, err)
+	}
+
+	event, err := selectStateEvent(state)
+	if err != nil {
+		return "", fmt.Errorf("select event for state %q: %w", state.ID, err)
+	}
+	return event, nil
+}
+
+func newIsolatedOrchestrationEngine(rootEngine *query.Engine, d *cli.Deps, compDeps query.CompactionDeps) *query.Engine {
+	cfg := d.EngineCfg
+	cfg.TaskID = ""
+	cfg.ContentReplacementRecords = nil
+	cfg.RecordContentReplacements = nil
+
+	engine := query.NewEngine(
+		d.Prov,
+		rootEngine.Registry(),
+		rootEngine.Orchestrator(),
+		newIsolatedOrchestrationStore(d),
+		d.CostTracker,
+		d.Bus,
+		cfg,
+	)
+	if d.HookMgr != nil {
+		engine.SetHookManager(d.HookMgr)
+	}
+	engine.SetCompaction(compDeps)
+	return engine
+}
+
+func newIsolatedOrchestrationStore(d *cli.Deps) *app.StateStore {
+	snap := d.Store.Snapshot()
+	conv := model.NewConversation(snap.Conversation.System, d.Cfg.Model, d.Cfg.Provider, d.Cwd)
+	return app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          d.Cwd,
+		Model:        d.Cfg.Model,
+		Provider:     d.Cfg.Provider,
+		MaxTokens:    d.Cfg.MaxTokens,
+		Temperature:  d.Cfg.Temperature,
+	})
+}
+
+func controlName(state orchestration.State) string {
+	switch {
+	case state.Control.ForEachNext != nil:
+		return "foreach_next"
+	case state.Control.MarkCurrentItem != nil:
+		return "mark_current_item"
+	default:
+		return "unknown"
+	}
 }
 
 func loadPersonaForState(personaDir string, state orchestration.State) (persona.Definition, error) {

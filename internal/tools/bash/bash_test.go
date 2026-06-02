@@ -124,7 +124,7 @@ func TestBashTool_BackgroundChildDoesNotHoldToolOpen(t *testing.T) {
 	if !strings.Contains(result.Content, "ready") {
 		t.Fatalf("expected foreground output, got %q", result.Content)
 	}
-	if !strings.Contains(result.Content, "Stdout:") || !strings.Contains(result.Content, "Stderr:") {
+	if !strings.Contains(result.Content, "Console:") {
 		t.Fatalf("expected log paths for backgrounding command, got %q", result.Content)
 	}
 }
@@ -161,7 +161,7 @@ func TestBashTool_SoftWaitReturnsRunningCommand(t *testing.T) {
 
 	tool := &Tool{}
 	timeout := 2_000
-	input, _ := json.Marshal(BashInput{Command: "sleep 1; echo done", Timeout: &timeout})
+	input, _ := json.Marshal(BashInput{Command: "echo before; sleep 1; echo done", Timeout: &timeout})
 
 	start := time.Now()
 	result, err := tool.Invoke(context.Background(), input, testState{t.TempDir()})
@@ -172,15 +172,15 @@ func TestBashTool_SoftWaitReturnsRunningCommand(t *testing.T) {
 	if elapsed > time.Second {
 		t.Fatalf("soft wait blocked too long: %s", elapsed)
 	}
-	for _, want := range []string{"Command is still running", "Active processes:", "Status:", "Stdout:", "Stderr:"} {
+	for _, want := range []string{"Console tail (last 100 lines):", "before", "Command is still running", "Active processes:", "Status:", "Console:"} {
 		if !strings.Contains(result.Content, want) {
 			t.Fatalf("result missing %q: %s", want, result.Content)
 		}
 	}
 
 	statusPath := fieldPath(result.Content, "Status:")
-	stdoutPath := fieldPath(result.Content, "Stdout:")
-	if statusPath == "" || stdoutPath == "" {
+	consolePath := fieldPath(result.Content, "Console:")
+	if statusPath == "" || consolePath == "" {
 		t.Fatalf("missing paths in result: %s", result.Content)
 	}
 
@@ -196,12 +196,12 @@ func TestBashTool_SoftWaitReturnsRunningCommand(t *testing.T) {
 	if !strings.Contains(status, "exited") || !strings.Contains(status, "exit_code=0") {
 		t.Fatalf("status = %q", status)
 	}
-	stdout, err := os.ReadFile(stdoutPath)
+	console, err := os.ReadFile(consolePath)
 	if err != nil {
-		t.Fatalf("read stdout: %v", err)
+		t.Fatalf("read console: %v", err)
 	}
-	if !strings.Contains(string(stdout), "done") {
-		t.Fatalf("stdout = %q, want command to complete after soft wait", stdout)
+	if !strings.Contains(string(console), "done") {
+		t.Fatalf("console = %q, want command to complete after soft wait", console)
 	}
 }
 
@@ -218,15 +218,15 @@ func TestBashTool_ExplicitBackgroundReturnsStatusAndLogs(t *testing.T) {
 	if elapsed > time.Second {
 		t.Fatalf("background command blocked: %s", elapsed)
 	}
-	for _, want := range []string{"Started background command", "Status:", "Stdout:", "Stderr:"} {
+	for _, want := range []string{"Started background command", "Status:", "Console:"} {
 		if !strings.Contains(result.Content, want) {
 			t.Fatalf("result missing %q: %s", want, result.Content)
 		}
 	}
 
 	statusPath := fieldPath(result.Content, "Status:")
-	stdoutPath := fieldPath(result.Content, "Stdout:")
-	if statusPath == "" || stdoutPath == "" {
+	consolePath := fieldPath(result.Content, "Console:")
+	if statusPath == "" || consolePath == "" {
 		t.Fatalf("missing paths in result: %s", result.Content)
 	}
 
@@ -242,12 +242,12 @@ func TestBashTool_ExplicitBackgroundReturnsStatusAndLogs(t *testing.T) {
 	if !strings.Contains(status, "exited") || !strings.Contains(status, "exit_code=0") {
 		t.Fatalf("status = %q", status)
 	}
-	stdout, err := os.ReadFile(stdoutPath)
+	console, err := os.ReadFile(consolePath)
 	if err != nil {
-		t.Fatalf("read stdout log: %v", err)
+		t.Fatalf("read console log: %v", err)
 	}
-	if strings.TrimSpace(string(stdout)) != "done" {
-		t.Fatalf("stdout log = %q", stdout)
+	if strings.TrimSpace(string(console)) != "done" {
+		t.Fatalf("console log = %q", console)
 	}
 }
 

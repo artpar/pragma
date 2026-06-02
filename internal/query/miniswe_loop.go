@@ -57,7 +57,7 @@ This workflows should be done step-by-step so that you can iterate on your chang
 4. Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
    Every command starts in the current working directory. To run in a different directory, use ` + "`cd /path/to/working/dir && command`" + `.
    You can prefix environment variables directly before a command, such as ` + "`MY_ENV_VAR=MY_VALUE command`" + `, or write/load environment variables from files
-5. Commands wait up to 30 seconds for immediate output. If a command is still running after that, it is not killed; you will receive the PID, active processes, status file, and stdout/stderr log paths so you can continue and inspect it later.
+5. Commands wait up to 30 seconds for immediate output. If a command is still running after that, it is not killed; you will receive the PID, active processes, status file, and a combined console log path so you can continue and inspect it later.
 
 <system_information>
 %s
@@ -133,6 +133,8 @@ var pragmaLoopBashBlockRE = regexp.MustCompile("(?s)```bash\\s*\\n(.*?)\\n```")
 
 var pragmaLoopCommandTimeout = 300 * time.Second
 var pragmaLoopForegroundWait = 30 * time.Second
+
+const pragmaLoopRunningOutputLines = 100
 
 func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	defer func() {
@@ -376,24 +378,17 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	if err != nil {
 		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
-	stdoutFile, err := os.OpenFile(files.stdout, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	consoleFile, err := os.OpenFile(files.console, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		cancel()
 		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
-	stderrFile, err := os.OpenFile(files.stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		cancel()
-		stdoutFile.Close()
-		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
-	}
-	cmd.Stdout = stdoutFile
-	cmd.Stderr = stderrFile
+	cmd.Stdout = consoleFile
+	cmd.Stderr = consoleFile
 
 	if err := cmd.Start(); err != nil {
 		cancel()
-		stdoutFile.Close()
-		stderrFile.Close()
+		consoleFile.Close()
 		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
 	}
 	pid := cmd.Process.Pid
@@ -403,8 +398,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	go func() {
 		defer cancel()
 		err := cmd.Wait()
-		stdoutFile.Close()
-		stderrFile.Close()
+		consoleFile.Close()
 		writePragmaLoopCommandStatus(files.status, pid, cmdCtx, err)
 		done <- err
 	}()
@@ -417,7 +411,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	case waitErr = <-done:
 		cancel()
 	case <-softTimer.C:
-		output := strings.TrimRight(readPragmaLoopCommandOutput(files), "\n")
+		output := tailLines(readPragmaLoopCommandOutput(files), pragmaLoopRunningOutputLines)
 		output = appendPragmaLoopRunningProcess(output, pid, files)
 		return pragmaLoopBashResult{ReturnCode: -1, Output: output}, false
 	case <-cmdCtx.Done():
@@ -456,8 +450,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 type pragmaLoopCommandFiles struct {
 	dir     string
 	command string
-	stdout  string
-	stderr  string
+	console string
 	status  string
 }
 
@@ -473,8 +466,7 @@ func newPragmaLoopCommandFiles(command string) (pragmaLoopCommandFiles, error) {
 	files := pragmaLoopCommandFiles{
 		dir:     dir,
 		command: filepath.Join(dir, "command.sh"),
-		stdout:  filepath.Join(dir, "stdout.log"),
-		stderr:  filepath.Join(dir, "stderr.log"),
+		console: filepath.Join(dir, "console.log"),
 		status:  filepath.Join(dir, "status.txt"),
 	}
 	if err := os.WriteFile(files.command, []byte(command), 0o644); err != nil {
@@ -484,14 +476,11 @@ func newPragmaLoopCommandFiles(command string) (pragmaLoopCommandFiles, error) {
 }
 
 func readPragmaLoopCommandOutput(files pragmaLoopCommandFiles) string {
-	var parts []string
-	if stdout, err := os.ReadFile(files.stdout); err == nil && len(stdout) > 0 {
-		parts = append(parts, string(stdout))
+	output, err := os.ReadFile(files.console)
+	if err != nil || len(output) == 0 {
+		return ""
 	}
-	if stderr, err := os.ReadFile(files.stderr); err == nil && len(stderr) > 0 {
-		parts = append(parts, string(stderr))
-	}
-	return strings.Join(parts, "\n")
+	return string(output)
 }
 
 func writePragmaLoopCommandStatus(statusPath string, pid int, cmdCtx context.Context, err error) {
@@ -514,20 +503,34 @@ func writePragmaLoopCommandStatus(statusPath string, pid int, cmdCtx context.Con
 
 func appendPragmaLoopRunningProcess(output string, pid int, files pragmaLoopCommandFiles) string {
 	if output != "" {
+		output = fmt.Sprintf("Console tail (last %d lines):\n%s\n", pragmaLoopRunningOutputLines, output)
+	}
+	if output != "" {
 		output += "\n"
 	}
 	return output + fmt.Sprintf(`Command is still running after %s.
 PID: %d
 Command: %s
 Status: %s
-Stdout: %s
-Stderr: %s
+Console: %s
 
 Active processes:
 %s
 
 Poll with: cat %q
-Inspect logs with: tail -100 %q %q`, pragmaLoopForegroundWait, pid, files.command, files.status, files.stdout, files.stderr, pragmaLoopProcessGroupSummary(pid), files.status, files.stdout, files.stderr)
+Inspect logs with: tail -100 %q`, pragmaLoopForegroundWait, pid, files.command, files.status, files.console, pragmaLoopProcessGroupSummary(pid), files.status, files.console)
+}
+
+func tailLines(output string, maxLines int) string {
+	output = strings.TrimRight(output, "\n")
+	if output == "" || maxLines <= 0 {
+		return ""
+	}
+	lines := strings.Split(output, "\n")
+	if len(lines) <= maxLines {
+		return output
+	}
+	return strings.Join(lines[len(lines)-maxLines:], "\n")
 }
 
 func pragmaLoopProcessGroupSummary(pid int) string {

@@ -6,7 +6,17 @@ import (
 )
 
 func TestLoadPersonaYAMLs(t *testing.T) {
-	for _, id := range []string{"architect", "implementer", "prosecutor", "repair"} {
+	for _, id := range []string{
+		"architect",
+		"checklist_planner",
+		"final_prosecutor",
+		"implementer",
+		"item_implementer",
+		"item_prosecutor",
+		"item_repair",
+		"prosecutor",
+		"repair",
+	} {
 		def, err := LoadDefinitionFile(filepath.Join("..", "..", "personas", id+".yaml"))
 		if err != nil {
 			t.Fatalf("load %s persona: %v", id, err)

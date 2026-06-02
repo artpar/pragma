@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	defaultTimeoutMs = 120_000 // 2 minutes
-	maxTimeoutMs     = 600_000 // 10 minutes
+	defaultTimeoutMs   = 120_000 // 2 minutes
+	maxTimeoutMs       = 600_000 // 10 minutes
+	runningOutputLines = 100
 )
 
 var foregroundWait = 30 * time.Second
@@ -89,7 +90,7 @@ IMPORTANT: Avoid using this tool for file discovery, content search, file readin
  - If your command will create new directories or files, first use this tool to run ` + "`ls`" + ` to verify the parent directory exists and is the correct location.
  - Always quote file paths that contain spaces with double quotes in your command (e.g., cd "path with spaces/file.txt")
  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of ` + "`cd`" + `. You may use ` + "`cd`" + ` if the User explicitly requests it.
- - Foreground commands wait up to 30 seconds for immediate output. If a command is still running after that, the tool returns with the PID, active processes, status file, and stdout/stderr log paths so you can continue working and inspect it later.
+ - Foreground commands wait up to 30 seconds for immediate output. If a command is still running after that, the tool returns with the PID, active processes, status file, and a combined console log path so you can continue working and inspect it later.
  - You may specify an optional hard timeout in milliseconds (up to 600000ms / 10 minutes). By default, commands are killed after 120000ms (2 minutes) if they are still running.
  - Write a clear, concise description of what your command does. For simple commands, keep it brief (5-10 words). For complex commands (piped commands, obscure flags, or anything hard to understand at a glance), include enough context so that the user can understand what your command will do.
  - When issuing multiple commands:
@@ -287,22 +288,16 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	setProcAttr(cmd)
 
-	stdoutFile, err := os.OpenFile(files.Stdout, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	consoleFile, err := os.OpenFile(files.Console, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
-		return tool.InvokeResult{}, fmt.Errorf("open stdout log: %w", err)
+		return tool.InvokeResult{}, fmt.Errorf("open console log: %w", err)
 	}
-	stderrFile, err := os.OpenFile(files.Stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		stdoutFile.Close()
-		return tool.InvokeResult{}, fmt.Errorf("open stderr log: %w", err)
-	}
-	cmd.Stdout = stdoutFile
-	cmd.Stderr = stderrFile
+	cmd.Stdout = consoleFile
+	cmd.Stderr = consoleFile
 
 	if err := cmd.Start(); err != nil {
 		cancel()
-		stdoutFile.Close()
-		stderrFile.Close()
+		consoleFile.Close()
 		return tool.InvokeResult{}, fmt.Errorf("start command: %w", err)
 	}
 
@@ -312,8 +307,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	go func() {
 		defer cancel()
 		err := cmd.Wait()
-		stdoutFile.Close()
-		stderrFile.Close()
+		consoleFile.Close()
 		writeCommandStatus(files, pid, timeout, cmdCtx, err)
 		done <- err
 	}()
@@ -322,7 +316,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	case err = <-done:
 		cancel()
 	case <-time.After(foregroundWait):
-		content := runningCommandContent("Command is still running after "+foregroundWait.String()+".", pid, files)
+		output := tailLines(readCommandOutput(files), runningOutputLines)
+		content := runningCommandContent("Command is still running after "+foregroundWait.String()+".", pid, files, output)
 		return tool.InvokeResult{Content: content, Display: "background"}, nil
 	case <-cmdCtx.Done():
 		err = <-done
@@ -375,8 +370,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 type commandFiles struct {
 	Dir     string
 	Command string
-	Stdout  string
-	Stderr  string
+	Console string
 	Status  string
 }
 
@@ -392,8 +386,7 @@ func newCommandFiles() (commandFiles, error) {
 	return commandFiles{
 		Dir:     dir,
 		Command: filepath.Join(dir, "command.sh"),
-		Stdout:  filepath.Join(dir, "stdout.log"),
-		Stderr:  filepath.Join(dir, "stderr.log"),
+		Console: filepath.Join(dir, "console.log"),
 		Status:  filepath.Join(dir, "status.txt"),
 	}, nil
 }
@@ -405,24 +398,17 @@ func (t *Tool) invokeBackground(command string, timeout time.Duration, workDir s
 	cmd.WaitDelay = 5 * time.Second
 	setProcAttr(cmd)
 
-	stdoutFile, err := os.OpenFile(files.Stdout, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	consoleFile, err := os.OpenFile(files.Console, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		cancel()
-		return tool.InvokeResult{}, fmt.Errorf("open stdout log: %w", err)
+		return tool.InvokeResult{}, fmt.Errorf("open console log: %w", err)
 	}
-	stderrFile, err := os.OpenFile(files.Stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		cancel()
-		stdoutFile.Close()
-		return tool.InvokeResult{}, fmt.Errorf("open stderr log: %w", err)
-	}
-	cmd.Stdout = stdoutFile
-	cmd.Stderr = stderrFile
+	cmd.Stdout = consoleFile
+	cmd.Stderr = consoleFile
 
 	if err := cmd.Start(); err != nil {
 		cancel()
-		stdoutFile.Close()
-		stderrFile.Close()
+		consoleFile.Close()
 		return tool.InvokeResult{}, fmt.Errorf("start background command: %w", err)
 	}
 
@@ -430,14 +416,13 @@ func (t *Tool) invokeBackground(command string, timeout time.Duration, workDir s
 	_ = os.WriteFile(files.Status, []byte(fmt.Sprintf("running\npid=%d\nstarted=%s\n", pid, time.Now().Format(time.RFC3339))), 0o644)
 	go func() {
 		defer cancel()
-		defer stdoutFile.Close()
-		defer stderrFile.Close()
+		defer consoleFile.Close()
 
 		err := cmd.Wait()
 		writeCommandStatus(files, pid, timeout, cmdCtx, err)
 	}()
 
-	content := runningCommandContent("Started background command.", pid, files)
+	content := runningCommandContent("Started background command.", pid, files, "")
 	return tool.InvokeResult{Content: content, Display: "background"}, nil
 }
 
@@ -458,30 +443,41 @@ func writeCommandStatus(files commandFiles, pid int, timeout time.Duration, cmdC
 	_ = os.WriteFile(files.Status, []byte(fmt.Sprintf("%s\npid=%d\n%s\nended=%s\n", status, pid, detail, time.Now().Format(time.RFC3339))), 0o644)
 }
 
-func runningCommandContent(prefix string, pid int, files commandFiles) string {
-	return fmt.Sprintf(`%s
+func runningCommandContent(prefix string, pid int, files commandFiles, output string) string {
+	if output != "" {
+		output = fmt.Sprintf("Console tail (last %d lines):\n%s\n\n", runningOutputLines, output)
+	}
+	return output + fmt.Sprintf(`%s
 PID: %d
 Command: %s
 Status: %s
-Stdout: %s
-Stderr: %s
+Console: %s
 
 Active processes:
 %s
 
 Poll with: cat %q
-Inspect logs with: tail -100 %q %q`, prefix, pid, files.Command, files.Status, files.Stdout, files.Stderr, processGroupSummary(pid), files.Status, files.Stdout, files.Stderr)
+Inspect logs with: tail -100 %q`, prefix, pid, files.Command, files.Status, files.Console, processGroupSummary(pid), files.Status, files.Console)
+}
+
+func tailLines(output string, maxLines int) string {
+	output = strings.TrimRight(output, "\n")
+	if output == "" || maxLines <= 0 {
+		return ""
+	}
+	lines := strings.Split(output, "\n")
+	if len(lines) <= maxLines {
+		return output
+	}
+	return strings.Join(lines[len(lines)-maxLines:], "\n")
 }
 
 func readCommandOutput(files commandFiles) string {
-	var parts []string
-	if stdout, err := os.ReadFile(files.Stdout); err == nil && len(stdout) > 0 {
-		parts = append(parts, string(stdout))
+	output, err := os.ReadFile(files.Console)
+	if err != nil || len(output) == 0 {
+		return ""
 	}
-	if stderr, err := os.ReadFile(files.Stderr); err == nil && len(stderr) > 0 {
-		parts = append(parts, string(stderr))
-	}
-	return strings.Join(parts, "\n")
+	return string(output)
 }
 
 func processGroupSummary(pid int) string {
@@ -507,7 +503,7 @@ func appendLogPaths(output string, files commandFiles) string {
 	if output != "" {
 		output += "\n"
 	}
-	return output + fmt.Sprintf("Logs:\nStdout: %s\nStderr: %s", files.Stdout, files.Stderr)
+	return output + fmt.Sprintf("Logs:\nConsole: %s", files.Console)
 }
 
 func sourceMutationReason(command string) string {

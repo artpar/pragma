@@ -1,0 +1,92 @@
+name: architect-checklist-item-loop-final
+initial: architect
+states:
+  - id: architect
+    persona: architect
+
+  - id: checklist_planner
+    persona: checklist_planner
+
+  - id: next_item
+    control:
+      foreach_next:
+        list_path: /tmp/pragma/checklist.json
+        cursor_path: /tmp/pragma/current-item.json
+        pending_status: pending
+        done_status: approved
+        item_event: item_available
+        done_event: all_items_done
+
+  - id: item_implementer
+    persona: item_implementer
+
+  - id: item_prosecutor
+    persona: item_prosecutor
+    event:
+      from_file:
+        path: /tmp/pragma/item-prosecutor-verdict.md
+        rules:
+          - contains: "Decision:\nAPPROVE"
+            event: item_approve
+          - contains: "Decision:\nBLOCK"
+            event: item_block
+
+  - id: mark_item_approved
+    control:
+      mark_current_item:
+        list_path: /tmp/pragma/checklist.json
+        cursor_path: /tmp/pragma/current-item.json
+        status: approved
+        event: complete
+
+  - id: item_repair
+    persona: item_repair
+
+  - id: final_prosecutor
+    persona: final_prosecutor
+    event:
+      from_file:
+        path: /tmp/pragma/final-prosecutor-verdict.md
+        rules:
+          - contains: "Decision:\nAPPROVE"
+            event: final_approve
+          - contains: "Decision:\nBLOCK"
+            event: final_block
+
+  - id: done
+    terminal: true
+
+transitions:
+  - event: complete
+    from: [architect]
+    to: checklist_planner
+  - event: complete
+    from: [checklist_planner]
+    to: next_item
+  - event: item_available
+    from: [next_item]
+    to: item_implementer
+  - event: all_items_done
+    from: [next_item]
+    to: final_prosecutor
+  - event: complete
+    from: [item_implementer]
+    to: item_prosecutor
+  - event: item_approve
+    from: [item_prosecutor]
+    to: mark_item_approved
+  - event: complete
+    from: [mark_item_approved]
+    to: next_item
+  - event: item_block
+    from: [item_prosecutor]
+    to: item_repair
+  - event: complete
+    from: [item_repair]
+    to: item_prosecutor
+  - event: final_approve
+    from: [final_prosecutor]
+    to: done
+  - event: final_block
+    from: [final_prosecutor]
+    to: checklist_planner

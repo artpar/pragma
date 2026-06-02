@@ -129,19 +129,19 @@ func TestRunPragmaLoopBashSoftWaitReturnsRunningProcess(t *testing.T) {
 		pragmaLoopCommandTimeout = oldTimeout
 	}()
 
-	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "sleep 1; echo done")
+	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "echo before; sleep 1; echo done")
 	if timedOut {
 		t.Fatal("command hard-timed out")
 	}
-	for _, want := range []string{"Command is still running", "Active processes:", "Status:", "Stdout:", "Stderr:"} {
+	for _, want := range []string{"Console tail (last 100 lines):", "before", "Command is still running", "Active processes:", "Status:", "Console:"} {
 		if !strings.Contains(result.Output, want) {
 			t.Fatalf("output missing %q: %q", want, result.Output)
 		}
 	}
 
 	statusPath := pragmaLoopFieldPath(result.Output, "Status:")
-	stdoutPath := pragmaLoopFieldPath(result.Output, "Stdout:")
-	if statusPath == "" || stdoutPath == "" {
+	consolePath := pragmaLoopFieldPath(result.Output, "Console:")
+	if statusPath == "" || consolePath == "" {
 		t.Fatalf("missing paths in output: %s", result.Output)
 	}
 
@@ -157,12 +157,12 @@ func TestRunPragmaLoopBashSoftWaitReturnsRunningProcess(t *testing.T) {
 	if !strings.Contains(status, "exited") || !strings.Contains(status, "exit_code=0") {
 		t.Fatalf("status = %q", status)
 	}
-	stdout, err := os.ReadFile(stdoutPath)
+	console, err := os.ReadFile(consolePath)
 	if err != nil {
-		t.Fatalf("read stdout: %v", err)
+		t.Fatalf("read console: %v", err)
 	}
-	if !strings.Contains(string(stdout), "done") {
-		t.Fatalf("stdout = %q, want command to complete after soft wait", stdout)
+	if !strings.Contains(string(console), "done") {
+		t.Fatalf("console = %q, want command to complete after soft wait", console)
 	}
 }
 

@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -14,10 +15,36 @@ const (
 
 // State is one orchestration node. Execution semantics live outside the graph.
 type State struct {
-	ID       string `yaml:"id"`
-	Terminal bool   `yaml:"terminal,omitempty"`
-	Persona  string `yaml:"persona,omitempty"`
-	Event    Event  `yaml:"event,omitempty"`
+	ID       string  `yaml:"id"`
+	Terminal bool    `yaml:"terminal,omitempty"`
+	Persona  string  `yaml:"persona,omitempty"`
+	Control  Control `yaml:"control,omitempty"`
+	Event    Event   `yaml:"event,omitempty"`
+}
+
+type Control struct {
+	ForEachNext     *ForEachNextControl     `yaml:"foreach_next,omitempty"`
+	MarkCurrentItem *MarkCurrentItemControl `yaml:"mark_current_item,omitempty"`
+}
+
+func (c Control) IsZero() bool {
+	return c.ForEachNext == nil && c.MarkCurrentItem == nil
+}
+
+type ForEachNextControl struct {
+	ListPath      string `yaml:"list_path"`
+	CursorPath    string `yaml:"cursor_path"`
+	PendingStatus string `yaml:"pending_status,omitempty"`
+	DoneStatus    string `yaml:"done_status,omitempty"`
+	ItemEvent     string `yaml:"item_event"`
+	DoneEvent     string `yaml:"done_event"`
+}
+
+type MarkCurrentItemControl struct {
+	ListPath   string `yaml:"list_path"`
+	CursorPath string `yaml:"cursor_path"`
+	Status     string `yaml:"status"`
+	Event      string `yaml:"event"`
 }
 
 type Event struct {
@@ -52,6 +79,18 @@ type Runtime struct {
 	Definition Definition
 	States     map[string]State
 	FSM        *fsm.FSM
+}
+
+type Checklist struct {
+	Items []ChecklistItem `json:"items"`
+}
+
+type ChecklistItem struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Acceptance  []string `json:"acceptance,omitempty"`
+	Status      string   `json:"status"`
 }
 
 func NewRuntime(def Definition) (*Runtime, error) {
@@ -147,7 +186,13 @@ func validate(def Definition) (map[string]State, error) {
 
 	for _, state := range states {
 		if state.Terminal {
+			if !state.Control.IsZero() {
+				return nil, fmt.Errorf("orchestration %q terminal state %q cannot have control", def.Name, state.ID)
+			}
 			continue
+		}
+		if err := validateStateExecution(def.Name, state); err != nil {
+			return nil, err
 		}
 		for _, event := range emittedEvents(state) {
 			if !transitionsByStateEvent[state.ID][event] {
@@ -175,8 +220,74 @@ func validate(def Definition) (map[string]State, error) {
 	return states, nil
 }
 
+func validateStateExecution(defName string, state State) error {
+	if !state.Control.IsZero() {
+		if state.Persona != "" {
+			return fmt.Errorf("orchestration %q state %q cannot have both persona and control", defName, state.ID)
+		}
+		if state.Event.FromFile != nil || state.Event.Default != "" {
+			return fmt.Errorf("orchestration %q control state %q cannot also define event", defName, state.ID)
+		}
+		controls := 0
+		if state.Control.ForEachNext != nil {
+			controls++
+			if err := validateForEachNextControl(defName, state.ID, state.Control.ForEachNext); err != nil {
+				return err
+			}
+		}
+		if state.Control.MarkCurrentItem != nil {
+			controls++
+			if err := validateMarkCurrentItemControl(defName, state.ID, state.Control.MarkCurrentItem); err != nil {
+				return err
+			}
+		}
+		if controls != 1 {
+			return fmt.Errorf("orchestration %q control state %q must define exactly one control", defName, state.ID)
+		}
+	}
+	return nil
+}
+
+func validateForEachNextControl(defName, stateID string, control *ForEachNextControl) error {
+	if control.ListPath == "" {
+		return fmt.Errorf("orchestration %q state %q foreach_next requires list_path", defName, stateID)
+	}
+	if control.CursorPath == "" {
+		return fmt.Errorf("orchestration %q state %q foreach_next requires cursor_path", defName, stateID)
+	}
+	if control.ItemEvent == "" {
+		return fmt.Errorf("orchestration %q state %q foreach_next requires item_event", defName, stateID)
+	}
+	if control.DoneEvent == "" {
+		return fmt.Errorf("orchestration %q state %q foreach_next requires done_event", defName, stateID)
+	}
+	return nil
+}
+
+func validateMarkCurrentItemControl(defName, stateID string, control *MarkCurrentItemControl) error {
+	if control.ListPath == "" {
+		return fmt.Errorf("orchestration %q state %q mark_current_item requires list_path", defName, stateID)
+	}
+	if control.CursorPath == "" {
+		return fmt.Errorf("orchestration %q state %q mark_current_item requires cursor_path", defName, stateID)
+	}
+	if control.Status == "" {
+		return fmt.Errorf("orchestration %q state %q mark_current_item requires status", defName, stateID)
+	}
+	if control.Event == "" {
+		return fmt.Errorf("orchestration %q state %q mark_current_item requires event", defName, stateID)
+	}
+	return nil
+}
+
 func emittedEvents(state State) []string {
 	events := make([]string, 0, 1+len(fileEventRules(state)))
+	if state.Control.ForEachNext != nil {
+		return []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneEvent}
+	}
+	if state.Control.MarkCurrentItem != nil {
+		return []string{state.Control.MarkCurrentItem.Event}
+	}
 	if state.Event.Default != "" {
 		events = append(events, state.Event.Default)
 	} else if state.Event.FromFile == nil {
@@ -193,4 +304,115 @@ func fileEventRules(state State) []TextEvent {
 		return nil
 	}
 	return state.Event.FromFile.Rules
+}
+
+func ExecuteControl(state State) (string, error) {
+	switch {
+	case state.Control.ForEachNext != nil:
+		return executeForEachNext(*state.Control.ForEachNext)
+	case state.Control.MarkCurrentItem != nil:
+		return executeMarkCurrentItem(*state.Control.MarkCurrentItem)
+	default:
+		return "", fmt.Errorf("state %q has no control", state.ID)
+	}
+}
+
+func executeForEachNext(control ForEachNextControl) (string, error) {
+	checklist, err := readChecklist(control.ListPath)
+	if err != nil {
+		return "", err
+	}
+	pendingStatus := control.PendingStatus
+	if pendingStatus == "" {
+		pendingStatus = "pending"
+	}
+	doneStatus := control.DoneStatus
+	if doneStatus == "" {
+		doneStatus = "approved"
+	}
+	for _, item := range checklist.Items {
+		if item.Status != pendingStatus {
+			continue
+		}
+		if err := writeJSONFile(control.CursorPath, item); err != nil {
+			return "", err
+		}
+		return control.ItemEvent, nil
+	}
+	if err := writeJSONFile(control.CursorPath, ChecklistItem{Status: doneStatus}); err != nil {
+		return "", err
+	}
+	return control.DoneEvent, nil
+}
+
+func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
+	checklist, err := readChecklist(control.ListPath)
+	if err != nil {
+		return "", err
+	}
+	current, err := readChecklistItem(control.CursorPath)
+	if err != nil {
+		return "", err
+	}
+	if current.ID == "" {
+		return "", fmt.Errorf("current item %q has empty id", control.CursorPath)
+	}
+	found := false
+	for i := range checklist.Items {
+		if checklist.Items[i].ID == current.ID {
+			checklist.Items[i].Status = control.Status
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "", fmt.Errorf("current item %q not found in checklist %q", current.ID, control.ListPath)
+	}
+	if err := writeJSONFile(control.ListPath, checklist); err != nil {
+		return "", err
+	}
+	current.Status = control.Status
+	if err := writeJSONFile(control.CursorPath, current); err != nil {
+		return "", err
+	}
+	return control.Event, nil
+}
+
+func readChecklist(path string) (Checklist, error) {
+	var checklist Checklist
+	if err := readJSONFile(path, &checklist); err != nil {
+		return Checklist{}, err
+	}
+	return checklist, nil
+}
+
+func readChecklistItem(path string) (ChecklistItem, error) {
+	var item ChecklistItem
+	if err := readJSONFile(path, &item); err != nil {
+		return ChecklistItem{}, err
+	}
+	return item, nil
+}
+
+func readJSONFile(path string, dst any) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return fmt.Errorf("parse json %q: %w", path, err)
+	}
+	return nil
+}
+
+func writeJSONFile(path string, value any) error {
+	raw, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return err
+	}
+	return nil
 }
