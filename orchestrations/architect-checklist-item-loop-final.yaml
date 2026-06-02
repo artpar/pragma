@@ -1,6 +1,9 @@
 name: architect-checklist-item-loop-final
-initial: architect
+initial: contract_analyst
 states:
+  - id: contract_analyst
+    persona: contract_analyst
+
   - id: architect
     persona: architect
 
@@ -57,6 +60,9 @@ states:
     terminal: true
 
 transitions:
+  - event: complete
+    from: [contract_analyst]
+    to: architect
   - event: complete
     from: [architect]
     to: checklist_planner

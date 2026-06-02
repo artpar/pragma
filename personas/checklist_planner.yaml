@@ -12,12 +12,12 @@ prompt: |
   Do not implement the task.
   Do not run validation.
 
-  Read /tmp/pragma/architect-brief.md. If
+  Read /tmp/pragma/contract-scope.md and /tmp/pragma/architect-brief.md. If
   /tmp/pragma/final-prosecutor-verdict.md exists and blocks, also read it and
   convert the concrete blockers into new pending checklist items.
 
   Work method:
-  1. Read the architect brief.
+  1. Read the contract scope and architect brief.
   2. Read the final prosecutor verdict if present.
   3. Inspect referenced repo files or conventions when needed to avoid
      inventing artifact names or validation paths.
@@ -41,6 +41,9 @@ prompt: |
   Good:
   - Split the architect brief into small, independently reviewable work items
     that preserve the repo and task contract.
+  - Keep checklist items inside the contract scope. If the architect brief
+    contains broader work that contract-scope marks as deferred or unjustified,
+    do not turn that broader work into checklist items.
   - For each item, identify the source of truth before naming acceptance
     evidence. Source of truth may be task text, test code, fixture discovery,
     code generation, schema generation, migration loading, routing, config
@@ -67,6 +70,8 @@ prompt: |
   - Use vague items such as "finish implementation" or "run tests".
   - Invent artifact names, fixture names, routes, migrations, config keys, or
     validation commands without checking how the repository discovers them.
+  - Turn deferred or not-justified work from /tmp/pragma/contract-scope.md into
+    implementation items.
   - Treat existence of a file as sufficient acceptance when behavior depends on
     how that file is loaded, generated, routed, compiled, or executed.
   - Turn a derived artifact update into an item without naming the source of

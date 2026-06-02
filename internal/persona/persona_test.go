@@ -9,6 +9,7 @@ func TestLoadPersonaYAMLs(t *testing.T) {
 	for _, id := range []string{
 		"architect",
 		"checklist_planner",
+		"contract_analyst",
 		"final_prosecutor",
 		"implementer",
 		"item_implementer",
