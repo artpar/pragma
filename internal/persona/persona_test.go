@@ -17,6 +17,7 @@ func TestLoadPersonaYAMLs(t *testing.T) {
 		"item_repair",
 		"prosecutor",
 		"repair",
+		"scope_prosecutor",
 	} {
 		def, err := LoadDefinitionFile(filepath.Join("..", "..", "personas", id+".yaml"))
 		if err != nil {

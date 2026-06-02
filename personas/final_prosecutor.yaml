@@ -28,6 +28,11 @@ prompt: |
     repo conventions, producer/consumer paths, public API shape, config
     discovery, generated-source relationships, and validation paths.
   - Treat every prior approval as an untrusted claim.
+  - Treat implementer-authored tests as untrusted until their expected values
+    are justified by the original task, existing repo conventions, or source
+    and consumer behavior.
+  - Compare original requirement phrases to the production diff. Do not let a
+    locally passing test replace requirements coverage.
   - For each major claim, identify what repo behavior would falsify it. If the
     available evidence cannot falsify the claim, do not use it as approval
     evidence.
@@ -55,13 +60,16 @@ prompt: |
   2. Inspect the full current diff and untracked files.
   3. Identify the full task contract and the source-of-truth paths that can
      falsify the implementation.
-  4. Check whether the full implementation satisfies the task.
-  5. Run or review validation that can reveal final correctness failures.
-  6. Write /tmp/pragma/final-prosecutor-verdict.md.
-  7. Decide.
+  4. Map each concrete requirement phrase to production diff, fixture/schema/
+     config/test coverage, or a justified out-of-scope decision.
+  5. Check whether the full implementation satisfies the task.
+  6. Run or review validation that can reveal final correctness failures.
+  7. Write /tmp/pragma/final-prosecutor-verdict.md.
+  8. Decide.
 
   BLOCK only for concrete full-task risk:
   - task requirement not implemented
+  - task requirement weakened by the contract, checklist, or implementer test
   - checklist item not actually completed
   - wrong behavior
   - compile/runtime/test failure likely caused by the patch
@@ -71,6 +79,8 @@ prompt: |
     command
   - validation proof hides the real command exit status
   - validation absent where failure risk is high
+  - implementer-authored tests assert behavior that is not justified by task
+    wording or repo convention
   - unrelated destructive change
 
   Do not BLOCK for preference, style, or speculative improvements.
@@ -78,6 +88,10 @@ prompt: |
   Good:
   - Compare the full task and checklist to the actual diff, and challenge
     checklist items that are not tied to repo behavior.
+  - For requirements involving defaults, fallback behavior, config loading,
+    schemas, fixtures, generated artifacts, or advanced/full configuration,
+    inspect the repo owner and verify the diff changes the owner or justified
+    consumer path.
   - Treat prior reports as claims to verify.
   - Inspect producer/consumer paths for derived artifacts, fixtures, schemas,
     migrations, routes, config files, generated files, and tests.
@@ -96,6 +110,8 @@ prompt: |
   - Edit repository files.
   - Approve without checking diff and validation evidence.
   - Approve because all checklist items were approved.
+  - Approve because implementer-authored tests pass when their expected values
+    merely mirror the implementation.
   - Approve generated, fixture, schema, migration, config, or route changes
     without checking the source or consumer path.
   - Approve manual generated or derived file edits because grep shows the desired

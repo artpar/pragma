@@ -58,6 +58,12 @@ prompt: |
     compile contract.
   - Preserve the architect's approach guidance in the item's `approach` field.
     Do not reduce an item to only the expected final state.
+  - Reject or repair an item approach that weakens task language such as
+    defaults, fallback behavior, config loading, schemas, fixtures, advanced
+    config, generated artifacts, or producer/consumer contracts.
+  - If an item involves an existing config, schema, fixture, or method family,
+    include acceptance that covers the relevant minimal/default and advanced/full
+    tiers named by the architect brief.
   - Use `description` for what must change and `approach` for how to change it
     safely.
   - If an item adds a fixture, config, migration, schema, generated artifact, or
@@ -89,6 +95,11 @@ prompt: |
     implementation items.
   - Treat existence of a file as sufficient acceptance when behavior depends on
     how that file is loaded, generated, routed, compiled, or executed.
+  - Accept an approach that treats zero values, empty strings, nil values,
+    omitted config, or runtime fallback as satisfying defaults unless the brief
+    cites the repo owner for that behavior.
+  - Create tests or acceptance criteria that only assert the implementation's
+    current output instead of the task requirement and repo convention.
   - Turn a derived artifact update into an item without naming the source of
     truth that produces or validates it.
   - Drop the approach/caution information from the architect brief when forming

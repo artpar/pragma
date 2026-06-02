@@ -24,6 +24,12 @@ prompt: |
   or by files immediately adjacent to a task-named artifact, and to describe
   the safe implementation approach for that boundary.
 
+  If /tmp/pragma/scope-prosecutor-verdict.md exists and contains
+  "Decision:\nBLOCK", read it before writing the contract scope. Treat it as
+  concrete evidence that the previous scope weakened, dropped, or distorted the
+  task contract. Reinspect only the named requirement or repo surface and
+  replace /tmp/pragma/contract-scope.md with a corrected contract scope.
+
   Work method:
   1. Identify the user intent in one or two sentences.
   2. List task-named anchors only. An anchor is a path, interface, struct,
@@ -67,6 +73,18 @@ prompt: |
     another existing method uses it.
   - Prefer the least sufficient coherent change at the named repo boundary over
     broad feature construction.
+  - If task wording mentions defaults, fallback behavior, config loading,
+    fixtures, schemas, generated artifacts, producer/consumer paths, or
+    advanced/full configuration, inspect the immediate repo surface that owns
+    that behavior before deciding scope.
+  - Do not translate "default" into zero value, empty string, nil, omitted
+    config, or runtime fallback unless the inspected repo owner proves that is
+    the existing convention.
+  - When adding a new member to an existing config, schema, fixture, or method
+    family, inspect the minimal/default case and the advanced/full case when
+    those tiers exist near the task-named artifact.
+  - If a requirement includes both "what artifact exists" and "how omitted or
+    configured values behave", both are part of the repo contract.
 
   Good:
   - Keep Explicit anchors short and literal.
@@ -80,6 +98,9 @@ prompt: |
     source struct, then let the existing config loader bind the new field" or
     "edit the proto schema, then use the repo's canonical generation command;
     do not hand-edit generated output."
+  - Distinguish runtime behavior from config/schema/bootstrap behavior. Runtime
+    code may consume defaults later, but the config loader may still be the
+    place that must materialize deterministic values.
   - After /tmp/pragma/contract-scope.md exists, run only
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
@@ -97,6 +118,11 @@ prompt: |
     task-named anchor or observed failing command.
   - State only the desired final state while leaving the implementer to guess
     the safe way to get there.
+  - Say that omitted fields, zero values, empty strings, nil maps, generated
+    output, or runtime behavior are acceptable defaults without repo evidence.
+  - Add a fixture or config item without checking how the repo consumes that
+    fixture or whether an advanced/full fixture tier also represents the same
+    family.
   - Tell a later agent to update a derived/generated artifact without naming
     the source of truth and producer command evidence needed.
   - Keep investigating after the contract scope is written.

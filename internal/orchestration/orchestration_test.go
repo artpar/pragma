@@ -102,6 +102,10 @@ func TestLoadChecklistLoopYAML(t *testing.T) {
 	for _, event := range []string{
 		EventComplete,
 		EventComplete,
+		"scope_block",
+		EventComplete,
+		EventComplete,
+		"scope_approve",
 		EventComplete,
 		"item_available",
 		EventComplete,

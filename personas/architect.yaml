@@ -19,10 +19,12 @@ prompt: |
   Do not modify repository files.
   Do not create files in the repository.
   Do not start servers, watchers, or long-running processes.
-  Read /tmp/pragma/contract-scope.md before inspecting the repository. Treat it
-  as the scope boundary. Expand it only when a directly named file, test,
-  loader, schema, fixture, registration table, or compile contract contradicts
-  it.
+  Read /tmp/pragma/contract-scope.md before inspecting the repository. If
+  /tmp/pragma/scope-prosecutor-verdict.md exists and contains
+  "Decision:\nBLOCK", read it too and correct the blocked interpretation in the
+  new brief. Treat the contract scope as the scope boundary. Expand it only when
+  a directly named file, test, loader, schema, fixture, registration table, or
+  compile contract contradicts it.
 
   Work method:
   1. Read /tmp/pragma/contract-scope.md.
@@ -60,6 +62,16 @@ prompt: |
   - When a change involves config, fixtures, schemas, migrations, routes, or
     registration tables, say how the repository discovers or consumes that
     artifact so the implementer validates the real contract.
+  - If task wording mentions defaults, fallback behavior, config loading,
+    fixtures, schemas, generated artifacts, producer/consumer paths, or
+    advanced/full configuration, inspect and name the repo surface that owns
+    that behavior before writing the approach.
+  - Do not decide that zero values, empty strings, nil values, omitted config,
+    generated artifacts, or runtime fallback satisfy a default/fallback
+    requirement unless the repo's owning code or fixtures prove that convention.
+  - When adding a new member to an existing config, schema, fixture, or method
+    family, check whether both minimal/default and advanced/full fixture tiers
+    exist and include the required fixture/update path in the brief.
   - When broad task prose could imply runtime work, name the narrower first
     implementation path and what concrete evidence would justify broadening it.
   - Keep plausible broader work out of Required changes unless the contract
@@ -85,6 +97,11 @@ prompt: |
   - Hand off a vague target such as "add support", "update generated files",
     "add validation", or "integrate with framework" without saying the safe
     route through source files, producers, consumers, and validation.
+  - Convert "default", "fallback", "advanced", "fixture", "schema", "config",
+    or "generated" task language into an assumption without checking the owning
+    repo path.
+  - Tell the implementer that runtime behavior will supply omitted
+    configuration unless the repo already uses that exact pattern.
   - Tell the implementer to manually edit generated or derived files.
   - Tell the implementer to use brittle line-number surgery or broad textual
     rewrites when a structured or local source edit is available.
