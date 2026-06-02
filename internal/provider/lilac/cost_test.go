@@ -185,6 +185,56 @@ func TestStreamUsageEstimation(t *testing.T) {
 	_ = p // used for Pricing lookup
 }
 
+func TestCompletionUsageCacheReadAccounting(t *testing.T) {
+	usage := (&completionUsage{
+		PromptTokens:     8_331_609,
+		CompletionTokens: 104_900,
+		TotalTokens:      8_436_509,
+		PromptTokensDetails: promptTokensDetails{
+			CachedTokens: 7_719_600,
+		},
+	}).toTokenUsage()
+
+	if usage.InputTokens != 612_009 {
+		t.Fatalf("InputTokens: got %d, want 612009", usage.InputTokens)
+	}
+	if usage.CacheReadInputTokens != 7_719_600 {
+		t.Fatalf("CacheReadInputTokens: got %d, want 7719600", usage.CacheReadInputTokens)
+	}
+	if usage.OutputTokens != 104_900 {
+		t.Fatalf("OutputTokens: got %d, want 104900", usage.OutputTokens)
+	}
+
+	pricing, ok := LookupModel("minimaxai/minimax-m2.7")
+	if !ok {
+		t.Fatal("model not found for minimaxai/minimax-m2.7")
+	}
+	cost := float64(usage.InputTokens)*pricing.Pricing.InputPerMToken/1_000_000 +
+		float64(usage.CacheReadInputTokens)*pricing.Pricing.CacheReadPerMToken/1_000_000 +
+		float64(usage.OutputTokens)*pricing.Pricing.OutputPerMToken/1_000_000
+
+	const want = 0.734061
+	if cost < want*0.999 || cost > want*1.001 {
+		t.Fatalf("cost: got %.6f, want %.6f", cost, want)
+	}
+}
+
+func TestCompletionUsageClampsCachedTokens(t *testing.T) {
+	usage := (&completionUsage{
+		PromptTokens: 100,
+		PromptTokensDetails: promptTokensDetails{
+			CachedTokens: 150,
+		},
+	}).toTokenUsage()
+
+	if usage.InputTokens != 0 {
+		t.Fatalf("InputTokens: got %d, want 0", usage.InputTokens)
+	}
+	if usage.CacheReadInputTokens != 100 {
+		t.Fatalf("CacheReadInputTokens: got %d, want 100", usage.CacheReadInputTokens)
+	}
+}
+
 // TestEnsureMaxTokens verifies that the provider sets max_tokens
 // when the user doesn't specify one, preventing output truncation.
 func TestEnsureMaxTokens(t *testing.T) {

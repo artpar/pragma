@@ -209,7 +209,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 
 	llmParams.StreamOptions = nil
 
-	var comp *providers.ChatCompletion
+	var comp *completionResponse
 	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, lilacClassify, func() error {
 		var reqErr error
 		comp, reqErr = p.completeDirect(ctx, llmParams)
@@ -221,7 +221,10 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 		return model.Response{}, err
 	}
 
-	resp := anyllm.ResponseFromCompletion(comp)
+	resp := anyllm.ResponseFromCompletion(comp.toAnyLLM())
+	if comp.Usage != nil {
+		resp.Usage = comp.Usage.toTokenUsage()
+	}
 	if resp.Usage.OutputTokens == 0 {
 		observe.TraceCtx(ctx, "lilac", "Provider.Complete", "if: resp.Usage.OutputTokens == 0")
 		resp.Usage.OutputTokens = shared.EstimateOutputTokens(resp.Content)
@@ -281,7 +284,7 @@ func (t temperatureParam) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.FormatFloat(value, 'f', -1, 64)), nil
 }
 
-func (p *Provider) completeDirect(ctx context.Context, params providers.CompletionParams) (*providers.ChatCompletion, error) {
+func (p *Provider) completeDirect(ctx context.Context, params providers.CompletionParams) (*completionResponse, error) {
 	reqBody := chatCompletionRequest{
 		Messages:          params.Messages,
 		Model:             params.Model,
@@ -339,7 +342,7 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 	if err := json.Unmarshal(respBody, &wire); err != nil {
 		return nil, fmt.Errorf("lilac: decode chat completion response: %w", err)
 	}
-	return wire.toAnyLLM(), nil
+	return &wire, nil
 }
 
 func setOpenAICompatibleHeaders(req *http.Request) {
@@ -362,8 +365,50 @@ type completionResponse struct {
 	Created           int64              `json:"created"`
 	Model             string             `json:"model"`
 	Choices           []completionChoice `json:"choices"`
-	Usage             *providers.Usage   `json:"usage,omitempty"`
+	Usage             *completionUsage   `json:"usage,omitempty"`
 	SystemFingerprint string             `json:"system_fingerprint,omitempty"`
+}
+
+type completionUsage struct {
+	PromptTokens        int                 `json:"prompt_tokens"`
+	CompletionTokens    int                 `json:"completion_tokens"`
+	TotalTokens         int                 `json:"total_tokens"`
+	ReasoningTokens     int                 `json:"reasoning_tokens,omitempty"`
+	PromptTokensDetails promptTokensDetails `json:"prompt_tokens_details,omitempty"`
+}
+
+type promptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens,omitempty"`
+}
+
+func (u *completionUsage) toAnyLLM() *providers.Usage {
+	if u == nil {
+		return nil
+	}
+	return &providers.Usage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
+		ReasoningTokens:  u.ReasoningTokens,
+	}
+}
+
+func (u *completionUsage) toTokenUsage() model.TokenUsage {
+	if u == nil {
+		return model.TokenUsage{}
+	}
+	cachedTokens := u.PromptTokensDetails.CachedTokens
+	if cachedTokens < 0 {
+		cachedTokens = 0
+	}
+	if cachedTokens > u.PromptTokens {
+		cachedTokens = u.PromptTokens
+	}
+	return model.TokenUsage{
+		InputTokens:          u.PromptTokens - cachedTokens,
+		OutputTokens:         u.CompletionTokens,
+		CacheReadInputTokens: cachedTokens,
+	}
 }
 
 type completionChoice struct {
@@ -429,7 +474,7 @@ func (r completionResponse) toAnyLLM() *providers.ChatCompletion {
 		Created:           r.Created,
 		Model:             r.Model,
 		Choices:           choices,
-		Usage:             r.Usage,
+		Usage:             r.Usage.toAnyLLM(),
 		SystemFingerprint: r.SystemFingerprint,
 	}
 }
