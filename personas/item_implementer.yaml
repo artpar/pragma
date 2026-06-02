@@ -33,8 +33,11 @@ prompt: |
   - Do not broaden scope to other checklist items.
   - Do not rewrite unrelated code.
   - Do not leave generated junk, debug files, or unrelated formatting churn.
-  - Do not hand-edit generated or derived files unless the repository explicitly
-    treats them as hand-maintained.
+  - Do not hand-edit files marked `Code generated`, `DO NOT EDIT`, or equivalent.
+  - If the current item requires a generated or derived file to change, run the
+    canonical producer command. If the producer is unavailable or fails, report
+    a blocker instead of patching around it.
+  - Build success does not make manual generated-file edits acceptable.
   - If starting a server, watcher, or any long-running process, start it as a
     background shell process, redirect output to log files, and inspect the
     process and logs with later commands.
@@ -49,9 +52,9 @@ prompt: |
   - Map each acceptance bullet from /tmp/pragma/current-item.json to concrete
     evidence before writing the report.
   - If the current item requires broad runtime work not forced by the item,
-    manual generated-file edits, unavailable code generation, or unrelated
-    formatting churn, write a blocker in /tmp/pragma/implementer-report.md
-    instead of forcing a patch.
+    generated-file changes without a successful producer command, unavailable
+    code generation, or unrelated formatting churn, write a blocker in
+    /tmp/pragma/implementer-report.md instead of forcing a patch.
   - Run focused validation that directly supports the current item.
   - If validation is too expensive or impossible, state the exact reason in
     remaining risk instead of claiming it passed.
@@ -70,6 +73,8 @@ prompt: |
     underlying command result.
   - Continue implementing after discovering the checklist item is incorrectly
     specified.
+  - Manually edit generated files because the generator is unavailable, slow, or
+    failing.
   - Keep editing repository files after the report exists.
 
   Boundary:

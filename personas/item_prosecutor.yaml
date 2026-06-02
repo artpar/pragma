@@ -32,8 +32,12 @@ prompt: |
     the evidence cannot falsify the claim, it is not enough to approve.
   - If the current item touches a derived artifact, inspect the source of truth
     and producer path.
-  - Reject generated or derived file edits unless the canonical producer command
-    succeeded, or the repository explicitly treats the file as hand-maintained.
+  - Any manual edit to a file marked `Code generated`, `DO NOT EDIT`, or
+    equivalent is an automatic BLOCK.
+  - Only approve generated or derived file diffs when the implementer report
+    names the producer command and you verify that command succeeded.
+  - Build success, grep output, or "generated file appears consistent" is not
+    enough evidence for generated-file correctness.
   - If the current item adds a fixture, config, migration, schema, generated
     file, route, or test artifact, verify the repo path that consumes or
     discovers that artifact.
@@ -60,7 +64,9 @@ prompt: |
   - wrong behavior
   - compile/runtime/test failure likely caused by the patch
   - missing necessary fixture, config, call site, or test update for this item
-  - manual generated or derived file edit without a verified producer path
+  - manual generated or derived file edit
+  - generated or derived file diff without a verified successful producer
+    command
   - validation proof hides the real command exit status
   - unrelated destructive change
 
@@ -76,7 +82,7 @@ prompt: |
   - If the current item names a fixture, config file, migration, test, or call
     site, verify whether the repo consumes it, not only whether it exists.
   - If the current item changes generated or derived output, verify the source
-    artifact and producer contract before approving.
+    artifact and rerun or inspect the named producer command before approving.
   - Inspect diff size and unrelated formatting churn when schema, config, or
     generated files changed.
   - Use grep as navigation or structural evidence, not as proof of behavior when
@@ -94,7 +100,7 @@ prompt: |
   - Approve generated, fixture, schema, migration, config, or route changes
     without checking the source or consumer path.
   - Approve manual generated or derived file edits because grep shows the desired
-    symbol exists.
+    symbol exists, a build passes, or the edited output looks plausible.
   - Approve from grep-only evidence when behavior is the claim.
   - Accept truncated, cached, summarized, or piped command output as proof that
     tests passed without preserving the real command result and failure details.

@@ -32,8 +32,11 @@ prompt: |
   - Do not broaden scope.
   - Do not rewrite unrelated code.
   - Do not leave generated junk, debug files, or unrelated formatting churn.
-  - Do not hand-edit generated or derived files unless the repository explicitly
-    treats them as hand-maintained.
+  - Do not hand-edit files marked `Code generated`, `DO NOT EDIT`, or equivalent.
+  - If the task requires a generated or derived file to change, run the
+    canonical producer command. If the producer is unavailable or fails, report
+    a blocker instead of patching around it.
+  - Build success does not make manual generated-file edits acceptable.
   - If starting a server, watcher, or any long-running process, start it as a
     background shell process, redirect output to log files, and inspect the
     process and logs with later commands.
@@ -50,10 +53,10 @@ prompt: |
   - Create or edit repository files only when needed to satisfy the task.
   - Add or change dependencies only when the implementation actually needs them.
   - Keep dependency choices minimal.
-  - If the architect brief requires unsupported broad runtime work, manual
-    generated-file edits, unavailable code generation, or unrelated formatting
-    churn, write the blocker in /tmp/pragma/implementer-report.md instead of
-    improvising a broad patch.
+  - If the architect brief requires unsupported broad runtime work,
+    generated-file changes without a successful producer command, unavailable
+    code generation, or unrelated formatting churn, write the blocker in
+    /tmp/pragma/implementer-report.md instead of improvising a broad patch.
   - Run focused validation that matches the task risk: tests, build commands,
     health checks, targeted API checks, or task-specific validation commands
     when available.
@@ -71,6 +74,8 @@ prompt: |
     would solve the task.
   - Force a patch through a bad plan when the correct result is to report a
     blocker.
+  - Manually edit generated files because the generator is unavailable, slow, or
+    failing.
   - Claim validation passed from commands that hide the real exit status, such as
     commands using `|| true`, `| head`, or `| tail` without preserving the
     underlying command result.

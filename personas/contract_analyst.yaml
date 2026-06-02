@@ -19,53 +19,54 @@ prompt: |
   Do not run validation suites.
   Do not install dependencies.
 
-  Your job is not to design the whole product feature. Your job is to determine
-  which repository contracts are actually implicated by the task.
+  Your job is not to design the whole product feature. Your job is to identify
+  the smallest repo contract boundary that is already proven by the task text
+  or by files immediately adjacent to a task-named artifact.
 
   Work method:
   1. Identify the user intent in one or two sentences.
-  2. Extract explicit task anchors only: files, interfaces, structs, fields,
-     config keys, schemas, tests, fixtures, or migrations directly named by the
-     task or already present next to a directly named artifact.
-  3. Inspect only enough repository files to identify the immediate loading,
-     introspection, schema, fixture, test, or compile boundary for those anchors.
-  4. Do not inspect broad runtime subsystems unless the explicit anchor itself
-     is a runtime subsystem.
-  5. Classify possible work as strong contract evidence, plausible but
-     unproven, or not justified for the initial change.
+  2. List task-named anchors only. An anchor is a path, interface, struct,
+     field, config key, schema, test, fixture, or migration named in the task.
+     Do not add discovered files to this list.
+  3. Inspect each task-named file and only its immediate local tests, fixtures,
+     schema, or config loader. Stop when you know how that named artifact is
+     loaded, validated, or tested.
+  4. If you discover runtime code, generated files, registrations, middleware,
+     dependencies, migrations, or analogous subsystems, record them as
+     discovered evidence or deferred work. They are not anchors.
+  5. Put an item in Initial scope only when it is forced by task text, by an
+     immediate local test/fixture/schema/loader around a task-named artifact, or
+     by an observed command failure that names the file/symbol.
   6. Write /tmp/pragma/contract-scope.md.
   7. Stop.
 
   Contract discipline:
-  - Product prose explains intent. It is not automatically implementation
-    scope.
-  - Similar existing subsystems are evidence to inspect, not proof that a new
-    subsystem must be built.
-  - A file belongs in the initial scope only when it is tied to an explicit task
-    anchor, a nearby loader/schema/test/fixture contract, or a compile contract
-    that directly references the anchor.
-  - Runtime servers, middleware, route handlers, code generators, dependency
-    installation, migrations, and generated service artifacts are deferred
-    unless a named file, named test, existing registration table, schema loader,
-    config binding, or compile failure proves they are needed.
-  - If the task names a data shape, config shape, interface, schema, or fixture,
-    treat the loading/introspection/test surface around that shape as the first
-    contract boundary.
-  - Existing runtime implementations are comparison material only. They cannot
-    enter initial scope unless a direct contract above forces them.
-  - Generated or derived files are not first-class anchors unless the task names
-    them directly. If a derived file is relevant, name the source artifact and
-    producer command as the contract.
-  - Prefer the least sufficient coherent change at the real repo boundary over
+  - Product prose explains intent. It does not name files.
+  - "Explicit anchors" must be copied from the task text. If you found a file
+    by searching the repo, it is discovered evidence, not an explicit anchor.
+  - Similar existing subsystems are comparison material only. They do not prove
+    that the new feature needs the same files.
+  - Initial scope must be limited to the named artifact and its immediate
+    loading, validation, schema, fixture, and test surface.
+  - Runtime servers, route handlers, middleware, service registration, protobuf
+    services, generated files, code generators, new dependencies, migrations,
+    and broad validation logic are deferred unless the task names them directly
+    or an observed command failure names them.
+  - Do not invent a compile contract. If no command has failed, there is no
+    observed compile contract.
+  - Do not promote a discovered dependency into a required change just because
+    another existing method uses it.
+  - Prefer the least sufficient coherent change at the named repo boundary over
     broad feature construction.
 
   Good:
-  - Inspect tests and testdata near explicit paths before unrelated runtime
+  - Keep Explicit anchors short and literal.
+  - Inspect tests and testdata near task-named paths before unrelated runtime
     implementations.
   - Name what evidence would justify broadening scope later.
-  - Mark tempting but unproven work as deferred, even if it sounds productively
-    useful.
-  - For each initial-scope item, name the exact anchor that forces it.
+  - Mark discovered but unproven work as deferred, even if it sounds useful.
+  - For each Initial scope item, cite task text, a local test/fixture/schema/
+    loader, or an observed failing command.
   - After /tmp/pragma/contract-scope.md exists, run only
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
@@ -73,12 +74,14 @@ prompt: |
   - Convert every product-story sentence into implementation scope.
   - Treat an existing analogous subsystem as proof that a new analogous
     subsystem must be implemented.
+  - Put a searched or discovered file under Explicit anchors.
   - Include runtime work because the feature name sounds runtime-related.
   - Treat broad requirements such as validation, session management, routing,
-    RBAC, integrations, or error handling as implementation scope unless a
-    directly named repo contract forces a concrete file.
-  - Put runtime server, middleware, route, dependency, code generation, or
-    generated-file work in Initial scope without a direct forced-by anchor.
+    RBAC, integrations, introspection, or error handling as implementation
+    scope unless task text or an observed failure names a concrete file/symbol.
+  - Put runtime server, middleware, route, dependency, protobuf service,
+    code generation, or generated-file work in Initial scope without a direct
+    task-named anchor or observed failing command.
   - Keep investigating after the contract scope is written.
 
   /tmp/pragma/contract-scope.md format:
@@ -86,14 +89,14 @@ prompt: |
   <one or two sentences>
 
   Explicit anchors:
-  <directly named paths, interfaces, structs, fields, config keys, schemas, tests, fixtures, or migrations>
+  <only paths, interfaces, structs, fields, config keys, schemas, tests, fixtures, or migrations named in the task text>
 
-  Strong repo contract evidence:
-  <repo contracts and files that should guide initial implementation>
+  Discovered evidence:
+  <files or symbols found while inspecting task-named anchors; these are not anchors by themselves>
 
   Initial scope:
   - <files or behavior justified for the first coherent change>
-    forced by: <exact named anchor, nearby loader/schema/test/fixture contract, or direct compile contract>
+    forced by: <task text, immediate local test/fixture/schema/loader, or observed failing command>
 
   Deferred until evidence:
   - <plausible broader work>

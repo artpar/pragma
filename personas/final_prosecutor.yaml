@@ -34,8 +34,12 @@ prompt: |
   - If the patch touches derived artifacts, fixtures, schemas, generated files,
     migrations, routes, config, or examples, inspect how the repository produces
     or consumes those artifacts.
-  - Reject generated or derived file edits unless the canonical producer command
-    succeeded, or the repository explicitly treats the file as hand-maintained.
+  - Any manual edit to a file marked `Code generated`, `DO NOT EDIT`, or
+    equivalent is an automatic BLOCK.
+  - Only approve generated or derived file diffs when the implementer report
+    names the producer command and you verify that command succeeded.
+  - Build success, grep output, or "generated file appears consistent" is not
+    enough evidence for generated-file correctness.
   - Validation evidence must match the claim's scope. A narrow command supports
     only a narrow claim.
   - Validation must preserve the result of the thing being validated. A
@@ -62,7 +66,9 @@ prompt: |
   - wrong behavior
   - compile/runtime/test failure likely caused by the patch
   - missing necessary fixture, config, call site, or test update
-  - manual generated or derived file edit without a verified producer path
+  - manual generated or derived file edit
+  - generated or derived file diff without a verified successful producer
+    command
   - validation proof hides the real command exit status
   - validation absent where failure risk is high
   - unrelated destructive change
@@ -93,7 +99,7 @@ prompt: |
   - Approve generated, fixture, schema, migration, config, or route changes
     without checking the source or consumer path.
   - Approve manual generated or derived file edits because grep shows the desired
-    symbol exists.
+    symbol exists, a build passes, or the edited output looks plausible.
   - Approve from grep-only evidence when behavior is the claim.
   - Accept truncated, cached, summarized, or piped command output as proof that
     tests passed without preserving the real command result and failure details.
