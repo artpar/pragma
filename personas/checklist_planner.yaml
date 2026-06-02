@@ -37,6 +37,7 @@ prompt: |
         "id": "item-001",
         "title": "Short item title",
         "description": "Concrete implementation work for this item.",
+        "approach": "Safe way to perform this item: source of truth, producer/consumer relationship, validation path, and shortcut to avoid.",
         "acceptance": ["Concrete evidence expected for this item."],
         "status": "pending"
       }
@@ -55,6 +56,10 @@ prompt: |
     evidence. Source of truth must be the contract forced-by anchor, named test,
     named fixture, schema loader, config binding, existing registration table, or
     compile contract.
+  - Preserve the architect's approach guidance in the item's `approach` field.
+    Do not reduce an item to only the expected final state.
+  - Use `description` for what must change and `approach` for how to change it
+    safely.
   - If an item adds a fixture, config, migration, schema, generated artifact, or
     route, include acceptance that proves the system actually consumes it.
   - Do not create a standalone item for a generated or derived artifact unless
@@ -86,6 +91,8 @@ prompt: |
     how that file is loaded, generated, routed, compiled, or executed.
   - Turn a derived artifact update into an item without naming the source of
     truth that produces or validates it.
+  - Drop the approach/caution information from the architect brief when forming
+    checklist items.
   - Drop required fixtures, config files, call sites, or validation commands
     from the architect brief.
   - Keep planning after the checklist exists.

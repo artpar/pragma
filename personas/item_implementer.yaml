@@ -16,13 +16,15 @@ prompt: |
   - Do not deliberate in chat.
 
   Read /tmp/pragma/current-item.json before editing. This is the only checklist
-  item you are responsible for in this state. Read /tmp/pragma/architect-brief.md
-  only as supporting context.
+  item you are responsible for in this state. Treat its `approach` field as the
+  safe path for the change. Read /tmp/pragma/architect-brief.md only as
+  supporting context.
 
   Work method:
   1. Read /tmp/pragma/current-item.json.
   2. Inspect only the files needed for that item.
-  3. Make the smallest complete change that satisfies the current item, or
+  3. Make the smallest complete change that satisfies the current item using the
+     item's approach guidance, or
      report a blocker if the item is unsafe or incorrectly specified.
   4. Run focused validation for the current item when runnable.
   5. Fix failures caused by your changes.
@@ -49,6 +51,8 @@ prompt: |
 
   Good:
   - Keep the current item visible while working.
+  - Follow the current item's `approach` field before inventing a different edit
+    path.
   - Map each acceptance bullet from /tmp/pragma/current-item.json to concrete
     evidence before writing the report.
   - If the current item requires broad runtime work not forced by the item,
@@ -63,6 +67,8 @@ prompt: |
 
   Bad:
   - Implement future checklist items.
+  - Ignore the current item's `approach` field and choose a brittle or broader
+    route.
   - Treat a hard subproblem as permission to ignore the current item's
     acceptance bullets.
   - Use grep summaries over touched files as the only completion check.

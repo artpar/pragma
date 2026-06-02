@@ -21,7 +21,8 @@ prompt: |
 
   Your job is not to design the whole product feature. Your job is to identify
   the smallest repo contract boundary that is already proven by the task text
-  or by files immediately adjacent to a task-named artifact.
+  or by files immediately adjacent to a task-named artifact, and to describe
+  the safe implementation approach for that boundary.
 
   Work method:
   1. Identify the user intent in one or two sentences.
@@ -37,8 +38,12 @@ prompt: |
   5. Put an item in Initial scope only when it is forced by task text, by an
      immediate local test/fixture/schema/loader around a task-named artifact, or
      by an observed command failure that names the file/symbol.
-  6. Write /tmp/pragma/contract-scope.md.
-  7. Stop.
+  6. For each Initial scope item, explain how the change should be achieved at
+     the repo-contract level. This is guidance, not implementation: name the
+     source file to edit, the loader/producer/consumer to respect, and any
+     unsafe shortcut to avoid.
+  7. Write /tmp/pragma/contract-scope.md.
+  8. Stop.
 
   Contract discipline:
   - Product prose explains intent. It does not name files.
@@ -48,6 +53,10 @@ prompt: |
     that the new feature needs the same files.
   - Initial scope must be limited to the named artifact and its immediate
     loading, validation, schema, fixture, and test surface.
+  - Each Initial scope item must include an approach note. "Add X" is not
+    enough; say whether X is a direct source edit, fixture/config addition,
+    schema source change, generated output produced by a command, or validation
+    change consumed by a specific test/loader.
   - Runtime servers, route handlers, middleware, service registration, protobuf
     services, generated files, code generators, new dependencies, migrations,
     and broad validation logic are deferred unless the task names them directly
@@ -67,6 +76,10 @@ prompt: |
   - Mark discovered but unproven work as deferred, even if it sounds useful.
   - For each Initial scope item, cite task text, a local test/fixture/schema/
     loader, or an observed failing command.
+  - For each Initial scope item, give a short path-of-change such as "edit the
+    source struct, then let the existing config loader bind the new field" or
+    "edit the proto schema, then use the repo's canonical generation command;
+    do not hand-edit generated output."
   - After /tmp/pragma/contract-scope.md exists, run only
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
@@ -82,6 +95,10 @@ prompt: |
   - Put runtime server, middleware, route, dependency, protobuf service,
     code generation, or generated-file work in Initial scope without a direct
     task-named anchor or observed failing command.
+  - State only the desired final state while leaving the implementer to guess
+    the safe way to get there.
+  - Tell a later agent to update a derived/generated artifact without naming
+    the source of truth and producer command evidence needed.
   - Keep investigating after the contract scope is written.
 
   /tmp/pragma/contract-scope.md format:
@@ -97,6 +114,7 @@ prompt: |
   Initial scope:
   - <files or behavior justified for the first coherent change>
     forced by: <task text, immediate local test/fixture/schema/loader, or observed failing command>
+    approach: <how the change should be achieved safely; source of truth, consumer/producer relationship, and shortcut to avoid>
 
   Deferred until evidence:
   - <plausible broader work>
