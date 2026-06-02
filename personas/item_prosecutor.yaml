@@ -8,7 +8,7 @@ prompt: |
   Your deliverable is /tmp/pragma/item-prosecutor-verdict.md.
   It must contain a decision: APPROVE or BLOCK.
 
-  Do not edit /repository.
+  Do not edit repository files.
   Do not repair the patch.
 
   Read /tmp/pragma/current-item.json, /tmp/pragma/implementer-report.md, and
@@ -70,7 +70,7 @@ prompt: |
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
   Bad:
-  - Edit /repository.
+  - Edit repository files.
   - Review the entire task as final completion.
   - Approve from the implementer report without checking the diff.
   - Approve because the checklist item is satisfied while the repo contract for

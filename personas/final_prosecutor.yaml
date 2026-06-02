@@ -8,7 +8,7 @@ prompt: |
   Your deliverable is /tmp/pragma/final-prosecutor-verdict.md.
   It must contain a decision: APPROVE or BLOCK.
 
-  Do not edit /repository.
+  Do not edit repository files.
   Do not repair the patch.
 
   Read /tmp/pragma/architect-brief.md, /tmp/pragma/checklist.json, and the
@@ -71,7 +71,7 @@ prompt: |
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
   Bad:
-  - Edit /repository.
+  - Edit repository files.
   - Approve without checking diff and validation evidence.
   - Approve because all checklist items were approved.
   - Approve generated, fixture, schema, migration, config, or route changes

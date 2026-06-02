@@ -63,6 +63,25 @@ type Deps struct {
 	Cleanup       func()
 }
 
+// ProviderResolutionOptions lets utility commands share Pragma's provider
+// selection without constructing the full agent runtime.
+type ProviderResolutionOptions struct {
+	DefaultProvider       string
+	DefaultModel          string
+	AllowProviderFallback bool
+}
+
+type ResolvedProviderConfig struct {
+	Config           config.Config
+	Credentials      config.Credentials
+	Provider         string
+	Model            string
+	APIKey           string
+	BaseURL          string
+	ProviderExplicit bool
+	ModelExplicit    bool
+}
+
 // SetupDeps creates all shared dependencies from CLI flags and config.
 // The prompter and orchestrator are NOT created here — they differ between
 // interactive and non-interactive modes.
@@ -76,29 +95,14 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		return nil, fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, err := config.Load(cwd)
+	resolved, err := ResolveProviderConfig(cmd, ProviderResolutionOptions{
+		AllowProviderFallback: true,
+	})
 	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"load config: %w\", err)")
-		return nil, fmt.Errorf("load config: %w", err)
+		return nil, err
 	}
-
-	creds, _ := config.LoadCredentials()
-
-	ApplyFlagOverrides(cmd, &cfg)
-	if cfg.Provider == "" {
-		observe.GlobalTrace("if: cfg.Provider == \"\" (auto-detect)")
-		cfg.Provider = autoDetectProvider(creds)
-	}
-	if cfg.Provider == "" {
-		observe.GlobalTrace("if: cfg.Provider still == \"\" (fallback to anthropic)")
-		cfg.Provider = "anthropic"
-	}
-	if cfg.Model == "" {
-		observe.GlobalTrace("if: cfg.Model == \"\"")
-		cfg.Model = DefaultModelFor(cfg.Provider)
-	}
-	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
+	cfg := resolved.Config
+	creds := resolved.Credentials
 	if cfg.MaxTokens == 0 {
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
@@ -123,29 +127,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			observe.GlobalTrace("return: nil, err")
 			return nil, err
 		}
-	}
-
-	if cfg.Provider == "google-vertex" {
-		observe.GlobalTrace("if: cfg.Provider == \"google-vertex\" (skip API key check)")
-	} else if cfg.APIKey == "" {
-		observe.GlobalTrace("if: cfg.APIKey == \"\" (try credentials.yml)")
-		cfg.APIKey = creds.CredentialFor(cfg.Provider).APIKey
-	}
-	if cfg.Provider != "google-vertex" && cfg.APIKey == "" {
-		observe.GlobalTrace("if: cfg.APIKey == \"\" (try env var)")
-		cfg.APIKey = os.Getenv(envVarForProvider(cfg.Provider))
-	}
-	if cfg.Provider != "google-vertex" && cfg.APIKey == "" {
-		observe.GlobalTrace("if: cfg.APIKey == \"\" (try provider picker)")
-		selected, selErr := pickAvailableProvider(cfg.Provider, creds)
-		if selErr != nil {
-			observe.GlobalTrace("if: selErr != nil")
-			observe.GlobalTrace("return: nil, selErr")
-			return nil, selErr
-		}
-		cfg.Provider = selected.name
-		cfg.APIKey = selected.apiKey
-		cfg.Model = DefaultModelFor(cfg.Provider)
 	}
 
 	bus := observe.NewEventBus(1024)
@@ -644,6 +625,76 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	}
 }
 
+// ResolveProviderConfig applies the same provider/model/API-key selection used
+// by normal runs. Utility commands can pass defaults discovered from their own
+// inputs, then still let global flags and settings override them.
+func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (ResolvedProviderConfig, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ResolvedProviderConfig{}, fmt.Errorf("get working directory: %w", err)
+	}
+	cfg, err := config.Load(cwd)
+	if err != nil {
+		return ResolvedProviderConfig{}, fmt.Errorf("load config: %w", err)
+	}
+	creds, _ := config.LoadCredentials()
+
+	ApplyFlagOverrides(cmd, &cfg)
+	providerExplicit := cmd.Flags().Changed("provider")
+	modelExplicit := cmd.Flags().Changed("model")
+
+	if cfg.Provider == "" && opts.DefaultProvider != "" {
+		cfg.Provider = opts.DefaultProvider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = autoDetectProvider(creds)
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "anthropic"
+	}
+	if cfg.Model == "" && opts.DefaultModel != "" {
+		cfg.Model = opts.DefaultModel
+	}
+	if cfg.Model == "" {
+		cfg.Model = DefaultModelFor(cfg.Provider)
+	}
+	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
+
+	if cfg.Provider == "google-vertex" {
+		observe.GlobalTrace("if: cfg.Provider == \"google-vertex\" (skip API key check)")
+	} else if cfg.APIKey == "" {
+		observe.GlobalTrace("if: cfg.APIKey == \"\" (try credentials.yml)")
+		cfg.APIKey = creds.CredentialFor(cfg.Provider).APIKey
+	}
+	if cfg.Provider != "google-vertex" && cfg.APIKey == "" {
+		observe.GlobalTrace("if: cfg.APIKey == \"\" (try env var)")
+		cfg.APIKey = os.Getenv(envVarForProvider(cfg.Provider))
+	}
+	if cfg.Provider != "google-vertex" && cfg.APIKey == "" && opts.AllowProviderFallback {
+		observe.GlobalTrace("if: cfg.APIKey == \"\" (try provider picker)")
+		selected, selErr := pickAvailableProvider(cfg.Provider, creds)
+		if selErr != nil {
+			return ResolvedProviderConfig{}, selErr
+		}
+		cfg.Provider = selected.name
+		cfg.APIKey = selected.apiKey
+		cfg.Model = DefaultModelFor(cfg.Provider)
+	}
+
+	return ResolvedProviderConfig{
+		Config:           cfg,
+		Credentials:      creds,
+		Provider:         cfg.Provider,
+		Model:            cfg.Model,
+		APIKey:           cfg.APIKey,
+		BaseURL:          ProviderBaseURL(cfg.Provider, creds),
+		ProviderExplicit: providerExplicit,
+		ModelExplicit:    modelExplicit,
+	}, nil
+}
+
 func applyContextDefaults(cfg *config.Config) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -801,6 +852,48 @@ func resolveBaseURL(envVar, provider string) string {
 	}
 	observe.GlobalTrace("return: creds.CredentialFor(provider).BaseURL")
 	return creds.CredentialFor(provider).BaseURL
+}
+
+// ProviderBaseURL resolves the provider's OpenAI-compatible base URL for direct
+// HTTP utilities. It follows provider-specific env vars, credentials, then a
+// known default where one exists.
+func ProviderBaseURL(provider string, creds config.Credentials) string {
+	envVar := baseURLEnvVarForProvider(provider)
+	if envVar != "" {
+		if v := os.Getenv(envVar); v != "" {
+			return v
+		}
+	}
+	if v := creds.CredentialFor(provider).BaseURL; v != "" {
+		return v
+	}
+	return DefaultBaseURLFor(provider)
+}
+
+func DefaultBaseURLFor(provider string) string {
+	switch provider {
+	case "lilac":
+		return "https://api.getlilac.com/v1"
+	case "openai":
+		return "https://api.openai.com/v1"
+	case "groq":
+		return "https://api.groq.com/openai/v1"
+	default:
+		return ""
+	}
+}
+
+func baseURLEnvVarForProvider(provider string) string {
+	switch provider {
+	case "lilac":
+		return "LILAC_BASE_URL"
+	case "openai":
+		return "OPENAI_BASE_URL"
+	case "google":
+		return "GOOGLE_BASE_URL"
+	default:
+		return ""
+	}
 }
 
 type selectedProvider struct {

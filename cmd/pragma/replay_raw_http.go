@@ -4,21 +4,33 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/artpar/pragma/internal/cli"
 )
 
 type rawHTTPRequestMeta struct {
-	Method string `json:"method"`
-	URL    string `json:"url"`
+	Sequence  int    `json:"sequence,omitempty"`
+	Method    string `json:"method"`
+	URL       string `json:"url"`
+	StartedAt string `json:"started_at,omitempty"`
+}
+
+type rawHTTPResponseMeta struct {
+	StatusCode  int    `json:"status_code,omitempty"`
+	StartedAt   string `json:"started_at,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
 }
 
 func replayRawHTTPCmd() *cobra.Command {
@@ -30,6 +42,20 @@ func replayRawHTTPCmd() *cobra.Command {
 	}
 	cmd.Flags().String("base-url", "", "override scheme/host/base path while preserving captured endpoint")
 	cmd.Flags().String("api-key-env", "LILAC_API_KEY", "environment variable containing the replay API key")
+	cmd.Flags().String("out", "", "write response body to file instead of stdout")
+	cmd.AddCommand(replayRawHTTPDumpCmd())
+	return cmd
+}
+
+func replayRawHTTPDumpCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "dump <run-dir-or-capture-dir>",
+		Short: "Dump captured raw HTTP turns into inspection files",
+		Args:  cobra.ExactArgs(1),
+		RunE:  replayRawHTTPDumpRun,
+	}
+	cmd.Flags().String("out", "", "output directory (default: <input>/turn-payloads)")
+	cmd.Flags().Bool("overwrite", false, "replace output directory if it exists")
 	return cmd
 }
 
@@ -46,9 +72,37 @@ func replayRawHTTPRun(cmd *cobra.Command, args []string) error {
 	if meta.Method == "" {
 		meta.Method = http.MethodPost
 	}
+	defaultProvider := inferRawHTTPReplayProvider(meta.URL)
+	capturedModel, _ := rawHTTPRequestModel(body)
+	resolved, err := cli.ResolveProviderConfig(cmd, cli.ProviderResolutionOptions{
+		DefaultProvider: defaultProvider,
+		DefaultModel:    capturedModel,
+	})
+	if err != nil {
+		return err
+	}
+	if !isRawHTTPReplayProvider(resolved.Provider) {
+		return fmt.Errorf("raw HTTP replay supports OpenAI-compatible providers only (lilac, openai, groq); got %q", resolved.Provider)
+	}
+	model := resolved.Model
+	if resolved.ProviderExplicit && !resolved.ModelExplicit {
+		model = cli.DefaultModelFor(resolved.Provider)
+	}
+	if model != "" && model != capturedModel {
+		body, err = rewriteRawHTTPRequestModel(body, model)
+		if err != nil {
+			return err
+		}
+	}
+
 	targetURL := meta.URL
 	if override, _ := cmd.Flags().GetString("base-url"); override != "" {
 		targetURL, err = overrideCapturedURL(meta.URL, override)
+		if err != nil {
+			return err
+		}
+	} else if resolved.BaseURL != "" {
+		targetURL, err = overrideCapturedURL(meta.URL, resolved.BaseURL)
 		if err != nil {
 			return err
 		}
@@ -73,27 +127,87 @@ func replayRawHTTPRun(cmd *cobra.Command, args []string) error {
 	if req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	apiKey := resolved.APIKey
 	apiKeyEnv, _ := cmd.Flags().GetString("api-key-env")
-	if apiKey := strings.TrimSpace(os.Getenv(apiKeyEnv)); apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+	if envKey := strings.TrimSpace(os.Getenv(apiKeyEnv)); envKey != "" && !cmd.Flags().Changed("api-key") {
+		apiKey = envKey
 	}
+	if apiKey == "" {
+		return fmt.Errorf("API key required for %s: set --api-key, %s, or ~/.pragma/credentials.yml", resolved.Provider, apiKeyEnv)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	fmt.Fprintf(os.Stderr, "HTTP %s\n", resp.Status)
+	fmt.Fprintf(cmd.ErrOrStderr(), "HTTP %s\n", resp.Status)
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	_, _ = os.Stdout.Write(respBody)
-	if len(respBody) > 0 && respBody[len(respBody)-1] != '\n' {
-		fmt.Fprintln(os.Stdout)
+	outPath, _ := cmd.Flags().GetString("out")
+	if outPath != "" {
+		if err := os.WriteFile(outPath, respBody, 0o644); err != nil {
+			return err
+		}
+	} else {
+		_, _ = cmd.OutOrStdout().Write(respBody)
+		if len(respBody) > 0 && respBody[len(respBody)-1] != '\n' {
+			fmt.Fprintln(cmd.OutOrStdout())
+		}
 	}
-	printRawHTTPSummary(respBody)
+	printRawHTTPSummary(cmd.ErrOrStderr(), respBody)
 	return nil
+}
+
+func inferRawHTTPReplayProvider(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "api.getlilac.com":
+		return "lilac"
+	case "api.openai.com":
+		return "openai"
+	case "api.groq.com":
+		return "groq"
+	default:
+		return ""
+	}
+}
+
+func isRawHTTPReplayProvider(provider string) bool {
+	switch provider {
+	case "lilac", "openai", "groq":
+		return true
+	default:
+		return false
+	}
+}
+
+func rawHTTPRequestModel(body []byte) (string, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", err
+	}
+	model, _ := payload["model"].(string)
+	return model, nil
+}
+
+func rewriteRawHTTPRequestModel(body []byte, model string) ([]byte, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("parse captured request JSON before model rewrite: %w", err)
+	}
+	payload["model"] = model
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal captured request JSON after model rewrite: %w", err)
+	}
+	return rewritten, nil
 }
 
 func overrideCapturedURL(captured, base string) (string, error) {
@@ -114,7 +228,11 @@ func overrideCapturedURL(captured, base string) (string, error) {
 	if basePath != "" && strings.HasPrefix(capturedPath, basePath+"/") {
 		result.Path = capturedPath
 	} else {
-		result.Path = basePath + "/" + strings.TrimLeft(capturedPath, "/")
+		endpointPath := strings.TrimLeft(capturedPath, "/")
+		if strings.HasSuffix(basePath, "/v1") && strings.HasPrefix(endpointPath, "v1/") {
+			endpointPath = strings.TrimPrefix(endpointPath, "v1/")
+		}
+		result.Path = basePath + "/" + endpointPath
 	}
 	result.RawQuery = capturedURL.RawQuery
 	return result.String(), nil
@@ -129,13 +247,13 @@ func skipReplayHeader(k string) bool {
 	}
 }
 
-func printRawHTTPSummary(body []byte) {
+func printRawHTTPSummary(w io.Writer, body []byte) {
 	summary := summarizeSSE(body)
 	if summary == "" {
 		summary = summarizeJSONResponse(body)
 	}
 	if summary != "" {
-		fmt.Fprintln(os.Stderr, summary)
+		fmt.Fprintln(w, summary)
 	}
 }
 
@@ -220,4 +338,301 @@ func readJSONFile(path string, out any) error {
 		return err
 	}
 	return json.Unmarshal(data, out)
+}
+
+func replayRawHTTPDumpRun(cmd *cobra.Command, args []string) error {
+	input := args[0]
+	captureDir, err := resolveRawHTTPCaptureDir(input)
+	if err != nil {
+		return err
+	}
+	out, _ := cmd.Flags().GetString("out")
+	if out == "" {
+		out = filepath.Join(input, "turn-payloads")
+	}
+	overwrite, _ := cmd.Flags().GetBool("overwrite")
+	return dumpRawHTTPCaptures(captureDir, out, overwrite)
+}
+
+func resolveRawHTTPCaptureDir(input string) (string, error) {
+	info, err := os.Stat(input)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", input)
+	}
+
+	nested := filepath.Join(input, "raw-http-pragma")
+	if nestedInfo, err := os.Stat(nested); err == nil && nestedInfo.IsDir() {
+		return nested, nil
+	}
+
+	entries, err := os.ReadDir(input)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if isRawHTTPTurnDir(entry.Name()) {
+			return input, nil
+		}
+	}
+	return "", fmt.Errorf("%s is neither a run directory containing raw-http-pragma nor a raw HTTP capture directory", input)
+}
+
+func isRawHTTPTurnDir(name string) bool {
+	return name != "" && name[0] >= '0' && name[0] <= '9'
+}
+
+func dumpRawHTTPCaptures(captureDir, outDir string, overwrite bool) error {
+	turns, err := rawHTTPTurnDirs(captureDir)
+	if err != nil {
+		return err
+	}
+	if len(turns) == 0 {
+		return fmt.Errorf("no captured turns found in %s", captureDir)
+	}
+
+	if _, err := os.Stat(outDir); err == nil {
+		if !overwrite {
+			return fmt.Errorf("output directory exists; pass --overwrite: %s", outDir)
+		}
+		if err := os.RemoveAll(outDir); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
+
+	index := []string{"turn\tsource_dir\trequest_path\tresponse_path\tstatus_code\tstarted_at\tcompleted_at"}
+	for _, turn := range turns {
+		turnNumber := rawHTTPTurnNumber(filepath.Base(turn))
+		dest := filepath.Join(outDir, "turn-"+turnNumber)
+		if err := os.MkdirAll(dest, 0o755); err != nil {
+			return err
+		}
+
+		requestPath := filepath.Join(dest, "request.json")
+		if err := writePrettyJSONFile(filepath.Join(turn, "request.json"), requestPath); err != nil {
+			return fmt.Errorf("dump %s request.json: %w", filepath.Base(turn), err)
+		}
+		if err := writeRequestMessages(requestPath, filepath.Join(dest, "request_messages.md")); err != nil {
+			return fmt.Errorf("dump %s request_messages.md: %w", filepath.Base(turn), err)
+		}
+
+		for _, name := range []string{
+			"request.meta.json",
+			"request.headers.json",
+			"response.meta.json",
+			"response.headers.json",
+		} {
+			if err := copyOptionalPrettyJSON(filepath.Join(turn, name), filepath.Join(dest, name)); err != nil {
+				return fmt.Errorf("dump %s %s: %w", filepath.Base(turn), name, err)
+			}
+		}
+
+		responsePath := ""
+		rawResponse := filepath.Join(turn, "response.raw")
+		if _, err := os.Stat(rawResponse); err == nil {
+			responsePath = filepath.Join(dest, "response.json")
+			if err := writePrettyJSONFile(rawResponse, responsePath); err != nil {
+				if !errorsIsJSONSyntax(err) {
+					return fmt.Errorf("dump %s response.raw: %w", filepath.Base(turn), err)
+				}
+				responsePath = filepath.Join(dest, "response.raw")
+				if err := copyFile(rawResponse, responsePath); err != nil {
+					return fmt.Errorf("dump %s response.raw: %w", filepath.Base(turn), err)
+				}
+			}
+			if strings.HasSuffix(responsePath, ".json") {
+				if err := writeResponseContent(responsePath, filepath.Join(dest, "response_content.md")); err != nil {
+					return fmt.Errorf("dump %s response_content.md: %w", filepath.Base(turn), err)
+				}
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+
+		var reqMeta rawHTTPRequestMeta
+		_ = readJSONFile(filepath.Join(turn, "request.meta.json"), &reqMeta)
+		var respMeta rawHTTPResponseMeta
+		_ = readJSONFile(filepath.Join(turn, "response.meta.json"), &respMeta)
+		startedAt := firstNonEmptyRawHTTPDump(respMeta.StartedAt, reqMeta.StartedAt)
+		index = append(index, strings.Join([]string{
+			turnNumber,
+			filepath.Base(turn),
+			filepath.ToSlash(filepath.Join("turn-"+turnNumber, "request.json")),
+			filepath.ToSlash(strings.TrimPrefix(responsePath, outDir+string(os.PathSeparator))),
+			fmt.Sprintf("%d", respMeta.StatusCode),
+			startedAt,
+			respMeta.CompletedAt,
+		}, "\t"))
+	}
+
+	if err := os.WriteFile(filepath.Join(outDir, "index.tsv"), []byte(strings.Join(index, "\n")+"\n"), 0o644); err != nil {
+		return err
+	}
+	readme := fmt.Sprintf(`# Raw HTTP Turn Payloads
+
+Source capture: %s
+Turns exported: %d
+
+This is a plain dump of captured provider HTTP payloads. It does not infer
+orchestration phases, personas, checklist items, or completion state.
+
+Each turn directory contains copied or pretty-printed captured files:
+- request.json
+- response.json or response.raw
+- request.meta.json / response.meta.json when present
+- request.headers.json / response.headers.json when present
+- request_messages.md and response_content.md for readable inspection
+`, captureDir, len(turns))
+	if err := os.WriteFile(filepath.Join(outDir, "README.md"), []byte(readme), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stdout, outDir)
+	return nil
+}
+
+func rawHTTPTurnDirs(captureDir string) ([]string, error) {
+	entries, err := os.ReadDir(captureDir)
+	if err != nil {
+		return nil, err
+	}
+	var turns []string
+	for _, entry := range entries {
+		if entry.IsDir() && isRawHTTPTurnDir(entry.Name()) {
+			turns = append(turns, filepath.Join(captureDir, entry.Name()))
+		}
+	}
+	sort.Slice(turns, func(i, j int) bool {
+		return rawHTTPTurnNumber(filepath.Base(turns[i])) < rawHTTPTurnNumber(filepath.Base(turns[j]))
+	})
+	return turns, nil
+}
+
+func rawHTTPTurnNumber(name string) string {
+	if idx := strings.Index(name, "-"); idx > 0 {
+		return name[:idx]
+	}
+	return name
+}
+
+func writePrettyJSONFile(src, dest string) error {
+	var v any
+	if err := readJSONFile(src, &v); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(dest, data, 0o644)
+}
+
+func copyOptionalPrettyJSON(src, dest string) error {
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := writePrettyJSONFile(src, dest); err == nil {
+		return nil
+	} else if !errorsIsJSONSyntax(err) {
+		return err
+	}
+	return copyFile(src, dest)
+}
+
+func copyFile(src, dest string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+func errorsIsJSONSyntax(err error) bool {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr)
+}
+
+func writeRequestMessages(requestPath, dest string) error {
+	var obj map[string]any
+	if err := readJSONFile(requestPath, &obj); err != nil {
+		return err
+	}
+	messages := asSlice(obj["messages"])
+	var b strings.Builder
+	for _, item := range messages {
+		msg, _ := item.(map[string]any)
+		role, _ := msg["role"].(string)
+		content := readableContent(msg["content"])
+		if role == "" && content == "" {
+			continue
+		}
+		fmt.Fprintf(&b, "## %s\n\n%s\n\n", strings.ToUpper(role), content)
+	}
+	return os.WriteFile(dest, []byte(b.String()), 0o644)
+}
+
+func writeResponseContent(responsePath, dest string) error {
+	var obj map[string]any
+	if err := readJSONFile(responsePath, &obj); err != nil {
+		return err
+	}
+	var b strings.Builder
+	for _, choice := range asSlice(obj["choices"]) {
+		ch, _ := choice.(map[string]any)
+		msg, _ := ch["message"].(map[string]any)
+		if content := readableContent(msg["content"]); content != "" {
+			b.WriteString(content)
+			if !strings.HasSuffix(content, "\n") {
+				b.WriteString("\n")
+			}
+		}
+	}
+	return os.WriteFile(dest, []byte(b.String()), 0o644)
+}
+
+func readableContent(v any) string {
+	switch value := v.(type) {
+	case string:
+		return value
+	case nil:
+		return ""
+	default:
+		data, err := json.MarshalIndent(value, "", "  ")
+		if err != nil {
+			return fmt.Sprint(value)
+		}
+		return string(data)
+	}
+}
+
+func firstNonEmptyRawHTTPDump(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

@@ -9,8 +9,8 @@ prompt: |
   This file defines the repo contract boundary for the architect.
 
   Do not implement the task.
-  Do not modify /repository.
-  Do not create files in /repository.
+  Do not modify repository files.
+  Do not create files in the repository.
   Do not run validation suites.
   Do not install dependencies.
 

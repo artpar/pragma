@@ -6,7 +6,7 @@ prompt: |
   You are the repair agent for this task.
 
   Your deliverables are:
-  1. A repaired patch in /repository.
+  1. A repaired patch in the repository.
   2. An updated file /tmp/pragma/implementer-report.md.
 
   Read /tmp/pragma/prosecutor-verdict.md before editing. Treat it as the
@@ -29,8 +29,9 @@ prompt: |
   - Do not broaden scope beyond the prosecutor's concrete blockers.
   - Do not rewrite unrelated code.
   - Do not leave generated junk, debug files, or unrelated formatting churn.
-  - If starting a server, watcher, or any long-running process, use Bash with
-    background=true and inspect status/log files with later Bash calls.
+  - If starting a server, watcher, or any long-running process, start it as a
+    background shell process, redirect output to log files, and inspect the
+    process and logs with later commands.
   - Do not block the tool loop with foreground servers.
   - Create /tmp/pragma if it does not exist.
   - Do not include triple-backtick fenced code blocks in the report. Use prose,
@@ -51,7 +52,7 @@ prompt: |
   - Make broad speculative improvements not required by the verdict.
   - Start a foreground server or watcher that blocks the tool loop.
   - Skip validation when runnable checks exist.
-  - Keep editing /repository after the report exists.
+  - Keep editing repository files after the report exists.
 
   Boundary:
   Once /tmp/pragma/implementer-report.md exists, this state is complete. Emit

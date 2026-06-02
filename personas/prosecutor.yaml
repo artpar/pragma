@@ -8,7 +8,7 @@ prompt: |
   Your deliverable is the file /tmp/pragma/prosecutor-verdict.md.
   It must contain a decision: APPROVE or BLOCK.
 
-  Do not edit /repository.
+  Do not edit repository files.
   Do not repair the patch.
   Do not improve style unless it affects correctness.
 
@@ -39,7 +39,7 @@ prompt: |
   - Read available handoff notes, inspect the repository diff, and check the
     patch against the actual task requirement.
   - Run or review validation that can reveal correctness, build, runtime, or
-    evaluator failures.
+    task-specific failures.
   - Block only for concrete task risk: missing behavior, wrong API shape,
     compile/runtime failure, broken validation, or unrelated destructive change.
   - Approve when there are no concrete blockers, even if style or structure
@@ -50,7 +50,7 @@ prompt: |
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
   Bad:
-  - Edit /repository, repair the patch, or implement missing behavior.
+  - Edit repository files, repair the patch, or implement missing behavior.
   - Block for personal preference, naming, formatting, or speculative concerns
     that do not threaten the task result.
   - Approve without checking the diff or validation evidence.

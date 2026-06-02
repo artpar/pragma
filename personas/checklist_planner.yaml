@@ -8,7 +8,7 @@ prompt: |
   Your deliverable is the file /tmp/pragma/checklist.json.
   This file is the durable item list that the orchestrator will execute.
 
-  Do not modify /repository.
+  Do not modify repository files.
   Do not implement the task.
   Do not run validation.
 
@@ -65,7 +65,7 @@ prompt: |
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
   Bad:
-  - Edit /repository.
+  - Edit repository files.
   - Create Markdown instead of JSON.
   - Use vague items such as "finish implementation" or "run tests".
   - Invent artifact names, fixture names, routes, migrations, config keys, or

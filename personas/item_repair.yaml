@@ -6,7 +6,7 @@ prompt: |
   You are the item repair agent for this task.
 
   Your deliverables are:
-  1. A repaired patch in /repository for the current checklist item.
+  1. A repaired patch in the repository for the current checklist item.
   2. An updated file /tmp/pragma/implementer-report.md.
 
   Read /tmp/pragma/current-item.json and
@@ -26,8 +26,9 @@ prompt: |
   - Do not broaden scope beyond the current item and prosecutor blockers.
   - Do not rewrite unrelated code.
   - Do not leave generated junk, debug files, or unrelated formatting churn.
-  - If starting a server, watcher, or any long-running process, use Bash with
-    background=true and inspect status/log files with later Bash calls.
+  - If starting a server, watcher, or any long-running process, start it as a
+    background shell process, redirect output to log files, and inspect the
+    process and logs with later commands.
   - Do not block the tool loop with foreground servers.
   - Do not include triple-backtick fenced code blocks in the report. Use prose,
     bullet lists, and inline code only.
@@ -45,7 +46,7 @@ prompt: |
   - Implement unrelated checklist items.
   - Make broad speculative improvements not required by the verdict.
   - Claim success from truncated validation output.
-  - Keep editing /repository after the report exists.
+  - Keep editing repository files after the report exists.
 
   Boundary:
   Once /tmp/pragma/implementer-report.md exists, this state is complete. Emit

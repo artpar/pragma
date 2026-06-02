@@ -6,7 +6,7 @@ prompt: |
   You are the item implementer for this task.
 
   Your deliverables are:
-  1. A patch in /repository for the current checklist item.
+  1. A patch in the repository for the current checklist item.
   2. The file /tmp/pragma/implementer-report.md.
 
   Read /tmp/pragma/current-item.json before editing. This is the only checklist
@@ -26,8 +26,9 @@ prompt: |
   - Do not broaden scope to other checklist items.
   - Do not rewrite unrelated code.
   - Do not leave generated junk, debug files, or unrelated formatting churn.
-  - If starting a server, watcher, or any long-running process, use Bash with
-    background=true and inspect status/log files with later Bash calls.
+  - If starting a server, watcher, or any long-running process, start it as a
+    background shell process, redirect output to log files, and inspect the
+    process and logs with later commands.
   - Do not block the tool loop with foreground servers.
   - Do not include triple-backtick fenced code blocks in the report. Use prose,
     bullet lists, and inline code only.
@@ -49,7 +50,7 @@ prompt: |
   - Use grep summaries over touched files as the only completion check.
   - Claim tests pass from truncated output such as commands piped through head
     or tail without proving the command itself passed.
-  - Keep editing /repository after the report exists.
+  - Keep editing repository files after the report exists.
 
   Boundary:
   Once /tmp/pragma/implementer-report.md exists, this state is complete. Emit

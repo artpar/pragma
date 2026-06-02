@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -188,5 +190,113 @@ func TestApplyContextDefaultsPreservesExplicitChatMode(t *testing.T) {
 	}
 	if cfg.StopAfterToolExec {
 		t.Fatal("StopAfterToolExec = true, want false for explicit chat mode")
+	}
+}
+
+func TestResolveProviderConfigExplicitFlagsWin(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LILAC_API_KEY", "env-key")
+	t.Chdir(work)
+	writeTestCredentials(t, home, `providers:
+  lilac:
+    api_key: creds-key
+    base_url: https://creds.example/v1
+`)
+
+	cmd := newFlagCommand(t, "--provider", "lilac", "--model", "glm", "--api-key", "flag-key")
+	resolved, err := ResolveProviderConfig(cmd, ProviderResolutionOptions{})
+	if err != nil {
+		t.Fatalf("ResolveProviderConfig: %v", err)
+	}
+	if resolved.Provider != "lilac" {
+		t.Fatalf("Provider = %q, want lilac", resolved.Provider)
+	}
+	if resolved.Model != "zai-org/glm-5.1" {
+		t.Fatalf("Model = %q, want alias-resolved glm", resolved.Model)
+	}
+	if resolved.APIKey != "flag-key" {
+		t.Fatalf("APIKey = %q, want flag-key", resolved.APIKey)
+	}
+	if !resolved.ProviderExplicit || !resolved.ModelExplicit {
+		t.Fatalf("explicit flags not tracked: %#v", resolved)
+	}
+	if resolved.BaseURL != "https://creds.example/v1" {
+		t.Fatalf("BaseURL = %q, want credentials URL", resolved.BaseURL)
+	}
+}
+
+func TestResolveProviderConfigCredentialsThenEnv(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LILAC_API_KEY", "env-key")
+	t.Chdir(work)
+	writeTestCredentials(t, home, `providers:
+  lilac:
+    api_key: creds-key
+`)
+
+	cmd := newFlagCommand(t)
+	resolved, err := ResolveProviderConfig(cmd, ProviderResolutionOptions{DefaultProvider: "lilac", DefaultModel: "captured-model"})
+	if err != nil {
+		t.Fatalf("ResolveProviderConfig: %v", err)
+	}
+	if resolved.Provider != "lilac" {
+		t.Fatalf("Provider = %q, want lilac", resolved.Provider)
+	}
+	if resolved.Model != "captured-model" {
+		t.Fatalf("Model = %q, want captured-model", resolved.Model)
+	}
+	if resolved.APIKey != "creds-key" {
+		t.Fatalf("APIKey = %q, want credentials before env", resolved.APIKey)
+	}
+	if resolved.BaseURL != "https://api.getlilac.com/v1" {
+		t.Fatalf("BaseURL = %q, want default Lilac URL", resolved.BaseURL)
+	}
+}
+
+func TestResolveProviderConfigEnvFallback(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OPENAI_API_KEY", "env-openai")
+	t.Chdir(work)
+
+	cmd := newFlagCommand(t)
+	resolved, err := ResolveProviderConfig(cmd, ProviderResolutionOptions{DefaultProvider: "openai"})
+	if err != nil {
+		t.Fatalf("ResolveProviderConfig: %v", err)
+	}
+	if resolved.Provider != "openai" {
+		t.Fatalf("Provider = %q, want openai", resolved.Provider)
+	}
+	if resolved.APIKey != "env-openai" {
+		t.Fatalf("APIKey = %q, want env-openai", resolved.APIKey)
+	}
+	if resolved.Model != DefaultModelFor("openai") {
+		t.Fatalf("Model = %q, want OpenAI default", resolved.Model)
+	}
+}
+
+func newFlagCommand(t *testing.T, args ...string) *cobra.Command {
+	t.Helper()
+	cmd := &cobra.Command{Use: "pragma"}
+	RegisterFlags(cmd)
+	if err := cmd.ParseFlags(args); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	return cmd
+}
+
+func writeTestCredentials(t *testing.T, home, content string) {
+	t.Helper()
+	dir := filepath.Join(home, ".pragma")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "credentials.yml"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

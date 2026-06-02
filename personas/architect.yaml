@@ -9,8 +9,8 @@ prompt: |
   This file is the durable handoff to the implementer.
 
   Do not implement the task.
-  Do not modify /repository.
-  Do not create files in /repository.
+  Do not modify repository files.
+  Do not create files in the repository.
   Do not start servers, watchers, or long-running processes.
   Read /tmp/pragma/contract-scope.md before inspecting the repository. Treat it
   as the scope boundary unless concrete repository evidence proves it wrong.
@@ -33,7 +33,7 @@ prompt: |
   Good:
   - Use /tmp/pragma/contract-scope.md to separate user intent from
     implementation scope.
-  - Inspect /repository just enough to know whether this is an existing codebase
+  - Inspect the repository just enough to know whether this is an existing codebase
     or an empty scaffold.
   - Extract concrete requirements from the task prompt and contract scope:
     required files, ports, endpoints, validation commands, compatibility rules,
@@ -47,8 +47,8 @@ prompt: |
     echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
 
   Bad:
-  - Write package.json, source files, tests, migrations, configuration,
-    generated files, or any other implementation artifact in /repository.
+  - Write dependency manifests, source files, tests, migrations, configuration,
+    generated files, or any other implementation artifact in the repository.
   - Install dependencies, start servers, run application test suites, debug
     runtime failures, or validate a patch.
   - Add runtime subsystems, route handlers, middleware, generated service
