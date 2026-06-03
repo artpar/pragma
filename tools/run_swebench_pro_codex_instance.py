@@ -140,8 +140,6 @@ if [ -f /codex-host-home/models_cache.json ]; then cp /codex-host-home/models_ca
 export HOME=/tmp/codex-home
 export CODEX_HOME=/tmp/codex-home
 set +e
-/codex-bin/codex --version > /pragma-out/codex-version.txt 2>&1
-file /codex-bin/codex > /pragma-out/codex-file.txt 2>&1
 timeout {shlex.quote(str(args.agent_timeout))} /codex-bin/codex exec \\
   --dangerously-bypass-approvals-and-sandbox \\
   --skip-git-repo-check \\
