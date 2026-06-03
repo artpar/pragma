@@ -1,0 +1,104 @@
+name: prompt-control-v2-benchmark
+initial: surface_mapper
+states:
+  - id: surface_mapper
+    persona: surface_mapper
+
+  - id: evidence_mapper
+    persona: evidence_mapper
+
+  - id: patch_planner
+    persona: patch_planner
+
+  - id: checklist_writer
+    persona: checklist_writer
+
+  - id: next_item
+    control:
+      foreach_next:
+        list_path: /tmp/pragma/checklist.json
+        cursor_path: /tmp/pragma/current-item.json
+        pending_status: pending
+        done_status: completed
+        item_event: item_available
+        done_event: all_items_done
+
+  - id: item_worker
+    persona: item_worker
+
+  - id: item_reviewer
+    persona: item_reviewer
+    event:
+      from_file:
+        path: /tmp/pragma/item-verdict.md
+        rules:
+          - contains: "Decision:\nAPPROVE"
+            event: item_approve
+          - contains: "Decision:\nBLOCK"
+            event: item_block
+
+  - id: mark_item_completed
+    control:
+      mark_current_item:
+        list_path: /tmp/pragma/checklist.json
+        cursor_path: /tmp/pragma/current-item.json
+        status: completed
+        event: complete
+
+  - id: validation_runner
+    persona: validation_runner
+
+  - id: final_reviewer
+    persona: final_reviewer
+    event:
+      from_file:
+        path: /tmp/pragma/final-prosecutor-verdict.md
+        rules:
+          - contains: "Decision:\nAPPROVE"
+            event: final_approve
+          - contains: "Decision:\nBLOCK"
+            event: final_block
+
+  - id: done
+    terminal: true
+
+transitions:
+  - event: complete
+    from: [surface_mapper]
+    to: evidence_mapper
+  - event: complete
+    from: [evidence_mapper]
+    to: patch_planner
+  - event: complete
+    from: [patch_planner]
+    to: checklist_writer
+  - event: complete
+    from: [checklist_writer]
+    to: next_item
+  - event: item_available
+    from: [next_item]
+    to: item_worker
+  - event: all_items_done
+    from: [next_item]
+    to: validation_runner
+  - event: complete
+    from: [item_worker]
+    to: item_reviewer
+  - event: item_approve
+    from: [item_reviewer]
+    to: mark_item_completed
+  - event: complete
+    from: [mark_item_completed]
+    to: next_item
+  - event: item_block
+    from: [item_reviewer]
+    to: checklist_writer
+  - event: complete
+    from: [validation_runner]
+    to: final_reviewer
+  - event: final_approve
+    from: [final_reviewer]
+    to: done
+  - event: final_block
+    from: [final_reviewer]
+    to: checklist_writer

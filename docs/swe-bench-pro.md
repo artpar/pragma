@@ -74,6 +74,7 @@ the benchmark container:
 |---|---|
 | `orchestrations/` | `/pragma/orchestrations` |
 | `personas/` | `/pragma/personas` |
+| `personas-research-v2/` | `/pragma/personas-research-v2` |
 
 Example:
 
@@ -81,6 +82,17 @@ Example:
 PRAGMA_EXTRA_ARGS='orchestration run /pragma/orchestrations/architect-implementer-prosecutor.yaml --persona-dir /pragma/personas' \
 tools/run_swebench_pro_instance.py \
   --instance-id instance_flipt-io__flipt-507170da0f7f4da330f6732bffdf11c4df7fc192 \
+  --pull-image \
+  --evaluate
+```
+
+To test the prompt-control v2 persona set from scratch on the Flipt Kubernetes
+task, use the v2 orchestration and persona directory:
+
+```bash
+PRAGMA_EXTRA_ARGS='orchestration run /pragma/orchestrations/prompt-control-v2-benchmark.yaml --persona-dir /pragma/personas-research-v2' \
+tools/run_swebench_pro_instance.py \
+  --instance-id instance_flipt-io__flipt-0fd09def402258834b9d6c0eaa6d3b4ab93b4446 \
   --pull-image \
   --evaluate
 ```

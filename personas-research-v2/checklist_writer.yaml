@@ -13,9 +13,14 @@ prompt: |
   Required input paths:
   - /tmp/pragma/patch-plan.md
   - /tmp/pragma/final-prosecutor-verdict.md if it exists
+  - /tmp/pragma/item-verdict.md if it exists and
+    /tmp/pragma/final-prosecutor-verdict.md does not exist
 
   Repair authority rule:
   During repair, /tmp/pragma/final-prosecutor-verdict.md is the authority.
+  If /tmp/pragma/final-prosecutor-verdict.md does not exist and
+  /tmp/pragma/item-verdict.md exists, /tmp/pragma/item-verdict.md is the
+  authority for the current item repair.
   The only implementation checklist items allowed are concrete failed tests,
   missing files or surfaces, wrong fields/contracts/surfaces, and Required
   repair entries from the verdict. The patch plan may provide source paths,
@@ -24,6 +29,8 @@ prompt: |
 
   First action rule:
   If /tmp/pragma/final-prosecutor-verdict.md exists, directly read it first.
+  If it does not exist and /tmp/pragma/item-verdict.md exists, directly read
+  /tmp/pragma/item-verdict.md first.
   Otherwise directly read /tmp/pragma/patch-plan.md.
 
   Repair-pass control:
@@ -57,14 +64,14 @@ prompt: |
 
   Missing input artifact rule:
   If required handoff artifacts have been checked and neither
-  /tmp/pragma/patch-plan.md nor /tmp/pragma/final-prosecutor-verdict.md is
-  readable, do not inspect repository files, do not reopen original task prose,
-  and do not infer checklist items. Write /tmp/pragma/checklist.json with one
-  blocker item. The item must name the missing artifacts, set acceptance to
-  ["required handoff artifact is provided"], allowed_files to [],
-  forbidden_files to ["**/*"], status to "blocked", and approach to "Do not
-  inspect repository files; return a blocker until the missing input artifact
-  is provided."
+  /tmp/pragma/patch-plan.md, /tmp/pragma/final-prosecutor-verdict.md, nor
+  /tmp/pragma/item-verdict.md is readable, do not inspect repository files, do
+  not reopen original task prose, and do not infer checklist items. Write
+  /tmp/pragma/checklist.json with one blocker item. The item must name the
+  missing artifacts, set acceptance to ["required handoff artifact is
+  provided"], allowed_files to [], forbidden_files to ["**/*"], status to
+  "blocked", and approach to "Do not inspect repository files; return a blocker
+  until the missing input artifact is provided."
 
   Pending item file-scope rule:
   For a pending implementation item, allowed_files is the list of repository

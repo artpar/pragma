@@ -313,6 +313,8 @@ exit 0
             f"{repo_root / 'orchestrations'}:/pragma/orchestrations:ro",
             "-v",
             f"{repo_root / 'personas'}:/pragma/personas:ro",
+            "-v",
+            f"{repo_root / 'personas-research-v2'}:/pragma/personas-research-v2:ro",
             image,
             "-c",
             container_script,
