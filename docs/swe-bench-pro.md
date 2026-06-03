@@ -46,10 +46,41 @@ The first real run may pull a multi-GB `linux/amd64` Docker image from `jefzda/s
 The runner:
 
 1. Cross-builds Pragma as `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`.
-2. Starts the selected SWE-bench Pro Docker image.
-3. Runs `/preprocess.sh` when the image provides it.
-4. Runs Pragma in `/app` with the Pragma loop.
-5. Captures `git diff --binary` as `<instance_id>.pred`.
+2. Prepares a cached Linux `amd64` generator toolchain for benchmark images.
+3. Starts the selected SWE-bench Pro Docker image.
+4. Runs `/preprocess.sh` when the image provides it.
+5. Mounts the generator toolchain into `/pragma-toolchain` and prepends it to
+   `PATH`.
+6. Runs Pragma in `/app` with the Pragma loop.
+7. Captures `git diff --binary` as `<instance_id>.pred`.
+
+The generator toolchain is enabled by default and cached under:
+
+```text
+.pragma/toolchains/swebench-pro-linux-amd64
+```
+
+It provides:
+
+- `buf`
+- `protoc`
+- `protoc-gen-go`
+- `protoc-gen-go-grpc`
+
+Each real run writes `toolchain-preflight.log` in the run output directory so
+the benchmark artifact records which generator binaries were visible inside the
+container. Disable this behavior with `--no-generator-toolchain` or
+`SWE_BENCH_GENERATOR_TOOLCHAIN=0`.
+
+Tool versions and download sources can be overridden with:
+
+| Setting | Purpose |
+|---|---|
+| `SWE_BENCH_GENERATOR_TOOLCHAIN_DIR` | Cache/mount directory |
+| `SWE_BENCH_BUF_URL` | `buf` Linux binary URL |
+| `SWE_BENCH_PROTOC_URL` | `protoc` Linux zip URL |
+| `SWE_BENCH_PROTOC_GEN_GO_VERSION` | `protoc-gen-go` Go module version |
+| `SWE_BENCH_PROTOC_GEN_GO_GRPC_VERSION` | `protoc-gen-go-grpc` Go module version |
 
 Default Pragma settings:
 

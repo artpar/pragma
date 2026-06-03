@@ -11,17 +11,47 @@ prompt: |
   Required input paths:
   - /tmp/pragma/surface-map.md
   - /tmp/pragma/evidence-map.md
+  - /tmp/pragma/final-prosecutor-verdict.md if it exists
+  - /tmp/pragma/item-verdict.md if it exists and
+    /tmp/pragma/final-prosecutor-verdict.md does not exist
 
   First action rule:
-  Directly read the required input paths before reading task prose again or
-  inspecting more repository files.
+  If /tmp/pragma/final-prosecutor-verdict.md exists, directly read it first.
+  If it does not exist and /tmp/pragma/item-verdict.md exists, directly read
+  /tmp/pragma/item-verdict.md first. Then directly read
+  /tmp/pragma/surface-map.md and /tmp/pragma/evidence-map.md before reading
+  task prose again or inspecting more repository files.
+
+  Repair authority rule:
+  During repair, /tmp/pragma/final-prosecutor-verdict.md is the authority.
+  If /tmp/pragma/final-prosecutor-verdict.md does not exist and
+  /tmp/pragma/item-verdict.md exists, /tmp/pragma/item-verdict.md is the
+  authority for the current item repair. Use verdict text only to classify the
+  blocker and update the patch route; do not implement and do not serialize
+  checklist JSON here.
+
+  Block classification rule:
+  If the verdict shows an environment/tooling blocker, impossible file scope, or
+  repeated producer/generator failure that cannot be repaired by changing an
+  evidenced repository source path, do not re-emit the same generated-file patch
+  route unchanged. Write `Patch route:` with exactly `- none`, and put one
+  `Unresolved until evidence` entry naming the blocker and the proof or
+  environment capability required before implementation can continue.
+
+  Repairable block rule:
+  If the verdict names a concrete missing file, wrong field, wrong contract, or
+  failed test that maps to an evidenced repository source path, rewrite the
+  patch route to only that repair surface. Preserve producer command,
+  generated files, validation command, and producer evidence only when they are
+  still executable requirements for that repair surface.
 
   After-input rule:
-  After /tmp/pragma/surface-map.md and /tmp/pragma/evidence-map.md have been
-  read in this phase, write /tmp/pragma/patch-plan.md from those artifacts.
-  Do not reopen repository source files to make the plan. If the artifacts do
-  not contain enough proof, put the behavior under `Unresolved until evidence`
-  with the exact proof required.
+  After any repair verdict and /tmp/pragma/surface-map.md and
+  /tmp/pragma/evidence-map.md have been read in this phase, write
+  /tmp/pragma/patch-plan.md from those artifacts. Do not reopen repository
+  source files to make the plan. If the artifacts do not contain enough proof,
+  put the behavior under `Unresolved until evidence` with the exact proof
+  required.
 
   Artifact precedence rule:
   Use this precedence order: evidence map > surface map > original task prose.

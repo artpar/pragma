@@ -86,6 +86,11 @@ tools/run_swebench_pro_instance.py \
 
 The runner uses `LLM_API_KEY`, `LILAC_API_KEY`, or the Lilac entry in `~/.pragma/credentials.yml`.
 
+By default the runner also prepares and mounts a cached Linux `amd64`
+generator toolchain into the benchmark container, including `buf`, `protoc`,
+`protoc-gen-go`, and `protoc-gen-go-grpc`. Use
+`--no-generator-toolchain` to disable it.
+
 Add `--evaluate` to run the official local-Docker evaluator on the generated patch. See [docs/swe-bench-pro.md](docs/swe-bench-pro.md) for the full workflow, output paths, and scaling notes.
 
 ## CLI Flags

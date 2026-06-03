@@ -9,12 +9,20 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
+import stat
 import subprocess
 import sys
+import urllib.request
+import zipfile
 
 
 DEFAULT_PRO_REPO = Path("/Users/artpar/workspace/code/SWE-bench_Pro-os")
 DEFAULT_INSTANCE_ID = "instance_flipt-io__flipt-507170da0f7f4da330f6732bffdf11c4df7fc192"
+DEFAULT_BUF_URL = "https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64"
+DEFAULT_PROTOBUF_RELEASE_API = "https://api.github.com/repos/protocolbuffers/protobuf/releases/latest"
+DEFAULT_PROTOC_GEN_GO_VERSION = "v1.36.6"
+DEFAULT_PROTOC_GEN_GO_GRPC_VERSION = "v1.5.1"
 
 
 def display_command(command: list[str]) -> list[str]:
@@ -99,6 +107,118 @@ def build_linux_binary(repo_root: Path, output_dir: Path) -> Path:
     env.update({"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"})
     run(["go", "build", "-o", str(binary), "./cmd/pragma"], repo_root, env)
     return binary
+
+
+def make_executable(path: Path) -> None:
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def download_file(url: str, destination: Path) -> None:
+    if destination.exists():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = destination.with_suffix(destination.suffix + ".tmp")
+    print(f"+ download {url} -> {destination}", flush=True)
+    urllib.request.urlretrieve(url, temp_path)
+    temp_path.replace(destination)
+
+
+def latest_protoc_url() -> str:
+    request = urllib.request.Request(
+        DEFAULT_PROTOBUF_RELEASE_API,
+        headers={"User-Agent": "pragma-swebench-runner"},
+    )
+    with urllib.request.urlopen(request) as response:
+        release = json.load(response)
+    for asset in release.get("assets", []):
+        name = str(asset.get("name", ""))
+        if name.startswith("protoc-") and name.endswith("-linux-x86_64.zip"):
+            return str(asset["browser_download_url"])
+    raise SystemExit("could not find a linux-x86_64 protoc asset in latest protobuf release")
+
+
+def prepare_buf(bin_dir: Path, url: str) -> None:
+    buf_bin = bin_dir / "buf"
+    download_file(url, buf_bin)
+    make_executable(buf_bin)
+
+
+def prepare_protoc(bin_dir: Path, url: str) -> None:
+    protoc_bin = bin_dir / "protoc"
+    if protoc_bin.exists():
+        return
+    archive = bin_dir.parent / "downloads" / Path(url).name
+    download_file(url, archive)
+    print(f"+ extract {archive} -> {bin_dir.parent}", flush=True)
+    with zipfile.ZipFile(archive) as zip_file:
+        zip_file.extractall(bin_dir.parent)
+    extracted = bin_dir.parent / "bin" / "protoc"
+    if not extracted.exists():
+        raise SystemExit(f"protoc not found after extracting {archive}")
+    make_executable(extracted)
+
+
+def install_go_tool(
+    repo_root: Path,
+    bin_dir: Path,
+    package: str,
+    version: str,
+    binary_name: str,
+) -> None:
+    binary = bin_dir / binary_name
+    if binary.exists():
+        return
+    env = os.environ.copy()
+    gopath = bin_dir.parent / "gopath"
+    env.update(
+        {
+            "GOOS": "linux",
+            "GOARCH": "amd64",
+            "CGO_ENABLED": "0",
+            "GOPATH": str(gopath),
+        }
+    )
+    run(["go", "install", f"{package}@{version}"], repo_root, env)
+    candidates = [
+        gopath / "bin" / "linux_amd64" / binary_name,
+        gopath / "bin" / binary_name,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            shutil.copy2(candidate, binary)
+            break
+    else:
+        raise SystemExit(f"go install did not create expected tool: {binary}")
+    make_executable(binary)
+
+
+def prepare_generator_toolchain(repo_root: Path, args: argparse.Namespace) -> Path:
+    toolchain_dir = (
+        Path(args.generator_toolchain_dir)
+        if args.generator_toolchain_dir
+        else repo_root / ".pragma" / "toolchains" / "swebench-pro-linux-amd64"
+    ).resolve()
+    bin_dir = toolchain_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+
+    prepare_buf(bin_dir, args.buf_url)
+    prepare_protoc(bin_dir, args.protoc_url or latest_protoc_url())
+    install_go_tool(
+        repo_root,
+        bin_dir,
+        "google.golang.org/protobuf/cmd/protoc-gen-go",
+        args.protoc_gen_go_version,
+        "protoc-gen-go",
+    )
+    install_go_tool(
+        repo_root,
+        bin_dir,
+        "google.golang.org/grpc/cmd/protoc-gen-go-grpc",
+        args.protoc_gen_go_grpc_version,
+        "protoc-gen-go-grpc",
+    )
+
+    return toolchain_dir
 
 
 def normalize_eval_test_list(value: object) -> str:
@@ -211,6 +331,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-turns", default=os.getenv("PRAGMA_MAX_TURNS", "250"))
     parser.add_argument("--temperature", default=os.getenv("PRAGMA_TEMPERATURE", "0"))
     parser.add_argument("--agent-timeout", default=os.getenv("PRAGMA_AGENT_TIMEOUT", "7200"))
+    default_generator_toolchain = os.getenv("SWE_BENCH_GENERATOR_TOOLCHAIN", "1").lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    parser.add_argument(
+        "--generator-toolchain",
+        dest="generator_toolchain",
+        action="store_true",
+        default=default_generator_toolchain,
+        help="prepare and mount linux/amd64 buf/protoc/protobuf generator tools into the benchmark container",
+    )
+    parser.add_argument(
+        "--no-generator-toolchain",
+        dest="generator_toolchain",
+        action="store_false",
+        help="do not prepare or mount generator tools into the benchmark container",
+    )
+    parser.add_argument(
+        "--generator-toolchain-dir",
+        type=Path,
+        default=os.getenv("SWE_BENCH_GENERATOR_TOOLCHAIN_DIR"),
+    )
+    parser.add_argument("--buf-url", default=os.getenv("SWE_BENCH_BUF_URL", DEFAULT_BUF_URL))
+    parser.add_argument("--protoc-url", default=os.getenv("SWE_BENCH_PROTOC_URL", ""))
+    parser.add_argument(
+        "--protoc-gen-go-version",
+        default=os.getenv("SWE_BENCH_PROTOC_GEN_GO_VERSION", DEFAULT_PROTOC_GEN_GO_VERSION),
+    )
+    parser.add_argument(
+        "--protoc-gen-go-grpc-version",
+        default=os.getenv("SWE_BENCH_PROTOC_GEN_GO_GRPC_VERSION", DEFAULT_PROTOC_GEN_GO_GRPC_VERSION),
+    )
     parser.add_argument("--prepare-only", action="store_true", help="build binary and print selected image, but do not run Docker")
     parser.add_argument("--pull-image", action="store_true", help="pull the selected Docker image before running")
     parser.add_argument("--evaluate", action="store_true", help="run the official local-Docker evaluator after patch generation")
@@ -249,9 +402,12 @@ def main() -> None:
     metadata_path.write_text(json.dumps({"instance_id": args.instance_id, "image": image, "row": row}, indent=2), encoding="utf-8")
 
     binary = build_linux_binary(repo_root, output_dir)
+    toolchain_dir = prepare_generator_toolchain(repo_root, args) if args.generator_toolchain else None
     print(f"instance_id={args.instance_id}")
     print(f"image={image}")
     print(f"output_dir={output_dir}")
+    if toolchain_dir is not None:
+        print(f"generator_toolchain={toolchain_dir}")
     if args.prepare_only:
         return
     if args.pull_image:
@@ -260,6 +416,7 @@ def main() -> None:
     pred_path = output_dir / f"{args.instance_id}.pred"
     status_path = output_dir / "agent-status.txt"
     raw_http_dir = output_dir / "raw-http-pragma"
+    toolchain_preflight_path = output_dir / "toolchain-preflight.log"
     extra_args = os.getenv("PRAGMA_EXTRA_ARGS", "")
     container_script = f"""
 set -u
@@ -270,6 +427,21 @@ export HOME=/tmp/pragma-home
 export LILAC_API_KEY="$LLM_API_KEY"
 export LILAC_BASE_URL="$LILAC_BASE_URL"
 export PRAGMA_RAW_HTTP_CAPTURE_DIR=/pragma-out/raw-http-pragma
+if [ -d /pragma-toolchain/bin ]; then
+  export PATH="/pragma-toolchain/bin:$PATH"
+fi
+{{
+  echo "generator toolchain preflight:"
+  for tool in buf protoc protoc-gen-go protoc-gen-go-grpc; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      printf "%s: " "$tool"
+      "$tool" --version 2>/dev/null || true
+    else
+      echo "$tool: not found"
+    fi
+  done
+}} > /pragma-out/toolchain-preflight.log 2>&1
+cat /pragma-out/toolchain-preflight.log
 set +e
 timeout {shlex.quote(str(args.agent_timeout))} /pragma-bin \\
   --provider lilac \\
@@ -297,6 +469,9 @@ exit 0
     ]
     if not api_key:
         raise SystemExit("set LLM_API_KEY or LILAC_API_KEY, or add providers.lilac.api_key to ~/.pragma/credentials.yml")
+    toolchain_mount_args = []
+    if toolchain_dir is not None:
+        toolchain_mount_args = ["-v", f"{toolchain_dir}:/pragma-toolchain:ro"]
     run(
         [
             "docker",
@@ -309,6 +484,7 @@ exit 0
             f"{binary}:/pragma-bin:ro",
             "-v",
             f"{output_dir}:/pragma-out",
+            *toolchain_mount_args,
             "-v",
             f"{repo_root / 'orchestrations'}:/pragma/orchestrations:ro",
             "-v",
@@ -324,6 +500,8 @@ exit 0
     print(f"agent_status={status_path.read_text(encoding='utf-8').strip() if status_path.exists() else 'missing'}")
     print(f"pred_path={pred_path}")
     print(f"raw_http_dir={raw_http_dir}")
+    if toolchain_dir is not None:
+        print(f"toolchain_preflight={toolchain_preflight_path}")
     if args.evaluate:
         maybe_evaluate(pro_repo, output_dir, row, pred_path, "pragma", args.dockerhub_username)
 

@@ -95,7 +95,7 @@ transitions:
     to: next_item
   - event: item_block
     from: [item_reviewer]
-    to: checklist_writer
+    to: patch_planner
   - event: complete
     from: [validation_runner]
     to: final_reviewer
@@ -104,4 +104,4 @@ transitions:
     to: done
   - event: final_block
     from: [final_reviewer]
-    to: checklist_writer
+    to: patch_planner
