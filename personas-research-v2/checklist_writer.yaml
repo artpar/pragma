@@ -136,6 +136,14 @@ prompt: |
   Put source path, generated files, producer command, and validation command on
   that same item.
 
+  Producer-first ordering rule:
+  When the patch plan contains any patch-route bullet with `producer command:`
+  other than `none`, write those producer checklist items before all
+  non-producer pending items, even if the patch plan listed a consumer item
+  first. Preserve relative order within the producer group and within the
+  non-producer group. This is a mechanical dependency rule: generated/source
+  producers run before config, defaulting, fixture, or runtime consumers.
+
   Patch-route role and unresolved separation rule:
   For each patch-route bullet, create one pending item for the `source path`
   only. `consumer/defaulting path` and `fixture/schema tier` are evidence and

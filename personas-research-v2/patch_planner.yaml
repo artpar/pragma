@@ -92,6 +92,10 @@ prompt: |
   application code, emit the producer/source-dependency route first. Consumer
   routes that reference generated symbols must not precede the route that
   creates those symbols.
+  Absolute producer-first rule:
+  Any route with `producer command:` other than `none` must be emitted before
+  every route whose `producer command:` is `none`, unless a visible completed
+  item already proves that producer route is done.
 
   Producer evidence exact-copy rule:
   If evidence-map contains a `Producer evidence:` section, copy the first bullet
