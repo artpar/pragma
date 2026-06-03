@@ -100,7 +100,10 @@ prompt: |
   says validation is N/A, says generator tools were unavailable, says a manual
   generated-file patch was applied, or shows a nonzero producer status, write
   Decision: BLOCK even if grep/search evidence finds the expected generated
-  symbol. Required repair must say to run the producer command successfully and
+  symbol. If the current item names `generated_files`, every generated file
+  changed by that producer and required by the current item must also be named
+  in the implementer report Changed section. Required repair must say to run
+  the producer command successfully, report the generated files in Changed, and
   remove any manual generated-file edit caused by the failed producer attempt.
 
   No-change implementation report rule:
