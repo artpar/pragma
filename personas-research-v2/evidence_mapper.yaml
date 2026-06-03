@@ -55,6 +55,19 @@ prompt: |
   adjacent surface and visible evidence has been inspected, record it under
   `Evidenced generated/derived paths` instead of `Not evidenced`.
 
+  Generated source ownership rule:
+  Generated Go files such as `*.pb.go`, `*.pb.gw.go`, and `*_grpc.pb.go` are
+  not source-of-truth edit paths. If evidence involves a missing enum, symbol,
+  field, service, or mapping in generated protobuf Go, inspect the owning
+  `.proto` file before writing the evidence map when that proto path is visible
+  or directly inferable from the generated path. Record the `.proto` file under
+  `Evidence source paths`, record the generated Go file under `Evidenced
+  generated/derived paths`, and record the focused producer command. If
+  `buf.gen.yaml` exists at the repo root, use:
+  `buf generate --template buf.gen.yaml <proto path>`.
+  Do not put the proto/generated behavior under `Not evidenced` merely because
+  generation is required when the owning proto source path has been inspected.
+
   Producer evidence exact-section rule:
   If visible evidence includes a successful producer/generator command for
   generated or derived paths, write exactly these two sections:

@@ -85,6 +85,14 @@ prompt: |
   Do not hide producer information in prose, and do not split generation or
   validation into separate patch-route items.
 
+  Source-dependency ordering rule:
+  If one evidenced route adds or regenerates a source dependency such as a
+  protobuf enum, schema field, generated symbol, or producer-owned source value,
+  and another evidenced route consumes that dependency from config/defaulting or
+  application code, emit the producer/source-dependency route first. Consumer
+  routes that reference generated symbols must not precede the route that
+  creates those symbols.
+
   Producer evidence exact-copy rule:
   If evidence-map contains a `Producer evidence:` section, copy the first bullet
   after it into a `producer evidence:` line in the same patch route. The output
