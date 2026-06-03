@@ -38,6 +38,7 @@ plugins/jetbrains-reflective-mcp/gradlew.bat
 .claude/
 .gogent/
 pragma-recording.jsonl
+prompt-replay-payloads-*/
 stress-test/
 
 # E2E test snapshots

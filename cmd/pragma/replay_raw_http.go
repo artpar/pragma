@@ -43,7 +43,9 @@ func replayRawHTTPCmd() *cobra.Command {
 	cmd.Flags().String("base-url", "", "override scheme/host/base path while preserving captured endpoint")
 	cmd.Flags().String("api-key-env", "LILAC_API_KEY", "environment variable containing the replay API key")
 	cmd.Flags().String("out", "", "write response body to file instead of stdout")
+	cmd.Flags().Duration("timeout", 10*time.Minute, "HTTP request timeout for the replay")
 	cmd.AddCommand(replayRawHTTPDumpCmd())
+	cmd.AddCommand(replayRawHTTPAuditCmd())
 	return cmd
 }
 
@@ -56,6 +58,17 @@ func replayRawHTTPDumpCmd() *cobra.Command {
 	}
 	cmd.Flags().String("out", "", "output directory (default: <input>/turn-payloads)")
 	cmd.Flags().Bool("overwrite", false, "replace output directory if it exists")
+	return cmd
+}
+
+func replayRawHTTPAuditCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "audit <dir>",
+		Short: "Audit raw HTTP replay case directories for response evidence",
+		Args:  cobra.ExactArgs(1),
+		RunE:  replayRawHTTPAuditRun,
+	}
+	cmd.Flags().Bool("require-responses", false, "return an error if any request lacks usable response evidence")
 	return cmd
 }
 
@@ -137,7 +150,8 @@ func replayRawHTTPRun(cmd *cobra.Command, args []string) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+	resp, err := (&http.Client{Timeout: timeout}).Do(req)
 	if err != nil {
 		return err
 	}
@@ -352,6 +366,106 @@ func replayRawHTTPDumpRun(cmd *cobra.Command, args []string) error {
 	}
 	overwrite, _ := cmd.Flags().GetBool("overwrite")
 	return dumpRawHTTPCaptures(captureDir, out, overwrite)
+}
+
+func replayRawHTTPAuditRun(cmd *cobra.Command, args []string) error {
+	requireResponses, _ := cmd.Flags().GetBool("require-responses")
+	return auditRawHTTPReplayEvidence(args[0], requireResponses, cmd.OutOrStdout())
+}
+
+func auditRawHTTPReplayEvidence(root string, requireResponses bool, w io.Writer) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", root)
+	}
+
+	var cases []string
+	if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if d.Name() == "request.json" {
+			cases = append(cases, filepath.Dir(path))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	sort.Strings(cases)
+	if len(cases) == 0 {
+		return fmt.Errorf("no request.json files found under %s", root)
+	}
+
+	fmt.Fprintln(w, "case\trequest_bytes\tresponse_bytes\tstatus\tsummary")
+	missing := 0
+	for _, dir := range cases {
+		requestPath := filepath.Join(dir, "request.json")
+		responsePath := filepath.Join(dir, "response.raw")
+		reqInfo, err := os.Stat(requestPath)
+		if err != nil {
+			return err
+		}
+		respInfo, err := os.Stat(responsePath)
+		status := "response_ok"
+		responseBytes := int64(0)
+		summary := ""
+		if os.IsNotExist(err) {
+			status = "missing_response"
+			missing++
+		} else if err != nil {
+			return err
+		} else {
+			responseBytes = respInfo.Size()
+			body, err := os.ReadFile(responsePath)
+			if err != nil {
+				return err
+			}
+			status, summary = classifyRawHTTPResponseEvidence(body)
+			if status != "response_ok" {
+				missing++
+			}
+		}
+		fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\n",
+			filepath.ToSlash(dir),
+			reqInfo.Size(),
+			responseBytes,
+			status,
+			summary,
+		)
+	}
+	if requireResponses && missing > 0 {
+		return fmt.Errorf("%d replay case(s) lack usable response evidence", missing)
+	}
+	return nil
+}
+
+func classifyRawHTTPResponseEvidence(body []byte) (string, string) {
+	if len(body) == 0 {
+		return "empty_response", ""
+	}
+	if strings.TrimSpace(string(body)) == "" {
+		return "empty_response", ""
+	}
+	if summary := summarizeSSE(body); summary != "" {
+		return "response_ok", summary
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return "response_non_json", trimSummary(string(body))
+	}
+	if _, ok := obj["error"]; ok {
+		return "response_error", trimSummary(string(body))
+	}
+	if len(asSlice(obj["choices"])) == 0 {
+		return "response_without_choices", trimSummary(string(body))
+	}
+	return "response_ok", summarizeJSONResponse(body)
 }
 
 func resolveRawHTTPCaptureDir(input string) (string, error) {

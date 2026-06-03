@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -186,6 +187,95 @@ func TestReplayRawHTTPCredentialsFile(t *testing.T) {
 	}
 }
 
+func TestReplayRawHTTPTimeoutFlag(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"late"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	_, _, err := executeRawHTTPReplayWithError(
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--base-url", server.URL+"/v1",
+		"--timeout", "1ms",
+		turnDir,
+	)
+	if err == nil {
+		t.Fatal("replay succeeded, want timeout error")
+	}
+	if !strings.Contains(err.Error(), "Client.Timeout") && !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("timeout error = %v", err)
+	}
+}
+
+func TestReplayRawHTTPAuditReportsEvidenceState(t *testing.T) {
+	root := t.TempDir()
+	good := filepath.Join(root, "batch", "good")
+	missing := filepath.Join(root, "batch", "missing")
+	empty := filepath.Join(root, "batch", "empty")
+	for _, dir := range []string{good, missing, empty} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "request.json"), []byte(`{"messages":[]}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(good, "response.raw"), []byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(empty, "response.raw"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr := executeRawHTTPReplay(t,
+		"replay", "raw-http", "audit", filepath.Join(root, "batch"),
+	)
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	for _, want := range []string{
+		"case\trequest_bytes\tresponse_bytes\tstatus\tsummary",
+		"/good\t15\t65\tresponse_ok",
+		"/missing\t15\t0\tmissing_response",
+		"/empty\t15\t0\tempty_response",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("audit output missing %q\n%s", want, stdout)
+		}
+	}
+}
+
+func TestReplayRawHTTPAuditRequireResponses(t *testing.T) {
+	root := t.TempDir()
+	caseDir := filepath.Join(root, "case")
+	if err := os.MkdirAll(caseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(caseDir, "request.json"), []byte(`{"messages":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := executeRawHTTPReplayWithError(
+		"replay", "raw-http", "audit", "--require-responses", root,
+	)
+	if err == nil {
+		t.Fatal("audit succeeded, want missing response error")
+	}
+	if !strings.Contains(err.Error(), "lack usable response evidence") {
+		t.Fatalf("audit error = %v", err)
+	}
+}
+
 func writeCaptureTurn(t *testing.T, captureDir, name, request, response, requestMeta, responseMeta string) {
 	t.Helper()
 	turnDir := filepath.Join(captureDir, name)
@@ -218,6 +308,14 @@ func assertFileContains(t *testing.T, path, want string) {
 
 func executeRawHTTPReplay(t *testing.T, args ...string) (string, string) {
 	t.Helper()
+	stdout, stderr, err := executeRawHTTPReplayWithError(args...)
+	if err != nil {
+		t.Fatalf("Execute(%v): %v\nstderr:\n%s", args, err, stderr)
+	}
+	return stdout, stderr
+}
+
+func executeRawHTTPReplayWithError(args ...string) (string, string, error) {
 	root := &cobra.Command{Use: "pragma"}
 	cli.RegisterFlags(root)
 	root.AddCommand(replayCmd())
@@ -225,10 +323,8 @@ func executeRawHTTPReplay(t *testing.T, args ...string) (string, string) {
 	var stdout, stderr bytes.Buffer
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute(%v): %v\nstderr:\n%s", args, err, stderr.String())
-	}
-	return stdout.String(), stderr.String()
+	err := root.Execute()
+	return stdout.String(), stderr.String(), err
 }
 
 func writeReplayCredentials(t *testing.T, home, content string) {
