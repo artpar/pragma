@@ -202,12 +202,21 @@ def prepare_grpc_gateway_includes(bin_dir: Path, version: str) -> None:
             raise SystemExit("grpc-gateway module cache not found after installing generator tools")
         module_dir = candidates[-1]
 
-    source_dir = module_dir / "protoc-gen-openapiv2"
+    source_dir = module_dir / "protoc-gen-openapiv2" / "options"
     if not source_dir.exists():
         raise SystemExit(f"grpc-gateway include protos not found: {source_dir}")
 
-    destination_dir = bin_dir.parent / "include" / "protoc-gen-openapiv2"
-    shutil.copytree(source_dir, destination_dir, dirs_exist_ok=True)
+    destination_dir = bin_dir.parent / "include" / "protoc-gen-openapiv2" / "options"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("annotations.proto", "openapiv2.proto"):
+        source = source_dir / name
+        destination = destination_dir / name
+        if not source.exists():
+            raise SystemExit(f"grpc-gateway include proto not found: {source}")
+        if destination.exists():
+            continue
+        shutil.copy2(source, destination)
+        destination.chmod(destination.stat().st_mode | stat.S_IWUSR)
 
 
 def prepare_generator_toolchain(repo_root: Path, args: argparse.Namespace) -> Path:
