@@ -91,6 +91,16 @@ prompt: |
   passed. Do not inspect git diff to compensate for an unauditable implementer
   report.
 
+  Generated producer approval rule:
+  If the current item names `generated_files` or `producer_command`, approval
+  requires visible evidence that the exact producer command from the current
+  item or implementer report ran with EXIT_STATUS: 0. If the implementer report
+  says validation is N/A, says generator tools were unavailable, says a manual
+  generated-file patch was applied, or shows a nonzero producer status, write
+  Decision: BLOCK even if grep/search evidence finds the expected generated
+  symbol. Required repair must say to run the producer command successfully and
+  remove any manual generated-file edit caused by the failed producer attempt.
+
   No-change implementation report rule:
   If the current item asks to edit, change, add, remove, update, or fix
   repository code/config and the implementer report says Changed: No files

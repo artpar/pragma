@@ -50,6 +50,18 @@ prompt: |
   widen, narrow, or reinterpret completed-item file-scope fields while creating
   a separate pending repair item.
 
+  Repair checklist replacement rule:
+  During a repair pass, do not copy prior checklist items with `status`:
+  `pending`, `blocked`, or any status other than `completed`. Do not preserve
+  the current blocked item ahead of the repair route. The new pending items must
+  be created only from the current /tmp/pragma/patch-plan.md `Patch route:`
+  bullets, in the same order as those bullets. If the patch plan has a concrete
+  generated-file, producer, enum, schema, or source-dependency repair route
+  that unblocks the current item, that repair route must be the first pending
+  item selected by foreach_next. Old pending product-work items may reappear
+  only if the current patch plan explicitly emits them again as patch-route
+  bullets after the repair route.
+
   Purpose:
   Write small implementation items tied to concrete surfaces.
 

@@ -23,6 +23,7 @@ DEFAULT_BUF_URL = "https://github.com/bufbuild/buf/releases/latest/download/buf-
 DEFAULT_PROTOBUF_RELEASE_API = "https://api.github.com/repos/protocolbuffers/protobuf/releases/latest"
 DEFAULT_PROTOC_GEN_GO_VERSION = "v1.36.6"
 DEFAULT_PROTOC_GEN_GO_GRPC_VERSION = "v1.5.1"
+DEFAULT_GRPC_GATEWAY_VERSION = "v2.29.0"
 
 
 def display_command(command: list[str]) -> list[str]:
@@ -217,6 +218,20 @@ def prepare_generator_toolchain(repo_root: Path, args: argparse.Namespace) -> Pa
         args.protoc_gen_go_grpc_version,
         "protoc-gen-go-grpc",
     )
+    install_go_tool(
+        repo_root,
+        bin_dir,
+        "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway",
+        args.grpc_gateway_version,
+        "protoc-gen-grpc-gateway",
+    )
+    install_go_tool(
+        repo_root,
+        bin_dir,
+        "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2",
+        args.grpc_gateway_version,
+        "protoc-gen-openapiv2",
+    )
 
     return toolchain_dir
 
@@ -364,6 +379,10 @@ def parse_args() -> argparse.Namespace:
         "--protoc-gen-go-grpc-version",
         default=os.getenv("SWE_BENCH_PROTOC_GEN_GO_GRPC_VERSION", DEFAULT_PROTOC_GEN_GO_GRPC_VERSION),
     )
+    parser.add_argument(
+        "--grpc-gateway-version",
+        default=os.getenv("SWE_BENCH_GRPC_GATEWAY_VERSION", DEFAULT_GRPC_GATEWAY_VERSION),
+    )
     parser.add_argument("--prepare-only", action="store_true", help="build binary and print selected image, but do not run Docker")
     parser.add_argument("--pull-image", action="store_true", help="pull the selected Docker image before running")
     parser.add_argument("--evaluate", action="store_true", help="run the official local-Docker evaluator after patch generation")
@@ -432,7 +451,7 @@ if [ -d /pragma-toolchain/bin ]; then
 fi
 {{
   echo "generator toolchain preflight:"
-  for tool in buf protoc protoc-gen-go protoc-gen-go-grpc; do
+  for tool in buf protoc protoc-gen-go protoc-gen-go-grpc protoc-gen-grpc-gateway protoc-gen-openapiv2; do
     if command -v "$tool" >/dev/null 2>&1; then
       printf "%s: " "$tool"
       "$tool" --version 2>/dev/null || true

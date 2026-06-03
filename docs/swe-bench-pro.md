@@ -66,6 +66,8 @@ It provides:
 - `protoc`
 - `protoc-gen-go`
 - `protoc-gen-go-grpc`
+- `protoc-gen-grpc-gateway`
+- `protoc-gen-openapiv2`
 
 Each real run writes `toolchain-preflight.log` in the run output directory so
 the benchmark artifact records which generator binaries were visible inside the
@@ -81,6 +83,7 @@ Tool versions and download sources can be overridden with:
 | `SWE_BENCH_PROTOC_URL` | `protoc` Linux zip URL |
 | `SWE_BENCH_PROTOC_GEN_GO_VERSION` | `protoc-gen-go` Go module version |
 | `SWE_BENCH_PROTOC_GEN_GO_GRPC_VERSION` | `protoc-gen-go-grpc` Go module version |
+| `SWE_BENCH_GRPC_GATEWAY_VERSION` | `protoc-gen-grpc-gateway` and `protoc-gen-openapiv2` Go module version |
 
 Default Pragma settings:
 
