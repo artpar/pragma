@@ -53,8 +53,12 @@ func Resolve(def *GraphDef, createNode NodeCreator, createRouter RouterCreator, 
 
 	for _, e := range def.Graph.Edges {
 		observe.GlobalTrace("range def.Graph.Edges")
-		if e.To == "" || hasConditional[e.From] {
-			observe.GlobalTrace("if: e.To == \"\" || hasConditional[e.From] (skip)")
+		if hasConditional[e.From] {
+			observe.GlobalTrace("if: hasConditional[e.From]")
+			return nil, fmt.Errorf("resolve graph: node %q has both static and conditional edges", e.From)
+		}
+		if e.To == "" {
+			observe.GlobalTrace("if: e.To == \"\"")
 			continue
 		}
 		b.AddEdge(e.From, e.To)

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/artpar/pragma/internal/app"
@@ -10,6 +11,7 @@ import (
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/orchestration"
+	"github.com/artpar/pragma/internal/persona"
 )
 
 func TestSelectStateEventDefaultsToComplete(t *testing.T) {
@@ -45,6 +47,50 @@ func TestSelectStateEventFromFileRules(t *testing.T) {
 	}
 	if event != "approve" {
 		t.Fatalf("event = %q, want approve", event)
+	}
+}
+
+func TestSelectStateEventUsesLastDecisionVerdict(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "verdict.md")
+	content := "Findings:\nPrevious text said Decision:\nAPPROVE\n\nDecision:\nBLOCK\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write verdict: %v", err)
+	}
+
+	event, err := selectStateEvent(orchestration.State{
+		ID: "review",
+		Event: orchestration.Event{
+			FromFile: &orchestration.FileEventRule{
+				Path: path,
+				Rules: []orchestration.TextEvent{
+					{Contains: "Decision:\nAPPROVE", Event: "approve"},
+					{Contains: "Decision:\nBLOCK", Event: "block"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("selectStateEvent: %v", err)
+	}
+	if event != "block" {
+		t.Fatalf("event = %q, want block", event)
+	}
+}
+
+func TestBuildOrchestrationPromptCanOmitTask(t *testing.T) {
+	prompt := buildOrchestrationPrompt(orchestration.State{
+		ID:         "item_worker",
+		TaskPrompt: orchestration.TaskPromptNone,
+	}, persona.Definition{
+		ID:     "item_worker",
+		Prompt: "Read current-item.json.",
+	}, "full benchmark task")
+
+	if strings.Contains(prompt, "full benchmark task") {
+		t.Fatalf("prompt included task despite task_prompt none: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Read current-item.json.") {
+		t.Fatalf("prompt lost persona text: %q", prompt)
 	}
 }
 

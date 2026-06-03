@@ -12,6 +12,8 @@ import (
 
 // LLMNodeConfig configures an LLM call node.
 type LLMNodeConfig struct {
+	// Model overrides the graph state's model_id when set.
+	Model string
 	// NodePrompt is prepended as the first system block before the main system prompt.
 	// This gives the node a specific instruction while preserving the full context
 	// (cwd, tool descriptions, AGENT.md) from the parent agent.
@@ -36,6 +38,9 @@ func LLMNode(prov provider.Provider, bus *observe.EventBus, cfg LLMNodeConfig) l
 		msgs := Messages(state)
 		sys := System(state)
 		modelID := ModelID(state)
+		if cfg.Model != "" {
+			modelID = cfg.Model
+		}
 		maxTokens := MaxTokens(state)
 		tools := Tools(state)
 

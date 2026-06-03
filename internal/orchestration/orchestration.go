@@ -10,16 +10,19 @@ import (
 )
 
 const (
-	EventComplete = "complete"
+	EventComplete  = "complete"
+	TaskPromptFull = "full"
+	TaskPromptNone = "none"
 )
 
 // State is one orchestration node. Execution semantics live outside the graph.
 type State struct {
-	ID       string  `yaml:"id"`
-	Terminal bool    `yaml:"terminal,omitempty"`
-	Persona  string  `yaml:"persona,omitempty"`
-	Control  Control `yaml:"control,omitempty"`
-	Event    Event   `yaml:"event,omitempty"`
+	ID         string  `yaml:"id"`
+	Terminal   bool    `yaml:"terminal,omitempty"`
+	Persona    string  `yaml:"persona,omitempty"`
+	TaskPrompt string  `yaml:"task_prompt,omitempty"`
+	Control    Control `yaml:"control,omitempty"`
+	Event      Event   `yaml:"event,omitempty"`
 }
 
 type Control struct {
@@ -91,6 +94,70 @@ type ChecklistItem struct {
 	Description string   `json:"description,omitempty"`
 	Acceptance  []string `json:"acceptance,omitempty"`
 	Status      string   `json:"status"`
+	Extra       map[string]json.RawMessage
+}
+
+func (i *ChecklistItem) UnmarshalJSON(data []byte) error {
+	type checklistItem ChecklistItem
+	var known checklistItem
+	if err := json.Unmarshal(data, &known); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	for _, key := range []string{"id", "title", "description", "acceptance", "status"} {
+		delete(raw, key)
+	}
+	*i = ChecklistItem(known)
+	if len(raw) > 0 {
+		i.Extra = raw
+	} else {
+		i.Extra = nil
+	}
+	return nil
+}
+
+func (i ChecklistItem) MarshalJSON() ([]byte, error) {
+	fields := make(map[string]json.RawMessage, len(i.Extra)+5)
+	for key, value := range i.Extra {
+		fields[key] = value
+	}
+	if i.ID != "" {
+		raw, err := json.Marshal(i.ID)
+		if err != nil {
+			return nil, err
+		}
+		fields["id"] = raw
+	}
+	if i.Title != "" {
+		raw, err := json.Marshal(i.Title)
+		if err != nil {
+			return nil, err
+		}
+		fields["title"] = raw
+	}
+	if i.Description != "" {
+		raw, err := json.Marshal(i.Description)
+		if err != nil {
+			return nil, err
+		}
+		fields["description"] = raw
+	}
+	if i.Acceptance != nil {
+		raw, err := json.Marshal(i.Acceptance)
+		if err != nil {
+			return nil, err
+		}
+		fields["acceptance"] = raw
+	}
+	raw, err := json.Marshal(i.Status)
+	if err != nil {
+		return nil, err
+	}
+	fields["status"] = raw
+	return json.Marshal(fields)
 }
 
 func NewRuntime(def Definition) (*Runtime, error) {
@@ -221,9 +288,15 @@ func validate(def Definition) (map[string]State, error) {
 }
 
 func validateStateExecution(defName string, state State) error {
+	if state.TaskPrompt != "" && state.TaskPrompt != TaskPromptFull && state.TaskPrompt != TaskPromptNone {
+		return fmt.Errorf("orchestration %q state %q has invalid task_prompt %q", defName, state.ID, state.TaskPrompt)
+	}
 	if !state.Control.IsZero() {
 		if state.Persona != "" {
 			return fmt.Errorf("orchestration %q state %q cannot have both persona and control", defName, state.ID)
+		}
+		if state.TaskPrompt != "" {
+			return fmt.Errorf("orchestration %q control state %q cannot define task_prompt", defName, state.ID)
 		}
 		if state.Event.FromFile != nil || state.Event.Default != "" {
 			return fmt.Errorf("orchestration %q control state %q cannot also define event", defName, state.ID)

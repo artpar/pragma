@@ -25,9 +25,11 @@ states:
 
   - id: item_worker
     persona: item_worker
+    task_prompt: none
 
   - id: item_reviewer
     persona: item_reviewer
+    task_prompt: none
     event:
       from_file:
         path: /tmp/pragma/item-verdict.md
@@ -47,6 +49,7 @@ states:
 
   - id: validation_runner
     persona: validation_runner
+    task_prompt: none
 
   - id: final_reviewer
     persona: final_reviewer

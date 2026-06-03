@@ -100,7 +100,7 @@ func TestParse_Invalid(t *testing.T) {
 	}
 }
 
-func TestParse_EdgeToEmptyIsEND(t *testing.T) {
+func TestParse_StaticEdgeToEmptyIsRejected(t *testing.T) {
 	yamlDef := `
 graph:
   initial: agent
@@ -114,11 +114,8 @@ graph:
     messages: overwrite
 `
 	def, err := definition.Parse([]byte(yamlDef))
-	if err != nil {
-		t.Fatalf("expected to: \"\" to be accepted as END, got error: %v", err)
-	}
-	if def.Graph.Initial != "agent" {
-		t.Errorf("expected initial=agent, got %q", def.Graph.Initial)
+	if err == nil {
+		t.Fatalf("expected static to: \"\" to be rejected, got def %#v", def)
 	}
 }
 
@@ -242,6 +239,33 @@ graph:
 	_, err = definition.Resolve(def, noopCreator, definition.DefaultRouterCreator(), nil)
 	if err == nil {
 		t.Error("expected error for unknown router")
+	}
+}
+
+func TestResolve_RejectsMixedStaticAndConditionalEdges(t *testing.T) {
+	yaml := `
+graph:
+  initial: a
+  nodes:
+    a: {type: llm}
+    b: {type: llm}
+    c: {type: llm}
+  edges:
+    - from: a
+      to: b
+  conditional_edges:
+    - from: a
+      router: "field:route"
+      paths: {"c": "c"}
+`
+	def, err := definition.Parse([]byte(yaml))
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	_, err = definition.Resolve(def, noopCreator, definition.DefaultRouterCreator(), nil)
+	if err == nil {
+		t.Fatal("expected mixed static and conditional edges to be rejected")
 	}
 }
 

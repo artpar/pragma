@@ -22,9 +22,11 @@ states:
 
   - id: item_implementer
     persona: item_implementer
+    task_prompt: none
 
   - id: item_prosecutor
     persona: item_prosecutor
+    task_prompt: none
     event:
       from_file:
         path: /tmp/pragma/item-prosecutor-verdict.md
@@ -44,6 +46,7 @@ states:
 
   - id: item_repair
     persona: item_repair
+    task_prompt: none
 
   - id: final_prosecutor
     persona: final_prosecutor

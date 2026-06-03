@@ -1,6 +1,10 @@
 package lifecycle
 
-import "github.com/artpar/pragma/internal/observe"
+import (
+	"reflect"
+
+	"github.com/artpar/pragma/internal/observe"
+)
 
 // State is the shared blackboard flowing through the graph.
 // Keys are strings, values are any type. Nodes receive a snapshot
@@ -11,20 +15,67 @@ import "github.com/artpar/pragma/internal/observe"
 // type assertions on the values they expect.
 type State map[string]any
 
-// Snapshot creates a shallow copy of State (new map, same value pointers).
-// Each node receives its own key map so concurrent nodes can't interfere
-// with each other's key set, while sharing large values (provider instances,
-// tool registries, message slices) by reference for efficiency.
+// Snapshot creates a copy of State with independent map and slice containers.
+// Pointer-like values are still shared, so nodes must return StateUpdate values
+// instead of mutating infrastructure objects in place.
 func (s State) Snapshot() State {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	cp := make(State, len(s))
 	for k, v := range s {
 		observe.GlobalTrace("range s")
-		cp[k] = v
+		cp[k] = cloneStateValue(v)
 	}
 	observe.GlobalTrace("return: cp")
 	return cp
+}
+
+func cloneStateValue(value any) any {
+	if value == nil {
+		return nil
+	}
+	cloned := cloneReflectValue(reflect.ValueOf(value))
+	if !cloned.IsValid() {
+		return nil
+	}
+	return cloned.Interface()
+}
+
+func cloneReflectValue(value reflect.Value) reflect.Value {
+	if !value.IsValid() {
+		return value
+	}
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return value
+		}
+		cloned := cloneReflectValue(value.Elem())
+		out := reflect.New(value.Type()).Elem()
+		out.Set(cloned)
+		return out
+	case reflect.Slice:
+		if value.IsNil() {
+			return value
+		}
+		out := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			out.Index(i).Set(cloneReflectValue(value.Index(i)))
+		}
+		return out
+	case reflect.Map:
+		if value.IsNil() {
+			return value
+		}
+		out := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			out.SetMapIndex(iter.Key(), cloneReflectValue(iter.Value()))
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 // StateUpdate is a partial state update returned by a node.

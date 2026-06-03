@@ -3,6 +3,7 @@ package bridge_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/artpar/pragma/internal/lifecycle"
@@ -24,10 +25,12 @@ type testTool struct {
 	handler func(json.RawMessage) (string, error)
 }
 
-func (t *testTool) Name() string                  { return t.name }
-func (t *testTool) Description() string            { return "test tool: " + t.name }
-func (t *testTool) InputSchema() json.RawMessage   { return json.RawMessage(`{"type":"object","properties":{}}`) }
-func (t *testTool) Flags() tool.ToolFlags          { return tool.ToolFlags{Concurrent: true} }
+func (t *testTool) Name() string        { return t.name }
+func (t *testTool) Description() string { return "test tool: " + t.name }
+func (t *testTool) InputSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{}}`)
+}
+func (t *testTool) Flags() tool.ToolFlags { return tool.ToolFlags{Concurrent: true} }
 func (t *testTool) CheckPerm(_ context.Context, _ json.RawMessage, _ permission.Checker) permission.CheckResult {
 	return permission.CheckResult{Decision: permission.DecisionAllow}
 }
@@ -225,6 +228,35 @@ func TestLLMNode_NodePrompt(t *testing.T) {
 	}
 }
 
+func TestLLMNode_ModelOverride(t *testing.T) {
+	resp := model.Response{
+		Content:    []model.ContentPart{model.TextPart{Text: "ok"}},
+		StopReason: model.StopEndTurn,
+	}
+	prov := gtesting.NewSequenceProvider(resp)
+
+	node := bridge.LLMNode(prov, newTestBus(), bridge.LLMNodeConfig{
+		Model: "node-model",
+	})
+	state := lifecycle.State{
+		bridge.KeyMessages:  []model.Message{},
+		bridge.KeyModelID:   "state-model",
+		bridge.KeyMaxTokens: 1024,
+	}
+
+	if _, err := node(context.Background(), state); err != nil {
+		t.Fatalf("node: %v", err)
+	}
+
+	calls := prov.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("provider calls = %d, want 1", len(calls))
+	}
+	if calls[0].Model != "node-model" {
+		t.Fatalf("model = %q, want node-model", calls[0].Model)
+	}
+}
+
 func TestToolNode_Execute(t *testing.T) {
 	bus := newTestBus()
 	reg := tool.NewRegistry(bus)
@@ -303,11 +335,143 @@ func TestToolNode_NoToolCalls(t *testing.T) {
 	}
 
 	update, err := node(context.Background(), state)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for tools node without tool calls")
 	}
 	if update != nil {
 		t.Fatalf("expected nil update for no tool calls, got %v", update)
+	}
+}
+
+func TestToolNode_RejectsDisallowedTool(t *testing.T) {
+	bus := newTestBus()
+	reg := tool.NewRegistry(bus)
+	_ = reg.Register(&testTool{
+		name: "Echo",
+		handler: func(input json.RawMessage) (string, error) {
+			return "echoed", nil
+		},
+	})
+	_ = reg.Register(&testTool{
+		name: "Other",
+		handler: func(input json.RawMessage) (string, error) {
+			return "other", nil
+		},
+	})
+	checker := permission.NewRuleChecker(nil, permission.ModeBypassPermissions, "/tmp", bus)
+	orch := tool.NewOrchestrator(reg, checker, &permission.NonInteractivePrompter{}, bus)
+
+	node := bridge.ToolNode(orch, "/tmp", []string{"Echo"})
+	state := lifecycle.State{
+		bridge.KeyMessages: []model.Message{
+			{
+				ID:   "assistant-1",
+				Role: model.RoleAssistant,
+				Content: []model.ContentPart{
+					model.ToolCallPart{ID: "tc-1", Name: "Other", Input: json.RawMessage(`{}`)},
+				},
+			},
+		},
+	}
+
+	update, err := node(context.Background(), state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs := update[bridge.KeyMessages].([]model.Message)
+	tr, ok := msgs[0].Content[0].(model.ToolResultPart)
+	if !ok {
+		t.Fatalf("content[0] = %T, want ToolResultPart", msgs[0].Content[0])
+	}
+	if !tr.IsError || !strings.Contains(tr.Content, "not allowed") {
+		t.Fatalf("tool result = %#v, want not allowed error", tr)
+	}
+}
+
+func TestNodeFactoryAppliesModelAndToolConfig(t *testing.T) {
+	bus := newTestBus()
+	prov := gtesting.NewSequenceProvider(model.Response{
+		Content:    []model.ContentPart{model.TextPart{Text: "ok"}},
+		StopReason: model.StopEndTurn,
+	})
+	reg := tool.NewRegistry(bus)
+	_ = reg.Register(&testTool{
+		name: "Echo",
+		handler: func(input json.RawMessage) (string, error) {
+			return "echoed", nil
+		},
+	})
+	_ = reg.Register(&testTool{
+		name: "Other",
+		handler: func(input json.RawMessage) (string, error) {
+			return "other", nil
+		},
+	})
+	checker := permission.NewRuleChecker(nil, permission.ModeBypassPermissions, "/tmp", bus)
+	orch := tool.NewOrchestrator(reg, checker, &permission.NonInteractivePrompter{}, bus)
+	factory := bridge.NewNodeFactory(bridge.Infra{
+		Provider:     prov,
+		Orchestrator: orch,
+		Bus:          bus,
+		Cwd:          "/tmp",
+	})
+
+	llmNode, err := factory.Create("llm", map[string]any{"model": "node-model"})
+	if err != nil {
+		t.Fatalf("create llm node: %v", err)
+	}
+	_, err = llmNode(context.Background(), lifecycle.State{
+		bridge.KeyMessages:  []model.Message{},
+		bridge.KeyModelID:   "state-model",
+		bridge.KeyMaxTokens: 1024,
+	})
+	if err != nil {
+		t.Fatalf("llm node: %v", err)
+	}
+	if got := prov.Calls()[0].Model; got != "node-model" {
+		t.Fatalf("factory llm model = %q, want node-model", got)
+	}
+
+	toolsNode, err := factory.Create("tools", map[string]any{"tools": []string{"Echo"}})
+	if err != nil {
+		t.Fatalf("create tools node: %v", err)
+	}
+	update, err := toolsNode(context.Background(), lifecycle.State{
+		bridge.KeyMessages: []model.Message{{
+			ID:   "assistant-1",
+			Role: model.RoleAssistant,
+			Content: []model.ContentPart{
+				model.ToolCallPart{ID: "tc-1", Name: "Other", Input: json.RawMessage(`{}`)},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("tools node: %v", err)
+	}
+	msgs := update[bridge.KeyMessages].([]model.Message)
+	tr := msgs[0].Content[0].(model.ToolResultPart)
+	if !tr.IsError || !strings.Contains(tr.Content, "not allowed") {
+		t.Fatalf("factory tools result = %#v, want not allowed error", tr)
+	}
+}
+
+func TestEvalNodeMalformedJSONReturnsError(t *testing.T) {
+	prov := gtesting.NewSequenceProvider(model.Response{
+		Content:    []model.ContentPart{model.TextPart{Text: "not json"}},
+		StopReason: model.StopEndTurn,
+	})
+	node := bridge.EvalNode(prov, newTestBus(), bridge.EvalNodeConfig{Criteria: "must pass"})
+
+	update, err := node(context.Background(), lifecycle.State{
+		bridge.KeyMessages: []model.Message{{ID: "user-1", Role: model.RoleUser}},
+		bridge.KeyModelID:  "eval-model",
+	})
+	if err == nil {
+		t.Fatal("expected malformed eval JSON to return an error")
+	}
+	if update != nil {
+		t.Fatalf("update = %#v, want nil", update)
 	}
 }
 

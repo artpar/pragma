@@ -18,7 +18,6 @@ func nodeReturning(update StateUpdate) NodeFunc {
 	}
 }
 
-
 // --- Graph builder tests ---
 
 func TestBuildValidation(t *testing.T) {
@@ -104,6 +103,23 @@ func TestStateSnapshot(t *testing.T) {
 	cp["a"] = 99
 	if s["a"] != 1 {
 		t.Error("snapshot mutation leaked to original")
+	}
+}
+
+func TestStateSnapshotCopiesMapAndSliceContainers(t *testing.T) {
+	s := State{
+		"items": []any{"a", "b"},
+		"meta":  map[string]any{"status": "pending"},
+	}
+	cp := s.Snapshot()
+	cp["items"].([]any)[0] = "changed"
+	cp["meta"].(map[string]any)["status"] = "changed"
+
+	if got := s["items"].([]any)[0]; got != "a" {
+		t.Fatalf("slice mutation leaked to original: %v", got)
+	}
+	if got := s["meta"].(map[string]any)["status"]; got != "pending" {
+		t.Fatalf("map mutation leaked to original: %v", got)
 	}
 }
 
@@ -439,23 +455,23 @@ func TestMDAP(t *testing.T) {
 		actions, _ := s["action_list"].([]string)
 		actions = append(actions, s["winning_action"].(string))
 		return StateUpdate{
-			"task_state":   s["winning_state"],
-			"step":         step + 1,
-			"action_list":  actions,
-			"votes":        map[string]any{}, // reset
-			"valid":        false,
+			"task_state":     s["winning_state"],
+			"step":           step + 1,
+			"action_list":    actions,
+			"votes":          map[string]any{}, // reset
+			"valid":          false,
 			"margin_reached": false,
 		}, nil
 	}
 
 	g := NewMDAP(sampleFn, voteFn, advanceFn)
 	result, err := NewExecutor(g).Run(context.Background(), State{
-		"task_state":   "initial",
-		"step":         0,
-		"total_steps":  3,
-		"k":            1,
-		"action_list":  []string{},
-		"votes":        map[string]any{},
+		"task_state":  "initial",
+		"step":        0,
+		"total_steps": 3,
+		"k":           1,
+		"action_list": []string{},
+		"votes":       map[string]any{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -606,4 +622,3 @@ func TestStream(t *testing.T) {
 		t.Errorf("expected at least 3 events, got %d", eventCount)
 	}
 }
-

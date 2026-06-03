@@ -124,11 +124,7 @@ func EvalNode(prov provider.Provider, bus *observe.EventBus, cfg EvalNodeConfig)
 					ErrorMessage: fmt.Sprintf("eval node: failed to parse LLM response as JSON: %v", err),
 				})
 			}
-			return lifecycle.StateUpdate{
-				KeyPassed:     false,
-				KeyScore:      0.0,
-				KeyTotalUsage: resp.Usage,
-			}, nil
+			return nil, fmt.Errorf("eval node: parse JSON response: %w", err)
 		}
 
 		return lifecycle.StateUpdate{

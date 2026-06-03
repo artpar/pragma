@@ -47,6 +47,9 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 	case "llm":
 		observe.GlobalTrace("case: \"llm\"")
 		cfg := LLMNodeConfig{}
+		if v, ok := config["model"].(string); ok {
+			cfg.Model = v
+		}
 		if v, ok := config["prompt"].(string); ok {
 			cfg.NodePrompt = v
 		}
@@ -57,7 +60,7 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 
 	case "tools":
 		observe.GlobalTrace("case: \"tools\"")
-		return ToolNode(f.infra.Orchestrator, f.infra.Cwd), nil
+		return ToolNode(f.infra.Orchestrator, f.infra.Cwd, toolNamesFromConfig(config["tools"])), nil
 
 	case "eval":
 		observe.GlobalTrace("case: \"eval\"")
@@ -77,5 +80,24 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 	default:
 		observe.GlobalTrace("default")
 		return nil, fmt.Errorf("unknown node type: %q", nodeType)
+	}
+}
+
+func toolNamesFromConfig(value any) []string {
+	switch v := value.(type) {
+	case []string:
+		return append([]string(nil), v...)
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			name, ok := item.(string)
+			if !ok {
+				continue
+			}
+			out = append(out, name)
+		}
+		return out
+	default:
+		return nil
 	}
 }

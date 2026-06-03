@@ -68,8 +68,8 @@ func validate(def *GraphDef) error {
 			return fmt.Errorf("graph definition: edge from unknown node %q", e.From)
 		}
 		if e.To == "" {
-			observe.GlobalTrace("if: e.To == \"\" (treat as END, skip)")
-			continue
+			observe.GlobalTrace("if: e.To == \"\"")
+			return fmt.Errorf("graph definition: static edge from %q has empty target; use conditional_edges paths for END", e.From)
 		}
 		if _, ok := def.Graph.Nodes[e.To]; !ok {
 			observe.GlobalTrace("if: !ok")

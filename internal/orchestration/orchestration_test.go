@@ -102,10 +102,6 @@ func TestLoadChecklistLoopYAML(t *testing.T) {
 	for _, event := range []string{
 		EventComplete,
 		EventComplete,
-		"scope_block",
-		EventComplete,
-		EventComplete,
-		"scope_approve",
 		EventComplete,
 		"item_available",
 		EventComplete,
@@ -157,6 +153,52 @@ func TestNewRuntimeRejectsPersonaControlState(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeRejectsInvalidTaskPromptMode(t *testing.T) {
+	_, err := NewRuntime(Definition{
+		Name:    "bad",
+		Initial: "worker",
+		States: []State{
+			{ID: "worker", TaskPrompt: "summary"},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"worker"}, To: "done"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid task_prompt mode to be rejected")
+	}
+}
+
+func TestNewRuntimeRejectsTaskPromptOnControlState(t *testing.T) {
+	_, err := NewRuntime(Definition{
+		Name:    "bad",
+		Initial: "next_item",
+		States: []State{
+			{
+				ID:         "next_item",
+				TaskPrompt: TaskPromptNone,
+				Control: Control{
+					ForEachNext: &ForEachNextControl{
+						ListPath:   "/tmp/list.json",
+						CursorPath: "/tmp/current.json",
+						ItemEvent:  "item",
+						DoneEvent:  "done",
+					},
+				},
+			},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: "item", From: []string{"next_item"}, To: "done"},
+			{Event: "done", From: []string{"next_item"}, To: "done"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected task_prompt on control state to be rejected")
+	}
+}
+
 func TestExecuteForEachNextWritesFirstPendingItem(t *testing.T) {
 	dir := t.TempDir()
 	listPath := filepath.Join(dir, "checklist.json")
@@ -190,6 +232,61 @@ func TestExecuteForEachNextWritesFirstPendingItem(t *testing.T) {
 	readTestJSON(t, cursorPath, &current)
 	if current.ID != "item-002" {
 		t.Fatalf("current item id = %q, want item-002", current.ID)
+	}
+}
+
+func TestExecuteForEachNextPreservesUnknownItemFields(t *testing.T) {
+	dir := t.TempDir()
+	listPath := filepath.Join(dir, "checklist.json")
+	cursorPath := filepath.Join(dir, "current-item.json")
+	raw := []byte(`{
+  "items": [
+    {
+      "id": "item-001",
+      "title": "pending",
+      "status": "pending",
+      "allowed_files": ["server/auth.go"],
+      "forbidden_files": ["generated/**"],
+      "validation_command": "go test ./server",
+      "producer_evidence": {"kind": "patch-plan"}
+    }
+  ]
+}`)
+	if err := os.WriteFile(listPath, raw, 0o600); err != nil {
+		t.Fatalf("write checklist: %v", err)
+	}
+
+	event, err := ExecuteControl(State{
+		ID: "next_item",
+		Control: Control{
+			ForEachNext: &ForEachNextControl{
+				ListPath:   listPath,
+				CursorPath: cursorPath,
+				ItemEvent:  "item_available",
+				DoneEvent:  "all_items_done",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteControl: %v", err)
+	}
+	if event != "item_available" {
+		t.Fatalf("event = %q, want item_available", event)
+	}
+
+	var current map[string]any
+	readTestJSON(t, cursorPath, &current)
+	if _, ok := current["allowed_files"]; !ok {
+		t.Fatalf("current item lost allowed_files: %#v", current)
+	}
+	if _, ok := current["forbidden_files"]; !ok {
+		t.Fatalf("current item lost forbidden_files: %#v", current)
+	}
+	if _, ok := current["validation_command"]; !ok {
+		t.Fatalf("current item lost validation_command: %#v", current)
+	}
+	if _, ok := current["producer_evidence"]; !ok {
+		t.Fatalf("current item lost producer_evidence: %#v", current)
 	}
 }
 
@@ -256,6 +353,61 @@ func TestExecuteMarkCurrentItemUpdatesChecklist(t *testing.T) {
 	readTestJSON(t, listPath, &checklist)
 	if checklist.Items[0].Status != "pending" || checklist.Items[1].Status != "approved" {
 		t.Fatalf("statuses = %q, %q; want pending, approved", checklist.Items[0].Status, checklist.Items[1].Status)
+	}
+}
+
+func TestExecuteMarkCurrentItemPreservesUnknownChecklistFields(t *testing.T) {
+	dir := t.TempDir()
+	listPath := filepath.Join(dir, "checklist.json")
+	cursorPath := filepath.Join(dir, "current-item.json")
+	raw := []byte(`{
+  "items": [
+    {
+      "id": "item-001",
+      "status": "pending",
+      "allowed_files": ["server/auth.go"],
+      "validation_command": "go test ./server"
+    },
+    {
+      "id": "item-002",
+      "status": "pending",
+      "allowed_files": ["client/auth.go"],
+      "producer_evidence": {"kind": "generated"}
+    }
+  ]
+}`)
+	if err := os.WriteFile(listPath, raw, 0o600); err != nil {
+		t.Fatalf("write checklist: %v", err)
+	}
+	if err := os.WriteFile(cursorPath, []byte(`{"id":"item-002","status":"pending","allowed_files":["client/auth.go"],"producer_evidence":{"kind":"generated"}}`), 0o600); err != nil {
+		t.Fatalf("write current item: %v", err)
+	}
+
+	_, err := ExecuteControl(State{
+		ID: "mark_item_approved",
+		Control: Control{
+			MarkCurrentItem: &MarkCurrentItemControl{
+				ListPath:   listPath,
+				CursorPath: cursorPath,
+				Status:     "approved",
+				Event:      EventComplete,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteControl: %v", err)
+	}
+
+	var checklist map[string][]map[string]any
+	readTestJSON(t, listPath, &checklist)
+	if checklist["items"][0]["allowed_files"] == nil || checklist["items"][0]["validation_command"] == nil {
+		t.Fatalf("first item metadata was stripped: %#v", checklist["items"][0])
+	}
+	if checklist["items"][1]["allowed_files"] == nil || checklist["items"][1]["producer_evidence"] == nil {
+		t.Fatalf("second item metadata was stripped: %#v", checklist["items"][1])
+	}
+	if checklist["items"][1]["status"] != "approved" {
+		t.Fatalf("second item status = %v, want approved", checklist["items"][1]["status"])
 	}
 }
 

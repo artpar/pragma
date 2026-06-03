@@ -112,7 +112,7 @@ func runOrchestrationNode(ctx context.Context, rootEngine *query.Engine, d *cli.
 	fmt.Fprintf(os.Stderr, "orchestration: state=%s persona=%s\n", state.ID, personaDef.ID)
 
 	engine := newIsolatedOrchestrationEngine(rootEngine, d, compDeps)
-	if _, err := runOrchestrationState(ctx, engine, state.ID, personaDef, taskPrompt); err != nil {
+	if _, err := runOrchestrationState(ctx, engine, state, personaDef, taskPrompt); err != nil {
 		return "", fmt.Errorf("state %q failed: %w", state.ID, err)
 	}
 
@@ -190,6 +190,9 @@ func selectStateEvent(state orchestration.State) (string, error) {
 		return "", err
 	}
 	content := string(raw)
+	if event, ok := selectDecisionEvent(content, state.Event.FromFile.Rules); ok {
+		return event, nil
+	}
 	for _, rule := range state.Event.FromFile.Rules {
 		if strings.Contains(content, rule.Contains) {
 			return rule.Event, nil
@@ -201,13 +204,58 @@ func selectStateEvent(state orchestration.State) (string, error) {
 	return "", fmt.Errorf("no file event rule matched %q", state.Event.FromFile.Path)
 }
 
-func runOrchestrationState(ctx context.Context, engine *query.Engine, stateID string, personaDef persona.Definition, taskPrompt string) (string, error) {
-	prompt := fmt.Sprintf(`%s
+func selectDecisionEvent(content string, rules []orchestration.TextEvent) (string, bool) {
+	decisionEvents := make(map[string]string)
+	for _, rule := range rules {
+		decision, ok := decisionRuleValue(rule.Contains)
+		if !ok {
+			return "", false
+		}
+		decisionEvents[decision] = rule.Event
+	}
+	decision, ok := lastDecisionValue(content)
+	if !ok {
+		return "", false
+	}
+	event, ok := decisionEvents[decision]
+	return event, ok
+}
 
-## Task
+func decisionRuleValue(pattern string) (string, bool) {
+	pattern = strings.TrimSpace(pattern)
+	if strings.HasPrefix(pattern, "Decision:\n") {
+		return strings.TrimSpace(strings.TrimPrefix(pattern, "Decision:\n")), true
+	}
+	if strings.HasPrefix(pattern, "Decision:") {
+		return strings.TrimSpace(strings.TrimPrefix(pattern, "Decision:")), true
+	}
+	return "", false
+}
 
-%s
-`, personaDef.Prompt, taskPrompt)
+func lastDecisionValue(content string) (string, bool) {
+	lines := strings.Split(content, "\n")
+	var decision string
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		switch {
+		case line == "Decision:":
+			for j := i + 1; j < len(lines); j++ {
+				next := strings.TrimSpace(lines[j])
+				if next == "" {
+					continue
+				}
+				decision = next
+				break
+			}
+		case strings.HasPrefix(line, "Decision:"):
+			decision = strings.TrimSpace(strings.TrimPrefix(line, "Decision:"))
+		}
+	}
+	return decision, decision != ""
+}
+
+func runOrchestrationState(ctx context.Context, engine *query.Engine, state orchestration.State, personaDef persona.Definition, taskPrompt string) (string, error) {
+	prompt := buildOrchestrationPrompt(state, personaDef, taskPrompt)
 
 	var text strings.Builder
 	start := time.Now()
@@ -227,10 +275,22 @@ func runOrchestrationState(ctx context.Context, engine *query.Engine, stateID st
 		case query.RetryEvent:
 			fmt.Fprintf(os.Stderr, "[retry: %s in %s]\n", e.Kind, e.Delay)
 		case query.TurnCompleteEvent:
-			fmt.Fprintf(os.Stderr, "\n[state %s complete in %s]\n", stateID, time.Since(start).Round(time.Second))
+			fmt.Fprintf(os.Stderr, "\n[state %s complete in %s]\n", state.ID, time.Since(start).Round(time.Second))
 		case query.ErrorEvent:
 			return text.String(), e.Err
 		}
 	}
 	return text.String(), nil
+}
+
+func buildOrchestrationPrompt(state orchestration.State, personaDef persona.Definition, taskPrompt string) string {
+	if state.TaskPrompt == orchestration.TaskPromptNone {
+		return strings.TrimRight(personaDef.Prompt, "\n") + "\n"
+	}
+	return fmt.Sprintf(`%s
+
+## Task
+
+%s
+`, personaDef.Prompt, taskPrompt)
 }
