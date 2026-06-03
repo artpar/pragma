@@ -117,6 +117,9 @@ prompt: |
   - `producer_command`: exact producer command from the patch plan
   - `generated_files`: exact generated/derived files from the patch plan
   - `validation_command`: exact focused validation command from the patch plan
+  The item `allowed_files` must include the source path and the generated files
+  named by that same producer route, because the producer is expected to update
+  those generated repository files after the source edit.
   Do not hide producer commands inside description, approach, or acceptance.
 
   Generated producer evidence handoff rule:

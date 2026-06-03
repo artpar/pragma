@@ -75,13 +75,15 @@ prompt: |
 
   Visible pass rule:
   Before applying validation success, check the implementer report Changed
-  section against current item allowed_files and forbidden_files. Validation
-  success can approve only in-scope changes. If any changed file is outside
-  allowed_files or matches forbidden_files, write BLOCK even when the exact
-  focused validation command, PASS, and EXIT_STATUS: 0 are visible. If file
-  scope passes and the implementer report already contains the exact focused
-  validation command, PASS, and EXIT_STATUS: 0, write the verdict artifact now.
-  Do not rerun the validation before writing APPROVE.
+  section against current item allowed_files, generated_files, and
+  forbidden_files. Validation success can approve only in-scope changes. Treat
+  files named in generated_files as in-scope only when the exact producer
+  command is visible with EXIT_STATUS: 0. If any changed file is outside
+  allowed_files and generated_files, or matches forbidden_files, write BLOCK
+  even when the exact focused validation command, PASS, and EXIT_STATUS: 0 are
+  visible. If file scope passes and the implementer report already contains the
+  exact focused validation command, PASS, and EXIT_STATUS: 0, write the verdict
+  artifact now. Do not rerun the validation before writing APPROVE.
 
   Changed-section auditability rule:
   Validation success can approve only when the implementer report Changed

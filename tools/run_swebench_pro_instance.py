@@ -193,6 +193,23 @@ def install_go_tool(
     make_executable(binary)
 
 
+def prepare_grpc_gateway_includes(bin_dir: Path, version: str) -> None:
+    gopath = bin_dir.parent / "gopath"
+    module_dir = gopath / "pkg" / "mod" / "github.com" / "grpc-ecosystem" / "grpc-gateway" / f"v2@{version}"
+    if not module_dir.exists():
+        candidates = sorted((gopath / "pkg" / "mod" / "github.com" / "grpc-ecosystem" / "grpc-gateway").glob("v2@*"))
+        if not candidates:
+            raise SystemExit("grpc-gateway module cache not found after installing generator tools")
+        module_dir = candidates[-1]
+
+    source_dir = module_dir / "protoc-gen-openapiv2"
+    if not source_dir.exists():
+        raise SystemExit(f"grpc-gateway include protos not found: {source_dir}")
+
+    destination_dir = bin_dir.parent / "include" / "protoc-gen-openapiv2"
+    shutil.copytree(source_dir, destination_dir, dirs_exist_ok=True)
+
+
 def prepare_generator_toolchain(repo_root: Path, args: argparse.Namespace) -> Path:
     toolchain_dir = (
         Path(args.generator_toolchain_dir)
@@ -232,6 +249,7 @@ def prepare_generator_toolchain(repo_root: Path, args: argparse.Namespace) -> Pa
         args.grpc_gateway_version,
         "protoc-gen-openapiv2",
     )
+    prepare_grpc_gateway_includes(bin_dir, args.grpc_gateway_version)
 
     return toolchain_dir
 
@@ -459,6 +477,11 @@ fi
       echo "$tool: not found"
     fi
   done
+  if [ -f /pragma-toolchain/include/protoc-gen-openapiv2/options/annotations.proto ]; then
+    echo "protoc-gen-openapiv2 protos: present"
+  else
+    echo "protoc-gen-openapiv2 protos: not found"
+  fi
 }} > /pragma-out/toolchain-preflight.log 2>&1
 cat /pragma-out/toolchain-preflight.log
 set +e

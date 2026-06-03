@@ -68,6 +68,7 @@ It provides:
 - `protoc-gen-go-grpc`
 - `protoc-gen-grpc-gateway`
 - `protoc-gen-openapiv2`
+- grpc-gateway OpenAPI annotation protos under `/pragma-toolchain/include`
 
 Each real run writes `toolchain-preflight.log` in the run output directory so
 the benchmark artifact records which generator binaries were visible inside the
