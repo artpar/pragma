@@ -78,7 +78,7 @@ func TestSelectStateEventUsesLastDecisionVerdict(t *testing.T) {
 }
 
 func TestBuildOrchestrationPromptCanOmitTask(t *testing.T) {
-	prompt := buildOrchestrationPrompt(orchestration.State{
+	system, prompt := buildOrchestrationPrompt(orchestration.State{
 		ID:         "item_worker",
 		TaskPrompt: orchestration.TaskPromptNone,
 	}, persona.Definition{
@@ -89,8 +89,33 @@ func TestBuildOrchestrationPromptCanOmitTask(t *testing.T) {
 	if strings.Contains(prompt, "full benchmark task") {
 		t.Fatalf("prompt included task despite task_prompt none: %q", prompt)
 	}
-	if !strings.Contains(prompt, "Read current-item.json.") {
-		t.Fatalf("prompt lost persona text: %q", prompt)
+	if strings.Contains(prompt, "Read current-item.json.") {
+		t.Fatalf("prompt included persona text in user message: %q", prompt)
+	}
+	if len(system.Blocks) != 1 || !strings.Contains(system.Blocks[0].Text, "Read current-item.json.") {
+		t.Fatalf("system prompt lost persona text: %#v", system.Blocks)
+	}
+}
+
+func TestBuildOrchestrationPromptSplitsPersonaSystemAndTaskUser(t *testing.T) {
+	system, prompt := buildOrchestrationPrompt(orchestration.State{
+		ID: "surface_mapper",
+	}, persona.Definition{
+		ID:     "surface_mapper",
+		Prompt: "You are the surface mapper.",
+	}, "Feature request body")
+
+	if len(system.Blocks) != 1 || !strings.HasPrefix(system.Blocks[0].Text, "You are the surface mapper.\n\nPragma loop mode is a shell-action transport.") {
+		t.Fatalf("system prompt = %#v", system.Blocks)
+	}
+	if !strings.Contains(system.Blocks[0].Text, "```bash\nyour_command_here\n```") {
+		t.Fatalf("system prompt lost shell-action format: %#v", system.Blocks)
+	}
+	if strings.Contains(prompt, "You are the surface mapper.") {
+		t.Fatalf("user prompt included persona text: %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Task\n\nFeature request body\n") {
+		t.Fatalf("user prompt lost task body: %q", prompt)
 	}
 }
 

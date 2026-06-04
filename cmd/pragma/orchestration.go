@@ -255,11 +255,11 @@ func lastDecisionValue(content string) (string, bool) {
 }
 
 func runOrchestrationState(ctx context.Context, engine *query.Engine, state orchestration.State, personaDef persona.Definition, taskPrompt string) (string, error) {
-	prompt := buildOrchestrationPrompt(state, personaDef, taskPrompt)
+	system, prompt := buildOrchestrationPrompt(state, personaDef, taskPrompt)
 
 	var text strings.Builder
 	start := time.Now()
-	for ev := range engine.Run(ctx, prompt) {
+	for ev := range engine.RunPragmaLoopWithSystem(ctx, system, prompt) {
 		switch e := ev.(type) {
 		case query.TextEvent:
 			text.WriteString(e.Text)
@@ -283,14 +283,13 @@ func runOrchestrationState(ctx context.Context, engine *query.Engine, state orch
 	return text.String(), nil
 }
 
-func buildOrchestrationPrompt(state orchestration.State, personaDef persona.Definition, taskPrompt string) string {
+func buildOrchestrationPrompt(state orchestration.State, personaDef persona.Definition, taskPrompt string) (model.SystemPrompt, string) {
+	system := model.SystemPrompt{Blocks: []model.SystemBlock{{
+		Text:      strings.TrimRight(personaDef.Prompt, "\n") + "\n\n" + query.PragmaLoopSystemPrompt(),
+		Cacheable: false,
+	}}}
 	if state.TaskPrompt == orchestration.TaskPromptNone {
-		return strings.TrimRight(personaDef.Prompt, "\n") + "\n"
+		return system, "Proceed with this phase using the required input artifacts."
 	}
-	return fmt.Sprintf(`%s
-
-## Task
-
-%s
-`, personaDef.Prompt, taskPrompt)
+	return system, fmt.Sprintf("## Task\n\n%s\n", taskPrompt)
 }

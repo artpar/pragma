@@ -37,6 +37,10 @@ your_command_here
 
 Failure to follow these rules will cause your response to be rejected.`
 
+func PragmaLoopSystemPrompt() string {
+	return pragmaLoopSystemPrompt
+}
+
 const pragmaLoopInstanceSuffix = `
 
 <system_information>
@@ -67,6 +71,29 @@ var pragmaLoopForegroundWait = 30 * time.Second
 const pragmaLoopRunningOutputLines = 100
 
 func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
+	snap := e.store.Snapshot()
+	system := pragmaLoopSystemFromExisting(snap.Conversation.System)
+	e.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), ch)
+}
+
+// RunPragmaLoopWithSystem runs the shell-action loop with an explicit system
+// prompt and first user message. It is used by orchestration states that need
+// persona instructions to have system-message priority.
+func (e *Engine) RunPragmaLoopWithSystem(ctx context.Context, system model.SystemPrompt, userMessage string) <-chan LoopEvent {
+	ch := make(chan LoopEvent, 16)
+	go func() {
+		defer close(ch)
+		defer func() {
+			if r := recover(); r != nil {
+				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
+			}
+		}()
+		e.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, ch)
+	}()
+	return ch
+}
+
+func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, ch chan<- LoopEvent) {
 	defer func() {
 		if e.hookMgr != nil {
 			hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -81,11 +108,10 @@ func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<
 	}
 
 	snap := e.store.Snapshot()
-	system := pragmaLoopSystemFromExisting(snap.Conversation.System)
 	userMsg := model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
-		Content:   []model.ContentPart{model.TextPart{Text: pragmaLoopInstancePrompt(userMessage, snap.CWD)}},
+		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
 		Timestamp: time.Now(),
 	}
 	e.store.Update(func(s *app.AppState) {
