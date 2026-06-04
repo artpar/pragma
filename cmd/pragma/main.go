@@ -28,6 +28,7 @@ func main() {
 	root.AddCommand(completionCmd())
 	root.AddCommand(sessionsCmd())
 	root.AddCommand(replayCmd())
+	root.AddCommand(inspectCmd())
 	root.AddCommand(auditCmd())
 	root.AddCommand(metricsCmd())
 	root.AddCommand(lifecycleCmd())

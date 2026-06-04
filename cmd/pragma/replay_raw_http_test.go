@@ -390,18 +390,43 @@ func TestReplayRawHTTPFormatPrettyStreamPreservesTranscript(t *testing.T) {
 		"Type: function",
 		"Function: lookup",
 		`"query": "abc"`,
-		"## Stream Transcript",
-		"Raw:\n```text\n: provider comment",
-		"Field: event",
-		"provider_extra",
-		`"x_unknown": "kept"`,
+		"## Stream Details",
+		"Data chunks: 5",
+		"Malformed data chunks: 1",
+		"Event boundaries: 6 blank lines",
+		"Done marker: true",
+		"### SSE Control Lines",
+		"- comment: provider comment",
+		"- event: completion",
+		"### Malformed Data Chunks",
+		"#### Chunk 6",
+		"### Parsed Chunk Coverage",
+		"- reasoning deltas: 2 chunks (full text in Reasoning)",
+		"- content deltas: 2 chunks (full text in Assistant Content)",
+		"- tool call deltas: 2 chunks (reconstructed in Tool Calls)",
+		"- usage chunks: 1",
+		"### Field Coverage",
+		`delta.x_unknown="kept": chunks 1`,
+		`tool_call.function.arguments="{\"query\"": chunks 3`,
+		`tool_call.function.arguments=":\"abc\"}": chunks 4`,
+		"top.provider_extra={\"region\":\"test\"}: chunks 1",
+		"### Usage Payloads",
 		"Parse error: invalid character 'n' looking for beginning of object key string",
 		"```text\n{not-json",
-		"Payload: [DONE]",
-		"blank line",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("pretty stream output missing %q\n%s", want, stdout)
+		}
+	}
+	for _, bad := range []string{
+		"## Stream Transcript",
+		"### Event Line",
+		"Field: data",
+		"blank line\n\n",
+		"### Data Chunks",
+	} {
+		if strings.Contains(stdout, bad) {
+			t.Fatalf("pretty stream output contains transcript noise %q\n%s", bad, stdout)
 		}
 	}
 	if strings.Contains(stderr, "summary:") {

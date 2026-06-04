@@ -950,8 +950,8 @@ func renderRawHTTPPrettyStreamResponse(status string, body []byte) ([]byte, erro
 	b.WriteString("\n## Tool Calls\n\n")
 	writeRawHTTPStreamToolCalls(&b, stream)
 
-	b.WriteString("\n## Stream Transcript\n\n")
-	writeRawHTTPStreamTranscript(&b, stream.Lines)
+	b.WriteString("\n## Stream Details\n\n")
+	writeRawHTTPStreamDetails(&b, stream.Lines)
 	return []byte(b.String()), nil
 }
 
@@ -1093,38 +1093,272 @@ func writeRawHTTPStreamToolCalls(b *strings.Builder, stream rawHTTPStreamRespons
 	}
 }
 
-func writeRawHTTPStreamTranscript(b *strings.Builder, lines []rawHTTPSSELine) {
-	for i, line := range lines {
-		fmt.Fprintf(b, "### Event Line %d\n", i+1)
-		if line.Raw == "" {
-			b.WriteString("blank line\n\n")
+func writeRawHTTPStreamDetails(b *strings.Builder, lines []rawHTTPSSELine) {
+	dataChunks, malformed, blanks, done := rawHTTPSSECounts(lines)
+	fmt.Fprintf(b, "Data chunks: %d\n", dataChunks)
+	if malformed > 0 {
+		fmt.Fprintf(b, "Malformed data chunks: %d\n", malformed)
+	}
+	if blanks > 0 {
+		fmt.Fprintf(b, "Event boundaries: %d blank lines\n", blanks)
+	}
+	fmt.Fprintf(b, "Done marker: %t\n", done)
+
+	writeRawHTTPSSEControlLines(b, lines)
+	writeRawHTTPMalformedChunks(b, lines)
+	writeRawHTTPDataChunks(b, lines)
+}
+
+func rawHTTPSSECounts(lines []rawHTTPSSELine) (dataChunks, malformed, blanks int, done bool) {
+	for _, line := range lines {
+		switch {
+		case line.Raw == "":
+			blanks++
+		case line.Field == "data" && line.DataDone:
+			done = true
+		case line.Field == "data" && line.DataErr != nil:
+			malformed++
+		case line.Field == "data" && line.DataJSON != nil:
+			dataChunks++
+		}
+	}
+	return dataChunks, malformed, blanks, done
+}
+
+func writeRawHTTPSSEControlLines(b *strings.Builder, lines []rawHTTPSSELine) {
+	var controls []string
+	for _, line := range lines {
+		if line.Raw == "" || line.Field == "data" {
 			continue
 		}
-		if line.Field == "data" && line.DataDone {
-			b.WriteString("Field: data\n\n")
-			b.WriteString("Payload: [DONE]\n\n")
+		if strings.HasPrefix(line.Raw, ":") {
+			controls = append(controls, fmt.Sprintf("comment: %s", strings.TrimSpace(strings.TrimPrefix(line.Raw, ":"))))
 			continue
 		}
 		if line.Field != "" {
-			fmt.Fprintf(b, "Field: %s\n\n", line.Field)
-		} else {
-			b.WriteString("Raw:\n")
-			fmt.Fprintf(b, "```text\n%s\n```\n\n", line.Raw)
+			controls = append(controls, fmt.Sprintf("%s: %s", line.Field, line.Value))
+			continue
+		}
+		controls = append(controls, fmt.Sprintf("raw: %s", line.Raw))
+	}
+	if len(controls) == 0 {
+		return
+	}
+	b.WriteString("\n### SSE Control Lines\n\n")
+	for _, line := range controls {
+		fmt.Fprintf(b, "- %s\n", line)
+	}
+}
+
+func writeRawHTTPMalformedChunks(b *strings.Builder, lines []rawHTTPSSELine) {
+	var chunk int
+	var wroteHeader bool
+	for _, line := range lines {
+		if line.Field != "data" {
 			continue
 		}
 		if line.DataJSON != nil {
-			data, err := json.MarshalIndent(line.DataJSON, "", "  ")
-			if err != nil {
-				fmt.Fprintf(b, "```text\n%s\n```\n\n", line.Value)
-			} else {
-				fmt.Fprintf(b, "```json\n%s\n```\n\n", data)
-			}
+			chunk++
 			continue
 		}
-		if line.DataErr != nil {
-			fmt.Fprintf(b, "Parse error: %v\n\n", line.DataErr)
+		if line.DataDone {
+			continue
 		}
-		fmt.Fprintf(b, "```text\n%s\n```\n\n", line.Value)
+		if line.DataErr == nil {
+			continue
+		}
+		if !wroteHeader {
+			b.WriteString("\n### Malformed Data Chunks\n\n")
+			wroteHeader = true
+		}
+		chunk++
+		fmt.Fprintf(b, "#### Chunk %d\n\n", chunk)
+		fmt.Fprintf(b, "Parse error: %v\n\n", line.DataErr)
+		fmt.Fprintf(b, "```text\n%s\n```\n", line.Value)
+	}
+}
+
+func writeRawHTTPDataChunks(b *strings.Builder, lines []rawHTTPSSELine) {
+	coverage := collectRawHTTPStreamCoverage(lines)
+	b.WriteString("\n### Parsed Chunk Coverage\n\n")
+	fmt.Fprintf(b, "- reasoning deltas: %d chunks", coverage.ReasoningChunks)
+	if coverage.ReasoningChunks > 0 {
+		b.WriteString(" (full text in Reasoning)")
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(b, "- content deltas: %d chunks", coverage.ContentChunks)
+	if coverage.ContentChunks > 0 {
+		b.WriteString(" (full text in Assistant Content)")
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(b, "- tool call deltas: %d chunks", coverage.ToolCallChunks)
+	if coverage.ToolCallChunks > 0 {
+		b.WriteString(" (reconstructed in Tool Calls)")
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(b, "- usage chunks: %d\n", coverage.UsageChunks)
+
+	if len(coverage.FieldOccurrences) > 0 {
+		b.WriteString("\n### Field Coverage\n\n")
+		for _, key := range sortedRawHTTPKeys(coverage.FieldOccurrences) {
+			fmt.Fprintf(b, "- %s: %s\n", key, formatRawHTTPChunkRanges(coverage.FieldOccurrences[key]))
+		}
+	}
+	if len(coverage.UsagePayloads) > 0 {
+		b.WriteString("\n### Usage Payloads\n\n")
+		for _, payload := range coverage.UsagePayloads {
+			data, err := json.MarshalIndent(payload.Value, "", "  ")
+			if err != nil {
+				fmt.Fprintf(b, "#### Chunk %d\n\n%v\n\n", payload.Chunk, payload.Value)
+				continue
+			}
+			fmt.Fprintf(b, "#### Chunk %d\n\n```json\n%s\n```\n\n", payload.Chunk, data)
+		}
+	}
+}
+
+type rawHTTPStreamCoverage struct {
+	ReasoningChunks  int
+	ContentChunks    int
+	ToolCallChunks   int
+	UsageChunks      int
+	FieldOccurrences map[string][]int
+	UsagePayloads    []rawHTTPChunkValue
+}
+
+type rawHTTPChunkValue struct {
+	Chunk int
+	Value any
+}
+
+func collectRawHTTPStreamCoverage(lines []rawHTTPSSELine) rawHTTPStreamCoverage {
+	coverage := rawHTTPStreamCoverage{
+		FieldOccurrences: make(map[string][]int),
+	}
+	var chunk int
+	for _, line := range lines {
+		if line.Field != "data" || line.DataJSON == nil {
+			continue
+		}
+		chunk++
+		obj := line.DataJSON
+		for key, value := range obj {
+			if key == "choices" {
+				continue
+			}
+			if key == "usage" {
+				coverage.UsageChunks++
+				coverage.UsagePayloads = append(coverage.UsagePayloads, rawHTTPChunkValue{Chunk: chunk, Value: value})
+				continue
+			}
+			addRawHTTPOccurrence(coverage.FieldOccurrences, "top."+key+"="+rawHTTPPrettyScalar(value), chunk)
+		}
+		for _, choice := range asSlice(obj["choices"]) {
+			ch, _ := choice.(map[string]any)
+			for key, value := range ch {
+				if key == "delta" {
+					continue
+				}
+				addRawHTTPOccurrence(coverage.FieldOccurrences, "choice."+key+"="+rawHTTPPrettyScalar(value), chunk)
+			}
+			delta, _ := ch["delta"].(map[string]any)
+			for key, value := range delta {
+				switch key {
+				case "reasoning":
+					coverage.ReasoningChunks++
+				case "content":
+					coverage.ContentChunks++
+				case "tool_calls":
+					if calls := asSlice(value); len(calls) > 0 {
+						coverage.ToolCallChunks++
+						addRawHTTPToolCallCoverage(coverage.FieldOccurrences, chunk, calls)
+					}
+				default:
+					addRawHTTPOccurrence(coverage.FieldOccurrences, "delta."+key+"="+rawHTTPPrettyScalar(value), chunk)
+				}
+			}
+		}
+	}
+	return coverage
+}
+
+func addRawHTTPToolCallCoverage(occurrences map[string][]int, chunk int, calls []any) {
+	for _, item := range calls {
+		call, _ := item.(map[string]any)
+		for key, value := range call {
+			if key == "function" {
+				continue
+			}
+			addRawHTTPOccurrence(occurrences, "tool_call."+key+"="+rawHTTPPrettyScalar(value), chunk)
+		}
+		function, _ := call["function"].(map[string]any)
+		for key, value := range function {
+			addRawHTTPOccurrence(occurrences, "tool_call.function."+key+"="+rawHTTPPrettyScalar(value), chunk)
+		}
+	}
+}
+
+func addRawHTTPOccurrence(occurrences map[string][]int, key string, chunk int) {
+	seen := occurrences[key]
+	if len(seen) > 0 && seen[len(seen)-1] == chunk {
+		return
+	}
+	occurrences[key] = append(seen, chunk)
+}
+
+func sortedRawHTTPKeys(values map[string][]int) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func formatRawHTTPChunkRanges(chunks []int) string {
+	if len(chunks) == 0 {
+		return ""
+	}
+	var parts []string
+	start := chunks[0]
+	prev := chunks[0]
+	for _, chunk := range chunks[1:] {
+		if chunk == prev+1 {
+			prev = chunk
+			continue
+		}
+		parts = append(parts, formatRawHTTPChunkRange(start, prev))
+		start = chunk
+		prev = chunk
+	}
+	parts = append(parts, formatRawHTTPChunkRange(start, prev))
+	return "chunks " + strings.Join(parts, ", ")
+}
+
+func formatRawHTTPChunkRange(start, end int) string {
+	if start == end {
+		return fmt.Sprintf("%d", start)
+	}
+	return fmt.Sprintf("%d-%d", start, end)
+}
+
+func rawHTTPPrettyScalar(value any) string {
+	switch v := value.(type) {
+	case string:
+		return fmt.Sprintf("%q", v)
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%.0f", v)
+		}
+		return fmt.Sprintf("%v", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	default:
+		data, err := json.Marshal(value)
+		if err == nil {
+			return string(data)
+		}
+		return fmt.Sprint(value)
 	}
 }
 

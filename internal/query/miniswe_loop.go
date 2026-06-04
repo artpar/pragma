@@ -27,6 +27,7 @@ to send the next shell action.
 Your response must contain one fenced bash code block with one command or one shell script.
 Do not write prose, analysis sections, headings, or bullets outside the bash code block.
 Use commands, command output, and required task artifacts for reasoning and evidence.
+When you have done your part of the persona job ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` to signal finish" + `.
 Format your response as shown in <format_example>.
 
 <format_example>
