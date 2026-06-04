@@ -18,6 +18,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/pragma/internal/cli"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
 )
 
 type rawHTTPRequestMeta struct {
@@ -32,6 +35,23 @@ type rawHTTPResponseMeta struct {
 	StartedAt   string `json:"started_at,omitempty"`
 	CompletedAt string `json:"completed_at,omitempty"`
 }
+
+type rawHTTPChatRequest struct {
+	Model       string               `json:"model"`
+	MaxTokens   int                  `json:"max_tokens,omitempty"`
+	Temperature *float64             `json:"temperature,omitempty"`
+	Messages    []rawHTTPChatMessage `json:"messages"`
+	Tools       []json.RawMessage    `json:"tools,omitempty"`
+}
+
+type rawHTTPChatMessage struct {
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+}
+
+var createRawHTTPReplayProvider = cli.CreateProvider
 
 func replayRawHTTPCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -100,8 +120,11 @@ func replayRawHTTPRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if resolved.Provider == "google" {
+		return replayRawHTTPGoogle(cmd, body, resolved, capturedModel, format)
+	}
 	if !isRawHTTPReplayProvider(resolved.Provider) {
-		return fmt.Errorf("raw HTTP replay supports OpenAI-compatible providers only (lilac, openai, groq); got %q", resolved.Provider)
+		return fmt.Errorf("raw HTTP replay supports OpenAI-compatible providers or google; got %q", resolved.Provider)
 	}
 	model := resolved.Model
 	if resolved.ProviderExplicit && !resolved.ModelExplicit {
@@ -171,6 +194,13 @@ func replayRawHTTPRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if format == "pretty" {
+		requestReport, err := renderRawHTTPPrettyRequest(body)
+		if err != nil {
+			return err
+		}
+		rendered = appendPrettySections(requestReport, rendered)
+	}
 	outPath, _ := cmd.Flags().GetString("out")
 	if outPath != "" {
 		if err := os.WriteFile(outPath, rendered, 0o644); err != nil {
@@ -195,6 +225,111 @@ func isRawHTTPReplayFormat(format string) bool {
 	default:
 		return false
 	}
+}
+
+func replayRawHTTPGoogle(cmd *cobra.Command, body []byte, resolved cli.ResolvedProviderConfig, capturedModel, format string) error {
+	params, err := rawHTTPChatRequestToParams(body)
+	if err != nil {
+		return err
+	}
+	params.Model = resolved.Model
+	if !resolved.ModelExplicit {
+		params.Model = cli.DefaultModelFor("google")
+	}
+	if params.Model == "" || params.Model == capturedModel {
+		params.Model = cli.DefaultModelFor("google")
+	}
+
+	prov, err := createRawHTTPReplayProvider(resolved.Config, observe.NewEventBus(1024))
+	if err != nil {
+		return err
+	}
+	resp, err := prov.Complete(cmd.Context(), params)
+	if err != nil {
+		return err
+	}
+	rendered, err := renderNativeReplayOutput(resolved.Provider, resp, format)
+	if err != nil {
+		return err
+	}
+	if format == "pretty" {
+		requestReport, err := renderRawHTTPPrettyRequest(body)
+		if err != nil {
+			return err
+		}
+		rendered = appendPrettySections(requestReport, rendered)
+	}
+	outPath, _ := cmd.Flags().GetString("out")
+	if outPath != "" {
+		return os.WriteFile(outPath, rendered, 0o644)
+	}
+	_, _ = cmd.OutOrStdout().Write(rendered)
+	if len(rendered) > 0 && rendered[len(rendered)-1] != '\n' {
+		fmt.Fprintln(cmd.OutOrStdout())
+	}
+	return nil
+}
+
+func rawHTTPChatRequestToParams(body []byte) (provider.RequestParams, error) {
+	var req rawHTTPChatRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return provider.RequestParams{}, fmt.Errorf("parse captured chat request: %w", err)
+	}
+	if len(req.Tools) > 0 {
+		return provider.RequestParams{}, fmt.Errorf("google raw-http replay supports text-only chat payloads; tools are not supported")
+	}
+	var systemBlocks []model.SystemBlock
+	var messages []model.Message
+	for i, msg := range req.Messages {
+		if len(msg.ToolCalls) > 0 && string(msg.ToolCalls) != "null" && string(msg.ToolCalls) != "[]" {
+			return provider.RequestParams{}, fmt.Errorf("google raw-http replay supports text-only chat payloads; message %d contains tool_calls", i)
+		}
+		if msg.ToolCallID != "" {
+			return provider.RequestParams{}, fmt.Errorf("google raw-http replay supports text-only chat payloads; message %d is a tool result", i)
+		}
+		content, err := rawHTTPStringContent(msg.Content)
+		if err != nil {
+			return provider.RequestParams{}, fmt.Errorf("google raw-http replay supports text-only chat payloads; message %d: %w", i, err)
+		}
+		switch msg.Role {
+		case "system":
+			if content != "" {
+				systemBlocks = append(systemBlocks, model.SystemBlock{Text: content, Cacheable: true})
+			}
+		case "user":
+			messages = append(messages, model.Message{
+				ID:      model.NewUUID(),
+				Role:    model.RoleUser,
+				Content: []model.ContentPart{model.TextPart{Text: content}},
+			})
+		case "assistant":
+			messages = append(messages, model.Message{
+				ID:      model.NewUUID(),
+				Role:    model.RoleAssistant,
+				Content: []model.ContentPart{model.TextPart{Text: content}},
+			})
+		default:
+			return provider.RequestParams{}, fmt.Errorf("message %d has unsupported role %q", i, msg.Role)
+		}
+	}
+	return provider.RequestParams{
+		Model:       req.Model,
+		MaxTokens:   req.MaxTokens,
+		Messages:    messages,
+		System:      model.SystemPrompt{Blocks: systemBlocks},
+		Temperature: req.Temperature,
+	}, nil
+}
+
+func rawHTTPStringContent(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s, nil
+	}
+	return "", fmt.Errorf("content is not a string")
 }
 
 func rawHTTPReplayFormatFromFlags(cmd *cobra.Command) string {
@@ -311,6 +446,224 @@ func renderRawHTTPReplayOutput(status string, body []byte, format string) ([]byt
 	default:
 		return nil, fmt.Errorf("unsupported raw HTTP replay format %q; expected raw, pretty, or content", format)
 	}
+}
+
+func renderNativeReplayOutput(providerName string, resp model.Response, format string) ([]byte, error) {
+	switch format {
+	case "", "raw":
+		data, err := json.MarshalIndent(resp, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("render native replay response: %w", err)
+		}
+		return append(data, '\n'), nil
+	case "pretty":
+		return renderNativePrettyResponse(providerName, resp), nil
+	case "content":
+		return []byte(nativeResponseContent(resp)), nil
+	default:
+		return nil, fmt.Errorf("unsupported raw HTTP replay format %q; expected raw, pretty, or content", format)
+	}
+}
+
+func renderRawHTTPPrettyRequest(body []byte) ([]byte, error) {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("render pretty request: %w", err)
+	}
+
+	var b strings.Builder
+	b.WriteString("# Raw HTTP Replay Request\n\n")
+	if model, _ := obj["model"].(string); model != "" {
+		fmt.Fprintf(&b, "Model: %s\n", model)
+	}
+	writeRawHTTPScalar(&b, "Max tokens", obj["max_tokens"])
+	writeRawHTTPScalar(&b, "Temperature", obj["temperature"])
+	messages := asSlice(obj["messages"])
+	fmt.Fprintf(&b, "Messages: %d\n", len(messages))
+	tools := asSlice(obj["tools"])
+	if len(tools) == 0 {
+		b.WriteString("Tools: none\n")
+	} else {
+		fmt.Fprintf(&b, "Tools: %d\n", len(tools))
+	}
+
+	b.WriteString("\n## Messages\n\n")
+	if len(messages) == 0 {
+		b.WriteString("none\n")
+	} else {
+		for i, item := range messages {
+			msg, _ := item.(map[string]any)
+			role, _ := msg["role"].(string)
+			if role == "" {
+				role = "unknown"
+			}
+			fmt.Fprintf(&b, "### %d. %s\n\n", i+1, strings.ToUpper(role))
+			content := readableContent(msg["content"])
+			if content == "" {
+				b.WriteString("none\n")
+			} else {
+				b.WriteString(content)
+				if !strings.HasSuffix(content, "\n") {
+					b.WriteString("\n")
+				}
+			}
+			if toolCalls := asSlice(msg["tool_calls"]); len(toolCalls) > 0 {
+				b.WriteString("\nTool calls:\n")
+				writeRawHTTPJSONBlock(&b, toolCalls)
+			}
+			if toolCallID, _ := msg["tool_call_id"].(string); toolCallID != "" {
+				fmt.Fprintf(&b, "\nTool call ID: %s\n", toolCallID)
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("## Tools\n\n")
+	if len(tools) == 0 {
+		b.WriteString("none\n")
+	} else {
+		writeRawHTTPJSONBlock(&b, tools)
+	}
+	return []byte(b.String()), nil
+}
+
+func writeRawHTTPScalar(b *strings.Builder, label string, value any) {
+	switch v := value.(type) {
+	case nil:
+		return
+	case float64:
+		fmt.Fprintf(b, "%s: %g\n", label, v)
+	case json.Number:
+		fmt.Fprintf(b, "%s: %s\n", label, v.String())
+	default:
+		fmt.Fprintf(b, "%s: %v\n", label, v)
+	}
+}
+
+func writeRawHTTPJSONBlock(b *strings.Builder, value any) {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		fmt.Fprintf(b, "%v\n", value)
+		return
+	}
+	b.WriteString("```json\n")
+	b.Write(data)
+	b.WriteString("\n```\n")
+}
+
+func appendPrettySections(first, second []byte) []byte {
+	out := append([]byte{}, first...)
+	if len(out) > 0 && out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
+	out = append(out, '\n')
+	out = append(out, second...)
+	return out
+}
+
+func renderNativePrettyResponse(providerName string, resp model.Response) []byte {
+	var b strings.Builder
+	b.WriteString("# Raw HTTP Replay Response\n\n")
+	b.WriteString("Transport: google provider\n")
+	if providerName != "" {
+		fmt.Fprintf(&b, "Provider: %s\n", providerName)
+	}
+	if resp.Model != "" {
+		fmt.Fprintf(&b, "Model: %s\n", resp.Model)
+	}
+	if resp.StopReason != "" {
+		fmt.Fprintf(&b, "Stop reason: %s\n", resp.StopReason)
+	}
+	if usage := nativeUsageSummary(resp.Usage); usage != "" {
+		fmt.Fprintf(&b, "Usage: %s\n", usage)
+	}
+
+	content := strings.TrimLeft(nativeResponseContent(resp), "\r\n")
+	b.WriteString("\n## Assistant Content\n\n")
+	if content != "" {
+		b.WriteString(content)
+		if !strings.HasSuffix(content, "\n") {
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString("none\n")
+	}
+
+	b.WriteString("\n## Tool Calls\n\n")
+	toolCalls := nativeToolCalls(resp)
+	if strings.TrimSpace(toolCalls) == "" {
+		b.WriteString("none\n")
+	} else {
+		b.WriteString(toolCalls)
+		if !strings.HasSuffix(toolCalls, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return []byte(b.String())
+}
+
+func nativeResponseContent(resp model.Response) string {
+	var parts []string
+	for _, part := range resp.Content {
+		switch p := part.(type) {
+		case model.TextPart:
+			if p.Text != "" {
+				parts = append(parts, p.Text)
+			}
+		case model.ThinkingPart:
+			if p.Text != "" {
+				parts = append(parts, p.Text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func nativeToolCalls(resp model.Response) string {
+	var b strings.Builder
+	var index int
+	for _, part := range resp.Content {
+		tc, ok := part.(model.ToolCallPart)
+		if !ok {
+			continue
+		}
+		index++
+		fmt.Fprintf(&b, "### Tool Call %d\n", index)
+		if tc.ID != "" {
+			fmt.Fprintf(&b, "ID: %s\n", tc.ID)
+		}
+		if tc.Name != "" {
+			fmt.Fprintf(&b, "Function: %s\n", tc.Name)
+		}
+		b.WriteString("\nArguments:\n")
+		formatted, lang := prettyRawHTTPJSONArg(string(tc.Input))
+		fmt.Fprintf(&b, "```%s\n%s\n```\n\n", lang, formatted)
+	}
+	return b.String()
+}
+
+func nativeUsageSummary(usage model.TokenUsage) string {
+	parts := []string{
+		nativeUsagePart("prompt", usage.InputTokens),
+		nativeUsagePart("cached", usage.CacheReadInputTokens),
+		nativeUsagePart("cache_create", usage.CacheCreationInputTokens),
+		nativeUsagePart("completion", usage.OutputTokens),
+		nativeUsagePart("total", usage.InputTokens+usage.CacheReadInputTokens+usage.CacheCreationInputTokens+usage.OutputTokens),
+	}
+	out := parts[:0]
+	for _, part := range parts {
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+func nativeUsagePart(label string, value int) string {
+	if value == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s=%d", label, value)
 }
 
 func renderRawHTTPContent(body []byte) ([]byte, error) {

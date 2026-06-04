@@ -50,6 +50,35 @@ def read_sample(sample_path: Path, instance_id: str) -> dict[str, object]:
     raise SystemExit(f"instance not found in {sample_path}: {instance_id}")
 
 
+def format_problem_statement(row: dict[str, object]) -> str:
+    return decode_embedded_json_string_lines(str(row["problem_statement"]))
+
+
+def decode_embedded_json_string_lines(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if len(stripped) < 2 or not stripped.startswith('"') or not stripped.endswith('"'):
+            lines.append(line)
+            continue
+        try:
+            decoded = json.loads(stripped)
+        except json.JSONDecodeError:
+            lines.append(line)
+            continue
+        if not isinstance(decoded, str):
+            lines.append(line)
+            continue
+        indent = line[: len(line) - len(line.lstrip())]
+        decoded_lines = decoded.splitlines()
+        if not decoded_lines:
+            lines.append("")
+            continue
+        lines.append(indent + decoded_lines[0])
+        lines.extend(decoded_lines[1:])
+    return "\n".join(lines)
+
+
 def read_pragma_lilac_credentials() -> tuple[str, str]:
     credentials_path = Path.home() / ".pragma" / "credentials.yml"
     if not credentials_path.exists():
@@ -441,7 +470,7 @@ def main() -> None:
     api_key = os.getenv("LLM_API_KEY") or os.getenv("LILAC_API_KEY") or config_api_key
     base_url = args.base_url or config_base_url or "https://api.getlilac.com/v1"
     image = dockerhub_image(row, args.dockerhub_username)
-    prompt = str(row["problem_statement"])
+    prompt = format_problem_statement(row)
     prompt_path = output_dir / "prompt.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     metadata_path = output_dir / "metadata.json"

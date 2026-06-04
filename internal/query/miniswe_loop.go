@@ -19,9 +19,12 @@ import (
 	"github.com/artpar/pragma/internal/provider"
 )
 
-const pragmaLoopSystemPrompt = `You are a helpful assistant that can interact with a computer.
+const pragmaLoopSystemPrompt = `Pragma loop mode is a shell-action transport.
 
-Your response must contain exactly ONE bash code block with ONE command or one shell script.
+Follow the active task and persona instructions. This wrapper only defines how
+to send the next shell action.
+
+Your response must contain one fenced bash code block with one command or one shell script.
 Do not write prose, analysis sections, headings, or bullets outside the bash code block.
 Use commands, command output, and required task artifacts for reasoning and evidence.
 Format your response as shown in <format_example>.
@@ -36,80 +39,11 @@ Failure to follow these rules will cause your response to be rejected.`
 
 const pragmaLoopInstanceSuffix = `
 
-You can execute bash commands and edit/create files to implement the necessary changes.
-
-## Recommended Workflow
-
-This workflows should be done step-by-step so that you can iterate on your changes and any possible problems.
-
-1. Analyze the codebase by finding and reading relevant files
-2. Edit/Create the source code to solve the task
-3. Test edge cases to ensure your solution is robust
-4. Submit your changes and finish your work by issuing the following command: ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`" + `.
-   Do not combine it with any other command. <important>After this command, you cannot continue working on this task.</important>
-
-## Important Rules
-
-1. Every response must contain exactly one action
-2. The action must be enclosed in triple backticks
-3. Current working directory: %s
-4. Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
-   Every command starts in the current working directory. To run in a different directory, use ` + "`cd /path/to/working/dir && command`" + `.
-   You can prefix environment variables directly before a command, such as ` + "`MY_ENV_VAR=MY_VALUE command`" + `, or write/load environment variables from files
-5. Commands wait up to 30 seconds for immediate output. If a command is still running after that, it is not killed; you will receive the PID, active processes, status file, and a combined console log path so you can continue and inspect it later.
-6. Do not pipe validation commands such as tests or builds to head or tail. Long output is already captured by the runner. If validation output may be large, redirect it to a log, preserve the real exit status, print useful log lines, and exit with the original status.
-
 <system_information>
+Current working directory: %s
 %s
 </system_information>
-
-## Formatting your response
-
-Here is an example of a correct response:
-
-<example_response>
-` + "```bash" + `
-ls -la
-` + "```" + `
-</example_response>
-
-## Useful command examples
-
-### Create a new file:
-
-` + "```bash" + `
-cat <<'EOF' > newfile.py
-import numpy as np
-hello = "world"
-print(hello)
-EOF
-` + "```" + `
-
-` + "### Edit files with sed:```bash\n" + `# Replace all occurrences
-sed -i 's/old_string/new_string/g' filename.py
-
-# Replace only first occurrence
-sed -i 's/old_string/new_string/' filename.py
-
-# Replace first occurrence on line 1
-sed -i '1s/old_string/new_string/' filename.py
-
-# Replace all occurrences in lines 1-10
-sed -i '1,10s/old_string/new_string/g' filename.py
-` + "```" + `
-
-### View file content:
-
-` + "```bash" + `
-# View specific lines with numbers
-nl -ba filename.py | sed -n '10,20p'
-` + "```" + `
-
-### Any other command you want to run
-
-` + "```bash" + `
-anything
-` + "```"
+`
 
 const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE bash action in triple backticks and no prose outside the code block. Found %d actions.
 If you want to end the task, please issue the following command: ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`" + `

@@ -20,6 +20,7 @@ from run_swebench_pro_instance import (
     DEFAULT_PRO_REPO,
     docker_eval_env,
     dockerhub_image,
+    format_problem_statement,
     maybe_evaluate,
     read_existing_run,
     read_sample,
@@ -110,7 +111,7 @@ def main() -> None:
     row = read_sample(sample_jsonl, args.instance_id)
     image = dockerhub_image(row, args.dockerhub_username)
     prompt_path = output_dir / "prompt.txt"
-    prompt_path.write_text(str(row["problem_statement"]), encoding="utf-8")
+    prompt_path.write_text(format_problem_statement(row), encoding="utf-8")
     metadata_path = output_dir / "metadata.json"
     metadata_path.write_text(json.dumps({"instance_id": args.instance_id, "image": image, "row": row}, indent=2), encoding="utf-8")
 

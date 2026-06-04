@@ -9,9 +9,11 @@ states:
 
   - id: patch_planner
     persona: patch_planner
+    task_prompt: none
 
   - id: checklist_writer
     persona: checklist_writer
+    task_prompt: none
 
   - id: next_item
     control:
@@ -53,6 +55,7 @@ states:
 
   - id: final_reviewer
     persona: final_reviewer
+    task_prompt: none
     event:
       from_file:
         path: /tmp/pragma/final-prosecutor-verdict.md
