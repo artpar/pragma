@@ -42,6 +42,8 @@ func replayRawHTTPCmd() *cobra.Command {
 	}
 	cmd.Flags().String("base-url", "", "override scheme/host/base path while preserving captured endpoint")
 	cmd.Flags().String("api-key-env", "LILAC_API_KEY", "environment variable containing the replay API key")
+	cmd.Flags().String("format", "raw", "output format: raw, pretty, content")
+	cmd.Flags().Bool("pretty", false, "print a human-readable response report")
 	cmd.Flags().String("out", "", "write response body to file instead of stdout")
 	cmd.Flags().Duration("timeout", 10*time.Minute, "HTTP request timeout for the replay")
 	cmd.AddCommand(replayRawHTTPDumpCmd())
@@ -77,6 +79,10 @@ func replayRawHTTPRun(cmd *cobra.Command, args []string) error {
 	body, err := os.ReadFile(filepath.Join(dir, "request.json"))
 	if err != nil {
 		return fmt.Errorf("read request.json: %w", err)
+	}
+	format := rawHTTPReplayFormatFromFlags(cmd)
+	if !isRawHTTPReplayFormat(format) {
+		return fmt.Errorf("unsupported raw HTTP replay format %q; expected raw, pretty, or content", format)
 	}
 	var meta rawHTTPRequestMeta
 	if err := readJSONFile(filepath.Join(dir, "request.meta.json"), &meta); err != nil {
@@ -161,19 +167,42 @@ func replayRawHTTPRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	rendered, err := renderRawHTTPReplayOutput(resp.Status, respBody, format)
+	if err != nil {
+		return err
+	}
 	outPath, _ := cmd.Flags().GetString("out")
 	if outPath != "" {
-		if err := os.WriteFile(outPath, respBody, 0o644); err != nil {
+		if err := os.WriteFile(outPath, rendered, 0o644); err != nil {
 			return err
 		}
 	} else {
-		_, _ = cmd.OutOrStdout().Write(respBody)
-		if len(respBody) > 0 && respBody[len(respBody)-1] != '\n' {
+		_, _ = cmd.OutOrStdout().Write(rendered)
+		if len(rendered) > 0 && rendered[len(rendered)-1] != '\n' {
 			fmt.Fprintln(cmd.OutOrStdout())
 		}
 	}
-	printRawHTTPSummary(cmd.ErrOrStderr(), respBody)
+	if format == "raw" {
+		printRawHTTPSummary(cmd.ErrOrStderr(), respBody)
+	}
 	return nil
+}
+
+func isRawHTTPReplayFormat(format string) bool {
+	switch format {
+	case "", "raw", "pretty", "content":
+		return true
+	default:
+		return false
+	}
+}
+
+func rawHTTPReplayFormatFromFlags(cmd *cobra.Command) string {
+	if pretty, _ := cmd.Flags().GetBool("pretty"); pretty {
+		return "pretty"
+	}
+	format, _ := cmd.Flags().GetString("format")
+	return format
 }
 
 func inferRawHTTPReplayProvider(rawURL string) string {
@@ -269,6 +298,187 @@ func printRawHTTPSummary(w io.Writer, body []byte) {
 	if summary != "" {
 		fmt.Fprintln(w, summary)
 	}
+}
+
+func renderRawHTTPReplayOutput(status string, body []byte, format string) ([]byte, error) {
+	switch format {
+	case "", "raw":
+		return body, nil
+	case "pretty":
+		return renderRawHTTPPrettyResponse(status, body)
+	case "content":
+		return renderRawHTTPContent(body)
+	default:
+		return nil, fmt.Errorf("unsupported raw HTTP replay format %q; expected raw, pretty, or content", format)
+	}
+}
+
+func renderRawHTTPContent(body []byte) ([]byte, error) {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("render content response: %w", err)
+	}
+	var parts []string
+	for _, choice := range asSlice(obj["choices"]) {
+		ch, _ := choice.(map[string]any)
+		msg, _ := ch["message"].(map[string]any)
+		if content := readableContent(msg["content"]); content != "" {
+			parts = append(parts, content)
+		}
+	}
+	if len(parts) == 0 {
+		return nil, nil
+	}
+	return []byte(strings.Join(parts, "\n")), nil
+}
+
+func renderRawHTTPPrettyResponse(status string, body []byte) ([]byte, error) {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, fmt.Errorf("render pretty response: %w", err)
+	}
+
+	var b strings.Builder
+	b.WriteString("# Raw HTTP Replay Response\n\n")
+	if status != "" {
+		fmt.Fprintf(&b, "HTTP: %s\n", status)
+	}
+	if model, _ := obj["model"].(string); model != "" {
+		fmt.Fprintf(&b, "Model: %s\n", model)
+	}
+	if finish := rawHTTPFinishReason(obj); finish != "" {
+		fmt.Fprintf(&b, "Finish reason: %s\n", finish)
+	}
+	if usage := rawHTTPUsageSummary(obj); usage != "" {
+		fmt.Fprintf(&b, "Usage: %s\n", usage)
+	}
+
+	content, err := renderRawHTTPContent(body)
+	if err != nil {
+		return nil, err
+	}
+	b.WriteString("\n## Assistant Content\n\n")
+	if len(content) > 0 {
+		normalized := strings.TrimLeft(string(content), "\r\n")
+		b.WriteString(normalized)
+		if !strings.HasSuffix(normalized, "\n") {
+			b.WriteString("\n")
+		}
+	} else {
+		b.WriteString("none\n")
+	}
+
+	b.WriteString("\n## Tool Calls\n\n")
+	toolCalls := renderRawHTTPToolCalls(obj)
+	if strings.TrimSpace(toolCalls) == "" {
+		b.WriteString("none\n")
+	} else {
+		b.WriteString(toolCalls)
+		if !strings.HasSuffix(toolCalls, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return []byte(b.String()), nil
+}
+
+func rawHTTPFinishReason(obj map[string]any) string {
+	var reasons []string
+	for _, choice := range asSlice(obj["choices"]) {
+		ch, _ := choice.(map[string]any)
+		if reason, _ := ch["finish_reason"].(string); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	return strings.Join(reasons, ", ")
+}
+
+func rawHTTPUsageSummary(obj map[string]any) string {
+	usage, _ := obj["usage"].(map[string]any)
+	if len(usage) == 0 {
+		return ""
+	}
+	parts := []string{
+		rawHTTPUsagePart(usage, "prompt", "prompt_tokens"),
+	}
+	if details, _ := usage["prompt_tokens_details"].(map[string]any); len(details) > 0 {
+		parts = append(parts, rawHTTPUsagePart(details, "cached", "cached_tokens"))
+	}
+	parts = append(parts,
+		rawHTTPUsagePart(usage, "completion", "completion_tokens"),
+		rawHTTPUsagePart(usage, "total", "total_tokens"),
+	)
+	if details, _ := usage["completion_tokens_details"].(map[string]any); len(details) > 0 {
+		parts = append(parts, rawHTTPUsagePart(details, "reasoning", "reasoning_tokens"))
+	}
+	out := parts[:0]
+	for _, part := range parts {
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+func rawHTTPUsagePart(values map[string]any, label, key string) string {
+	value, ok := values[key]
+	if !ok {
+		return ""
+	}
+	switch v := value.(type) {
+	case float64:
+		return fmt.Sprintf("%s=%.0f", label, v)
+	case int:
+		return fmt.Sprintf("%s=%d", label, v)
+	case json.Number:
+		return fmt.Sprintf("%s=%s", label, v.String())
+	default:
+		return fmt.Sprintf("%s=%v", label, v)
+	}
+}
+
+func renderRawHTTPToolCalls(obj map[string]any) string {
+	var b strings.Builder
+	var index int
+	for _, choice := range asSlice(obj["choices"]) {
+		ch, _ := choice.(map[string]any)
+		msg, _ := ch["message"].(map[string]any)
+		for _, item := range asSlice(msg["tool_calls"]) {
+			call, _ := item.(map[string]any)
+			index++
+			fmt.Fprintf(&b, "### Tool Call %d\n", index)
+			if id, _ := call["id"].(string); id != "" {
+				fmt.Fprintf(&b, "ID: %s\n", id)
+			}
+			if typ, _ := call["type"].(string); typ != "" {
+				fmt.Fprintf(&b, "Type: %s\n", typ)
+			}
+			function, _ := call["function"].(map[string]any)
+			if name, _ := function["name"].(string); name != "" {
+				fmt.Fprintf(&b, "Function: %s\n", name)
+			}
+			b.WriteString("\nArguments:\n")
+			args := readableContent(function["arguments"])
+			formatted, lang := prettyRawHTTPJSONArg(args)
+			fmt.Fprintf(&b, "```%s\n%s\n```\n\n", lang, formatted)
+		}
+	}
+	return b.String()
+}
+
+func prettyRawHTTPJSONArg(raw string) (string, string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "text"
+	}
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return raw, "text"
+	}
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return raw, "text"
+	}
+	return string(data), "json"
 }
 
 func summarizeSSE(body []byte) string {

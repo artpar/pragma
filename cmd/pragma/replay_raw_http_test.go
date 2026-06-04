@@ -150,6 +150,243 @@ func TestReplayRawHTTPProviderModelAndOut(t *testing.T) {
 	assertFileContains(t, outPath, "ok")
 }
 
+func TestReplayRawHTTPFormatRawDefault(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+	response := `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(response))
+	}))
+	defer server.Close()
+
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	stdout, stderr := executeRawHTTPReplay(t,
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--base-url", server.URL+"/v1",
+		turnDir,
+	)
+	if strings.TrimSpace(stdout) != response {
+		t.Fatalf("stdout = %q, want raw response %q", stdout, response)
+	}
+	if !strings.Contains(stderr, `summary: finish_reason="stop" tool_calls=0 text_prefix="ok"`) {
+		t.Fatalf("stderr missing raw summary: %q", stderr)
+	}
+}
+
+func TestReplayRawHTTPFormatContent(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"first"},"finish_reason":"stop"},{"message":{"content":"second"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	stdout, stderr := executeRawHTTPReplay(t,
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--base-url", server.URL+"/v1",
+		"--format", "content",
+		turnDir,
+	)
+	if stdout != "first\nsecond\n" {
+		t.Fatalf("stdout = %q, want content only", stdout)
+	}
+	if strings.Contains(stderr, "summary:") {
+		t.Fatalf("stderr contains summary for content format: %q", stderr)
+	}
+}
+
+func TestReplayRawHTTPFormatPrettyNoToolCalls(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"model":"test-model",
+			"usage":{
+				"prompt_tokens":10,
+				"prompt_tokens_details":{"cached_tokens":8},
+				"completion_tokens":3,
+				"total_tokens":13,
+				"completion_tokens_details":{"reasoning_tokens":2}
+			},
+			"choices":[{"message":{"content":"\n\nhello"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	stdout, stderr := executeRawHTTPReplay(t,
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--base-url", server.URL+"/v1",
+		"--format", "pretty",
+		turnDir,
+	)
+	for _, want := range []string{
+		"# Raw HTTP Replay Response",
+		"HTTP: 200 OK",
+		"Model: test-model",
+		"Finish reason: stop",
+		"Usage: prompt=10 cached=8 completion=3 total=13 reasoning=2",
+		"## Assistant Content\n\nhello",
+		"## Tool Calls\n\nnone",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("pretty output missing %q\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stderr, "summary:") {
+		t.Fatalf("stderr contains summary for pretty format: %q", stderr)
+	}
+}
+
+func TestReplayRawHTTPPrettyFlagAlias(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"model":"test-model","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	stdout, stderr := executeRawHTTPReplay(t,
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--base-url", server.URL+"/v1",
+		"--pretty",
+		turnDir,
+	)
+	if !strings.Contains(stdout, "# Raw HTTP Replay Response") {
+		t.Fatalf("stdout missing pretty report: %q", stdout)
+	}
+	if strings.Contains(stderr, "summary:") {
+		t.Fatalf("stderr contains summary for --pretty: %q", stderr)
+	}
+}
+
+func TestReplayRawHTTPFormatPrettyToolCalls(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"model":"test-model",
+			"choices":[{
+				"finish_reason":"tool_calls",
+				"message":{
+					"content":"",
+					"tool_calls":[{
+						"id":"call_1",
+						"type":"function",
+						"function":{"name":"lookup","arguments":"{\"query\":\"abc\",\"limit\":2}"}
+					}]
+				}
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	stdout, _ := executeRawHTTPReplay(t,
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--base-url", server.URL+"/v1",
+		"--format", "pretty",
+		turnDir,
+	)
+	for _, want := range []string{
+		"### Tool Call 1",
+		"ID: call_1",
+		"Type: function",
+		"Function: lookup",
+		"```json",
+		`"query": "abc"`,
+		`"limit": 2`,
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("pretty tool output missing %q\n%s", want, stdout)
+		}
+	}
+}
+
+func TestReplayRawHTTPFormatOutWritesSelectedFormat(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+	outPath := filepath.Join(root, "pretty.md")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"model":"test-model","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	stdout, _ := executeRawHTTPReplay(t,
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--base-url", server.URL+"/v1",
+		"--format", "pretty",
+		"--out", outPath,
+		turnDir,
+	)
+	if stdout != "" {
+		t.Fatalf("stdout = %q, want empty with --out", stdout)
+	}
+	assertFileContains(t, outPath, "# Raw HTTP Replay Response")
+	assertFileContains(t, outPath, "## Assistant Content\n\nok")
+}
+
+func TestReplayRawHTTPFormatRejectsUnknown(t *testing.T) {
+	root := t.TempDir()
+	turnDir := filepath.Join(root, "turn-000001")
+	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
+		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1}`)
+
+	_, _, err := executeRawHTTPReplayWithError(
+		"--provider", "lilac",
+		"--api-key", "flag-key",
+		"replay", "raw-http",
+		"--format", "yaml",
+		turnDir,
+	)
+	if err == nil {
+		t.Fatal("replay succeeded, want invalid format error")
+	}
+	if !strings.Contains(err.Error(), `unsupported raw HTTP replay format "yaml"`) {
+		t.Fatalf("invalid format error = %v", err)
+	}
+}
+
 func TestReplayRawHTTPCredentialsFile(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()
