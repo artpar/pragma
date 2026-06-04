@@ -688,6 +688,9 @@ func renderRawHTTPContent(body []byte) ([]byte, error) {
 func renderRawHTTPPrettyResponse(status string, body []byte) ([]byte, error) {
 	var obj map[string]any
 	if err := json.Unmarshal(body, &obj); err != nil {
+		if isRawHTTPSSE(body) {
+			return renderRawHTTPPrettyStreamResponse(status, body)
+		}
 		return nil, fmt.Errorf("render pretty response: %w", err)
 	}
 
@@ -704,6 +707,17 @@ func renderRawHTTPPrettyResponse(status string, body []byte) ([]byte, error) {
 	}
 	if usage := rawHTTPUsageSummary(obj); usage != "" {
 		fmt.Fprintf(&b, "Usage: %s\n", usage)
+	}
+
+	reasoning := renderRawHTTPReasoning(obj)
+	b.WriteString("\n## Reasoning\n\n")
+	if strings.TrimSpace(reasoning) == "" {
+		b.WriteString("none\n")
+	} else {
+		b.WriteString(reasoning)
+		if !strings.HasSuffix(reasoning, "\n") {
+			b.WriteString("\n")
+		}
 	}
 
 	content, err := renderRawHTTPContent(body)
@@ -743,6 +757,24 @@ func rawHTTPFinishReason(obj map[string]any) string {
 		}
 	}
 	return strings.Join(reasons, ", ")
+}
+
+func renderRawHTTPReasoning(obj map[string]any) string {
+	var parts []string
+	for i, choice := range asSlice(obj["choices"]) {
+		ch, _ := choice.(map[string]any)
+		msg, _ := ch["message"].(map[string]any)
+		reasoning := readableContent(msg["reasoning"])
+		if strings.TrimSpace(reasoning) == "" {
+			continue
+		}
+		if len(asSlice(obj["choices"])) > 1 {
+			parts = append(parts, fmt.Sprintf("### Choice %d\n\n%s", i+1, reasoning))
+		} else {
+			parts = append(parts, reasoning)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func rawHTTPUsageSummary(obj map[string]any) string {
@@ -832,6 +864,268 @@ func prettyRawHTTPJSONArg(raw string) (string, string) {
 		return raw, "text"
 	}
 	return string(data), "json"
+}
+
+type rawHTTPSSELine struct {
+	Raw      string
+	Field    string
+	Value    string
+	DataDone bool
+	DataJSON map[string]any
+	DataErr  error
+}
+
+type rawHTTPStreamToolCall struct {
+	Index     int
+	ID        string
+	Type      string
+	Name      string
+	Arguments string
+}
+
+type rawHTTPStreamResponse struct {
+	Lines      []rawHTTPSSELine
+	ID         string
+	Object     string
+	Model      string
+	Finish     []string
+	Usage      map[string]any
+	Reasoning  strings.Builder
+	Content    strings.Builder
+	ToolCalls  map[int]*rawHTTPStreamToolCall
+	ToolOrder  []int
+	ParseError error
+}
+
+func isRawHTTPSSE(body []byte) bool {
+	for _, line := range splitRawHTTPLines(body) {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" {
+			continue
+		}
+		return strings.HasPrefix(line, "data:") ||
+			strings.HasPrefix(line, "event:") ||
+			strings.HasPrefix(line, "id:") ||
+			strings.HasPrefix(line, "retry:") ||
+			strings.HasPrefix(line, ":")
+	}
+	return false
+}
+
+func renderRawHTTPPrettyStreamResponse(status string, body []byte) ([]byte, error) {
+	stream := parseRawHTTPSSE(body)
+	var b strings.Builder
+	b.WriteString("# Raw HTTP Replay Response\n\n")
+	b.WriteString("Transport: sse\n")
+	if status != "" {
+		fmt.Fprintf(&b, "HTTP: %s\n", status)
+	}
+	if stream.Model != "" {
+		fmt.Fprintf(&b, "Model: %s\n", stream.Model)
+	}
+	if stream.ID != "" {
+		fmt.Fprintf(&b, "ID: %s\n", stream.ID)
+	}
+	if stream.Object != "" {
+		fmt.Fprintf(&b, "Object: %s\n", stream.Object)
+	}
+	if len(stream.Finish) > 0 {
+		fmt.Fprintf(&b, "Finish reason: %s\n", strings.Join(stream.Finish, ", "))
+	}
+	if len(stream.Usage) > 0 {
+		if usage := rawHTTPUsageSummary(map[string]any{"usage": stream.Usage}); usage != "" {
+			fmt.Fprintf(&b, "Usage: %s\n", usage)
+		}
+	}
+	if stream.ParseError != nil {
+		fmt.Fprintf(&b, "Parse warning: %v\n", stream.ParseError)
+	}
+
+	b.WriteString("\n## Reasoning\n\n")
+	writePrettyTextSection(&b, stream.Reasoning.String())
+
+	b.WriteString("\n## Assistant Content\n\n")
+	writePrettyTextSection(&b, strings.TrimLeft(stream.Content.String(), "\r\n"))
+
+	b.WriteString("\n## Tool Calls\n\n")
+	writeRawHTTPStreamToolCalls(&b, stream)
+
+	b.WriteString("\n## Stream Transcript\n\n")
+	writeRawHTTPStreamTranscript(&b, stream.Lines)
+	return []byte(b.String()), nil
+}
+
+func writePrettyTextSection(b *strings.Builder, text string) {
+	if strings.TrimSpace(text) == "" {
+		b.WriteString("none\n")
+		return
+	}
+	b.WriteString(text)
+	if !strings.HasSuffix(text, "\n") {
+		b.WriteString("\n")
+	}
+}
+
+func parseRawHTTPSSE(body []byte) rawHTTPStreamResponse {
+	stream := rawHTTPStreamResponse{
+		ToolCalls: make(map[int]*rawHTTPStreamToolCall),
+	}
+	for _, rawLine := range splitRawHTTPLines(body) {
+		line := strings.TrimSuffix(rawLine, "\r")
+		item := rawHTTPSSELine{Raw: line}
+		if line != "" && !strings.HasPrefix(line, ":") {
+			field, value, ok := strings.Cut(line, ":")
+			if ok {
+				item.Field = field
+				item.Value = strings.TrimPrefix(value, " ")
+				if item.Field == "data" {
+					if item.Value == "[DONE]" {
+						item.DataDone = true
+					} else {
+						var obj map[string]any
+						if err := json.Unmarshal([]byte(item.Value), &obj); err != nil {
+							item.DataErr = err
+						} else {
+							item.DataJSON = obj
+							applyRawHTTPStreamChunk(&stream, obj)
+						}
+					}
+				}
+			}
+		}
+		if item.DataErr != nil && stream.ParseError == nil {
+			stream.ParseError = item.DataErr
+		}
+		stream.Lines = append(stream.Lines, item)
+	}
+	return stream
+}
+
+func splitRawHTTPLines(body []byte) []string {
+	text := string(body)
+	text = strings.TrimSuffix(text, "\n")
+	if text == "" {
+		return nil
+	}
+	return strings.Split(text, "\n")
+}
+
+func applyRawHTTPStreamChunk(stream *rawHTTPStreamResponse, obj map[string]any) {
+	if id, _ := obj["id"].(string); id != "" && stream.ID == "" {
+		stream.ID = id
+	}
+	if object, _ := obj["object"].(string); object != "" && stream.Object == "" {
+		stream.Object = object
+	}
+	if model, _ := obj["model"].(string); model != "" && stream.Model == "" {
+		stream.Model = model
+	}
+	if usage, _ := obj["usage"].(map[string]any); len(usage) > 0 {
+		stream.Usage = usage
+	}
+	for _, choice := range asSlice(obj["choices"]) {
+		ch, _ := choice.(map[string]any)
+		if finish, _ := ch["finish_reason"].(string); finish != "" {
+			stream.Finish = append(stream.Finish, finish)
+		}
+		delta, _ := ch["delta"].(map[string]any)
+		if reasoning, ok := delta["reasoning"]; ok {
+			stream.Reasoning.WriteString(readableContent(reasoning))
+		}
+		if content, ok := delta["content"]; ok {
+			stream.Content.WriteString(readableContent(content))
+		}
+		for _, item := range asSlice(delta["tool_calls"]) {
+			call, _ := item.(map[string]any)
+			applyRawHTTPStreamToolCall(stream, call)
+		}
+	}
+}
+
+func applyRawHTTPStreamToolCall(stream *rawHTTPStreamResponse, call map[string]any) {
+	index := len(stream.ToolOrder)
+	if value, ok := call["index"].(float64); ok {
+		index = int(value)
+	}
+	tc := stream.ToolCalls[index]
+	if tc == nil {
+		tc = &rawHTTPStreamToolCall{Index: index}
+		stream.ToolCalls[index] = tc
+		stream.ToolOrder = append(stream.ToolOrder, index)
+		sort.Ints(stream.ToolOrder)
+	}
+	if id, _ := call["id"].(string); id != "" {
+		tc.ID = id
+	}
+	if typ, _ := call["type"].(string); typ != "" {
+		tc.Type = typ
+	}
+	function, _ := call["function"].(map[string]any)
+	if name, _ := function["name"].(string); name != "" {
+		tc.Name = name
+	}
+	if args, ok := function["arguments"]; ok {
+		tc.Arguments += readableContent(args)
+	}
+}
+
+func writeRawHTTPStreamToolCalls(b *strings.Builder, stream rawHTTPStreamResponse) {
+	if len(stream.ToolOrder) == 0 {
+		b.WriteString("none\n")
+		return
+	}
+	for i, index := range stream.ToolOrder {
+		tc := stream.ToolCalls[index]
+		fmt.Fprintf(b, "### Tool Call %d\n", i+1)
+		fmt.Fprintf(b, "Index: %d\n", tc.Index)
+		if tc.ID != "" {
+			fmt.Fprintf(b, "ID: %s\n", tc.ID)
+		}
+		if tc.Type != "" {
+			fmt.Fprintf(b, "Type: %s\n", tc.Type)
+		}
+		if tc.Name != "" {
+			fmt.Fprintf(b, "Function: %s\n", tc.Name)
+		}
+		b.WriteString("\nArguments:\n")
+		formatted, lang := prettyRawHTTPJSONArg(tc.Arguments)
+		fmt.Fprintf(b, "```%s\n%s\n```\n\n", lang, formatted)
+	}
+}
+
+func writeRawHTTPStreamTranscript(b *strings.Builder, lines []rawHTTPSSELine) {
+	for i, line := range lines {
+		fmt.Fprintf(b, "### Event Line %d\n", i+1)
+		if line.Raw == "" {
+			b.WriteString("blank line\n\n")
+			continue
+		}
+		if line.Field == "data" && line.DataDone {
+			b.WriteString("Field: data\n\n")
+			b.WriteString("Payload: [DONE]\n\n")
+			continue
+		}
+		if line.Field != "" {
+			fmt.Fprintf(b, "Field: %s\n\n", line.Field)
+		} else {
+			b.WriteString("Raw:\n")
+			fmt.Fprintf(b, "```text\n%s\n```\n\n", line.Raw)
+			continue
+		}
+		if line.DataJSON != nil {
+			data, err := json.MarshalIndent(line.DataJSON, "", "  ")
+			if err != nil {
+				fmt.Fprintf(b, "```text\n%s\n```\n\n", line.Value)
+			} else {
+				fmt.Fprintf(b, "```json\n%s\n```\n\n", data)
+			}
+			continue
+		}
+		if line.DataErr != nil {
+			fmt.Fprintf(b, "Parse error: %v\n\n", line.DataErr)
+		}
+		fmt.Fprintf(b, "```text\n%s\n```\n\n", line.Value)
+	}
 }
 
 func summarizeSSE(body []byte) string {
