@@ -78,16 +78,27 @@ func TestSelectStateEventUsesLastDecisionVerdict(t *testing.T) {
 }
 
 func TestBuildOrchestrationPromptCanOmitTask(t *testing.T) {
-	system, prompt := buildOrchestrationPrompt(orchestration.State{
+	def := orchestration.Definition{
+		Name:    "test",
+		Initial: "surface_mapper",
+		States: []orchestration.State{
+			{ID: "surface_mapper"},
+			{ID: "item_worker", TaskPrompt: orchestration.TaskPromptNone},
+		},
+	}
+	system, prompt := buildOrchestrationPrompt(def, orchestration.State{
 		ID:         "item_worker",
 		TaskPrompt: orchestration.TaskPromptNone,
 	}, persona.Definition{
 		ID:     "item_worker",
 		Prompt: "Read current-item.json.",
-	}, "full benchmark task")
+	}, "full benchmark task", "Use checklist item 1.")
 
 	if strings.Contains(prompt, "full benchmark task") {
 		t.Fatalf("prompt included task despite task_prompt none: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Use checklist item 1.") {
+		t.Fatalf("prompt lost handoff: %q", prompt)
 	}
 	if strings.Contains(prompt, "Read current-item.json.") {
 		t.Fatalf("prompt included persona text in user message: %q", prompt)
@@ -98,12 +109,23 @@ func TestBuildOrchestrationPromptCanOmitTask(t *testing.T) {
 }
 
 func TestBuildOrchestrationPromptSplitsPersonaSystemAndTaskUser(t *testing.T) {
-	system, prompt := buildOrchestrationPrompt(orchestration.State{
+	def := orchestration.Definition{
+		Name:    "test",
+		Initial: "surface_mapper",
+		States: []orchestration.State{
+			{ID: "surface_mapper"},
+			{ID: "evidence_mapper"},
+		},
+		Transitions: []orchestration.Transition{
+			{Event: orchestration.EventComplete, From: []string{"surface_mapper"}, To: "evidence_mapper"},
+		},
+	}
+	system, prompt := buildOrchestrationPrompt(def, orchestration.State{
 		ID: "surface_mapper",
 	}, persona.Definition{
 		ID:     "surface_mapper",
 		Prompt: "You are the surface mapper.",
-	}, "Feature request body")
+	}, "Feature request body", "")
 
 	if len(system.Blocks) != 1 || !strings.HasPrefix(system.Blocks[0].Text, "You are the surface mapper.\n\nPragma loop mode is a shell-action transport.") {
 		t.Fatalf("system prompt = %#v", system.Blocks)
@@ -116,6 +138,9 @@ func TestBuildOrchestrationPromptSplitsPersonaSystemAndTaskUser(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "## Task\n\nFeature request body\n") {
 		t.Fatalf("user prompt lost task body: %q", prompt)
+	}
+	if !strings.Contains(prompt, `/tmp/pragma/handoff-prompts/surface_mapper/complete.md`) {
+		t.Fatalf("user prompt lost next handoff path: %q", prompt)
 	}
 }
 

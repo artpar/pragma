@@ -56,6 +56,10 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := ensureDefaultOrchestrationDirs(def); err != nil {
+		return err
+	}
+
 	d, err := cli.SetupDeps(cmd)
 	if err != nil {
 		return err
@@ -78,12 +82,22 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	engine.SetCompaction(compDeps)
 
 	personaDir, _ := cmd.Flags().GetString("persona-dir")
+	handoffPrompt := ""
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
-		event, err := runOrchestrationNode(cmd.Context(), engine, d, compDeps, personaDir, state, taskPrompt)
+		event, err := runOrchestrationNode(cmd.Context(), engine, d, compDeps, personaDir, def, state, taskPrompt, handoffPrompt)
 		if err != nil {
 			return err
+		}
+		nextHandoff, err := selectedHandoffPrompt(state.ID, event)
+		if err != nil {
+			return err
+		}
+		if nextHandoff != "" {
+			handoffPrompt = nextHandoff
+		} else if state.Control.IsZero() {
+			handoffPrompt = ""
 		}
 		if err := runtime.FSM.Event(cmd.Context(), event); err != nil {
 			return fmt.Errorf("transition %q from %q: %w", event, stateID, err)
@@ -94,7 +108,29 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runOrchestrationNode(ctx context.Context, rootEngine *query.Engine, d *cli.Deps, compDeps query.CompactionDeps, personaDir string, state orchestration.State, taskPrompt string) (string, error) {
+func ensureDefaultOrchestrationDirs(def orchestration.Definition) error {
+	if err := os.RemoveAll("/tmp/pragma/handoff-prompts"); err != nil {
+		return fmt.Errorf("reset orchestration handoff directory: %w", err)
+	}
+	for _, dir := range []string{
+		"/tmp/pragma",
+		"/tmp/pragma/handoff-prompts",
+		"/tmp/pragma/processes",
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create orchestration directory %q: %w", dir, err)
+		}
+	}
+	for _, state := range def.States {
+		dir := filepath.Join("/tmp/pragma/handoff-prompts", safeHandoffPathSegment(state.ID))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create orchestration handoff directory %q: %w", dir, err)
+		}
+	}
+	return nil
+}
+
+func runOrchestrationNode(ctx context.Context, rootEngine *query.Engine, d *cli.Deps, compDeps query.CompactionDeps, personaDir string, def orchestration.Definition, state orchestration.State, taskPrompt string, handoffPrompt string) (string, error) {
 	if !state.Control.IsZero() {
 		fmt.Fprintf(os.Stderr, "orchestration: state=%s control=%s\n", state.ID, controlName(state))
 		event, err := orchestration.ExecuteControl(state)
@@ -112,7 +148,7 @@ func runOrchestrationNode(ctx context.Context, rootEngine *query.Engine, d *cli.
 	fmt.Fprintf(os.Stderr, "orchestration: state=%s persona=%s\n", state.ID, personaDef.ID)
 
 	engine := newIsolatedOrchestrationEngine(rootEngine, d, compDeps)
-	if _, err := runOrchestrationState(ctx, engine, state, personaDef, taskPrompt); err != nil {
+	if _, err := runOrchestrationState(ctx, engine, def, state, personaDef, taskPrompt, handoffPrompt); err != nil {
 		return "", fmt.Errorf("state %q failed: %w", state.ID, err)
 	}
 
@@ -254,8 +290,8 @@ func lastDecisionValue(content string) (string, bool) {
 	return decision, decision != ""
 }
 
-func runOrchestrationState(ctx context.Context, engine *query.Engine, state orchestration.State, personaDef persona.Definition, taskPrompt string) (string, error) {
-	system, prompt := buildOrchestrationPrompt(state, personaDef, taskPrompt)
+func runOrchestrationState(ctx context.Context, engine *query.Engine, def orchestration.Definition, state orchestration.State, personaDef persona.Definition, taskPrompt string, handoffPrompt string) (string, error) {
+	system, prompt := buildOrchestrationPrompt(def, state, personaDef, taskPrompt, handoffPrompt)
 
 	var text strings.Builder
 	start := time.Now()
@@ -283,13 +319,115 @@ func runOrchestrationState(ctx context.Context, engine *query.Engine, state orch
 	return text.String(), nil
 }
 
-func buildOrchestrationPrompt(state orchestration.State, personaDef persona.Definition, taskPrompt string) (model.SystemPrompt, string) {
+func buildOrchestrationPrompt(def orchestration.Definition, state orchestration.State, personaDef persona.Definition, taskPrompt string, handoffPrompt string) (model.SystemPrompt, string) {
 	system := model.SystemPrompt{Blocks: []model.SystemBlock{{
 		Text:      strings.TrimRight(personaDef.Prompt, "\n") + "\n\n" + query.PragmaLoopSystemPrompt(),
 		Cacheable: false,
 	}}}
-	if state.TaskPrompt == orchestration.TaskPromptNone {
-		return system, "Proceed with this phase using the required input artifacts."
+
+	var b strings.Builder
+	if state.ID == def.Initial && state.TaskPrompt != orchestration.TaskPromptNone {
+		fmt.Fprintf(&b, "## Task\n\n%s\n", taskPrompt)
+	} else {
+		if strings.TrimSpace(handoffPrompt) != "" {
+			fmt.Fprintf(&b, "## Handoff From Previous Phase\n\n%s\n\n", strings.TrimSpace(handoffPrompt))
+		}
+		b.WriteString("## Phase Input\n\nProceed with this phase using the required input artifacts.\n")
 	}
-	return system, fmt.Sprintf("## Task\n\n%s\n", taskPrompt)
+
+	if handoffs := renderNextHandoffInstructions(def, state); handoffs != "" {
+		fmt.Fprintf(&b, "\n%s", handoffs)
+	}
+
+	return system, b.String()
+}
+
+func renderNextHandoffInstructions(def orchestration.Definition, state orchestration.State) string {
+	transitions := outgoingTransitions(def, state.ID)
+	if len(transitions) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("## Possible Next Phase Handoffs\n\n")
+	b.WriteString("When this phase is ready to finish, write the handoff prompt for the event this phase is causing before the final completion echo. Use the exact path below. The handoff should tell the next phase what this phase established, which artifacts to read, and what must be preserved.\n\n")
+	for _, tr := range transitions {
+		target := tr.To
+		if state, ok := stateByID(def, tr.To); ok {
+			switch {
+			case !state.Control.IsZero():
+				target += " (control)"
+			case state.Persona != "":
+				target += " (persona: " + state.Persona + ")"
+			case !state.Terminal:
+				target += " (persona: " + state.ID + ")"
+			}
+		}
+		fmt.Fprintf(&b, "- event %q -> %s: %s\n", tr.Event, target, handoffPromptPath(state.ID, tr.Event))
+	}
+	return b.String()
+}
+
+func outgoingTransitions(def orchestration.Definition, stateID string) []orchestration.Transition {
+	var out []orchestration.Transition
+	for _, tr := range def.Transitions {
+		for _, from := range tr.From {
+			if from == stateID {
+				out = append(out, orchestration.Transition{
+					Event: tr.Event,
+					From:  []string{stateID},
+					To:    tr.To,
+				})
+				break
+			}
+		}
+	}
+	return out
+}
+
+func stateByID(def orchestration.Definition, stateID string) (orchestration.State, bool) {
+	for _, state := range def.States {
+		if state.ID == stateID {
+			return state, true
+		}
+	}
+	return orchestration.State{}, false
+}
+
+func selectedHandoffPrompt(stateID string, event string) (string, error) {
+	raw, err := os.ReadFile(handoffPromptPath(stateID, event))
+	if err == nil {
+		return strings.TrimSpace(string(raw)), nil
+	}
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	return "", fmt.Errorf("read handoff prompt for state %q event %q: %w", stateID, event, err)
+}
+
+func handoffPromptPath(stateID string, event string) string {
+	return filepath.Join("/tmp/pragma/handoff-prompts", safeHandoffPathSegment(stateID), safeHandoffPathSegment(event)+".md")
+}
+
+func safeHandoffPathSegment(value string) string {
+	value = strings.TrimSpace(value)
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "unknown"
+	}
+	return b.String()
 }
