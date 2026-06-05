@@ -22,17 +22,14 @@ func FixLLMToolRouting(def *GraphDef) {
 		return
 	}
 
-	hasStopRouting := make(map[string]bool)
+	hasConditionalRouting := make(map[string]bool)
 	for _, ce := range def.Graph.ConditionalEdges {
 		observe.GlobalTrace("range def.Graph.ConditionalEdges")
-		if ce.Router == "stop_reason" {
-			observe.GlobalTrace("if: ce.Router == \"stop_reason\"")
-			hasStopRouting[ce.From] = true
-		}
+		hasConditionalRouting[ce.From] = true
 	}
 
-	// Collect LLM nodes that need fixing: they have unconditional edges but no
-	// stop_reason conditional edge.
+	// Collect LLM nodes that need fixing: they have non-END unconditional edges
+	// and no conditional routing.
 	type fixTarget struct {
 		nodeName string
 		edgeIdx  int // index in def.Graph.Edges
@@ -47,8 +44,12 @@ func FixLLMToolRouting(def *GraphDef) {
 			observe.GlobalTrace("if: !ok || spec.Type != \"llm\"")
 			continue
 		}
-		if hasStopRouting[e.From] {
-			observe.GlobalTrace("if: hasStopRouting[e.From]")
+		if e.To == "" {
+			observe.GlobalTrace("if: e.To == \"\"")
+			continue
+		}
+		if hasConditionalRouting[e.From] {
+			observe.GlobalTrace("if: hasConditionalRouting[e.From]")
 			continue
 		}
 		fixes = append(fixes, fixTarget{

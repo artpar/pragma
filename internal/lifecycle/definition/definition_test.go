@@ -50,8 +50,8 @@ func TestParse_Valid(t *testing.T) {
 	if def.Graph.MaxSteps != 50 {
 		t.Errorf("expected max_steps=50, got %d", def.Graph.MaxSteps)
 	}
-	if len(def.Graph.Nodes) != 3 {
-		t.Errorf("expected 3 nodes, got %d", len(def.Graph.Nodes))
+	if len(def.Graph.Nodes) != 4 {
+		t.Errorf("expected 4 nodes, got %d", len(def.Graph.Nodes))
 	}
 	if def.Graph.Nodes["planner"].Type != "llm" {
 		t.Error("planner should be type llm")
@@ -62,14 +62,29 @@ func TestParse_Valid(t *testing.T) {
 	if len(def.Graph.Nodes["executor"].Tools) != 2 {
 		t.Errorf("executor should have 2 tools, got %d", len(def.Graph.Nodes["executor"].Tools))
 	}
+	if def.Graph.Nodes["planner_tools"].Type != "tools" {
+		t.Error("planner_tools should be generated for planner stop_reason routing")
+	}
 	if len(def.Graph.Edges) != 2 {
 		t.Errorf("expected 2 edges, got %d", len(def.Graph.Edges))
 	}
-	if len(def.Graph.ConditionalEdges) != 1 {
-		t.Errorf("expected 1 conditional edge, got %d", len(def.Graph.ConditionalEdges))
+	if len(def.Graph.ConditionalEdges) != 2 {
+		t.Errorf("expected 2 conditional edges, got %d", len(def.Graph.ConditionalEdges))
 	}
-	if def.Graph.ConditionalEdges[0].Router != "field:done" {
-		t.Error("expected router=field:done")
+	var hasDoneRouter, hasPlannerStopRouter bool
+	for _, ce := range def.Graph.ConditionalEdges {
+		if ce.From == "reviewer" && ce.Router == "field:done" {
+			hasDoneRouter = true
+		}
+		if ce.From == "planner" && ce.Router == "stop_reason" && ce.Paths["continue"] == "planner_tools" && ce.Paths["end"] == "executor" {
+			hasPlannerStopRouter = true
+		}
+	}
+	if !hasDoneRouter {
+		t.Error("expected reviewer router=field:done")
+	}
+	if !hasPlannerStopRouter {
+		t.Error("expected planner stop_reason routing through planner_tools")
 	}
 	if len(def.Graph.Reducers) != 2 {
 		t.Errorf("expected 2 reducers, got %d", len(def.Graph.Reducers))

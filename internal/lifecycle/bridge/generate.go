@@ -250,7 +250,6 @@ func GenerateGraph(ctx context.Context, prov provider.Provider, bus *observe.Eve
 			continue
 		}
 
-		definition.FixLLMToolRouting(def)
 		observe.TraceCtx(ctx, "bridge", "GenerateGraph", "return: def, nil")
 		return def, nil
 	}

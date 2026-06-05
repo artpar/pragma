@@ -18,6 +18,7 @@ func Parse(data []byte) (*GraphDef, error) {
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"parse graph definition: %w\", err)")
 		return nil, fmt.Errorf("parse graph definition: %w", err)
 	}
+	FixLLMToolRouting(&def)
 	if err := validate(&def); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
