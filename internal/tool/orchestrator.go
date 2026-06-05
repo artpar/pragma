@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -304,6 +305,7 @@ func (o *Orchestrator) executeSingle(
 		}
 	}
 
+	var hookSupplements []model.ContentPart
 	if o.hookMgr != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.hookMgr != nil")
 		hookResult := o.hookMgr.Execute(ctx, hook.PreToolUse, hook.HookInput{
@@ -327,6 +329,7 @@ func (o *Orchestrator) executeSingle(
 				},
 			}
 		}
+		hookSupplements = append(hookSupplements, hookFeedbackSupplements(hook.PreToolUse, hookResult)...)
 	}
 
 	permResult := desc.CheckPerm(ctx, call.Input, o.checker)
@@ -367,6 +370,7 @@ func (o *Orchestrator) executeSingle(
 				Content:    "permission denied: " + permResult.Reason,
 				IsError:    true,
 			},
+			supplements: hookSupplements,
 		}
 	}
 
@@ -426,6 +430,7 @@ func (o *Orchestrator) executeSingle(
 					Content:    "permission denied by user",
 					IsError:    true,
 				},
+				supplements: hookSupplements,
 			}
 		}
 	}
@@ -440,6 +445,7 @@ func (o *Orchestrator) executeSingle(
 				Content:    "cancelled: " + ctx.Err().Error(),
 				IsError:    true,
 			},
+			supplements: hookSupplements,
 		}
 	}
 
@@ -473,6 +479,7 @@ func (o *Orchestrator) executeSingle(
 				Content:    err.Error(),
 				IsError:    true,
 			},
+			supplements: hookSupplements,
 		}
 	}
 
@@ -488,11 +495,12 @@ func (o *Orchestrator) executeSingle(
 
 	if o.hookMgr != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.hookMgr != nil")
-		o.hookMgr.Execute(ctx, hook.PostToolUse, hook.HookInput{
+		postHookResult := o.hookMgr.Execute(ctx, hook.PostToolUse, hook.HookInput{
 			ToolName:  call.Name,
 			ToolInput: call.Input,
 			Response:  invokeResult.Content,
 		})
+		hookSupplements = append(hookSupplements, hookFeedbackSupplements(hook.PostToolUse, postHookResult)...)
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 
@@ -507,9 +515,44 @@ func (o *Orchestrator) executeSingle(
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart:\t\tpart,\n\tdisplay:\tinvokeResult.Display,\n\tsupplements:\tinv...")
 
+	supplements := make([]model.ContentPart, 0, len(hookSupplements)+len(invokeResult.Supplements))
+	supplements = append(supplements, hookSupplements...)
+	supplements = append(supplements, invokeResult.Supplements...)
+
 	return singleResult{
 		part:        part,
 		display:     invokeResult.Display,
-		supplements: invokeResult.Supplements,
+		supplements: supplements,
 	}
+}
+
+func hookFeedbackSupplements(event hook.Event, result hook.AggregatedResult) []model.ContentPart {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	text := hookFeedbackText(event, result.Feedback)
+	if text == "" {
+		observe.GlobalTrace("if: text == \"\"")
+		return nil
+	}
+	observe.GlobalTrace("return: []model.ContentPart{model.TextPart{Text: text}}")
+	return []model.ContentPart{model.TextPart{Text: text}}
+}
+
+func hookFeedbackText(event hook.Event, feedback []string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	cleaned := make([]string, 0, len(feedback))
+	for _, msg := range feedback {
+		observe.GlobalTrace("range feedback")
+		if trimmed := strings.TrimSpace(msg); trimmed != "" {
+			observe.GlobalTrace("if: trimmed != \"\"")
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	if len(cleaned) == 0 {
+		observe.GlobalTrace("if: len(cleaned) == 0")
+		return ""
+	}
+	observe.GlobalTrace("return: \"Hook context from \" + string(event) + \":\\n\" + strings.Join(cleaned, \"\\n\\n\")")
+	return "Hook context from " + string(event) + ":\n" + strings.Join(cleaned, "\n\n")
 }

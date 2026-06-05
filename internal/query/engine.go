@@ -3,6 +3,8 @@ package query
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/compact"
@@ -199,6 +201,48 @@ func (e *Engine) appendConversationMessage(msg model.Message, mutate func(*app.A
 		}
 	})
 	e.emitMessageAppended(msg)
+}
+
+// AppendHookContext appends hook-produced context as an internal user message
+// so the next provider request can see it without exposing it as assistant text.
+func (e *Engine) AppendHookContext(source string, contexts []string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	text := formatHookContext(source, contexts)
+	if text == "" {
+		observe.GlobalTrace("if: text == \"\"")
+		return
+	}
+	e.appendConversationMessage(model.Message{
+		ID:        model.NewUUID(),
+		Role:      model.RoleUser,
+		Content:   []model.ContentPart{model.TextPart{Text: text}},
+		Timestamp: time.Now(),
+		Flags:     model.MessageFlags{IsInternal: true},
+	}, nil)
+}
+
+func formatHookContext(source string, contexts []string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	cleaned := make([]string, 0, len(contexts))
+	for _, ctx := range contexts {
+		observe.GlobalTrace("range contexts")
+		if trimmed := strings.TrimSpace(ctx); trimmed != "" {
+			observe.GlobalTrace("if: trimmed != \"\"")
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	if len(cleaned) == 0 {
+		observe.GlobalTrace("if: len(cleaned) == 0")
+		return ""
+	}
+	if source == "" {
+		observe.GlobalTrace("if: source == \"\"")
+		source = "hook"
+	}
+	observe.GlobalTrace("return: \"Hook context from \" + source + \":\\n\" + strings.Join(cleaned, \"\\n\\n\")")
+	return "Hook context from " + source + ":\n" + strings.Join(cleaned, "\n\n")
 }
 
 func (e *Engine) emitMessageAppended(msg model.Message) {

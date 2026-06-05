@@ -230,25 +230,26 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 	ch := make(chan interactive.Event, 16)
 	go func() {
 		defer close(ch)
+		var promptHookResult hook.AggregatedResult
 		if rt.Deps.HookMgr != nil {
-			hookResult := rt.Deps.HookMgr.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{
+			promptHookResult = rt.Deps.HookMgr.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{
 				PromptText: input,
 			})
-			if hookResult.Blocked {
-				ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", hookResult.BlockMsg)}}
+			if promptHookResult.Blocked {
+				ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", promptHookResult.BlockMsg)}}
 				return
 			}
 		}
 		if name, args, ok := slash.Parse(input); ok && rt.SlashCmds != nil {
-			rt.runSlash(ctx, name, args, ch)
+			rt.runSlash(ctx, name, args, promptHookResult, ch)
 			return
 		}
-		rt.runEngine(ctx, input, ch)
+		rt.runEngine(ctx, input, promptHookResult, ch)
 	}()
 	return ch
 }
 
-func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args string, ch chan<- interactive.Event) {
+func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
 	deps := rt.SlashDeps
 	if deps.LatestAssistantText == nil {
 		deps.LatestAssistantText = func() string { return latestAssistantText(rt.Deps.Store) }
@@ -277,11 +278,11 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args st
 		ch <- interactive.SlashResultEvent{Result: result}
 	}
 	if result.Orchestrate != nil {
-		rt.runOrchestration(ctx, *result.Orchestrate, ch)
+		rt.runOrchestration(ctx, *result.Orchestrate, promptHookResult, ch)
 		return
 	}
 	if result.InjectPrompt != "" {
-		rt.runEngine(ctx, result.InjectPrompt, ch)
+		rt.runEngine(ctx, result.InjectPrompt, promptHookResult, ch)
 	}
 }
 
@@ -297,11 +298,14 @@ func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 }
 
-func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch chan<- interactive.Event) {
-	if err := startSessionForCurrentConversation(ctx, rt.Deps); err != nil {
+func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
+	sessionHookResult, err := startSessionForCurrentConversation(ctx, rt.Deps)
+	if err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
+	rt.appendHookContext(hook.SessionStart, sessionHookResult, true)
+	rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false)
 	if rt.Deps.SessionWriter != nil {
 		_ = rt.Deps.SessionWriter.WritePromptHistory(input)
 	}
@@ -311,11 +315,14 @@ func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch ch
 	}
 }
 
-func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, ch chan<- interactive.Event) {
-	if err := startSessionForCurrentConversation(ctx, rt.Deps); err != nil {
+func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
+	sessionHookResult, err := startSessionForCurrentConversation(ctx, rt.Deps)
+	if err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
+	rt.appendHookContext(hook.SessionStart, sessionHookResult, true)
+	rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false)
 	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
 		PersonaDir:   req.PersonaDir,
 		TaskPrompt:   req.Prompt,
@@ -324,6 +331,16 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		ch <- interactive.LoopEvent{Event: ev}
 		persistSessionAfterLoopEvent(ev, rt.sessionSave)
 	}
+}
+
+func (rt *InteractiveRuntime) appendHookContext(event hook.Event, result hook.AggregatedResult, includeStdout bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if rt == nil || rt.Engine == nil {
+		observe.GlobalTrace("if: rt == nil || rt.Engine == nil")
+		return
+	}
+	rt.Engine.AppendHookContext(string(event), hookContextStrings(result, includeStdout))
 }
 
 func interactiveOrchestrationArtifactRoot(d *Deps) string {
@@ -375,7 +392,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
-	beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
+	_ = beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
 	return nil
 }
 
@@ -471,7 +488,7 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 	applyToolFilters(cmd, d.Registry)
 	waitForToolsetMCP(cmd.Context(), d)
 	if d.SessionWriter != nil {
-		beginSessionLifecycle(cmd.Context(), d, "")
+		_ = beginSessionLifecycle(cmd.Context(), d, "")
 	}
 
 	compDeps, compactor := BuildCompactionDeps(d)
@@ -753,9 +770,11 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 
 	ctx := cmd.Context()
 	if strings.TrimSpace(prompt) != "" {
-		if err := startSessionForCurrentConversation(ctx, d); err != nil {
+		sessionHookResult, err := startSessionForCurrentConversation(ctx, d)
+		if err != nil {
 			return err
 		}
+		engine.AppendHookContext(string(hook.SessionStart), hookContextStrings(sessionHookResult, true))
 	}
 	events := engine.Run(ctx, prompt)
 
@@ -888,10 +907,31 @@ func persistSessionAfterLoopEvent(ev query.LoopEvent, saveFn func()) {
 	}
 }
 
-func startSessionForCurrentConversation(ctx context.Context, d *Deps) error {
+func hookContextStrings(result hook.AggregatedResult, includeStdout bool) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	contexts := make([]string, 0, len(result.Feedback)+1)
+	for _, feedback := range result.Feedback {
+		observe.GlobalTrace("range result.Feedback")
+		if trimmed := strings.TrimSpace(feedback); trimmed != "" {
+			observe.GlobalTrace("if: trimmed != \"\"")
+			contexts = append(contexts, trimmed)
+		}
+	}
+	if includeStdout {
+		observe.GlobalTrace("if: includeStdout")
+		if trimmed := strings.TrimSpace(result.Stdout); trimmed != "" {
+			observe.GlobalTrace("if: trimmed != \"\"")
+			contexts = append(contexts, trimmed)
+		}
+	}
+	observe.GlobalTrace("return: contexts")
+	return contexts
+}
+
+func startSessionForCurrentConversation(ctx context.Context, d *Deps) (hook.AggregatedResult, error) {
 	if d.SessionWriter != nil {
-		beginSessionLifecycle(ctx, d, "")
-		return nil
+		return beginSessionLifecycle(ctx, d, ""), nil
 	}
 	header := d.SessionHeader
 	if header.SessionID == "" {
@@ -899,17 +939,16 @@ func startSessionForCurrentConversation(ctx context.Context, d *Deps) error {
 	}
 	sessStore, err := session.NewStore()
 	if err != nil {
-		return err
+		return hook.AggregatedResult{}, err
 	}
 	w, err := sessStore.Create(header)
 	if err != nil {
-		return err
+		return hook.AggregatedResult{}, err
 	}
 	d.SessionWriter = w
 	d.SessionHeader = header
 	d.SessionLastIdx = 0
-	beginSessionLifecycle(ctx, d, "")
-	return nil
+	return beginSessionLifecycle(ctx, d, ""), nil
 }
 
 func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
@@ -934,9 +973,9 @@ func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
 	}
 }
 
-func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) {
+func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) hook.AggregatedResult {
 	if d == nil || d.SessionStarted {
-		return
+		return hook.AggregatedResult{}
 	}
 	sessionID := d.Store.Snapshot().Conversation.ID
 	if d.HookMgr != nil {
@@ -947,11 +986,13 @@ func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) {
 		SessionID:   sessionID,
 		ResumedFrom: resumedFrom,
 	})
+	var hookResult hook.AggregatedResult
 	if d.HookMgr != nil {
 		observe.GlobalTrace("if: d.HookMgr != nil")
-		d.HookMgr.Execute(ctx, hook.SessionStart, hook.HookInput{})
+		hookResult = d.HookMgr.Execute(ctx, hook.SessionStart, hook.HookInput{})
 	}
 	d.SessionStarted = true
+	return hookResult
 }
 
 func endSessionLifecycle(ctx context.Context, d *Deps) {
