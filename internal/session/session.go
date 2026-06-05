@@ -3,6 +3,7 @@ package session
 import (
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/tool"
 )
@@ -20,6 +21,7 @@ type Session struct {
 	ContentReplacements []model.ContentReplacementRecord `json:"content_replacements,omitempty"`
 	PromptHistory       []PromptHistoryData              `json:"prompt_history,omitempty"`
 	FileStateRecords    []tool.FileStateRecord           `json:"file_state_records,omitempty"`
+	Todos               []app.TodoItem                   `json:"todos,omitempty"`
 }
 
 // SessionSummary is a lightweight view for listing sessions.

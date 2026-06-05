@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/tool"
 )
@@ -141,6 +142,10 @@ func (w *Writer) WritePromptHistory(text string) error {
 
 func (w *Writer) WriteFileState(records []tool.FileStateRecord) error {
 	return w.writeEntry(EntryFileState, FileStateData{Records: records})
+}
+
+func (w *Writer) WriteTodos(items []app.TodoItem) error {
+	return w.writeEntry(EntryTodos, TodosData{Items: items})
 }
 
 func (w *Writer) writeEntry(kind EntryKind, data any) error {

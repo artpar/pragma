@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/tool"
@@ -84,6 +85,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var replacements []model.ContentReplacementRecord
 	var promptHistory []PromptHistoryData
 	var fileStateRecords []tool.FileStateRecord
+	var todos []app.TodoItem
 	hasHeader := false
 
 	scanner := bufio.NewScanner(f)
@@ -131,6 +133,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				fileStateRecords = data.Records
 			}
+		case EntryTodos:
+			var data TodosData
+			if err := json.Unmarshal(entry.Data, &data); err == nil {
+				todos = data.Items
+			}
 		}
 	}
 
@@ -162,6 +169,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		ContentReplacements: replacements,
 		PromptHistory:       promptHistory,
 		FileStateRecords:    fileStateRecords,
+		Todos:               todos,
 	}, nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/tool"
 )
@@ -19,6 +20,7 @@ const (
 	EntryContentReplacement EntryKind = "content_replacement"
 	EntryPromptHistory      EntryKind = "prompt_history"
 	EntryFileState          EntryKind = "file_state"
+	EntryTodos              EntryKind = "todos"
 )
 
 // Entry is a single JSONL line in a session file. Discriminated by Kind.
@@ -62,6 +64,10 @@ type PromptHistoryData struct {
 
 type FileStateData struct {
 	Records []tool.FileStateRecord `json:"records"`
+}
+
+type TodosData struct {
+	Items []app.TodoItem `json:"items"`
 }
 
 type HandoffStateData struct {

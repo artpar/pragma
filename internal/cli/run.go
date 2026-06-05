@@ -404,6 +404,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.Model = providerBinding.modelID
 		st.Provider = providerBinding.providerName
 		st.HandoffState = sess.HandoffState
+		st.Todos = sess.Todos
 	})
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
@@ -1151,6 +1152,9 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 			if err := d.SessionWriter.WriteFileState(d.Engine.FileStateRecords()); err != nil {
 				return
 			}
+		}
+		if err := d.SessionWriter.WriteTodos(snap.Todos); err != nil {
+			return
 		}
 		d.SessionLastIdx = len(snap.Conversation.Messages)
 		if err := d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap)); err != nil {

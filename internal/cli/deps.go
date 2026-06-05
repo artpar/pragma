@@ -260,6 +260,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var resumedHandoffState model.HandoffState
 	var resumedContentReplacements []model.ContentReplacementRecord
 	var resumedFileStateRecords []tool.FileStateRecord
+	var resumedTodos []app.TodoItem
 	var sessionWriter *session.Writer
 	var resumedTurnCount int
 	var sessionStart time.Time
@@ -334,6 +335,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		resumedHandoffState = sess.HandoffState
 		resumedContentReplacements = sess.ContentReplacements
 		resumedFileStateRecords = sess.FileStateRecords
+		resumedTodos = sess.Todos
 		resumedTurnCount = sess.TurnCount
 		sessionStart = sess.Conversation.CreatedAt
 		if cfg.Verbose {
@@ -370,6 +372,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Provider:     cfg.Provider,
 		MaxTokens:    cfg.MaxTokens,
 		Temperature:  cfg.Temperature,
+		Todos:        resumedTodos,
 	})
 
 	hookMgr.SetSessionID(conv.ID)
