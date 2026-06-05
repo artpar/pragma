@@ -370,7 +370,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			}
 			e.appendConversationMessage(resultMsg, nil)
 			for i, r := range execResult.Results {
-				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i]}
+				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i], FileEffects: execResult.FileEffects[i]}
 			}
 			if e.config.StopAfterToolExec {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.config.StopAfterToolExec")
@@ -837,6 +837,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	defer observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "exit")
 	results := make([]model.ToolResultPart, len(calls))
 	displays := make([]string, len(calls))
+	fileEffects := make([][]tool.FileEffect, len(calls))
 	realCalls := make([]model.ToolCallPart, 0, len(calls))
 	realIndexes := make([]int, 0, len(calls))
 
@@ -904,6 +905,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 			idx := realIndexes[i]
 			results[idx] = r
 			displays[idx] = execResult.Displays[i]
+			fileEffects[idx] = append([]tool.FileEffect(nil), execResult.FileEffects[i]...)
 		}
 		supplements = execResult.Supplements
 	}
@@ -915,6 +917,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		Results:     results,
 		Displays:    displays,
 		Supplements: supplements,
+		FileEffects: fileEffects,
 	}
 }
 

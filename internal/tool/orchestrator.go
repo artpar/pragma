@@ -65,6 +65,7 @@ type ExecuteResult struct {
 	Results     []model.ToolResultPart
 	Displays    []string            // per-result presentation display text, same index as Results
 	Supplements []model.ContentPart // additional content parts (e.g., DocumentPart for PDFs)
+	FileEffects [][]FileEffect      // per-result file mutation receipts, same index as Results
 }
 
 // singleResult holds the output of one tool invocation.
@@ -72,6 +73,7 @@ type singleResult struct {
 	part        model.ToolResultPart
 	display     string
 	supplements []model.ContentPart
+	fileEffects []FileEffect
 }
 
 // Execute runs a batch of tool calls, partitioning into concurrent and serial groups.
@@ -236,13 +238,15 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	})
 
 	out := ExecuteResult{
-		Results:  make([]model.ToolResultPart, len(singles)),
-		Displays: make([]string, len(singles)),
+		Results:     make([]model.ToolResultPart, len(singles)),
+		Displays:    make([]string, len(singles)),
+		FileEffects: make([][]FileEffect, len(singles)),
 	}
 	for i, s := range singles {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range singles")
 		out.Results[i] = s.part
 		out.Displays[i] = s.display
+		out.FileEffects[i] = append([]FileEffect(nil), s.fileEffects...)
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
@@ -459,9 +463,19 @@ func (o *Orchestrator) executeSingle(
 		InputSizeBytes: len(call.Input),
 	})
 
+	var fileState *FileStateCache
+	var fileEffectCursor int
+	if cache, ok := FileStateCacheFrom(state); ok {
+		fileState = cache
+		fileEffectCursor = cache.EffectCursor()
+	}
 	start := time.Now()
 	invokeResult, err := desc.Invoke(ctx, call.Input, state)
 	duration := time.Since(start)
+	var fileEffects []FileEffect
+	if fileState != nil {
+		fileEffects = fileState.EffectsSince(fileEffectCursor)
+	}
 
 	if err != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: err != nil")
@@ -480,6 +494,7 @@ func (o *Orchestrator) executeSingle(
 				IsError:    true,
 			},
 			supplements: hookSupplements,
+			fileEffects: fileEffects,
 		}
 	}
 
@@ -523,6 +538,7 @@ func (o *Orchestrator) executeSingle(
 		part:        part,
 		display:     invokeResult.Display,
 		supplements: supplements,
+		fileEffects: fileEffects,
 	}
 }
 

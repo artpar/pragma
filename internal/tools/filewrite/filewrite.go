@@ -157,7 +157,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: statErr == nil")
-		tool.RecordFileState(state, filePath, strings.ReplaceAll(in.Content, "\r\n", "\n"), timestamp, nil, nil, false)
+		tool.RecordFileWriteState(state, filePath, strings.ReplaceAll(in.Content, "\r\n", "\n"), timestamp, nil, nil, false)
 	}
 
 	// Generate display diff for TUI (never sent to LLM)

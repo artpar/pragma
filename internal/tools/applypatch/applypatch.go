@@ -597,6 +597,7 @@ func writeVerified(ctx context.Context, changes []verifiedChange, state tool.Sta
 				observe.TraceCtx(ctx, "applypatch", "writeVerified", "return: fmt.Errorf(\"delete %s: %w\", change.op.Path, err)")
 				return fmt.Errorf("delete %s: %w", change.op.Path, err)
 			}
+			tool.RecordFileDelete(state, change.absPath)
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(change.absPath), 0755); err != nil {
@@ -611,7 +612,7 @@ func writeVerified(ctx context.Context, changes []verifiedChange, state tool.Sta
 		}
 		if timestamp, statErr := tool.FileTimestamp(change.absPath); statErr == nil {
 			observe.TraceCtx(ctx, "applypatch", "writeVerified", "if: statErr == nil")
-			tool.RecordFileState(state, change.absPath, change.newContent, timestamp, nil, nil, false)
+			tool.RecordFileWriteState(state, change.absPath, change.newContent, timestamp, nil, nil, false)
 		}
 	}
 	observe.TraceCtx(ctx, "applypatch", "writeVerified", "return: nil")

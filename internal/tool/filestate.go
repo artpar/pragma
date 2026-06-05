@@ -43,11 +43,17 @@ type FileStateCache struct {
 	maxItems int
 	maxBytes int
 	bytes    int
+	effects  []FileEffect
 }
 
 type fileStateEntry struct {
 	state FileState
 	size  int
+}
+
+type FileEffect struct {
+	Path      string
+	Operation string
 }
 
 func NewFileStateCache() *FileStateCache {
@@ -145,6 +151,32 @@ func (c *FileStateCache) Delete(path string) {
 	}
 }
 
+func (c *FileStateCache) EffectCursor() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.effects)
+}
+
+func (c *FileStateCache) EffectsSince(cursor int) []FileEffect {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor >= len(c.effects) {
+		return nil
+	}
+	out := make([]FileEffect, len(c.effects[cursor:]))
+	copy(out, c.effects[cursor:])
+	return out
+}
+
 func NormalizeFilePath(path string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -223,6 +255,36 @@ func RecordFileState(state StateSnapshot, path, content string, timestamp int64,
 	})
 }
 
+func RecordFileWriteState(state StateSnapshot, path, content string, timestamp int64, offset, limit *int, isPartialView bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	cache, ok := FileStateCacheFrom(state)
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		return
+	}
+	cache.Set(path, FileState{
+		Content:       content,
+		Timestamp:     timestamp,
+		Offset:        offset,
+		Limit:         limit,
+		IsPartialView: isPartialView,
+	})
+	cache.recordEffect(path, "write")
+}
+
+func RecordFileDelete(state StateSnapshot, path string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	cache, ok := FileStateCacheFrom(state)
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		return
+	}
+	cache.Delete(path)
+	cache.recordEffect(path, "delete")
+}
+
 func cloneFileState(state FileState) FileState {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -276,4 +338,17 @@ func (c *FileStateCache) evictLocked() {
 		delete(c.entries, key)
 		c.bytes -= entry.size
 	}
+}
+
+func (c *FileStateCache) recordEffect(path, operation string) {
+	if c == nil {
+		return
+	}
+	effect := FileEffect{
+		Path:      NormalizeFilePath(path),
+		Operation: operation,
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.effects = append(c.effects, effect)
 }

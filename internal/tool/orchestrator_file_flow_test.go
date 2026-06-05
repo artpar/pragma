@@ -69,10 +69,22 @@ func TestReadThenEditSameBatchUsesReadState(t *testing.T) {
 	if len(result.Results) != 2 {
 		t.Fatalf("results: got %d, want 2", len(result.Results))
 	}
+	if len(result.FileEffects) != 2 {
+		t.Fatalf("file effects: got %d, want 2", len(result.FileEffects))
+	}
 	for _, part := range result.Results {
 		if part.IsError {
 			t.Fatalf("tool %s failed: %s", part.ToolCallID, part.Content)
 		}
+	}
+	if len(result.FileEffects[0]) != 0 {
+		t.Fatalf("read emitted file effects: %+v", result.FileEffects[0])
+	}
+	if len(result.FileEffects[1]) != 1 {
+		t.Fatalf("edit file effects: got %+v, want one write", result.FileEffects[1])
+	}
+	if effect := result.FileEffects[1][0]; effect.Path != path || effect.Operation != "write" {
+		t.Fatalf("edit file effect = %+v, want write %s", effect, path)
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {

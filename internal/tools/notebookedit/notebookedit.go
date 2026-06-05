@@ -409,6 +409,6 @@ func recordNotebookState(state tool.StateSnapshot, path, content string) {
 	defer observe.GlobalTrace("exit")
 	if timestamp, err := tool.FileTimestamp(path); err == nil {
 		observe.GlobalTrace("if: err == nil")
-		tool.RecordFileState(state, path, tool.NormalizeTextContent(content), timestamp, nil, nil, false)
+		tool.RecordFileWriteState(state, path, tool.NormalizeTextContent(content), timestamp, nil, nil, false)
 	}
 }
