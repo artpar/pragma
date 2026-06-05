@@ -1109,21 +1109,57 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	closed := false
 	saveFn = func() {
-		if d.SessionWriter == nil {
+		if d.SessionWriter == nil || closed {
 			return
 		}
 		snap := d.Store.Snapshot()
 		for i := d.SessionLastIdx; i < len(snap.Conversation.Messages); i++ {
-			d.SessionWriter.WriteMessage(snap.Conversation.Messages[i])
+			if err := d.SessionWriter.WriteMessage(snap.Conversation.Messages[i]); err != nil {
+				return
+			}
 		}
-		d.SessionWriter.WriteHandoffState(snap.HandoffState)
+		if err := d.SessionWriter.WriteHandoffState(snap.HandoffState); err != nil {
+			return
+		}
 		d.SessionLastIdx = len(snap.Conversation.Messages)
-		d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap))
+		if err := d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap)); err != nil {
+			return
+		}
+		fileSize, _ := d.SessionWriter.Size()
+		if d.Bus != nil {
+			d.Bus.Emit(observe.SessionSaved{
+				EventHeader:   observe.NewEventHeader("SessionSaved", "", snap.Conversation.ID, ""),
+				SessionID:     snap.Conversation.ID,
+				MessageCount:  len(snap.Conversation.Messages),
+				FileSizeBytes: fileSize,
+			})
+		}
 	}
 	closeFn = func() {
-		if d.SessionWriter != nil {
-			d.SessionWriter.Close()
+		if d.SessionWriter != nil && !closed {
+			snap := d.Store.Snapshot()
+			sessionID := snap.Conversation.ID
+			durationMs := time.Since(d.SessionStart).Milliseconds()
+			turnCount := countUserTurns(snap.Conversation.Messages)
+			totalCost := 0.0
+			if d.CostTracker != nil {
+				totalCost = d.CostTracker.TotalUSD()
+			}
+			if err := d.SessionWriter.Close(); err != nil {
+				return
+			}
+			closed = true
+			if d.Bus != nil {
+				d.Bus.Emit(observe.SessionEnded{
+					EventHeader:  observe.NewEventHeader("SessionEnded", "", sessionID, ""),
+					SessionID:    sessionID,
+					DurationMs:   durationMs,
+					TurnCount:    turnCount,
+					TotalCostUSD: totalCost,
+				})
+			}
 		}
 	}
 	return

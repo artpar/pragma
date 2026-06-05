@@ -210,6 +210,19 @@ func (w *Writer) Rewrite(header HeaderData, msgs []model.Message, meta MetadataD
 	return w.file.Sync()
 }
 
+func (w *Writer) Size() (int64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return 0, fmt.Errorf("writer is closed")
+	}
+	info, err := w.file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
 // Close syncs and closes the underlying file.
 func (w *Writer) Close() error {
 	w.mu.Lock()
