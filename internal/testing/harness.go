@@ -470,6 +470,9 @@ func (a *allowAllChecker) Check(_ context.Context, _ string, _ string) permissio
 }
 
 func (a *allowAllChecker) AddSessionRule(_ permission.Rule) {}
+func (a *allowAllChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 // denyListChecker denies the named tools, allows everything else.
 type denyListChecker struct {
@@ -496,6 +499,9 @@ func (d *denyListChecker) Check(_ context.Context, toolName string, _ string) pe
 }
 
 func (d *denyListChecker) AddSessionRule(_ permission.Rule) {}
+func (d *denyListChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 // simpleTool implements tool.Descriptor for test scenarios.
 type simpleTool struct {

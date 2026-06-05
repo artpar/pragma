@@ -126,6 +126,22 @@ func (rc *RuleChecker) AddSessionRule(rule Rule) {
 	rc.rules = append(rc.rules, rule)
 }
 
+func (rc *RuleChecker) AddPersistentRule(rule Rule) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if err := PersistRule(rc.workDir, rule); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
+		return err
+	}
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	rule.Source = SourceLocal
+	rc.rules = append(rc.rules, rule)
+	observe.GlobalTrace("return: nil")
+	return nil
+}
+
 // modeDefault returns the Decision for unmatched tools based on the permission mode.
 func (rc *RuleChecker) modeDefault() Decision {
 	observe.GlobalTrace("enter")

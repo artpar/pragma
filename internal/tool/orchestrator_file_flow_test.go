@@ -23,6 +23,9 @@ func (allowChecker) Check(_ context.Context, _ string, _ string) permission.Chec
 }
 
 func (allowChecker) AddSessionRule(_ permission.Rule) {}
+func (allowChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 type fileFlowState struct {
 	cwd   string

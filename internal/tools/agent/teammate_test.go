@@ -21,7 +21,7 @@ type testTeammateProvider struct {
 	callCount int
 }
 
-func (tp *testTeammateProvider) Name() string { return "test-teammate" }
+func (tp *testTeammateProvider) Name() string                            { return "test-teammate" }
 func (tp *testTeammateProvider) SupportsFeature(_ provider.Feature) bool { return true }
 func (tp *testTeammateProvider) Pricing(_ string) (model.Pricing, bool) {
 	return model.Pricing{}, false
@@ -55,6 +55,9 @@ func (a *allowAllTestChecker) Check(_ context.Context, _ string, _ string) permi
 	}
 }
 func (a *allowAllTestChecker) AddSessionRule(_ permission.Rule) {}
+func (a *allowAllTestChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 func TestTeammate_SpawnAndMessage(t *testing.T) {
 	bus := observe.NewEventBus(256)

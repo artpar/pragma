@@ -237,3 +237,6 @@ func (c *testChecker) Check(_ context.Context, toolName string, content string) 
 }
 
 func (c *testChecker) AddSessionRule(_ permission.Rule) {}
+func (c *testChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}

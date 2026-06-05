@@ -20,6 +20,9 @@ func (allowAllChecker) Check(_ context.Context, _ string, _ string) permission.C
 	return permission.CheckResult{Decision: permission.DecisionAllow}
 }
 func (allowAllChecker) AddSessionRule(_ permission.Rule) {}
+func (allowAllChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 func TestInvoke_EmptyCommand(t *testing.T) {
 	tl := &Tool{}
@@ -80,6 +83,9 @@ func (denyAllChecker) Check(_ context.Context, _ string, _ string) permission.Ch
 	return permission.CheckResult{Decision: permission.DecisionDeny}
 }
 func (denyAllChecker) AddSessionRule(_ permission.Rule) {}
+func (denyAllChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 func TestCheckPerm(t *testing.T) {
 	tl := &Tool{}

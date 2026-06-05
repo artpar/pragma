@@ -364,7 +364,24 @@ func (o *Orchestrator) executeSingle(
 
 		if remember {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: remember")
-			o.checker.AddSessionRule(permission.SessionRuleForPrompt(call.Name, permResult, decision))
+			rule := permission.SessionRuleForPrompt(call.Name, permResult, decision)
+			if err := o.checker.AddPersistentRule(rule); err != nil {
+				o.bus.Emit(observe.ErrorOccurred{
+					EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
+					Severity:     "warn",
+					Component:    "permission",
+					ErrorType:    "persist_rule_failed",
+					ErrorMessage: fmt.Sprintf("persist permission rule for %s: %v", call.Name, err),
+				})
+				o.checker.AddSessionRule(rule)
+			} else {
+				o.bus.Emit(observe.PermissionPersisted{
+					EventHeader: observe.NewEventHeader("PermissionPersisted", traceID, spanID, parentSpan),
+					ToolName:    rule.ToolName,
+					Content:     rule.Content,
+					Decision:    string(rule.Decision),
+				})
+			}
 		}
 
 		o.bus.Emit(observe.ToolPermissionPrompted{

@@ -57,6 +57,7 @@ type CheckResult struct {
 type Checker interface {
 	Check(ctx context.Context, toolName string, content string) CheckResult
 	AddSessionRule(rule Rule)
+	AddPersistentRule(rule Rule) error
 }
 
 func SessionRuleForPrompt(toolName string, result CheckResult, decision Decision) Rule {

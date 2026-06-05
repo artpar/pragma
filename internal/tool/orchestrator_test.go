@@ -25,6 +25,9 @@ func (allowAllChecker) Check(_ context.Context, _ string, _ string) permission.C
 }
 
 func (allowAllChecker) AddSessionRule(_ permission.Rule) {}
+func (allowAllChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 // denyChecker denies a specific tool, allows everything else.
 type denyChecker struct {
@@ -46,6 +49,9 @@ func (c denyChecker) Check(_ context.Context, toolName string, _ string) permiss
 }
 
 func (denyChecker) AddSessionRule(_ permission.Rule) {}
+func (denyChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 // failingTool is a real tool that always returns an error.
 type failingTool struct {

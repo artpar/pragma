@@ -94,6 +94,9 @@ func (a *allowAllChecker) Check(_ context.Context, _ string, _ string) permissio
 }
 
 func (a *allowAllChecker) AddSessionRule(_ permission.Rule) {}
+func (a *allowAllChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
 
 // echoTool is a real tool.Descriptor that returns its input as output.
 type echoTool struct{}
