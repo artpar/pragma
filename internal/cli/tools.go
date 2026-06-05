@@ -11,7 +11,9 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/provider/anthropic"
 	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/remote"
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/tool"
 	toolagent "github.com/artpar/pragma/internal/tools/agent"
@@ -332,23 +334,24 @@ func BaseTools(d *Deps) []tool.Descriptor {
 
 	if os.Getenv("PRAGMA_FEATURE_REMOTE_TRIGGERS") == "1" {
 		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_FEATURE_REMOTE_TRIGGERS\") == \"1\"")
-		tools = append(tools, &toolremote.Tool{
-			HTTPClient: &http.Client{Timeout: 20 * time.Second},
-			BaseURL:    "https://api.anthropic.com",
-			TokenSource: func() (string, error) {
+		client := anthropic.NewRemoteTriggerClient(&http.Client{Timeout: 20 * time.Second}, "https://api.anthropic.com",
+			func() (string, error) {
 				token := os.Getenv("ANTHROPIC_OAUTH_TOKEN")
 				if token == "" {
 					return "", fmt.Errorf("ANTHROPIC_OAUTH_TOKEN not set")
 				}
 				return token, nil
 			},
-			OrgUUID: func() (string, error) {
+			func() (string, error) {
 				uuid := os.Getenv("ANTHROPIC_ORG_UUID")
 				if uuid == "" {
 					return "", fmt.Errorf("ANTHROPIC_ORG_UUID not set")
 				}
 				return uuid, nil
 			},
+		)
+		tools = append(tools, &toolremote.Tool{
+			Service: remote.NewService(client),
 		})
 	}
 	observe.GlobalTrace("return: tools")

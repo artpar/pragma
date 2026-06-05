@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
+	"github.com/artpar/pragma/internal/remote"
 	"github.com/artpar/pragma/internal/tool"
 )
 
@@ -41,12 +39,14 @@ var inputSchema = json.RawMessage(`{
 	}
 }`)
 
-// Tool manages scheduled remote agents via the Anthropic CCR API.
+// TriggerService owns runtime-visible remote trigger execution.
+type TriggerService interface {
+	Execute(ctx context.Context, req remote.Request) (remote.Response, error)
+}
+
+// Tool manages scheduled remote agents through the runtime remote service.
 type Tool struct {
-	HTTPClient  *http.Client
-	BaseURL     string
-	TokenSource func() (string, error)
-	OrgUUID     func() (string, error)
+	Service TriggerService
 }
 
 func (t *Tool) Name() string {
@@ -109,103 +109,23 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		return tool.InvokeResult{}, fmt.Errorf("action is required")
 	}
 
-	var method, urlPath string
-	var body io.Reader
-
-	switch in.Action {
-	case "list":
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "case: \"list\"")
-		method = http.MethodGet
-		urlPath = "/v1/code/triggers"
-
-	case "get":
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "case: \"get\"")
-		if in.TriggerID == "" {
-			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for get\")")
-			return tool.InvokeResult{}, fmt.Errorf("trigger_id required for get")
-		}
-		method = http.MethodGet
-		urlPath = "/v1/code/triggers/" + in.TriggerID
-
-	case "create":
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "case: \"create\"")
-		if len(in.Body) == 0 {
-			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for create\")")
-			return tool.InvokeResult{}, fmt.Errorf("body required for create")
-		}
-		method = http.MethodPost
-		urlPath = "/v1/code/triggers"
-		body = strings.NewReader(string(in.Body))
-
-	case "update":
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "case: \"update\"")
-		if in.TriggerID == "" {
-			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for update\")")
-			return tool.InvokeResult{}, fmt.Errorf("trigger_id required for update")
-		}
-		if len(in.Body) == 0 {
-			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"body required for update\")")
-			return tool.InvokeResult{}, fmt.Errorf("body required for update")
-		}
-		method = http.MethodPost
-		urlPath = "/v1/code/triggers/" + in.TriggerID
-		body = strings.NewReader(string(in.Body))
-
-	case "run":
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "case: \"run\"")
-		if in.TriggerID == "" {
-			observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"trigger_id required for run\")")
-			return tool.InvokeResult{}, fmt.Errorf("trigger_id required for run")
-		}
-		method = http.MethodPost
-		urlPath = "/v1/code/triggers/" + in.TriggerID + "/run"
-
-	default:
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "default")
-		return tool.InvokeResult{}, fmt.Errorf("unknown action: %s", in.Action)
+	if t.Service == nil {
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: t.Service == nil")
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"remote trigger service is not configured\")")
+		return tool.InvokeResult{}, fmt.Errorf("remote trigger service is not configured")
 	}
 
-	token, err := t.TokenSource()
+	resp, err := t.Service.Execute(ctx, remote.Request{
+		Action:    remote.Action(in.Action),
+		TriggerID: in.TriggerID,
+		Body:      in.Body,
+	})
 	if err != nil {
 		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get auth token: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("get auth token: %w", err)
+		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, err")
+		return tool.InvokeResult{}, err
 	}
-	orgUUID, err := t.OrgUUID()
-	if err != nil {
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"get org UUID: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("get org UUID: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, t.BaseURL+urlPath, body)
-	if err != nil {
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create request: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "ccr-triggers-2026-01-30")
-	req.Header.Set("x-organization-uuid", orgUUID)
-
-	resp, err := t.HTTPClient.Do(req)
-	if err != nil {
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"request failed: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read response body: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("read response body: %w", err)
-	}
-	content := fmt.Sprintf("HTTP %d\n%s", resp.StatusCode, string(respBody))
+	content := fmt.Sprintf("HTTP %d\n%s", resp.StatusCode, string(resp.Body))
 	observe.TraceCtx(ctx, "toolremote", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 
 	return tool.InvokeResult{Content: content}, nil
