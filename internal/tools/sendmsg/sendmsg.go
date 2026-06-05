@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -113,48 +112,33 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		return tool.InvokeResult{}, fmt.Errorf("message is required")
 	}
 
-	tk, ok := t.Tasks.Get(in.To)
-	if !ok {
-		observe.GlobalTrace("if: !ok")
-		tk, ok = t.Tasks.GetByName(in.To)
-	}
-	if !ok {
+	delivery := t.Tasks.DeliverMessage(in.To, in.Message)
+	switch delivery.Status {
+	case task.MessageDeliveryNotFound:
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"No agent found with name or ID %q\", i...")
 		return tool.InvokeResult{Content: fmt.Sprintf("No agent found with name or ID %q", in.To)}, nil
-	}
-
-	if tk.Status != task.TaskRunning && tk.Status != task.TaskPending {
+	case task.MessageDeliveryNotActive:
 		observe.GlobalTrace("if: tk.Status != task.TaskRunning && tk.Status != task.TaskPending")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent %q is %s, not running. Cannot d...")
-		return tool.InvokeResult{Content: fmt.Sprintf("Agent %q is %s, not running. Cannot deliver message.", in.To, tk.Status)}, nil
-	}
-
-	if !tk.LastHeartbeat.IsZero() && time.Since(tk.LastHeartbeat) > task.DeadAgentTimeout {
+		return tool.InvokeResult{Content: fmt.Sprintf("Agent %q is %s, not running. Cannot deliver message.", in.To, delivery.Task.Status)}, nil
+	case task.MessageDeliveryDead:
 		observe.GlobalTrace("if: !tk.LastHeartbeat.IsZero() && time.Since(tk.LastHeartbeat) > task.DeadAgentTi...")
-		_ = t.Tasks.Update(tk.ID, func(tt *task.Task) {
-			tt.Status = task.TaskFailed
-			tt.Error = fmt.Sprintf("agent unresponsive (no heartbeat for %s)", task.DeadAgentTimeout)
-		})
 		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent %q appears to be dead (no heart...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent %q appears to be dead (no heartbeat for %s). Message not delivered.", in.To, task.DeadAgentTimeout)}, nil
+	case task.MessageDelivered:
+		observe.GlobalTrace("case: task.MessageDelivered")
+	default:
+		observe.GlobalTrace("default")
+		return tool.InvokeResult{Content: fmt.Sprintf("Failed to deliver message: unexpected delivery status %q", delivery.Status)}, nil
 	}
-
-	if err := t.Tasks.Update(tk.ID, func(tt *task.Task) {
-		tt.PendingMessages = append(tt.PendingMessages, in.Message)
-	}); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to deliver message: %v\", err)}...")
-		return tool.InvokeResult{Content: fmt.Sprintf("Failed to deliver message: %v", err)}, nil
-	}
-	t.Tasks.NotifyTask(tk.ID)
 
 	result := struct {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
 	}{
 		Success: true,
-		Message: fmt.Sprintf("Message delivered to agent %q (task %s)", in.To, tk.ID),
+		Message: fmt.Sprintf("Message delivered to agent %q (task %s)", in.To, delivery.Task.ID),
 	}
 	data, _ := json.Marshal(result)
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")

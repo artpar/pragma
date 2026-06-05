@@ -18,6 +18,24 @@ type Registry struct {
 	seq   atomic.Int64
 }
 
+// MessageDeliveryStatus describes the outcome of attempting to deliver a
+// message to a task-owned agent.
+type MessageDeliveryStatus string
+
+const (
+	MessageDelivered         MessageDeliveryStatus = "delivered"
+	MessageDeliveryNotFound  MessageDeliveryStatus = "not_found"
+	MessageDeliveryNotActive MessageDeliveryStatus = "not_active"
+	MessageDeliveryDead      MessageDeliveryStatus = "dead"
+)
+
+// MessageDeliveryResult is the registry-owned result of a message delivery
+// attempt. Task is populated when a recipient was found.
+type MessageDeliveryResult struct {
+	Status MessageDeliveryStatus
+	Task   Task
+}
+
 // NewRegistry creates a task Registry.
 func NewRegistry(bus *observe.EventBus) *Registry {
 	observe.GlobalTrace("enter")
@@ -120,16 +138,13 @@ func (r *Registry) GetByName(name string) (Task, bool) {
 	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, t := range r.tasks {
-		observe.GlobalTrace("range r.tasks")
-		if t.AgentName == name {
-			observe.GlobalTrace("if: t.AgentName == name")
-			observe.GlobalTrace("return: t.snapshot(), true")
-			return t.snapshot(), true
-		}
+	t, ok := r.findByNameLocked(name)
+	if !ok {
+		observe.GlobalTrace("return: Task{}, false")
+		return Task{}, false
 	}
-	observe.GlobalTrace("return: Task{}, false")
-	return Task{}, false
+	observe.GlobalTrace("return: t.snapshot(), true")
+	return t.snapshot(), true
 }
 
 // Cancel cancels a running task. Returns error if task not found or not cancellable.
@@ -229,23 +244,61 @@ func statusRank(s TaskStatus) int {
 }
 
 // NotifyTask signals a task's Notify channel (non-blocking).
-// Used by SendMessage after appending to PendingMessages.
 func (r *Registry) NotifyTask(id string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tasks[id]
-	if !ok || t.Notify == nil {
-		observe.GlobalTrace("if: !ok || t.Notify == nil")
+	if !ok {
+		observe.GlobalTrace("if: !ok")
 		return
 	}
-	select {
-	case t.Notify <- struct{}{}:
-		observe.GlobalTrace("select: t.Notify <- struct{}{}")
-	default:
-		observe.GlobalTrace("select: default")
+	r.notifyTaskLocked(t)
+}
+
+// DeliverMessage resolves a task by ID or agent name, validates that it can
+// receive messages, applies lazy dead-agent reaping when needed, appends the
+// message, and signals the task.
+func (r *Registry) DeliverMessage(to, message string) MessageDeliveryResult {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	now := time.Now()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	t, ok := r.tasks[to]
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		t, ok = r.findByNameLocked(to)
 	}
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: MessageDeliveryResult{Status: MessageDeliveryNotFound}")
+		return MessageDeliveryResult{Status: MessageDeliveryNotFound}
+	}
+
+	if t.Status != TaskRunning && t.Status != TaskPending {
+		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
+		observe.GlobalTrace("return: MessageDeliveryResult{Status: MessageDeliveryNotActive, Task: t.snapshot()}")
+		return MessageDeliveryResult{Status: MessageDeliveryNotActive, Task: t.snapshot()}
+	}
+
+	if taskHeartbeatExpired(now, t.LastHeartbeat, DeadAgentTimeout) {
+		observe.GlobalTrace("if: taskHeartbeatExpired(now, t.LastHeartbeat, DeadAgentTimeout)")
+		t.Status = TaskFailed
+		t.Error = deadAgentError(DeadAgentTimeout)
+		t.UpdatedAt = now
+		observe.GlobalTrace("return: MessageDeliveryResult{Status: MessageDeliveryDead, Task: t.snapshot()}")
+		return MessageDeliveryResult{Status: MessageDeliveryDead, Task: t.snapshot()}
+	}
+
+	t.PendingMessages = append(t.PendingMessages, message)
+	t.UpdatedAt = now
+	r.notifyTaskLocked(t)
+	observe.GlobalTrace("return: MessageDeliveryResult{Status: MessageDelivered, Task: t.snapshot()}")
+	return MessageDeliveryResult{Status: MessageDelivered, Task: t.snapshot()}
 }
 
 // RequestShutdown asks a teammate task to shut down gracefully and signals it.
@@ -269,15 +322,7 @@ func (r *Registry) RequestShutdown(id string) error {
 	t.ShutdownRequested = true
 	t.UpdatedAt = time.Now()
 
-	if t.Notify != nil {
-		observe.GlobalTrace("if: t.Notify != nil")
-		select {
-		case t.Notify <- struct{}{}:
-			observe.GlobalTrace("select: t.Notify <- struct{}{}")
-		default:
-			observe.GlobalTrace("select: default")
-		}
-	}
+	r.notifyTaskLocked(t)
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -406,14 +451,63 @@ func (r *Registry) ReapDead(timeout time.Duration) []string {
 			observe.GlobalTrace("if: t.LastHeartbeat.IsZero()")
 			continue
 		}
-		if now.Sub(t.LastHeartbeat) > timeout {
-			observe.GlobalTrace("if: now.Sub(t.LastHeartbeat) > timeout")
+		if taskHeartbeatExpired(now, t.LastHeartbeat, timeout) {
+			observe.GlobalTrace("if: taskHeartbeatExpired(now, t.LastHeartbeat, timeout)")
 			t.Status = TaskFailed
-			t.Error = fmt.Sprintf("agent unresponsive (no heartbeat for %s)", timeout)
+			t.Error = deadAgentError(timeout)
 			t.UpdatedAt = now
 			reaped = append(reaped, id)
 		}
 	}
 	observe.GlobalTrace("return: reaped")
 	return reaped
+}
+
+func (r *Registry) findByNameLocked(name string) (*Task, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for _, t := range r.tasks {
+		observe.GlobalTrace("range r.tasks")
+		if t.AgentName == name {
+			observe.GlobalTrace("if: t.AgentName == name")
+			observe.GlobalTrace("return: t, true")
+			return t, true
+		}
+	}
+	observe.GlobalTrace("return: nil, false")
+	return nil, false
+}
+
+func (r *Registry) notifyTaskLocked(t *Task) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if t.Notify == nil {
+		observe.GlobalTrace("if: t.Notify == nil")
+		return
+	}
+	select {
+	case t.Notify <- struct{}{}:
+		observe.GlobalTrace("select: t.Notify <- struct{}{}")
+	default:
+		observe.GlobalTrace("select: default")
+	}
+}
+
+func taskHeartbeatExpired(now, lastHeartbeat time.Time, timeout time.Duration) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if lastHeartbeat.IsZero() {
+		observe.GlobalTrace("if: lastHeartbeat.IsZero()")
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	observe.GlobalTrace("return: now.Sub(lastHeartbeat) > timeout")
+	return now.Sub(lastHeartbeat) > timeout
+}
+
+func deadAgentError(timeout time.Duration) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: fmt.Sprintf(\"agent unresponsive (no heartbeat for %s)\", timeout)")
+	return fmt.Sprintf("agent unresponsive (no heartbeat for %s)", timeout)
 }
