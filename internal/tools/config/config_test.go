@@ -24,7 +24,7 @@ func TestFindSetting(t *testing.T) {
 		{"model", true},
 		{"verbose", true},
 		{"theme", true},
-		{"permissions.defaultMode", true},
+		{"permission_mode", true},
 		{"nonexistent", false},
 		{"MODEL", false}, // case-sensitive
 	}

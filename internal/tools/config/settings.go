@@ -2,7 +2,7 @@ package config
 
 // SettingDef describes a supported configuration setting.
 type SettingDef struct {
-	Name        string   // e.g., "model", "verbose", "permissions.defaultMode"
+	Name        string   // e.g., "model", "verbose", "permission_mode"
 	Type        string   // "string" or "boolean"
 	Source      string   // "global" or "project"
 	Options     []string // valid enum values; nil = freeform
@@ -39,10 +39,10 @@ var SupportedSettings = []SettingDef{
 		Description: "Color theme for the UI",
 	},
 	{
-		Name:        "permissions.defaultMode",
+		Name:        "permission_mode",
 		Type:        "string",
 		Source:      "project",
-		Options:     []string{"default", "plan", "acceptEdits", "dontAsk"},
+		Options:     []string{"default", "acceptEdits", "bypassPermissions", "dontAsk"},
 		Description: "Default permission mode",
 	},
 }

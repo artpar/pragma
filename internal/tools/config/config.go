@@ -17,7 +17,7 @@ import (
 
 // ConfigInput defines the parameters for the Config tool.
 type ConfigInput struct {
-	Setting string `json:"setting" desc:"The setting name (e.g., 'model', 'verbose', 'theme')"`
+	Setting string `json:"setting" desc:"The setting name (e.g., 'model', 'verbose', 'theme', 'permission_mode')"`
 	Value   *any   `json:"value,omitempty" desc:"Value to set. Omit to read current value."`
 }
 
@@ -28,7 +28,7 @@ var inputSchema = json.RawMessage(`{
 	"properties": {
 		"setting": {
 			"type": "string",
-			"description": "The setting name (e.g., 'model', 'verbose', 'theme', 'permissions.defaultMode')"
+			"description": "The setting name (e.g., 'model', 'verbose', 'theme', 'permission_mode')"
 		},
 		"value": {
 			"description": "Value to set. Omit to read current value."
@@ -243,7 +243,7 @@ func updateSettingsFile(path, key string, value any) error {
 		}
 	}
 
-	// Set the value (handle nested paths like "permissions.defaultMode")
+	// Set the value.
 	setNestedValue(raw, key, value)
 
 	// Marshal with indentation
