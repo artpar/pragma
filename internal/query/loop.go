@@ -84,8 +84,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
 		Timestamp: time.Now(),
 	}
-	e.store.Update(func(s *app.AppState) {
-		s.Conversation.Append(userMsg)
+	e.appendConversationMessage(userMsg, func(s *app.AppState) {
 		if e.isStateHandoffMode() && s.HandoffState.IsZero() {
 			s.HandoffState = model.NewHandoffState(userMessage)
 		}
@@ -118,9 +117,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 					Content:   []model.ContentPart{model.TextPart{Text: "Messages from teammates:\n" + strings.Join(msgs, "\n")}},
 					Timestamp: time.Now(),
 				}
-				e.store.Update(func(s *app.AppState) {
-					s.Conversation.Append(injectedMsg)
-				})
+				e.appendConversationMessage(injectedMsg, nil)
 			}
 		}
 
@@ -260,9 +257,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			Timestamp: time.Now(),
 		}
 		debug.Log("Assistant response: StopReason=%s, ContentParts=%d", response.StopReason, len(response.Content))
-		e.store.Update(func(s *app.AppState) {
-			s.Conversation.Append(assistantMsg)
-		})
+		e.appendConversationMessage(assistantMsg, nil)
 
 		pricing, known := e.provider.Pricing(resolvedModel)
 		if !known {
@@ -322,9 +317,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Content:   []model.ContentPart{model.TextPart{Text: fmt.Sprintf("Your previous tool call had malformed arguments and was discarded. Please retry with valid JSON arguments. (attempt %d/%d)", malformedRetries, maxMalformedRetries)}},
 				Timestamp: time.Now(),
 			}
-			e.store.Update(func(s *app.AppState) {
-				s.Conversation.Append(correctionMsg)
-			})
+			e.appendConversationMessage(correctionMsg, nil)
 			turnCount++
 			continue
 
@@ -350,9 +343,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Content:   []model.ContentPart{model.TextPart{Text: continuationPrompt}},
 				Timestamp: time.Now(),
 			}
-			e.store.Update(func(s *app.AppState) {
-				s.Conversation.Append(contMsg)
-			})
+			e.appendConversationMessage(contMsg, nil)
 
 			continue
 
@@ -377,9 +368,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Content:   resultParts,
 				Timestamp: time.Now(),
 			}
-			e.store.Update(func(s *app.AppState) {
-				s.Conversation.Append(resultMsg)
-			})
+			e.appendConversationMessage(resultMsg, nil)
 			for i, r := range execResult.Results {
 				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i]}
 			}

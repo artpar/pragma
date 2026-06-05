@@ -188,6 +188,47 @@ func (e *Engine) EventBus() *observe.EventBus {
 	return e.bus
 }
 
+func (e *Engine) appendConversationMessage(msg model.Message, mutate func(*app.AppState)) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	e.store.Update(func(s *app.AppState) {
+		s.Conversation.Append(msg)
+		if mutate != nil {
+			observe.GlobalTrace("if: mutate != nil")
+			mutate(s)
+		}
+	})
+	e.emitMessageAppended(msg)
+}
+
+func (e *Engine) emitMessageAppended(msg model.Message) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if e.bus == nil {
+		observe.GlobalTrace("if: e.bus == nil")
+		return
+	}
+	e.bus.Emit(observe.MessageAppended{
+		EventHeader:   observe.NewEventHeader("MessageAppended", "", observe.NewSpanID(), ""),
+		MessageID:     msg.ID,
+		Role:          string(msg.Role),
+		ContentTypes:  messageContentTypes(msg.Content),
+		TokenEstimate: compact.EstimateTokens(msg),
+	})
+}
+
+func messageContentTypes(parts []model.ContentPart) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	types := make([]string, 0, len(parts))
+	for _, part := range parts {
+		observe.GlobalTrace("range parts")
+		types = append(types, string(part.PartType()))
+	}
+	observe.GlobalTrace("return: types")
+	return types
+}
+
 // RunGraph executes a lifecycle graph using the engine's own provider, orchestrator,
 // and registry. Returns a channel of LoopEvents, same as Run().
 func (e *Engine) RunGraph(ctx context.Context, graph *lifecycle.Graph, prompt string) <-chan LoopEvent {

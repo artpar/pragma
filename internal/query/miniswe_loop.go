@@ -115,9 +115,8 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
 		Timestamp: time.Now(),
 	}
-	e.store.Update(func(s *app.AppState) {
+	e.appendConversationMessage(userMsg, func(s *app.AppState) {
 		s.Conversation.System = system
-		s.Conversation.Messages = append(s.Conversation.Messages, userMsg)
 	})
 
 	for turn := 0; turn < maxTurns; turn++ {
@@ -156,9 +155,7 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			Content:   pragmaLoopReplayContent(response.Content),
 			Timestamp: time.Now(),
 		}
-		e.store.Update(func(s *app.AppState) {
-			s.Conversation.Append(assistantMsg)
-		})
+		e.appendConversationMessage(assistantMsg, nil)
 
 		pricing, known := e.provider.Pricing(resolvedModel)
 		if known {
@@ -248,9 +245,7 @@ func (e *Engine) appendPragmaLoopUserMessage(text string) {
 		Content:   []model.ContentPart{model.TextPart{Text: text}},
 		Timestamp: time.Now(),
 	}
-	e.store.Update(func(s *app.AppState) {
-		s.Conversation.Append(msg)
-	})
+	e.appendConversationMessage(msg, nil)
 }
 
 func pragmaLoopInstancePrompt(task, cwd string) string {
