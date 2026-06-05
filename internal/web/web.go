@@ -65,6 +65,7 @@ func Run(ctx context.Context, cfg Config) error {
 	mux.HandleFunc("/api/state", srv.handleState)
 	mux.HandleFunc("/api/events", srv.handleEvents)
 	mux.HandleFunc("/api/prompt", srv.handlePrompt)
+	mux.HandleFunc("/api/cancel", srv.handleCancel)
 	mux.HandleFunc("/api/permission/", srv.handlePermission)
 	mux.HandleFunc("/api/ask/", srv.handleAsk)
 	mux.HandleFunc("/api/sessions", srv.handleSessions)
@@ -571,10 +572,17 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 			"model":       s.cfg.ModelName,
 			"provider":    s.cfg.Provider,
 			"mcp_servers": s.cfg.McpServerNames,
+			"running":     s.isRunning(),
 		},
 		"app_state":      snap,
 		"prompt_history": s.cfg.PromptHistory,
 	})
+}
+
+func (s *server) isRunning() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running
 }
 
 func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -626,6 +634,30 @@ func (s *server) handlePrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "interactive run already in progress", http.StatusConflict)
+}
+
+func (s *server) handleCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.cancelRun() {
+		http.Error(w, "interactive run is not in progress", http.StatusConflict)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *server) cancelRun() bool {
+	s.mu.Lock()
+	cancel := s.cancel
+	running := s.running
+	s.mu.Unlock()
+	if !running || cancel == nil {
+		return false
+	}
+	cancel()
+	return true
 }
 
 func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool {
@@ -1444,6 +1476,7 @@ button{cursor:pointer}
 #prompt:focus{border-color:#8ca9dc;box-shadow:0 0 0 3px rgba(29,95,209,.12)}
 .hint{font-size:11px;color:var(--muted);margin-top:6px}
 .send{align-self:end;min-width:76px;height:40px;border:1px solid var(--accent);border-radius:7px;background:var(--accent);color:#f8fbff;font-weight:650}
+.send.cancel{border-color:var(--danger);background:var(--danger)}
 .send:disabled{opacity:.55;cursor:not-allowed}
 .completion-menu{position:absolute;left:0;right:0;bottom:calc(100% + 8px);display:none;max-height:260px;overflow:auto;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);box-shadow:var(--shadow);z-index:25;padding:6px}
 .completion-menu.open{display:grid;gap:3px}
@@ -1543,7 +1576,7 @@ pre{margin:0;overflow:auto;background:var(--code);border-radius:7px;padding:10px
         <div class="completion-menu" id="completionMenu" role="listbox" aria-label="Completions"></div>
         <div class="hint">Enter sends, Shift+Enter adds a new line.</div>
       </div>
-      <button class="send" id="sendButton" type="submit">Send</button>
+      <button class="send" id="sendButton" type="button">Send</button>
     </form>
   </main>
 
@@ -1584,7 +1617,9 @@ const state = {
   historyDraft: '',
   completions: [],
   completionIndex: 0,
-  completionRequest: 0
+  completionRequest: 0,
+  running: false,
+  cancelPending: false
 };
 
 const streamEl = document.getElementById('stream');
@@ -1780,6 +1815,7 @@ function renderState(s){
   const raw = document.getElementById('rawState');
   raw.textContent = json(s);
   const runtime = state.runtime || {};
+  setRunning(Boolean(runtime.running));
   const appState = state.appState || {};
   const conversation = appState.conversation || appState.Conversation || {};
   const rows = [
@@ -2563,7 +2599,12 @@ async function updateCompletions(){
 }
 
 function setRunning(running){
-  sendButton.disabled = running;
+  state.running = running;
+  state.cancelPending = false;
+  sendButton.disabled = false;
+  sendButton.textContent = running ? 'Cancel' : 'Send';
+  sendButton.classList.toggle('cancel', running);
+  sendButton.setAttribute('aria-label', running ? 'Cancel current turn' : 'Send message');
   statusDot.classList.toggle('running', running);
 }
 
@@ -2685,8 +2726,28 @@ document.getElementById('search').addEventListener('input', event => {
   state.search = event.target.value.trim().toLowerCase();
   renderMain();
 });
+sendButton.onclick = async () => {
+  if(!state.running){
+    document.getElementById('promptForm').requestSubmit();
+    return;
+  }
+  if(state.cancelPending) return;
+  state.cancelPending = true;
+  sendButton.disabled = true;
+  try{
+    const response = await fetch('/api/cancel', {method:'POST'});
+    if(response.ok) return;
+    appendLocalError(await response.text());
+  }catch(err){
+    appendLocalError(err.message);
+  }finally{
+    state.cancelPending = false;
+    sendButton.disabled = false;
+  }
+};
 document.getElementById('promptForm').onsubmit = async event => {
   event.preventDefault();
+  if(state.running) return;
   const prompt = promptEl.value;
   if(!prompt.trim()) return;
   resetHistoryNavigation();
@@ -2695,12 +2756,20 @@ document.getElementById('promptForm').onsubmit = async event => {
   setRunning(true);
   const requestBody = {prompt};
   appendEnvelope({sequence:'local', received_at:new Date().toISOString(), type:'prompt_submitted', data_type:'browser.promptRequest', data:requestBody});
-  const response = await fetch('/api/prompt', {
-    method:'POST',
-    headers:{'content-type':'application/json'},
-    body:JSON.stringify(requestBody)
-  });
-  if(!response.ok) appendLocalError(await response.text());
+  try{
+    const response = await fetch('/api/prompt', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify(requestBody)
+    });
+    if(!response.ok){
+      setRunning(false);
+      appendLocalError(await response.text());
+    }
+  }catch(err){
+    setRunning(false);
+    appendLocalError(err.message);
+  }
 };
 promptEl.addEventListener('keydown', event => {
   if(event.key === 'ArrowUp'){
