@@ -90,4 +90,15 @@ var (
 	inputPromptDimStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "30", Dark: "86"}).
 				Faint(true)
+
+	completionSelectedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "252", Dark: "252"}).
+				Background(lipgloss.AdaptiveColor{Light: "236", Dark: "236"}).
+				Bold(true)
+
+	completionItemStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "242", Dark: "250"})
+
+	completionDetailStyle = lipgloss.NewStyle().
+				Faint(true)
 )

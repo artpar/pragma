@@ -8,14 +8,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/pragma/internal/config"
-	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/slash"
-	"github.com/artpar/pragma/internal/tui"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // RegisterSubcommands creates Cobra subcommands from slash.Registry commands
@@ -71,21 +70,8 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	}
 	d.Bus.Subscribe(d.StderrLogger)
 
-	snap := d.Store.Snapshot()
-	d.Bus.Emit(observe.SessionStarted{
-		EventHeader: observe.NewEventHeader("SessionStarted", "", "", ""),
-		SessionID:   snap.Conversation.ID,
-	})
-
-	if d.HookMgr != nil {
-		observe.GlobalTrace("if: d.HookMgr != nil")
-		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
-	}
 	defer func() {
-		if d.HookMgr != nil {
-			observe.GlobalTrace("if: d.HookMgr != nil")
-			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
-		}
+		endSessionLifecycle(cmd.Context(), d)
 	}()
 
 	for _, spec := range slashCmd.AllowedTools {
@@ -95,7 +81,7 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	}
 
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tui.NonInteractiveAsker{}
+	asker := &tool.NonInteractiveAsker{}
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -142,6 +128,9 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
 
 	ctx := cmd.Context()
+	if err := startSessionForCurrentConversation(ctx, d); err != nil {
+		return err
+	}
 	events := engine.Run(ctx, result.InjectPrompt)
 
 	for ev := range events {
@@ -175,13 +164,14 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 			fmt.Println()
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
-			sessionSaveFn()
 			sessionCloseFn()
 			return e.Err
 		}
+		if shouldSaveOnEvent(ev) {
+			sessionSaveFn()
+		}
 	}
 
-	sessionSaveFn()
 	sessionCloseFn()
 
 	if d.Cfg.Verbose {

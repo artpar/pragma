@@ -1,14 +1,20 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/slash"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const inputHistoryLimit = 100
+const InputHistoryLimit = 100
+const inputHistoryLimit = InputHistoryLimit
+const completionMenuLimit = 6
 
 // inputComponent wraps a textarea for user message input.
 // The input is always active — never disabled during streaming.
@@ -24,6 +30,21 @@ type inputComponent struct {
 	searchDraft   string
 	searchMatches []int
 	searchIndex   int
+
+	completionInput string
+	completions     []completionItem
+	completionIndex int
+}
+
+type completionItem struct {
+	Label       string
+	Detail      string
+	Replacement string
+}
+
+type scoredCompletionItem struct {
+	item  completionItem
+	score int
 }
 
 func newInputComponent() inputComponent {
@@ -78,6 +99,7 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 				c.historyIndex = -1
 				c.historyDraft = ""
 				c.resetHistorySearch()
+				c.clearCompletions()
 				observe.GlobalTrace("return: func() tea.Msg {\n\treturn InputSubmittedMsg{Text: text}\n}")
 				return func() tea.Msg {
 					return InputSubmittedMsg{Text: text}
@@ -85,12 +107,20 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 			}
 		case tea.KeyUp:
 			observe.GlobalTrace("case: tea.KeyUp")
+			if !keyMsg.Alt && c.cycleCompletion(-1) {
+				observe.GlobalTrace("return: nil")
+				return nil
+			}
 			if !keyMsg.Alt && c.shouldNavigateHistoryUp() && c.previousHistory() {
 				observe.GlobalTrace("return: nil")
 				return nil
 			}
 		case tea.KeyDown:
 			observe.GlobalTrace("case: tea.KeyDown")
+			if !keyMsg.Alt && c.cycleCompletion(1) {
+				observe.GlobalTrace("return: nil")
+				return nil
+			}
 			if !keyMsg.Alt && c.shouldNavigateHistoryDown() && c.nextHistory() {
 				observe.GlobalTrace("return: nil")
 				return nil
@@ -298,12 +328,432 @@ func (c *inputComponent) remember(text string) {
 	}
 }
 
+func (c *inputComponent) CompleteSlash(commands []slash.Command, cwd string) bool {
+	if c.searchActive {
+		return false
+	}
+	c.RefreshSlashCompletions(commands, cwd)
+	if len(c.completions) == 0 {
+		return false
+	}
+	c.applyCompletion(c.completions[c.completionIndex].Replacement)
+	return true
+}
+
+func (c *inputComponent) RefreshSlashCompletions(commands []slash.Command, cwd string) {
+	items := slashCompletionItems(c.textarea.Value(), commands, cwd)
+	if len(items) == 0 {
+		c.clearCompletions()
+		return
+	}
+	if len(items) > completionMenuLimit {
+		items = items[:completionMenuLimit]
+	}
+	if c.completionInput != c.textarea.Value() {
+		c.completionIndex = 0
+	}
+	c.completionInput = c.textarea.Value()
+	c.completions = items
+	if c.completionIndex >= len(c.completions) {
+		c.completionIndex = len(c.completions) - 1
+	}
+	if c.completionIndex < 0 {
+		c.completionIndex = 0
+	}
+}
+
+func (c *inputComponent) clearCompletions() {
+	c.completionInput = ""
+	c.completions = nil
+	c.completionIndex = 0
+}
+
+func (c *inputComponent) cycleCompletion(delta int) bool {
+	if len(c.completions) == 0 {
+		return false
+	}
+	c.completionIndex = (c.completionIndex + delta + len(c.completions)) % len(c.completions)
+	return true
+}
+
+func (c *inputComponent) applyCompletion(value string) {
+	c.textarea.SetValue(value)
+	c.textarea.Focus()
+	c.historyIndex = -1
+	c.historyDraft = ""
+	c.resetHistorySearch()
+	c.clearCompletions()
+}
+
+func slashCompletionItems(value string, commands []slash.Command, cwd string) []completionItem {
+	if !strings.HasPrefix(value, "/") {
+		return nil
+	}
+	if strings.Contains(value, "\n") {
+		return nil
+	}
+
+	cmdToken, hasArgs := firstSlashToken(value)
+	if !hasArgs {
+		return slashCommandCompletionItems(value, strings.TrimPrefix(cmdToken, "/"), commands)
+	}
+
+	name := strings.TrimPrefix(cmdToken, "/")
+	if name != "orchestrate" && name != "fsm" {
+		return nil
+	}
+	return orchestrateCompletionItems(value, cwd)
+}
+
+func firstSlashToken(value string) (string, bool) {
+	rest := strings.TrimPrefix(value, "/")
+	i := strings.IndexAny(rest, " \t")
+	if i < 0 {
+		return value, false
+	}
+	return "/" + rest[:i], true
+}
+
+func slashCommandCompletionItems(value, prefix string, commands []slash.Command) []completionItem {
+	seen := make(map[string]bool)
+	var scored []scoredCompletionItem
+	for _, cmd := range commands {
+		add := func(name, detail string) {
+			score, ok := fuzzyCompletionScore(name, prefix)
+			if name == "" || seen[name] || !ok {
+				return
+			}
+			seen[name] = true
+			scored = append(scored, scoredCompletionItem{
+				item: completionItem{
+					Label:       "/" + name,
+					Detail:      detail,
+					Replacement: "/" + name + " ",
+				},
+				score: score,
+			})
+		}
+		add(cmd.Name, cmd.Description)
+		for _, alias := range cmd.Aliases {
+			add(alias, "alias for /"+cmd.Name)
+		}
+	}
+	return sortedCompletionItems(scored)
+}
+
+func orchestrateCompletionItems(value, cwd string) []completionItem {
+	fields := strings.Fields(value)
+	if len(fields) == 0 {
+		return nil
+	}
+	endsSpace := endsWithSpace(value)
+	args := fields[1:]
+	current := ""
+	previous := fields[len(fields)-1]
+	currentArgIndex := -1
+	if !endsSpace {
+		current = fields[len(fields)-1]
+		if len(fields) > 1 {
+			currentArgIndex = len(fields) - 2
+			previous = fields[len(fields)-2]
+		}
+	}
+
+	state := parseOrchestrateCompletionState(args, currentArgIndex)
+	switch {
+	case state.currentRole == "definition":
+		return pathCompletionItems(value, current, cwd, pathCompletionYAML)
+	case state.currentRole == "persona":
+		return pathCompletionItems(value, current, cwd, pathCompletionDir)
+	case state.currentRole == "flag":
+		if strings.HasPrefix(current, "--persona-dir=") {
+			prefix := strings.TrimPrefix(current, "--persona-dir=")
+			items := pathCompletionItems(value, prefix, cwd, pathCompletionDir)
+			for i := range items {
+				replacement := "--persona-dir=" + items[i].Label + " "
+				items[i].Replacement = replaceCurrentToken(value, replacement)
+			}
+			return items
+		}
+		return flagCompletionItems(value, current, state.flagCandidates())
+	case endsSpace && previous != "--prompt":
+		switch {
+		case previous == "--persona-dir":
+			return pathCompletionItems(value, "", cwd, pathCompletionDir)
+		case !state.hasDefinition:
+			return pathCompletionItems(value, "", cwd, pathCompletionYAML)
+		default:
+			return flagCompletionItems(value, "", state.flagCandidates())
+		}
+	}
+	return nil
+}
+
+func flagCompletionItems(value, prefix string, flags []string) []completionItem {
+	var scored []scoredCompletionItem
+	for _, flag := range flags {
+		score, ok := fuzzyCompletionScore(flag, prefix)
+		if ok {
+			scored = append(scored, scoredCompletionItem{
+				item: completionItem{
+					Label:       flag,
+					Detail:      flagDetail(flag),
+					Replacement: replaceCurrentToken(value, flag+" "),
+				},
+				score: score,
+			})
+		}
+	}
+	return sortedCompletionItems(scored)
+}
+
+func flagDetail(flag string) string {
+	switch flag {
+	case "--persona-dir":
+		return "persona directory"
+	case "--prompt":
+		return "task prompt"
+	default:
+		return "flag"
+	}
+}
+
+type orchestrateCompletionState struct {
+	hasDefinition bool
+	hasPersonaDir bool
+	hasPrompt     bool
+	currentRole   string
+}
+
+func parseOrchestrateCompletionState(args []string, currentIndex int) orchestrateCompletionState {
+	state := orchestrateCompletionState{}
+	expectPersona := false
+	inPrompt := false
+	for i, arg := range args {
+		role := "prompt"
+		switch {
+		case inPrompt:
+			role = "prompt"
+		case expectPersona:
+			role = "persona"
+			expectPersona = false
+		case arg == "--persona-dir":
+			role = "flag"
+			state.hasPersonaDir = true
+			expectPersona = true
+		case strings.HasPrefix(arg, "--persona-dir="):
+			role = "flag"
+			state.hasPersonaDir = true
+		case arg == "--prompt":
+			role = "flag"
+			state.hasPrompt = true
+			inPrompt = true
+		case strings.HasPrefix(arg, "--prompt="):
+			role = "flag"
+			state.hasPrompt = true
+		case strings.HasPrefix(arg, "--"):
+			role = "flag"
+		case !state.hasDefinition:
+			role = "definition"
+			state.hasDefinition = true
+		}
+		if i == currentIndex {
+			state.currentRole = role
+		}
+	}
+	if state.currentRole == "" && currentIndex >= 0 {
+		state.currentRole = "prompt"
+	}
+	return state
+}
+
+func (s orchestrateCompletionState) flagCandidates() []string {
+	if !s.hasPersonaDir {
+		return []string{"--persona-dir"}
+	}
+	if !s.hasPrompt {
+		return []string{"--prompt"}
+	}
+	return nil
+}
+
+type pathCompletionKind int
+
+const (
+	pathCompletionYAML pathCompletionKind = iota
+	pathCompletionDir
+)
+
+func pathCompletionItems(value, prefix, cwd string, kind pathCompletionKind) []completionItem {
+	if cwd == "" {
+		cwd = "."
+	}
+	dirPart, basePart := filepath.Split(prefix)
+	readDir := dirPart
+	if readDir == "" {
+		readDir = "."
+	}
+	if !filepath.IsAbs(readDir) {
+		readDir = filepath.Join(cwd, readDir)
+	}
+	entries, err := os.ReadDir(readDir)
+	if err != nil {
+		return nil
+	}
+	var scored []scoredCompletionItem
+	for _, entry := range entries {
+		name := entry.Name()
+		score, ok := fuzzyCompletionScore(name, basePart)
+		if !ok {
+			continue
+		}
+		isDir := entry.IsDir()
+		if kind == pathCompletionDir && !isDir {
+			continue
+		}
+		if kind == pathCompletionYAML && !isDir && !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+		candidate := filepath.ToSlash(filepath.Join(dirPart, name))
+		if isDir {
+			candidate += "/"
+		}
+		detail := "directory"
+		if !isDir {
+			detail = "orchestration yaml"
+		}
+		replacement := candidate
+		if kind == pathCompletionDir || !isDir {
+			replacement += " "
+		}
+		scored = append(scored, scoredCompletionItem{
+			item: completionItem{
+				Label:       candidate,
+				Detail:      detail,
+				Replacement: replaceCurrentToken(value, replacement),
+			},
+			score: score,
+		})
+	}
+	return sortedCompletionItems(scored)
+}
+
+func sortedCompletionItems(scored []scoredCompletionItem) []completionItem {
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score != scored[j].score {
+			return scored[i].score > scored[j].score
+		}
+		return scored[i].item.Label < scored[j].item.Label
+	})
+	items := make([]completionItem, 0, len(scored))
+	for _, entry := range scored {
+		items = append(items, entry.item)
+	}
+	return items
+}
+
+func fuzzyCompletionScore(candidate, query string) (int, bool) {
+	query = strings.ToLower(query)
+	candidate = strings.ToLower(candidate)
+	if query == "" {
+		return 0, true
+	}
+	if strings.HasPrefix(candidate, query) {
+		return 100000 - len(candidate), true
+	}
+
+	score := 50000 - len(candidate)
+	lastMatch := -1
+	searchFrom := 0
+	for _, want := range query {
+		match := -1
+		for i, have := range candidate[searchFrom:] {
+			if have == want {
+				match = searchFrom + i
+				break
+			}
+		}
+		if match < 0 {
+			return 0, false
+		}
+		score += 100
+		if isCompletionBoundary(candidate, match) {
+			score += 25
+		}
+		if lastMatch >= 0 {
+			gap := match - lastMatch - 1
+			if gap == 0 {
+				score += 50
+			} else {
+				score -= gap
+			}
+		}
+		lastMatch = match
+		searchFrom = match + 1
+	}
+	return score, true
+}
+
+func isCompletionBoundary(value string, index int) bool {
+	if index == 0 || index >= len(value) {
+		return true
+	}
+	switch value[index-1] {
+	case '-', '_', '.', '/', ' ':
+		return true
+	default:
+		return false
+	}
+}
+
+func replaceCurrentToken(value, replacement string) string {
+	if endsWithSpace(value) {
+		return value + replacement
+	}
+	start := strings.LastIndexAny(value, " \t")
+	if start < 0 {
+		return replacement
+	}
+	return value[:start+1] + replacement
+}
+
+func endsWithSpace(value string) bool {
+	return value != "" && (value[len(value)-1] == ' ' || value[len(value)-1] == '\t')
+}
+
 // View renders the input area. Always shows the textarea (never disabled).
 func (c inputComponent) View() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: c.textarea.View()")
-	return c.textarea.View()
+	view := c.textarea.View()
+	if len(c.completions) == 0 {
+		observe.GlobalTrace("return: view")
+		return view
+	}
+	var b strings.Builder
+	b.WriteString(view)
+	for i, item := range c.completions {
+		b.WriteString("\n")
+		line := "  " + item.Label
+		if item.Detail != "" {
+			line += "  " + completionDetailStyle.Render(item.Detail)
+		}
+		if i == c.completionIndex {
+			line = completionSelectedStyle.Render("> " + item.Label)
+			if item.Detail != "" {
+				line += " " + completionDetailStyle.Render(item.Detail)
+			}
+		} else {
+			line = completionItemStyle.Render(line)
+		}
+		b.WriteString(line)
+	}
+	observe.GlobalTrace("return: b.String()")
+	return b.String()
+}
+
+func (c inputComponent) ViewHeight() int {
+	return 3 + len(c.completions)
 }
 
 // SetWidth adjusts the textarea width to fit the terminal.
@@ -350,6 +800,7 @@ func (c *inputComponent) SetHistory(prompts []string) {
 	c.historyIndex = -1
 	c.historyDraft = ""
 	c.resetHistorySearch()
+	c.clearCompletions()
 }
 
 // Reset clears the input value and refocuses.
@@ -361,4 +812,5 @@ func (c *inputComponent) Reset() {
 	c.historyIndex = -1
 	c.historyDraft = ""
 	c.resetHistorySearch()
+	c.clearCompletions()
 }

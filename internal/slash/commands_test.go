@@ -138,13 +138,13 @@ func TestHandleCopyClipboardFailure(t *testing.T) {
 	}
 }
 
-func TestHandleCopyUnavailableOutsideTUI(t *testing.T) {
+func TestHandleCopyUnavailableWithoutClipboard(t *testing.T) {
 	result, err := handleCopy(context.Background(), "", Deps{})
 	if err != nil {
 		t.Fatalf("handleCopy error: %v", err)
 	}
-	if !strings.Contains(result.DisplayText, "interactive TUI") {
-		t.Fatalf("display = %q, want TUI-only status", result.DisplayText)
+	if !strings.Contains(result.DisplayText, "clipboard access") {
+		t.Fatalf("display = %q, want clipboard unavailable status", result.DisplayText)
 	}
 }
 

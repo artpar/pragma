@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/artpar/pragma/internal/model"
 )
@@ -125,6 +126,16 @@ func (w *Writer) WriteContentReplacement(records []model.ContentReplacementRecor
 		return nil
 	}
 	return w.writeEntry(EntryContentReplacement, ContentReplacementData{Records: records})
+}
+
+func (w *Writer) WritePromptHistory(text string) error {
+	if text == "" {
+		return nil
+	}
+	return w.writeEntry(EntryPromptHistory, PromptHistoryData{
+		Text:      text,
+		Timestamp: time.Now(),
+	})
 }
 
 func (w *Writer) writeEntry(kind EntryKind, data any) error {

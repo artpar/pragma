@@ -22,15 +22,15 @@ var ErrUnknownCommand = errors.New("unknown command")
 
 // Result is the output of a slash command execution.
 type Result struct {
-	DisplayText       string // text to show in the TUI viewport
-	ClearConversation bool   // true for /clear — TUI should reset display
-	Quit              bool   // true for /exit — TUI should exit
-	InjectPrompt      string // if set, TUI feeds this as a user message to the engine
+	DisplayText       string // text to show in the interactive output surface
+	ClearConversation bool   // true for /clear: presentation should reset visible conversation
+	Quit              bool   // true for /exit: presentation should exit
+	InjectPrompt      string // if set, presentation feeds this as a user message to the engine
 	Orchestrate       *OrchestrationRequest
-	ShowTeamsDialog   bool   // true for /teams — TUI opens interactive teams dialog
-	ShowModelDialog   bool   // true for /model with no args — TUI opens model picker
-	ShowResumeDialog  bool   // true for /resume with no args — TUI opens session picker
-	ResumeSessionID   string // if set, TUI loads this session into conversation
+	OpenTeams         bool   // true for /teams: presentation opens team selection
+	OpenModelPicker   bool   // true for /model with no args: presentation opens model picker
+	OpenResumePicker  bool   // true for /resume with no args: presentation opens session picker
+	ResumeSessionID   string // if set, presentation loads this session into conversation
 }
 
 type OrchestrationRequest struct {
@@ -68,7 +68,7 @@ type Deps struct {
 	SessionStore *session.Store
 	SkillLoader  *skill.Loader
 
-	// TUI-local support — nil-safe.
+	// Presentation-local support — nil-safe.
 	LatestAssistantText func() string
 	ClipboardWrite      func(string) error
 }

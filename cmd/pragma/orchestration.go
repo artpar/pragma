@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/persona"
 	"github.com/artpar/pragma/internal/query"
-	"github.com/artpar/pragma/internal/tui"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 func orchestrationCmd() *cobra.Command {
@@ -39,7 +40,7 @@ func orchestrationRunCmd() *cobra.Command {
 func runOrchestration(cmd *cobra.Command, args []string) error {
 	taskPrompt, _ := cmd.Flags().GetString("prompt")
 	if taskPrompt == "" {
-		return cli.RunInteractive(cmd)
+		return fmt.Errorf("--prompt is required for orchestration run; use /orchestrate from interactive Pragma for browser-driven orchestration")
 	}
 
 	def, err := orchestration.LoadDefinitionFile(args[0])
@@ -60,7 +61,7 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	}
 
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tui.NonInteractiveAsker{}
+	asker := &tool.NonInteractiveAsker{}
 	engine, err := cli.RegisterTools(d, prompter, asker)
 	if err != nil {
 		return err
@@ -69,7 +70,11 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	engine.SetCompaction(compDeps)
 
 	personaDir, _ := cmd.Flags().GetString("persona-dir")
-	return printOrchestrationEvents(orchestration.RunEvents(cmd.Context(), engine, def, personaDir, taskPrompt))
+	return printOrchestrationEvents(orchestration.RunEventsWithOptions(cmd.Context(), engine, def, orchestration.RunOptions{
+		PersonaDir:   personaDir,
+		TaskPrompt:   taskPrompt,
+		ArtifactRoot: orchestration.DefaultArtifactRoot,
+	}))
 }
 
 func printOrchestrationEvents(events <-chan query.LoopEvent) error {
@@ -77,6 +82,24 @@ func printOrchestrationEvents(events <-chan query.LoopEvent) error {
 		switch e := ev.(type) {
 		case query.TextEvent:
 			fmt.Print(e.Text)
+		case query.OrchestrationStartedEvent:
+			fmt.Printf("[orchestration: %s initial=%s]\n", e.Name, e.Initial)
+		case query.OrchestrationStateStartedEvent:
+			if e.Control != "" {
+				fmt.Printf("\n[control: %s (%s)]\n", e.StateID, e.Control)
+			} else {
+				fmt.Printf("\n[orchestration: %s persona=%s]\n", e.StateID, e.PersonaID)
+			}
+		case query.OrchestrationStateCompletedEvent:
+			fmt.Printf("\n[state %s complete in %s]\n", e.StateID, e.Duration.Round(time.Second))
+		case query.OrchestrationControlEvent:
+			if e.Event != "" {
+				fmt.Printf("[control: %s emitted %s]\n", e.StateID, e.Event)
+			}
+		case query.OrchestrationTransitionEvent:
+			fmt.Printf("\n[transition: %s --%s--> %s]\n", e.From, e.Event, e.To)
+		case query.OrchestrationCompletedEvent:
+			fmt.Print("\n[orchestration: done]\n")
 		case query.ThinkingEvent:
 			if e.Text != "" {
 				fmt.Fprint(os.Stderr, e.Text)

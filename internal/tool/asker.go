@@ -1,6 +1,9 @@
 package tool
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // AskOption is a selectable choice for a question.
 type AskOption struct {
@@ -13,11 +16,11 @@ type AskOption struct {
 type AskQuestion struct {
 	Question    string      `json:"question"`
 	Header      string      `json:"header,omitempty"`      // chip label (max ~12 chars)
-	Options     []AskOption `json:"options,omitempty"`      // 2-4 options
+	Options     []AskOption `json:"options,omitempty"`     // 2-4 options
 	MultiSelect bool        `json:"multiSelect,omitempty"` // allow multiple selections
 }
 
-// AskRequest carries one or more questions from tool to TUI.
+// AskRequest carries one or more questions from a tool to the interactive UI.
 // Legacy: Question set, Questions empty → plain free-text input.
 // Structured: Questions populated → option selection UI.
 type AskRequest struct {
@@ -25,7 +28,7 @@ type AskRequest struct {
 	Questions []AskQuestion // structured questions with selectable options
 }
 
-// AskResponse carries answers back from TUI to tool.
+// AskResponse carries answers back from the interactive UI to the tool.
 // Keys are question text, values are selected option labels or typed text.
 // For multi-select questions, values are comma-separated labels.
 type AskResponse struct {
@@ -33,8 +36,15 @@ type AskResponse struct {
 }
 
 // Asker allows a tool to pause and ask the user a question.
-// The TUI implements this for interactive mode; non-interactive mode
-// returns an error.
+// Interactive presentations implement this; non-interactive mode returns an error.
 type Asker interface {
 	Ask(ctx context.Context, req AskRequest) (AskResponse, error)
+}
+
+// NonInteractiveAsker rejects AskUserQuestion in non-interactive command paths.
+type NonInteractiveAsker struct{}
+
+// Ask always returns an error because there is no interactive UI to answer it.
+func (a *NonInteractiveAsker) Ask(_ context.Context, _ AskRequest) (AskResponse, error) {
+	return AskResponse{}, errors.New("AskUserQuestion requires interactive mode")
 }

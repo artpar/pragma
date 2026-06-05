@@ -14,7 +14,7 @@ import (
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
 	replayprov "github.com/artpar/pragma/internal/provider/replay"
-	"github.com/artpar/pragma/internal/tui"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 func replayCmd() *cobra.Command {
@@ -171,7 +171,7 @@ func replayDeterministic(cmd *cobra.Command, engine *observe.ReplayEngine, until
 
 	// Build engine using standard tool registration path
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tui.NonInteractiveAsker{}
+	asker := &tool.NonInteractiveAsker{}
 	queryEngine, err := cli.RegisterTools(d, prompter, asker)
 	if err != nil {
 		return fmt.Errorf("register tools for replay: %w", err)

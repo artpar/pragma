@@ -38,29 +38,32 @@ import (
 
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
-	Cfg           config.Config
-	Creds         config.Credentials
-	Bus           *observe.EventBus
-	StderrLogger  *observe.Logger
-	Prov          provider.Provider
-	Checker       permission.Checker
-	Store         *app.StateStore
-	Registry      *tool.Registry
-	CostTracker   *model.CostTracker
-	EngineCfg     query.EngineConfig
-	TaskReg       *task.Registry
-	Toolset       *toolset.Compiled
-	McpManager    *mcp.Manager
-	CronSched     *cron.Scheduler
-	HookMgr       *hook.Manager
-	Metrics       *observe.Metrics
-	Auditor       *observe.Auditor
-	TokenMonitor  *observe.TokenMonitor
-	LogFilePath   string
-	Cwd           string
-	SessionStart  time.Time
-	SessionWriter *session.Writer
-	Cleanup       func()
+	Cfg            config.Config
+	Creds          config.Credentials
+	Bus            *observe.EventBus
+	StderrLogger   *observe.Logger
+	Prov           provider.Provider
+	Checker        permission.Checker
+	Store          *app.StateStore
+	Registry       *tool.Registry
+	CostTracker    *model.CostTracker
+	EngineCfg      query.EngineConfig
+	TaskReg        *task.Registry
+	Toolset        *toolset.Compiled
+	McpManager     *mcp.Manager
+	CronSched      *cron.Scheduler
+	HookMgr        *hook.Manager
+	Metrics        *observe.Metrics
+	Auditor        *observe.Auditor
+	TokenMonitor   *observe.TokenMonitor
+	LogFilePath    string
+	Cwd            string
+	SessionStart   time.Time
+	SessionHeader  session.HeaderData
+	SessionWriter  *session.Writer
+	SessionLastIdx int
+	SessionStarted bool
+	Cleanup        func()
 }
 
 // ProviderResolutionOptions lets utility commands share Pragma's provider
@@ -256,6 +259,8 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var sessionWriter *session.Writer
 	var resumedTurnCount int
 	var sessionStart time.Time
+	var sessionHeader session.HeaderData
+	var sessionLastIdx int
 	resumeID, _ := cmd.Flags().GetString("resume")
 
 	continueFlag, _ := cmd.Flags().GetBool("continue")
@@ -329,24 +334,20 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 
 		sessionWriter, _ = sessionStore.Open(resumeID)
+		sessionLastIdx = len(conv.Messages)
 	} else {
 		observe.GlobalTrace("else: resumeID != \"\"")
 		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)
 		sessionStart = conv.CreatedAt
-
-		sessionStore, storeErr := session.NewStore()
-		if storeErr == nil {
-			observe.GlobalTrace("if: storeErr == nil")
-			sessionWriter, _ = sessionStore.Create(session.HeaderData{
-				SessionID:      conv.ID,
-				Model:          cfg.Model,
-				Provider:       cfg.Provider,
-				WorkDir:        cwd,
-				GitRemote:      sysprompt.GitRemoteURL(cwd),
-				SystemOverride: cfg.SystemPrompt,
-				CreatedAt:      conv.CreatedAt,
-				System:         sysPrompt,
-			})
+		sessionHeader = session.HeaderData{
+			SessionID:      conv.ID,
+			Model:          cfg.Model,
+			Provider:       cfg.Provider,
+			WorkDir:        cwd,
+			GitRemote:      sysprompt.GitRemoteURL(cwd),
+			SystemOverride: cfg.SystemPrompt,
+			CreatedAt:      conv.CreatedAt,
+			System:         sysPrompt,
 		}
 	}
 
@@ -460,29 +461,32 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tCreds:\t\tcreds,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t...")
 
 	return &Deps{
-		Cfg:           cfg,
-		Creds:         creds,
-		Bus:           bus,
-		StderrLogger:  logger,
-		Prov:          prov,
-		Checker:       checker,
-		Store:         store,
-		Registry:      registry,
-		CostTracker:   costTracker,
-		EngineCfg:     engineCfg,
-		TaskReg:       taskReg,
-		Toolset:       activeToolset,
-		McpManager:    mcpManager,
-		CronSched:     cronSched,
-		HookMgr:       hookMgr,
-		Metrics:       metrics,
-		Auditor:       auditor,
-		TokenMonitor:  tokenMon,
-		LogFilePath:   logFilePath,
-		Cwd:           cwd,
-		SessionStart:  sessionStart,
-		SessionWriter: sessionWriter,
-		Cleanup:       compositeCleanup,
+		Cfg:            cfg,
+		Creds:          creds,
+		Bus:            bus,
+		StderrLogger:   logger,
+		Prov:           prov,
+		Checker:        checker,
+		Store:          store,
+		Registry:       registry,
+		CostTracker:    costTracker,
+		EngineCfg:      engineCfg,
+		TaskReg:        taskReg,
+		Toolset:        activeToolset,
+		McpManager:     mcpManager,
+		CronSched:      cronSched,
+		HookMgr:        hookMgr,
+		Metrics:        metrics,
+		Auditor:        auditor,
+		TokenMonitor:   tokenMon,
+		LogFilePath:    logFilePath,
+		Cwd:            cwd,
+		SessionStart:   sessionStart,
+		SessionHeader:  sessionHeader,
+		SessionWriter:  sessionWriter,
+		SessionLastIdx: sessionLastIdx,
+		SessionStarted: false,
+		Cleanup:        compositeCleanup,
 	}, nil
 }
 
@@ -652,7 +656,7 @@ func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (
 		cfg.Provider = autoDetectProvider(creds)
 	}
 	if cfg.Provider == "" {
-		cfg.Provider = "anthropic"
+		cfg.Provider = "lilac"
 	}
 	if cfg.Model == "" && opts.DefaultModel != "" {
 		cfg.Model = opts.DefaultModel
@@ -765,7 +769,7 @@ func DefaultModelFor(providerName string) string {
 		return "gemini-2.5-flash"
 	case "lilac":
 		observe.GlobalTrace("case: \"lilac\"")
-		return "zai-org/glm-5.1"
+		return "minimaxai/minimax-m2.7"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-sonnet-4-6-20250514"
@@ -788,7 +792,7 @@ func SecondaryModelFor(providerName string) string {
 		return "gemini-2.5-flash"
 	case "lilac":
 		observe.GlobalTrace("case: \"lilac\"")
-		return "google/gemma-4-31b-it"
+		return "minimaxai/minimax-m2.7"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
@@ -989,9 +993,9 @@ func autoDetectProvider(creds config.Credentials) string {
 		name   string
 		envVar string
 	}{
+		{"lilac", "LILAC_API_KEY"},
 		{"anthropic", "ANTHROPIC_API_KEY"},
 		{"google", "GOOGLE_API_KEY"},
-		{"lilac", "LILAC_API_KEY"},
 		{"openai", "OPENAI_API_KEY"},
 		{"groq", "GROQ_API_KEY"},
 	}

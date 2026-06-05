@@ -24,8 +24,8 @@ func handleResume(_ context.Context, args string, deps Deps) (Result, error) {
 
 	if args == "" {
 		observe.GlobalTrace("if: args == \"\"")
-		observe.GlobalTrace("return: Result{ShowResumeDialog: true}, nil")
-		return Result{ShowResumeDialog: true}, nil
+		observe.GlobalTrace("return: Result{OpenResumePicker: true}, nil")
+		return Result{OpenResumePicker: true}, nil
 	}
 
 	summaries, err := deps.SessionStore.List()

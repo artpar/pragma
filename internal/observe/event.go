@@ -407,6 +407,49 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	// Orchestration events
+	case "OrchestrationStarted":
+		var e OrchestrationStarted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "OrchestrationStateStarted":
+		var e OrchestrationStateStarted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "OrchestrationStateCompleted":
+		var e OrchestrationStateCompleted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "OrchestrationControl":
+		var e OrchestrationControl
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "OrchestrationTransition":
+		var e OrchestrationTransition
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "OrchestrationHandoff":
+		var e OrchestrationHandoff
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "OrchestrationCompleted":
+		var e OrchestrationCompleted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	default:
 		return nil, fmt.Errorf("unknown event kind: %q", peek.Kind)
 	}

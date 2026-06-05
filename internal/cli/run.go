@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/background"
 	"github.com/artpar/pragma/internal/buildinfo"
 	"github.com/artpar/pragma/internal/compact"
@@ -30,13 +31,15 @@ import (
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/slash"
+	"github.com/artpar/pragma/internal/sysprompt"
 	"github.com/artpar/pragma/internal/tool"
 	toolapplypatch "github.com/artpar/pragma/internal/tools/applypatch"
 	toolsynthetic "github.com/artpar/pragma/internal/tools/synthetic"
 	"github.com/artpar/pragma/internal/tui"
+	"github.com/artpar/pragma/internal/web"
 )
 
-// RunDispatcher routes to interactive TUI, non-interactive mode, background, or list-sessions.
+// RunDispatcher routes to interactive UI, non-interactive mode, background, or list-sessions.
 func RunDispatcher(cmd *cobra.Command, args []string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -209,42 +212,169 @@ func RunBackground(cmd *cobra.Command) error {
 	return nil
 }
 
-// RunInteractive launches the bubbletea TUI for multi-turn conversation.
-func RunInteractive(cmd *cobra.Command) error {
+// InteractiveRuntime is the presentation-neutral runtime for an interactive session.
+// cli owns construction; presentation packages own transport and rendering.
+type InteractiveRuntime struct {
+	Deps          *Deps
+	Engine        *query.Engine
+	SlashCmds     *slash.Registry
+	SlashDeps     slash.Deps
+	PromptHistory []string
+	sessionSave   func()
+	sessionClose  func()
+	Cleanup       func(context.Context)
+}
+
+func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan query.LoopEvent {
+	ch := make(chan query.LoopEvent, 16)
+	go func() {
+		defer close(ch)
+		if rt.Deps.HookMgr != nil {
+			hookResult := rt.Deps.HookMgr.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{
+				PromptText: input,
+			})
+			if hookResult.Blocked {
+				ch <- query.ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", hookResult.BlockMsg)}
+				return
+			}
+		}
+		if name, args, ok := slash.Parse(input); ok && rt.SlashCmds != nil {
+			rt.runSlash(ctx, name, args, ch)
+			return
+		}
+		rt.runEngine(ctx, input, ch)
+	}()
+	return ch
+}
+
+func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args string, ch chan<- query.LoopEvent) {
+	deps := rt.SlashDeps
+	if deps.LatestAssistantText == nil {
+		deps.LatestAssistantText = func() string { return latestAssistantText(rt.Deps.Store) }
+	}
+	result, err := rt.SlashCmds.Execute(ctx, name, strings.TrimSpace(args), deps)
+	if err != nil {
+		ch <- query.ErrorEvent{Err: err}
+		return
+	}
+	if result.ClearConversation {
+		rt.Deps.Store.Update(func(st *app.AppState) {
+			st.Conversation.Messages = nil
+		})
+	}
+	if result.ResumeSessionID != "" {
+		if err := rt.Resume(result.ResumeSessionID); err != nil {
+			ch <- query.ErrorEvent{Err: err}
+			return
+		}
+	}
+	if result.DisplayText != "" || result.OpenTeams || result.OpenModelPicker || result.OpenResumePicker || result.ResumeSessionID != "" || result.ClearConversation || result.Quit {
+		ch <- query.SlashResultEvent{Result: result}
+	}
+	if result.Orchestrate != nil {
+		rt.runOrchestration(ctx, *result.Orchestrate, ch)
+		return
+	}
+	if result.InjectPrompt != "" {
+		rt.runEngine(ctx, result.InjectPrompt, ch)
+	}
+}
+
+func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch chan<- query.LoopEvent) {
+	if err := startSessionForCurrentConversation(ctx, rt.Deps); err != nil {
+		ch <- query.ErrorEvent{Err: err}
+		return
+	}
+	if rt.Deps.SessionWriter != nil {
+		_ = rt.Deps.SessionWriter.WritePromptHistory(input)
+	}
+	for ev := range rt.Engine.Run(ctx, input) {
+		ch <- ev
+		if shouldSaveOnEvent(ev) {
+			rt.sessionSave()
+		}
+	}
+}
+
+func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, ch chan<- query.LoopEvent) {
+	if err := startSessionForCurrentConversation(ctx, rt.Deps); err != nil {
+		ch <- query.ErrorEvent{Err: err}
+		return
+	}
+	for ev := range orchestration.RunFileEvents(ctx, rt.Engine, req.DefinitionPath, req.PersonaDir, req.Prompt) {
+		ch <- ev
+		if shouldSaveOnEvent(ev) {
+			rt.sessionSave()
+		}
+	}
+}
+
+func (rt *InteractiveRuntime) Resume(sessionID string) error {
+	resumedFrom := rt.Deps.Store.Snapshot().Conversation.ID
+	sessStore, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+	sess, err := sessStore.Load(sessionID)
+	if err != nil {
+		return err
+	}
+	w, err := sessStore.Open(sessionID)
+	if err != nil {
+		return err
+	}
+	if rt.sessionClose != nil {
+		endSessionLifecycle(context.Background(), rt.Deps)
+		rt.sessionClose()
+	}
+	rt.Deps.SessionWriter = w
+	rt.Deps.SessionHeader = session.HeaderData{}
+	rt.Deps.SessionLastIdx = len(sess.Conversation.Messages)
+	rt.Deps.SessionStarted = false
+	rt.Deps.Store.Update(func(st *app.AppState) {
+		st.Conversation = sess.Conversation
+		if sess.Conversation.Model != "" {
+			st.Model = sess.Conversation.Model
+		}
+		st.HandoffState = sess.HandoffState
+	})
+	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
+	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
+	beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
+	return nil
+}
+
+func (rt *InteractiveRuntime) CloseSession() {
+	if rt.sessionClose != nil {
+		rt.sessionClose()
+	}
+}
+
+// BuildInteractiveRuntime wires the shared dependencies for an interactive UI.
+func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, asker tool.Asker) (*InteractiveRuntime, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	d, err := SetupDeps(cmd)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
-		return err
-	}
-	if d.Cleanup != nil {
-		observe.GlobalTrace("if: d.Cleanup != nil")
-		defer d.Cleanup()
+		return nil, err
 	}
 
-	snap := d.Store.Snapshot()
-	d.Bus.Emit(observe.SessionStarted{
-		EventHeader: observe.NewEventHeader("SessionStarted", "", "", ""),
-		SessionID:   snap.Conversation.ID,
-	})
-
-	if d.HookMgr != nil {
-		observe.GlobalTrace("if: d.HookMgr != nil")
-		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
-	}
-
-	prompter := tui.NewInteractivePrompter()
-	asker := tui.NewInteractiveAsker()
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
-		return err
+		if d.Cleanup != nil {
+			d.Cleanup()
+		}
+		return nil, err
 	}
 	applyToolFilters(cmd, d.Registry)
 	waitForToolsetMCP(cmd.Context(), d)
+	if d.SessionWriter != nil {
+		beginSessionLifecycle(cmd.Context(), d, "")
+	}
 
 	compDeps, compactor := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
@@ -266,7 +396,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	}
 
 	sessStore, _ := session.NewStore()
-
+	promptHistory := promptHistoryFromSessions(sessStore, tui.InputHistoryLimit)
 	slashDeps := slash.Deps{
 		Store:       d.Store,
 		CostTracker: d.CostTracker,
@@ -294,40 +424,93 @@ func RunInteractive(cmd *cobra.Command) error {
 		SkillLoader:  skillLoader,
 	}
 
-	m := tui.New(tui.Config{
-		ParentCtx:    cmd.Context(),
-		Engine:       engine,
-		Store:        d.Store,
-		CostTracker:  d.CostTracker,
-		ModelName:    d.Cfg.Model,
-		Provider:     d.Cfg.Provider,
-		SessionSave:  sessionSaveFn,
-		SessionClose: sessionCloseFn,
-		SessionSwitch: func(sessionID string) (func(), func()) {
-			sessStore, err := session.NewStore()
-			if err != nil {
-				return nil, nil
+	rt := &InteractiveRuntime{
+		Deps:          d,
+		Engine:        engine,
+		SlashCmds:     slashCmds,
+		SlashDeps:     slashDeps,
+		PromptHistory: promptHistory,
+		sessionSave:   sessionSaveFn,
+		sessionClose:  sessionCloseFn,
+		Cleanup: func(ctx context.Context) {
+			endSessionLifecycle(ctx, d)
+			if d.Cleanup != nil {
+				d.Cleanup()
 			}
-			w, err := sessStore.Open(sessionID)
-			if err != nil {
-				return nil, nil
-			}
-			d.SessionWriter = w
-			return makeSessionSaveClose(d)
 		},
-		SlashCmds: slashCmds,
-		SlashDeps: slashDeps,
-		Orchestrate: func(ctx context.Context, req slash.OrchestrationRequest) <-chan query.LoopEvent {
-			return orchestration.RunFileEvents(ctx, engine, req.DefinitionPath, req.PersonaDir, req.Prompt)
-		},
-		HookMgr:        d.HookMgr,
-		TokenMonitor:   d.TokenMonitor,
-		Metrics:        d.Metrics,
-		Workspace:      d.Cwd,
+	}
+	observe.GlobalTrace("return: rt, nil")
+	return rt, nil
+}
+
+// RunInteractive launches the browser UI for multi-turn conversation.
+func RunInteractive(cmd *cobra.Command) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	bridge := web.NewBridge()
+	rt, err := BuildInteractiveRuntime(cmd, bridge, bridge)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
+		return err
+	}
+	defer rt.Cleanup(cmd.Context())
+	return web.Run(cmd.Context(), web.Config{
+		Bridge:         bridge,
+		ParentCtx:      cmd.Context(),
+		RunInput:       rt.RunInput,
+		Resume:         rt.Resume,
+		CloseSession:   rt.CloseSession,
+		Store:          rt.Deps.Store,
+		CostTracker:    rt.Deps.CostTracker,
+		ModelName:      rt.Deps.Cfg.Model,
+		Provider:       rt.Deps.Cfg.Provider,
+		SlashCmds:      rt.SlashCmds,
+		SlashDeps:      rt.SlashDeps,
+		Metrics:        rt.Deps.Metrics,
+		Workspace:      rt.Deps.Cwd,
 		Version:        buildinfo.Version,
-		TaskReg:        d.TaskReg,
-		SessionStart:   d.SessionStart,
-		McpServerNames: connectedMcpNames(d.McpManager),
+		TaskReg:        rt.Deps.TaskReg,
+		SessionStart:   rt.Deps.SessionStart,
+		McpServerNames: connectedMcpNames(rt.Deps.McpManager),
+		PromptHistory:  rt.PromptHistory,
+	})
+}
+
+// RunTUIInteractive launches the Bubble Tea TUI using the shared runtime.
+func RunTUIInteractive(cmd *cobra.Command) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	prompter := tui.NewInteractivePrompter()
+	asker := tui.NewInteractiveAsker()
+	rt, err := BuildInteractiveRuntime(cmd, prompter, asker)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
+		return err
+	}
+	defer rt.Cleanup(cmd.Context())
+
+	m := tui.New(tui.Config{
+		ParentCtx:      cmd.Context(),
+		RunInput:       rt.RunInput,
+		Resume:         rt.Resume,
+		CloseSession:   rt.CloseSession,
+		Store:          rt.Deps.Store,
+		CostTracker:    rt.Deps.CostTracker,
+		ModelName:      rt.Deps.Cfg.Model,
+		Provider:       rt.Deps.Cfg.Provider,
+		SlashCmds:      rt.SlashCmds,
+		SlashDeps:      rt.SlashDeps,
+		HookMgr:        rt.Deps.HookMgr,
+		TokenMonitor:   rt.Deps.TokenMonitor,
+		Metrics:        rt.Deps.Metrics,
+		Workspace:      rt.Deps.Cwd,
+		Version:        buildinfo.Version,
+		TaskReg:        rt.Deps.TaskReg,
+		SessionStart:   rt.Deps.SessionStart,
+		McpServerNames: connectedMcpNames(rt.Deps.McpManager),
+		PromptHistory:  rt.PromptHistory,
 	})
 
 	log.SetOutput(io.Discard)
@@ -335,13 +518,6 @@ func RunInteractive(cmd *cobra.Command) error {
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	prompter.SetProgram(program)
 	asker.SetProgram(program)
-
-	defer func() {
-		if d.HookMgr != nil {
-			observe.GlobalTrace("if: d.HookMgr != nil")
-			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
-		}
-	}()
 
 	if _, err := program.Run(); err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -379,22 +555,8 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	snap := d.Store.Snapshot()
-	d.Bus.Emit(observe.SessionStarted{
-		EventHeader: observe.NewEventHeader("SessionStarted", "", "", ""),
-		SessionID:   snap.Conversation.ID,
-	})
-
-	if d.HookMgr != nil {
-		observe.GlobalTrace("if: d.HookMgr != nil")
-		d.HookMgr.Execute(cmd.Context(), hook.SessionStart, hook.HookInput{})
-	}
-
 	defer func() {
-		if d.HookMgr != nil {
-			observe.GlobalTrace("if: d.HookMgr != nil")
-			d.HookMgr.Execute(cmd.Context(), hook.SessionEnd, hook.HookInput{})
-		}
+		endSessionLifecycle(cmd.Context(), d)
 	}()
 
 	if !cmd.Flags().Changed("permission-mode") {
@@ -403,7 +565,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	}
 
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tui.NonInteractiveAsker{}
+	asker := &tool.NonInteractiveAsker{}
 	engine, err := RegisterTools(d, prompter, asker)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -453,6 +615,11 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
 
 	ctx := cmd.Context()
+	if strings.TrimSpace(prompt) != "" {
+		if err := startSessionForCurrentConversation(ctx, d); err != nil {
+			return err
+		}
+	}
 	events := engine.Run(ctx, prompt)
 
 	hasStructuredOutput := schemaFlag != ""
@@ -542,7 +709,6 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 				fmt.Fprintf(os.Stderr, "Hint: %s\n", e.Guidance)
 				flushWriter(os.Stderr)
 			}
-			sessionSaveFn()
 			sessionCloseFn()
 			return e.Err
 		}
@@ -556,7 +722,6 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}
 
-	sessionSaveFn()
 	sessionCloseFn()
 
 	fmt.Fprintf(os.Stderr, "\ntotal cost: $%.6f\n", d.CostTracker.TotalUSD())
@@ -568,6 +733,103 @@ func flushWriter(w io.Writer) {
 	if f, ok := w.(*os.File); ok {
 		_ = f.Sync()
 	}
+}
+
+func startSessionForCurrentConversation(ctx context.Context, d *Deps) error {
+	if d.SessionWriter != nil {
+		beginSessionLifecycle(ctx, d, "")
+		return nil
+	}
+	header := d.SessionHeader
+	if header.SessionID == "" {
+		snap := d.Store.Snapshot()
+		header = session.HeaderData{
+			SessionID:      snap.Conversation.ID,
+			Model:          d.Cfg.Model,
+			Provider:       d.Cfg.Provider,
+			WorkDir:        d.Cwd,
+			GitRemote:      sysprompt.GitRemoteURL(d.Cwd),
+			SystemOverride: d.Cfg.SystemPrompt,
+			CreatedAt:      snap.Conversation.CreatedAt,
+			System:         snap.Conversation.System,
+		}
+	}
+	sessStore, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+	w, err := sessStore.Create(header)
+	if err != nil {
+		return err
+	}
+	d.SessionWriter = w
+	d.SessionHeader = header
+	d.SessionLastIdx = 0
+	beginSessionLifecycle(ctx, d, "")
+	return nil
+}
+
+func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) {
+	if d == nil || d.SessionStarted {
+		return
+	}
+	sessionID := d.Store.Snapshot().Conversation.ID
+	if d.HookMgr != nil {
+		d.HookMgr.SetSessionID(sessionID)
+	}
+	d.Bus.Emit(observe.SessionStarted{
+		EventHeader: observe.NewEventHeader("SessionStarted", "", sessionID, ""),
+		SessionID:   sessionID,
+		ResumedFrom: resumedFrom,
+	})
+	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
+		d.HookMgr.Execute(ctx, hook.SessionStart, hook.HookInput{})
+	}
+	d.SessionStarted = true
+}
+
+func endSessionLifecycle(ctx context.Context, d *Deps) {
+	if d == nil || !d.SessionStarted {
+		return
+	}
+	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
+		d.HookMgr.Execute(ctx, hook.SessionEnd, hook.HookInput{})
+	}
+	d.SessionStarted = false
+}
+
+func shouldSaveOnEvent(ev query.LoopEvent) bool {
+	switch ev.(type) {
+	case query.ModelRequestEvent, query.ModelResponseEvent, query.ToolCallEvent, query.ToolResultEvent, query.TurnCompleteEvent, query.CompactionEvent:
+		return true
+	default:
+		return false
+	}
+}
+
+func latestAssistantText(store *app.StateStore) string {
+	if store == nil {
+		return ""
+	}
+	messages := store.Snapshot().Conversation.Messages
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != model.RoleAssistant || msg.Flags.IsInternal || msg.Flags.IsMeta {
+			continue
+		}
+		var parts []string
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok && strings.TrimSpace(tp.Text) != "" {
+				parts = append(parts, tp.Text)
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "\n")
+		}
+	}
+	return ""
 }
 
 // RunListSessions lists all saved sessions.
@@ -642,23 +904,17 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	lastIdx := 0
-	if d.SessionWriter != nil {
-		observe.GlobalTrace("if: d.SessionWriter != nil")
-		snap := d.Store.Snapshot()
-		lastIdx = len(snap.Conversation.Messages)
-	}
 	saveFn = func() {
 		if d.SessionWriter == nil {
 			return
 		}
 		snap := d.Store.Snapshot()
 		msnap := d.Metrics.Snapshot()
-		for i := lastIdx; i < len(snap.Conversation.Messages); i++ {
+		for i := d.SessionLastIdx; i < len(snap.Conversation.Messages); i++ {
 			d.SessionWriter.WriteMessage(snap.Conversation.Messages[i])
 		}
 		d.SessionWriter.WriteHandoffState(snap.HandoffState)
-		lastIdx = len(snap.Conversation.Messages)
+		d.SessionLastIdx = len(snap.Conversation.Messages)
 		d.SessionWriter.WriteMetadata(session.MetadataData{
 			CostUSD:    d.CostTracker.TotalUSD(),
 			TurnCount:  countUserTurns(snap.Conversation.Messages),
@@ -673,6 +929,72 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 		}
 	}
 	return
+}
+
+func promptHistoryFromSessions(store *session.Store, limit int) []string {
+	if store == nil || limit <= 0 {
+		return nil
+	}
+	summaries, err := store.List()
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	newestFirst := make([]string, 0, limit)
+	for _, summary := range summaries {
+		sess, err := store.Load(summary.ID)
+		if err != nil {
+			continue
+		}
+		prompts := sessionPromptHistory(sess)
+		for i := len(prompts) - 1; i >= 0; i-- {
+			prompt := prompts[i]
+			if seen[prompt] {
+				continue
+			}
+			seen[prompt] = true
+			newestFirst = append(newestFirst, prompt)
+			if len(newestFirst) >= limit {
+				return reversePromptHistory(newestFirst)
+			}
+		}
+	}
+	return reversePromptHistory(newestFirst)
+}
+
+func sessionPromptHistory(sess session.Session) []string {
+	if len(sess.PromptHistory) > 0 {
+		prompts := make([]string, 0, len(sess.PromptHistory))
+		for _, entry := range sess.PromptHistory {
+			if entry.Text != "" {
+				prompts = append(prompts, entry.Text)
+			}
+		}
+		return prompts
+	}
+	prompts := model.ExtractUserTextPrompts(sess.Conversation.Messages)
+	filtered := prompts[:0]
+	for _, prompt := range prompts {
+		if generatedPromptHistory(prompt) {
+			continue
+		}
+		filtered = append(filtered, prompt)
+	}
+	return filtered
+}
+
+func generatedPromptHistory(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return strings.HasPrefix(trimmed, "Please solve this task:") ||
+		(strings.HasPrefix(trimmed, "## Task") && strings.Contains(trimmed, "## Possible Next Phase Handoffs"))
+}
+
+func reversePromptHistory(newestFirst []string) []string {
+	history := make([]string, len(newestFirst))
+	for i := range newestFirst {
+		history[len(newestFirst)-1-i] = newestFirst[i]
+	}
+	return history
 }
 
 // countUserTurns counts all RoleUser messages (matching old SaveSession behavior).

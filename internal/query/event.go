@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/slash"
 )
 
 // LoopEvent is the sealed interface for events emitted by Engine.Run().
@@ -19,6 +20,14 @@ type TextEvent struct {
 }
 
 func (TextEvent) loopEventSealed() {}
+
+// SlashResultEvent carries UI-only slash command outcomes over the same
+// interactive event stream as model and orchestration work.
+type SlashResultEvent struct {
+	Result slash.Result
+}
+
+func (SlashResultEvent) loopEventSealed() {}
 
 // ThinkingEvent carries a streaming thinking/reasoning delta.
 type ThinkingEvent struct {
@@ -115,6 +124,66 @@ type LifecycleProgressEvent struct {
 }
 
 func (LifecycleProgressEvent) loopEventSealed() {}
+
+// OrchestrationStartedEvent signals the start of an orchestration FSM run.
+type OrchestrationStartedEvent struct {
+	Name    string
+	Initial string
+}
+
+func (OrchestrationStartedEvent) loopEventSealed() {}
+
+// OrchestrationStateStartedEvent signals that a state is starting.
+type OrchestrationStateStartedEvent struct {
+	StateID   string
+	PersonaID string
+	Control   string
+}
+
+func (OrchestrationStateStartedEvent) loopEventSealed() {}
+
+// OrchestrationStateCompletedEvent signals that a persona state completed.
+type OrchestrationStateCompletedEvent struct {
+	StateID  string
+	Duration time.Duration
+}
+
+func (OrchestrationStateCompletedEvent) loopEventSealed() {}
+
+// OrchestrationControlEvent signals a control state action or emitted event.
+type OrchestrationControlEvent struct {
+	StateID string
+	Control string
+	Event   string
+}
+
+func (OrchestrationControlEvent) loopEventSealed() {}
+
+// OrchestrationTransitionEvent signals a state transition.
+type OrchestrationTransitionEvent struct {
+	From  string
+	Event string
+	To    string
+}
+
+func (OrchestrationTransitionEvent) loopEventSealed() {}
+
+// OrchestrationHandoffEvent records a handoff prompt path read/write.
+type OrchestrationHandoffEvent struct {
+	StateID   string
+	Event     string
+	Path      string
+	Direction string
+}
+
+func (OrchestrationHandoffEvent) loopEventSealed() {}
+
+// OrchestrationCompletedEvent signals the FSM reached a terminal state.
+type OrchestrationCompletedEvent struct {
+	Name string
+}
+
+func (OrchestrationCompletedEvent) loopEventSealed() {}
 
 // AgentProgressEvent carries intermediate agent execution progress.
 // Emitted during Agent tool execution so the TUI can show per-agent

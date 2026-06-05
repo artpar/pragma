@@ -171,6 +171,14 @@ func (e *Engine) Registry() *tool.Registry {
 	return e.registry
 }
 
+// EventBus returns the engine's durable event bus.
+func (e *Engine) EventBus() *observe.EventBus {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: e.bus")
+	return e.bus
+}
+
 // RunGraph executes a lifecycle graph using the engine's own provider, orchestrator,
 // and registry. Returns a channel of LoopEvents, same as Run().
 func (e *Engine) RunGraph(ctx context.Context, graph *lifecycle.Graph, prompt string) <-chan LoopEvent {

@@ -9,12 +9,35 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/persona"
 	"github.com/artpar/pragma/internal/query"
 )
 
+const DefaultArtifactRoot = "/tmp/pragma"
+
+type RunOptions struct {
+	PersonaDir   string
+	TaskPrompt   string
+	ArtifactRoot string
+}
+
+func (o RunOptions) artifactRoot() string {
+	if strings.TrimSpace(o.ArtifactRoot) == "" {
+		return DefaultArtifactRoot
+	}
+	return o.ArtifactRoot
+}
+
 // RunFileEvents loads an orchestration definition and streams one complete FSM run.
 func RunFileEvents(ctx context.Context, engine *query.Engine, path string, personaDir string, taskPrompt string) <-chan query.LoopEvent {
+	return RunFileEventsWithOptions(ctx, engine, path, RunOptions{
+		PersonaDir: personaDir,
+		TaskPrompt: taskPrompt,
+	})
+}
+
+func RunFileEventsWithOptions(ctx context.Context, engine *query.Engine, path string, opts RunOptions) <-chan query.LoopEvent {
 	ch := make(chan query.LoopEvent, 16)
 	go func() {
 		defer close(ch)
@@ -23,28 +46,38 @@ func RunFileEvents(ctx context.Context, engine *query.Engine, path string, perso
 			ch <- query.ErrorEvent{Err: err}
 			return
 		}
-		runEvents(ctx, ch, engine, def, personaDir, taskPrompt)
+		runEvents(ctx, ch, engine, def, opts)
 	}()
 	return ch
 }
 
 // RunEvents streams one complete FSM run for an already-loaded definition.
 func RunEvents(ctx context.Context, engine *query.Engine, def Definition, personaDir string, taskPrompt string) <-chan query.LoopEvent {
+	return RunEventsWithOptions(ctx, engine, def, RunOptions{
+		PersonaDir: personaDir,
+		TaskPrompt: taskPrompt,
+	})
+}
+
+func RunEventsWithOptions(ctx context.Context, engine *query.Engine, def Definition, opts RunOptions) <-chan query.LoopEvent {
 	ch := make(chan query.LoopEvent, 16)
 	go func() {
 		defer close(ch)
-		runEvents(ctx, ch, engine, def, personaDir, taskPrompt)
+		runEvents(ctx, ch, engine, def, opts)
 	}()
 	return ch
 }
 
-func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, def Definition, personaDir string, taskPrompt string) {
+func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, def Definition, opts RunOptions) {
 	runtime, err := NewRuntime(def)
 	if err != nil {
 		ch <- query.ErrorEvent{Err: err}
 		return
 	}
-	if err := EnsureRunDirs(def); err != nil {
+	artifactRoot := opts.artifactRoot()
+	bus := eventBus(engine)
+	emitQueryObserve(ch, bus, query.OrchestrationStartedEvent{Name: def.Name, Initial: def.Initial})
+	if err := EnsureRunDirs(def, artifactRoot); err != nil {
 		ch <- query.ErrorEvent{Err: err}
 		return
 	}
@@ -53,17 +86,20 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
-		event, err := RunNodeEvents(ctx, ch, engine, personaDir, def, state, taskPrompt, handoffPrompt)
+		event, err := RunNodeEvents(ctx, ch, engine, opts.PersonaDir, def, state, opts.TaskPrompt, handoffPrompt, artifactRoot)
 		if err != nil {
 			ch <- query.ErrorEvent{Err: err}
 			return
 		}
-		nextHandoff, err := selectedHandoffPrompt(state.ID, event)
+		nextHandoff, err := selectedHandoffPrompt(artifactRoot, state.ID, event)
 		if err != nil {
 			ch <- query.ErrorEvent{Err: err}
 			return
 		}
 		if nextHandoff != "" {
+			emitQueryObserve(ch, bus, query.OrchestrationHandoffEvent{
+				StateID: state.ID, Event: event, Path: handoffPromptPath(artifactRoot, state.ID, event), Direction: "read",
+			})
 			handoffPrompt = nextHandoff
 		} else if state.Control.IsZero() {
 			handoffPrompt = ""
@@ -72,31 +108,39 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 			ch <- query.ErrorEvent{Err: fmt.Errorf("transition %q from %q: %w", event, stateID, err)}
 			return
 		}
-		ch <- query.TextEvent{Text: fmt.Sprintf("\n[transition: %s --%s--> %s]\n", stateID, event, runtime.FSM.Current())}
+		emitQueryObserve(ch, bus, query.OrchestrationTransitionEvent{From: stateID, Event: event, To: runtime.FSM.Current()})
 	}
 
-	ch <- query.TextEvent{Text: "\n[orchestration: done]\n"}
+	emitQueryObserve(ch, bus, query.OrchestrationCompletedEvent{Name: def.Name})
 	ch <- query.TurnCompleteEvent{
 		Response:   model.Response{StopReason: model.StopEndTurn},
 		StopReason: model.StopEndTurn,
 	}
 }
 
-func EnsureRunDirs(def Definition) error {
-	if err := os.RemoveAll("/tmp/pragma/handoff-prompts"); err != nil {
+func EnsureRunDirs(def Definition, artifactRoots ...string) error {
+	artifactRoot := DefaultArtifactRoot
+	if len(artifactRoots) > 0 {
+		artifactRoot = artifactRoots[0]
+	}
+	if strings.TrimSpace(artifactRoot) == "" {
+		artifactRoot = DefaultArtifactRoot
+	}
+	handoffRoot := filepath.Join(artifactRoot, "handoff-prompts")
+	if err := os.RemoveAll(handoffRoot); err != nil {
 		return fmt.Errorf("reset orchestration handoff directory: %w", err)
 	}
 	for _, dir := range []string{
-		"/tmp/pragma",
-		"/tmp/pragma/handoff-prompts",
-		"/tmp/pragma/processes",
+		artifactRoot,
+		handoffRoot,
+		filepath.Join(artifactRoot, "processes"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create orchestration directory %q: %w", dir, err)
 		}
 	}
 	for _, state := range def.States {
-		dir := filepath.Join("/tmp/pragma/handoff-prompts", safeHandoffPathSegment(state.ID))
+		dir := filepath.Join(handoffRoot, safeHandoffPathSegment(state.ID))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create orchestration handoff directory %q: %w", dir, err)
 		}
@@ -104,15 +148,21 @@ func EnsureRunDirs(def Definition) error {
 	return nil
 }
 
-func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string) (string, error) {
+func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, error) {
+	artifactRoot := DefaultArtifactRoot
+	if len(artifactRoots) > 0 {
+		artifactRoot = artifactRoots[0]
+	}
+	bus := eventBus(engine)
 	if !state.Control.IsZero() {
 		control := ControlName(state)
-		ch <- query.TextEvent{Text: fmt.Sprintf("\n[control: %s (%s)]\n", state.ID, control)}
+		emitQueryObserve(ch, bus, query.OrchestrationStateStartedEvent{StateID: state.ID, Control: control})
+		emitQueryObserve(ch, bus, query.OrchestrationControlEvent{StateID: state.ID, Control: control})
 		event, err := ExecuteControl(state)
 		if err != nil {
 			return "", fmt.Errorf("control state %q failed: %w", state.ID, err)
 		}
-		ch <- query.TextEvent{Text: fmt.Sprintf("[control: %s emitted %s]\n", state.ID, event)}
+		emitQueryObserve(ch, bus, query.OrchestrationControlEvent{StateID: state.ID, Control: control, Event: event})
 		return event, nil
 	}
 
@@ -120,9 +170,14 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 	if err != nil {
 		return "", err
 	}
-	ch <- query.TextEvent{Text: fmt.Sprintf("\n[orchestration: %s persona=%s]\n", state.ID, personaDef.ID)}
+	emitQueryObserve(ch, bus, query.OrchestrationStateStartedEvent{StateID: state.ID, PersonaID: personaDef.ID})
+	for _, tr := range outgoingTransitions(def, state.ID) {
+		emitQueryObserve(ch, bus, query.OrchestrationHandoffEvent{
+			StateID: state.ID, Event: tr.Event, Path: handoffPromptPath(artifactRoot, state.ID, tr.Event), Direction: "write_target",
+		})
+	}
 
-	if _, err := RunStateEvents(ctx, ch, engine, def, state, personaDef, taskPrompt, handoffPrompt); err != nil {
+	if _, err := RunStateEvents(ctx, ch, engine, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot); err != nil {
 		return "", fmt.Errorf("state %q failed: %w", state.ID, err)
 	}
 
@@ -229,8 +284,12 @@ func lastDecisionValue(content string) (string, bool) {
 	return decision, decision != ""
 }
 
-func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string) (string, error) {
-	system, prompt := BuildPrompt(def, state, personaDef, taskPrompt, handoffPrompt)
+func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, error) {
+	artifactRoot := DefaultArtifactRoot
+	if len(artifactRoots) > 0 {
+		artifactRoot = artifactRoots[0]
+	}
+	system, prompt := BuildPromptWithArtifactRoot(def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
 
 	var text strings.Builder
 	start := time.Now()
@@ -250,7 +309,7 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 		case query.ErrorEvent:
 			return text.String(), e.Err
 		case query.TurnCompleteEvent:
-			ch <- query.TextEvent{Text: fmt.Sprintf("\n[state %s complete in %s]\n", state.ID, time.Since(start).Round(time.Second))}
+			emitQueryObserve(ch, eventBus(engine), query.OrchestrationStateCompletedEvent{StateID: state.ID, Duration: time.Since(start)})
 		default:
 			ch <- ev
 		}
@@ -259,6 +318,10 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 }
 
 func BuildPrompt(def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string) (model.SystemPrompt, string) {
+	return BuildPromptWithArtifactRoot(def, state, personaDef, taskPrompt, handoffPrompt, DefaultArtifactRoot)
+}
+
+func BuildPromptWithArtifactRoot(def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoot string) (model.SystemPrompt, string) {
 	system := model.SystemPrompt{Blocks: []model.SystemBlock{{
 		Text:      strings.TrimRight(personaDef.Prompt, "\n") + "\n\n" + query.PragmaLoopSystemPrompt(),
 		Cacheable: false,
@@ -274,7 +337,7 @@ func BuildPrompt(def Definition, state State, personaDef persona.Definition, tas
 		b.WriteString("## Phase Input\n\nProceed with this phase using the required input artifacts.\n")
 	}
 
-	if handoffs := RenderNextHandoffInstructions(def, state); handoffs != "" {
+	if handoffs := RenderNextHandoffInstructionsWithArtifactRoot(def, state, artifactRoot); handoffs != "" {
 		fmt.Fprintf(&b, "\n%s", handoffs)
 	}
 
@@ -282,6 +345,10 @@ func BuildPrompt(def Definition, state State, personaDef persona.Definition, tas
 }
 
 func RenderNextHandoffInstructions(def Definition, state State) string {
+	return RenderNextHandoffInstructionsWithArtifactRoot(def, state, DefaultArtifactRoot)
+}
+
+func RenderNextHandoffInstructionsWithArtifactRoot(def Definition, state State, artifactRoot string) string {
 	transitions := outgoingTransitions(def, state.ID)
 	if len(transitions) == 0 {
 		return ""
@@ -291,7 +358,7 @@ func RenderNextHandoffInstructions(def Definition, state State) string {
 	b.WriteString("## Possible Next Phase Handoffs\n\n")
 	b.WriteString("When this phase is ready to finish, write the handoff prompt for the event this phase is causing before the final completion echo. Use the exact path below. The handoff should tell the next phase what this phase established, which artifacts to read, and what must be preserved.\n\n")
 	for _, tr := range transitions {
-		fmt.Fprintf(&b, "- event %q -> %s: %s\n", tr.Event, handoffTargetLabel(def, tr.To), handoffPromptPath(state.ID, tr.Event))
+		fmt.Fprintf(&b, "- event %q -> %s: %s\n", tr.Event, handoffTargetLabel(def, tr.To), handoffPromptPath(artifactRoot, state.ID, tr.Event))
 	}
 	return b.String()
 }
@@ -355,8 +422,8 @@ func stateByID(def Definition, stateID string) (State, bool) {
 	return State{}, false
 }
 
-func selectedHandoffPrompt(stateID string, event string) (string, error) {
-	raw, err := os.ReadFile(handoffPromptPath(stateID, event))
+func selectedHandoffPrompt(artifactRoot string, stateID string, event string) (string, error) {
+	raw, err := os.ReadFile(handoffPromptPath(artifactRoot, stateID, event))
 	if err == nil {
 		return strings.TrimSpace(string(raw)), nil
 	}
@@ -366,8 +433,74 @@ func selectedHandoffPrompt(stateID string, event string) (string, error) {
 	return "", fmt.Errorf("read handoff prompt for state %q event %q: %w", stateID, event, err)
 }
 
-func handoffPromptPath(stateID string, event string) string {
-	return filepath.Join("/tmp/pragma/handoff-prompts", safeHandoffPathSegment(stateID), safeHandoffPathSegment(event)+".md")
+func handoffPromptPath(artifactRoot string, stateID string, event string) string {
+	if strings.TrimSpace(artifactRoot) == "" {
+		artifactRoot = DefaultArtifactRoot
+	}
+	return filepath.Join(artifactRoot, "handoff-prompts", safeHandoffPathSegment(stateID), safeHandoffPathSegment(event)+".md")
+}
+
+func eventBus(engine *query.Engine) *observe.EventBus {
+	if engine == nil {
+		return nil
+	}
+	return engine.EventBus()
+}
+
+func emitQueryObserve(ch chan<- query.LoopEvent, bus *observe.EventBus, ev query.LoopEvent) {
+	ch <- ev
+	if bus == nil {
+		return
+	}
+	switch e := ev.(type) {
+	case query.OrchestrationStartedEvent:
+		bus.Emit(observe.OrchestrationStarted{
+			EventHeader: observe.NewEventHeader("OrchestrationStarted", "", "", ""),
+			Name:        e.Name,
+			Initial:     e.Initial,
+		})
+	case query.OrchestrationStateStartedEvent:
+		bus.Emit(observe.OrchestrationStateStarted{
+			EventHeader: observe.NewEventHeader("OrchestrationStateStarted", "", "", ""),
+			StateID:     e.StateID,
+			PersonaID:   e.PersonaID,
+			Control:     e.Control,
+		})
+	case query.OrchestrationStateCompletedEvent:
+		bus.Emit(observe.OrchestrationStateCompleted{
+			EventHeader: observe.NewEventHeader("OrchestrationStateCompleted", "", "", ""),
+			StateID:     e.StateID,
+			Duration:    e.Duration,
+			DurationMs:  e.Duration.Milliseconds(),
+		})
+	case query.OrchestrationControlEvent:
+		bus.Emit(observe.OrchestrationControl{
+			EventHeader: observe.NewEventHeader("OrchestrationControl", "", "", ""),
+			StateID:     e.StateID,
+			Control:     e.Control,
+			Event:       e.Event,
+		})
+	case query.OrchestrationTransitionEvent:
+		bus.Emit(observe.OrchestrationTransition{
+			EventHeader: observe.NewEventHeader("OrchestrationTransition", "", "", ""),
+			From:        e.From,
+			Event:       e.Event,
+			To:          e.To,
+		})
+	case query.OrchestrationHandoffEvent:
+		bus.Emit(observe.OrchestrationHandoff{
+			EventHeader: observe.NewEventHeader("OrchestrationHandoff", "", "", ""),
+			StateID:     e.StateID,
+			Event:       e.Event,
+			Path:        e.Path,
+			Direction:   e.Direction,
+		})
+	case query.OrchestrationCompletedEvent:
+		bus.Emit(observe.OrchestrationCompleted{
+			EventHeader: observe.NewEventHeader("OrchestrationCompleted", "", "", ""),
+			Name:        e.Name,
+		})
+	}
 }
 
 func safeHandoffPathSegment(value string) string {

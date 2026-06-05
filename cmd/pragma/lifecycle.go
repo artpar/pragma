@@ -18,7 +18,6 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
-	"github.com/artpar/pragma/internal/tui"
 )
 
 func lifecycleCmd() *cobra.Command {
@@ -101,7 +100,7 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 	checker := permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
 
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tui.NonInteractiveAsker{}
+	asker := &tool.NonInteractiveAsker{}
 	_, err = cli.RegisterTools(d, prompter, asker)
 	if err != nil {
 		return err
@@ -258,4 +257,3 @@ func loadYAMLGraph(path string, infra bridge.Infra) (*lifecycle.Graph, error) {
 		opts,
 	)
 }
-

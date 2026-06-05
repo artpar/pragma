@@ -212,7 +212,7 @@ func handleClear(_ context.Context, _ string, deps Deps) (Result, error) {
 
 func handleCopy(_ context.Context, _ string, deps Deps) (Result, error) {
 	if deps.LatestAssistantText == nil || deps.ClipboardWrite == nil {
-		return Result{DisplayText: "Copy is only available in the interactive TUI."}, nil
+		return Result{DisplayText: "Copy is only available when the active UI provides clipboard access."}, nil
 	}
 	text := deps.LatestAssistantText()
 	if strings.TrimSpace(text) == "" {
@@ -308,9 +308,9 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		if deps.ModelLister != nil {
 			observe.GlobalTrace("if: deps.ModelLister != nil")
 			if models := deps.ModelLister(); len(models) > 0 {
-				observe.GlobalTrace("if: len(models) > 0 — ShowModelDialog")
-				observe.GlobalTrace("return: Result{ShowModelDialog: true}, nil")
-				return Result{ShowModelDialog: true}, nil
+				observe.GlobalTrace("if: len(models) > 0 — OpenModelPicker")
+				observe.GlobalTrace("return: Result{OpenModelPicker: true}, nil")
+				return Result{OpenModelPicker: true}, nil
 			}
 		}
 

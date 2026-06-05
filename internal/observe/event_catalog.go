@@ -585,3 +585,66 @@ type LifecycleCompleted struct {
 }
 
 func (LifecycleCompleted) eventSealed() {}
+
+// --- Orchestration events (internal/orchestration/) ---
+
+type OrchestrationStarted struct {
+	EventHeader
+	Name    string `json:"name"`
+	Initial string `json:"initial"`
+}
+
+func (OrchestrationStarted) eventSealed() {}
+
+type OrchestrationStateStarted struct {
+	EventHeader
+	StateID   string `json:"state_id"`
+	PersonaID string `json:"persona_id,omitempty"`
+	Control   string `json:"control,omitempty"`
+}
+
+func (OrchestrationStateStarted) eventSealed() {}
+
+type OrchestrationStateCompleted struct {
+	EventHeader
+	StateID    string        `json:"state_id"`
+	Duration   time.Duration `json:"duration"`
+	DurationMs int64         `json:"duration_ms"`
+}
+
+func (OrchestrationStateCompleted) eventSealed() {}
+
+type OrchestrationControl struct {
+	EventHeader
+	StateID string `json:"state_id"`
+	Control string `json:"control"`
+	Event   string `json:"event,omitempty"`
+}
+
+func (OrchestrationControl) eventSealed() {}
+
+type OrchestrationTransition struct {
+	EventHeader
+	From  string `json:"from"`
+	Event string `json:"event"`
+	To    string `json:"to"`
+}
+
+func (OrchestrationTransition) eventSealed() {}
+
+type OrchestrationHandoff struct {
+	EventHeader
+	StateID   string `json:"state_id"`
+	Event     string `json:"event"`
+	Path      string `json:"path"`
+	Direction string `json:"direction"`
+}
+
+func (OrchestrationHandoff) eventSealed() {}
+
+type OrchestrationCompleted struct {
+	EventHeader
+	Name string `json:"name"`
+}
+
+func (OrchestrationCompleted) eventSealed() {}

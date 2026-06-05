@@ -25,17 +25,15 @@ import (
 // Config holds all dependencies for the TUI model.
 type Config struct {
 	ParentCtx      context.Context // parent context for cancellation propagation (e.g., cmd.Context())
-	Engine         *query.Engine
+	RunInput       func(context.Context, string) <-chan query.LoopEvent
+	Resume         func(sessionID string) error
+	CloseSession   func()
 	Store          *app.StateStore
 	CostTracker    *model.CostTracker
 	ModelName      string
 	Provider       string
-	SessionSave    func()
-	SessionClose   func()
-	SessionSwitch  func(sessionID string) (saveFn func(), closeFn func()) // returns new save/close for resumed session
 	SlashCmds      *slash.Registry
 	SlashDeps      slash.Deps
-	Orchestrate    func(context.Context, slash.OrchestrationRequest) <-chan query.LoopEvent
 	HookMgr        *hook.Manager         // nil if no hooks configured
 	TokenMonitor   *observe.TokenMonitor // nil if no token monitoring
 	Metrics        *observe.Metrics      // always non-nil (created in deps.go)
@@ -44,6 +42,7 @@ type Config struct {
 	TaskReg        *task.Registry        // task registry for teammate visibility
 	SessionStart   time.Time             // original session start (for resume elapsed time)
 	McpServerNames []string              // connected MCP server names for welcome banner
+	PromptHistory  []string              // input history seeded from saved sessions
 }
 
 // segmentKind distinguishes text (pre-rendered) from thinking/tool (rendered on demand).
@@ -191,15 +190,13 @@ type segment struct {
 // Model is the main bubbletea model for the interactive TUI.
 type Model struct {
 	// Dependencies
-	engine         *query.Engine
+	runInput       func(context.Context, string) <-chan query.LoopEvent
+	resume         func(sessionID string) error
+	closeSession   func()
 	store          *app.StateStore
 	costTracker    *model.CostTracker
-	sessionSave    func()
-	sessionClose   func()
-	sessionSwitch  func(sessionID string) (saveFn func(), closeFn func())
 	slashCmds      *slash.Registry
 	slashDeps      slash.Deps
-	orchestrate    func(context.Context, slash.OrchestrationRequest) <-chan query.LoopEvent
 	hookMgr        *hook.Manager
 	tokenMonitor   *observe.TokenMonitor
 	metrics        *observe.Metrics
@@ -264,7 +261,7 @@ func New(cfg Config) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"})
-	observe.GlobalTrace("return: Model{\n\tengine:\t\t\tcfg.Engine,\n\tstore:\t\t\tcfg.Store,\n\tcostTracker:\t\tcfg.CostTra...")
+	observe.GlobalTrace("return: Model{...}")
 
 	tb := newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace, cfg.SessionStart)
 
@@ -277,18 +274,21 @@ func New(cfg Config) Model {
 		budget = cfg.TokenMonitor.Budget()
 	}
 	tb.UpdateTokens(msnap.TokenUsage.InputTokens, msnap.TokenUsage.OutputTokens, cache, budget, msnap.LatestContextFill)
-	observe.GlobalTrace("return: Model{\n\tengine:\t\t\tcfg.Engine,\n\tstore:\t\t\tcfg.Store,\n\tcostTracker:\t\tcfg.CostTra...")
+	observe.GlobalTrace("return: Model{...}")
+
+	input := newInputComponent()
+	if len(cfg.PromptHistory) > 0 {
+		input.SetHistory(cfg.PromptHistory)
+	}
 
 	return Model{
-		engine:          cfg.Engine,
+		runInput:        cfg.RunInput,
+		resume:          cfg.Resume,
+		closeSession:    cfg.CloseSession,
 		store:           cfg.Store,
 		costTracker:     cfg.CostTracker,
-		sessionSave:     cfg.SessionSave,
-		sessionClose:    cfg.SessionClose,
-		sessionSwitch:   cfg.SessionSwitch,
 		slashCmds:       cfg.SlashCmds,
 		slashDeps:       cfg.SlashDeps,
-		orchestrate:     cfg.Orchestrate,
 		hookMgr:         cfg.HookMgr,
 		tokenMonitor:    cfg.TokenMonitor,
 		metrics:         cfg.Metrics,
@@ -296,7 +296,7 @@ func New(cfg Config) Model {
 		workspace:       cfg.Workspace,
 		mcpServerNames:  cfg.McpServerNames,
 		taskReg:         cfg.TaskReg,
-		input:           newInputComponent(),
+		input:           input,
 		perm:            newPermissionDialog(),
 		toolbar:         tb,
 		spin:            s,
@@ -371,10 +371,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			observe.GlobalTrace("return: m, cmd")
 			return m, cmd
 		}
-		return m, nil
-
-	case sessionSavedMsg:
-		observe.GlobalTrace("typecase: sessionSavedMsg")
 		return m, nil
 
 	case quitTimeoutMsg:
@@ -1060,7 +1056,7 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 
-	inputHeight := 3
+	inputHeight := m.input.ViewHeight()
 	toolbarHeight := 1
 	separatorHeight := 2
 	headerHeight := inputHeight + toolbarHeight + separatorHeight
@@ -1090,7 +1086,9 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 				observe.GlobalTrace("range snap.Conversation.Messages")
 				m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 			}
-			m.input.SetHistory(extractUserPrompts(snap.Conversation.Messages))
+			if len(m.input.history) == 0 {
+				m.input.SetHistory(extractUserPrompts(snap.Conversation.Messages))
+			}
 		}
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
@@ -1103,6 +1101,14 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.input.SetWidth(m.width)
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
+}
+
+func (m *Model) syncViewportHeight() {
+	if !m.ready {
+		return
+	}
+	headerHeight := m.input.ViewHeight() + 1 + 2
+	m.viewport.Height = max(m.height-headerHeight, 1)
 }
 
 // refreshTeammates polls the task registry for running teammates and updates

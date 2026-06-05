@@ -49,7 +49,7 @@ func (o *Orchestrator) SetHookManager(mgr *hook.Manager) {
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
 	Results     []model.ToolResultPart
-	Displays    []string            // per-result TUI display text, same index as Results
+	Displays    []string            // per-result presentation display text, same index as Results
 	Supplements []model.ContentPart // additional content parts (e.g., DocumentPart for PDFs)
 }
 

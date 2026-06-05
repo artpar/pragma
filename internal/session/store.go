@@ -81,6 +81,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var meta MetadataData
 	var handoffState model.HandoffState
 	var replacements []model.ContentReplacementRecord
+	var promptHistory []PromptHistoryData
 	hasHeader := false
 
 	scanner := bufio.NewScanner(f)
@@ -118,6 +119,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				replacements = append(replacements, data.Records...)
 			}
+		case EntryPromptHistory:
+			var data PromptHistoryData
+			if err := json.Unmarshal(entry.Data, &data); err == nil {
+				promptHistory = append(promptHistory, data)
+			}
 		}
 	}
 
@@ -147,6 +153,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		SystemOverride:      header.SystemOverride,
 		GitRemote:           header.GitRemote,
 		ContentReplacements: replacements,
+		PromptHistory:       promptHistory,
 	}, nil
 }
 

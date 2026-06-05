@@ -16,6 +16,7 @@ const (
 	EntryMetadata           EntryKind = "metadata"
 	EntryHandoffState       EntryKind = "handoff_state"
 	EntryContentReplacement EntryKind = "content_replacement"
+	EntryPromptHistory      EntryKind = "prompt_history"
 )
 
 // Entry is a single JSONL line in a session file. Discriminated by Kind.
@@ -48,6 +49,11 @@ type MetadataData struct {
 
 type ContentReplacementData struct {
 	Records []model.ContentReplacementRecord `json:"records"`
+}
+
+type PromptHistoryData struct {
+	Text      string    `json:"text"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type HandoffStateData struct {

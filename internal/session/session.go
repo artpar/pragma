@@ -17,6 +17,7 @@ type Session struct {
 	SystemOverride      string                           `json:"system_override,omitempty"`
 	GitRemote           string                           `json:"git_remote,omitempty"`
 	ContentReplacements []model.ContentReplacementRecord `json:"content_replacements,omitempty"`
+	PromptHistory       []PromptHistoryData              `json:"prompt_history,omitempty"`
 }
 
 // SessionSummary is a lightweight view for listing sessions.

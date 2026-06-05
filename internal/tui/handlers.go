@@ -20,33 +20,18 @@ import (
 	"github.com/artpar/pragma/internal/tui/render"
 )
 
-// extractUserPrompts extracts the text of user messages from a conversation.
+// ExtractUserPrompts extracts the text of user messages from a conversation.
 // Used to pre-populate input history when opening or resuming a session.
-func extractUserPrompts(messages []model.Message) []string {
+func ExtractUserPrompts(messages []model.Message) []string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	var prompts []string
-	for _, msg := range messages {
-		observe.GlobalTrace("range messages")
-		if msg.Role != model.RoleUser {
-			observe.GlobalTrace("if: msg.Role != model.RoleUser")
-			continue
-		}
-		var b strings.Builder
-		for _, part := range msg.Content {
-			observe.GlobalTrace("range msg.Content")
-			if tp, ok := part.(model.TextPart); ok {
-				observe.GlobalTrace("if: ok")
-				b.WriteString(tp.Text)
-			}
-		}
-		if b.Len() > 0 {
-			observe.GlobalTrace("if: b.Len() > 0")
-			prompts = append(prompts, b.String())
-		}
-	}
+	prompts := model.ExtractUserTextPrompts(messages)
 	observe.GlobalTrace("return: prompts")
 	return prompts
+}
+
+func extractUserPrompts(messages []model.Message) []string {
+	return ExtractUserPrompts(messages)
 }
 
 func latestAssistantText(store *app.StateStore) string {
@@ -111,85 +96,73 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		observe.GlobalTrace("if: msg.Err != nil")
 		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: "+msg.Err.Error())+"\n\n")
-	} else {
-		observe.GlobalTrace("else: msg.Err != nil")
-		if msg.Result.Quit {
-			observe.GlobalTrace("if: msg.Result.Quit")
-			observe.GlobalTrace("return: m.quit()")
-			return m.quit()
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+		return m, nil
+	}
+	return m.handleRuntimeSlashResult(msg.Result)
+}
+
+func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd) {
+	if result.Quit {
+		return m.quit()
+	}
+	if result.ClearConversation {
+		m.outputSegs = m.outputSegs[:0]
+	}
+	if result.DisplayText != "" {
+		rendered := m.mdRenderer.Render(result.DisplayText)
+		m.outputSegs = appendText(m.outputSegs, rendered+"\n\n")
+	}
+	if result.OpenTeams {
+		m.teams.Show(m.taskReg)
+	}
+	if result.OpenModelPicker {
+		var models []string
+		currentModel := m.toolbar.modelName
+		if m.slashDeps.ModelLister != nil {
+			models = m.slashDeps.ModelLister()
 		}
-		if msg.Result.ClearConversation {
-			observe.GlobalTrace("if: msg.Result.ClearConversation")
-			m.outputSegs = m.outputSegs[:0]
-		}
-		if msg.Result.DisplayText != "" {
-			observe.GlobalTrace("if: msg.Result.DisplayText != \"\"")
-			rendered := m.mdRenderer.Render(msg.Result.DisplayText)
-			m.outputSegs = appendText(m.outputSegs, rendered+"\n\n")
-		}
-		if msg.Result.InjectPrompt != "" {
-			observe.GlobalTrace("if: msg.Result.InjectPrompt != \"\"")
-			observe.GlobalTrace("return: m.startEngineFromPrompt(msg.Result.InjectPrompt)")
-			return m.startEngineFromPrompt(msg.Result.InjectPrompt)
-		}
-		if msg.Result.Orchestrate != nil {
-			observe.GlobalTrace("if: msg.Result.Orchestrate != nil")
-			if m.orchestrate == nil {
-				m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: orchestration runner is not available")+"\n\n")
-			} else {
-				return m.startOrchestration(*msg.Result.Orchestrate)
-			}
-		}
-		if msg.Result.ShowTeamsDialog {
-			observe.GlobalTrace("if: msg.Result.ShowTeamsDialog")
-			m.teams.Show(m.taskReg)
-		}
-		if msg.Result.ShowModelDialog {
-			observe.GlobalTrace("if: msg.Result.ShowModelDialog")
-			var models []string
-			currentModel := m.toolbar.modelName
-			if m.slashDeps.ModelLister != nil {
-				observe.GlobalTrace("if: m.slashDeps.ModelLister != nil")
-				models = m.slashDeps.ModelLister()
-			}
-			m.modelDlg.Show(models, currentModel)
-		}
-		if msg.Result.ShowResumeDialog {
-			observe.GlobalTrace("if: msg.Result.ShowResumeDialog")
-			if m.slashDeps.SessionStore != nil {
-				observe.GlobalTrace("if: m.slashDeps.SessionStore != nil")
-				summaries, err := m.slashDeps.SessionStore.List()
-				if err == nil && len(summaries) > 0 {
-					observe.GlobalTrace("if: err == nil && len(summaries) > 0")
-					entries := make([]SessionEntry, len(summaries))
-					for i, s := range summaries {
-						observe.GlobalTrace("range summaries")
-						entries[i] = SessionEntry{
-							ID:        s.ID,
-							Summary:   s.Summary,
-							WorkDir:   s.WorkDir,
-							TurnCount: s.TurnCount,
-							UpdatedAt: s.UpdatedAt,
-						}
+		m.modelDlg.Show(models, currentModel)
+	}
+	if result.OpenResumePicker {
+		if m.slashDeps.SessionStore != nil {
+			summaries, err := m.slashDeps.SessionStore.List()
+			if err == nil && len(summaries) > 0 {
+				entries := make([]SessionEntry, len(summaries))
+				for i, s := range summaries {
+					entries[i] = SessionEntry{
+						ID:        s.ID,
+						Summary:   s.Summary,
+						WorkDir:   s.WorkDir,
+						TurnCount: s.TurnCount,
+						UpdatedAt: s.UpdatedAt,
 					}
-					m.resumeDlg.Show(entries, m.workspace)
 				}
+				m.resumeDlg.Show(entries, m.workspace)
 			}
-		}
-		if msg.Result.ResumeSessionID != "" {
-			observe.GlobalTrace("if: msg.Result.ResumeSessionID != \"\"")
-			m.loadResumedSession(msg.Result.ResumeSessionID)
 		}
 	}
-
+	if result.ResumeSessionID != "" {
+		m.reloadConversationFromStore()
+	}
 	if snap := m.store.Snapshot(); snap.Model != "" {
-		observe.GlobalTrace("if: snap.Model != \"\"")
 		m.toolbar.SetModel(snap.Model)
 	}
 	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
-	observe.GlobalTrace("return: m, nil")
 	return m, nil
+}
+
+func (m *Model) reloadConversationFromStore() {
+	conv := m.store.Snapshot().Conversation
+	m.outputSegs = nil
+	for _, msg := range conv.Messages {
+		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
+	}
+	if len(m.input.history) == 0 {
+		m.input.SetHistory(extractUserPrompts(conv.Messages))
+	}
 }
 
 // handleLoopEvent processes a streaming event from the query engine.
@@ -210,6 +183,14 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch e := msg.Event.(type) {
+	case query.SlashResultEvent:
+		observe.GlobalTrace("typecase: query.SlashResultEvent")
+		next, cmd := m.handleRuntimeSlashResult(e.Result)
+		if cmd != nil {
+			return next, cmd
+		}
+		return next, waitForEvent(m.eventCh)
+
 	case query.CompactionStartedEvent:
 		observe.GlobalTrace("typecase: query.CompactionStartedEvent")
 		m.toolbar.SetStatus("compacting conversation...")
@@ -267,6 +248,62 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.closeActiveGroup()
 		m.outputSegs = m.flushStreamBuf()
 		m.outputSegs = appendThinking(m.outputSegs, e.Text, false)
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
+	case query.OrchestrationStartedEvent:
+		observe.GlobalTrace("typecase: query.OrchestrationStartedEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+		m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("[orchestration: %s initial=%s]\n", e.Name, e.Initial))
+		m.toolbar.SetStatus("orchestration...")
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
+	case query.OrchestrationStateStartedEvent:
+		observe.GlobalTrace("typecase: query.OrchestrationStateStartedEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+		if e.Control != "" {
+			m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n[control: %s (%s)]\n", e.StateID, e.Control))
+		} else {
+			m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n[orchestration: %s persona=%s]\n", e.StateID, e.PersonaID))
+		}
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
+	case query.OrchestrationStateCompletedEvent:
+		observe.GlobalTrace("typecase: query.OrchestrationStateCompletedEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+		m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n[state %s complete in %s]\n", e.StateID, e.Duration.Round(time.Second)))
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
+	case query.OrchestrationControlEvent:
+		observe.GlobalTrace("typecase: query.OrchestrationControlEvent")
+		if e.Event != "" {
+			m.closeActiveGroup()
+			m.outputSegs = m.flushStreamBuf()
+			m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("[control: %s emitted %s]\n", e.StateID, e.Event))
+			m.viewport.SetContent(m.viewportContent())
+			m.viewport.GotoBottom()
+		}
+
+	case query.OrchestrationTransitionEvent:
+		observe.GlobalTrace("typecase: query.OrchestrationTransitionEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+		m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n[transition: %s --%s--> %s]\n", e.From, e.Event, e.To))
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
+	case query.OrchestrationCompletedEvent:
+		observe.GlobalTrace("typecase: query.OrchestrationCompletedEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+		m.outputSegs = appendText(m.outputSegs, "\n[orchestration: done]\n")
+		m.toolbar.SetStatus("streaming...")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
@@ -393,7 +430,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		}
 		m.toolbar.UpdateTokens(snap.TokenUsage.InputTokens, snap.TokenUsage.OutputTokens, cache, budget, snap.LatestContextFill)
 		finished, pendingCmd := m.finishTurn()
-		return finished, tea.Batch(saveSessionCmd(m.sessionSave), pendingCmd)
+		return finished, pendingCmd
 
 	case query.RetryEvent:
 		observe.GlobalTrace("typecase: query.RetryEvent")
@@ -462,25 +499,6 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	return m, waitForEvent(m.eventCh)
 }
 
-func (m Model) startOrchestration(req slash.OrchestrationRequest) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-
-	m.viewport.SetContent(m.viewportContent())
-	m.viewport.GotoBottom()
-
-	m.streaming = true
-	m.input.SetStreaming(true)
-	m.toolbar.SetStatus("orchestration...")
-
-	m.cancel()
-	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
-	m.eventCh = m.orchestrate(m.ctx, req)
-
-	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
-	return m, waitForEvent(m.eventCh)
-}
-
 // handleAskRequest shows the ask dialog for a tool question.
 func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
@@ -489,27 +507,6 @@ func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
 	m.toolbar.SetStatus("waiting for answer...")
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
-}
-
-// startEngineFromPrompt submits a prompt to the engine as a user message.
-func (m Model) startEngineFromPrompt(prompt string) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-
-	m.viewport.SetContent(m.viewportContent())
-	m.viewport.GotoBottom()
-
-	m.streaming = true
-	m.input.SetStreaming(true)
-	m.toolbar.SetStatus("streaming...")
-
-	m.cancel()
-	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
-	m.eventCh = m.engine.Run(m.ctx, prompt)
-
-	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
-
-	return m, waitForEvent(m.eventCh)
 }
 
 // handlePermRequest shows the permission dialog, or queues if one is already visible.
@@ -691,6 +688,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.verbose = !m.verbose
 		m.viewport.SetContent(m.viewportContent())
 		return m, nil
+	case tea.KeyTab:
+		observe.GlobalTrace("case: tea.KeyTab — slash completion")
+		if m.slashCmds != nil && m.input.CompleteSlash(m.slashCmds.Commands(), m.workspace) {
+			m.input.RefreshSlashCompletions(m.slashCmds.Commands(), m.workspace)
+			m.syncViewportHeight()
+			return m, nil
+		}
 	case tea.KeyPgUp, tea.KeyPgDown:
 		observe.GlobalTrace("scroll key → viewport")
 		var cmd tea.Cmd
@@ -723,6 +727,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	cmd := m.input.Update(msg)
+	if m.slashCmds != nil {
+		m.input.RefreshSlashCompletions(m.slashCmds.Commands(), m.workspace)
+	}
+	m.syncViewportHeight()
 	observe.GlobalTrace("return: m, cmd")
 	return m, cmd
 }
@@ -745,6 +753,15 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
+	if m.runInput == nil {
+		if name, args, ok := slash.Parse(msg.Text); ok && m.slashCmds != nil {
+			return m.handleSlashCommand(name, args)
+		}
+		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: interactive runtime is not available")+"\n\n")
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+		return m, nil
+	}
 	observe.GlobalTrace("return: m.submitPrompt(msg.Text)")
 
 	return m.submitPrompt(msg.Text)
@@ -755,13 +772,7 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	if name, args, ok := slash.Parse(text); ok {
-		observe.GlobalTrace("if: ok")
-		observe.GlobalTrace("return: m.handleSlashCommand(name, args)")
-		return m.handleSlashCommand(name, args)
-	}
-
-	if m.hookMgr != nil {
+	if m.hookMgr != nil && m.runInput == nil {
 		observe.GlobalTrace("if: m.hookMgr != nil")
 		hookResult := m.hookMgr.Execute(m.ctx, hook.UserPromptSubmit, hook.HookInput{
 			PromptText: text,
@@ -793,7 +804,7 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 
 	m.cancel()
 	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
-	m.eventCh = m.engine.Run(m.ctx, text)
+	m.eventCh = m.runInput(m.ctx, text)
 
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
@@ -910,13 +921,9 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	m.cancel()
-	if m.sessionSave != nil {
-		observe.GlobalTrace("if: m.sessionSave != nil")
-		m.sessionSave()
-	}
-	if m.sessionClose != nil {
-		observe.GlobalTrace("if: m.sessionClose != nil")
-		m.sessionClose()
+	if m.closeSession != nil {
+		observe.GlobalTrace("if: m.closeSession != nil")
+		m.closeSession()
 	}
 
 	m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(m.toolbar.CostSummary())+"\n")
@@ -951,22 +958,6 @@ func waitForEvent(ch <-chan query.LoopEvent) tea.Cmd {
 	}
 }
 
-// saveSessionCmd returns a tea.Cmd that saves the session in the background.
-func saveSessionCmd(saveFn func()) tea.Cmd {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if saveFn == nil {
-		observe.GlobalTrace("if: saveFn == nil")
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
-	observe.GlobalTrace("return: func() tea.Msg {\n\tsaveFn()\n\treturn sessionSavedMsg{}\n}")
-	return func() tea.Msg {
-		saveFn()
-		return sessionSavedMsg{}
-	}
-}
-
 // truncateToolbar truncates a string to max runes for toolbar display.
 func truncateToolbar(s string, max int) string {
 	observe.GlobalTrace("enter")
@@ -986,65 +977,26 @@ func (m *Model) loadResumedSession(sessionID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	if m.slashDeps.SessionStore == nil {
-		observe.GlobalTrace("if: m.slashDeps.SessionStore == nil")
-		m.outputSegs = appendText(m.outputSegs, "\n  Session store not available.\n\n")
+	if m.resume == nil {
+		m.outputSegs = appendText(m.outputSegs, "\n  Session resume is not available.\n\n")
 		return
 	}
-
-	sess, err := m.slashDeps.SessionStore.Load(sessionID)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
+	if err := m.resume(sessionID); err != nil {
 		m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Error loading session: %s\n\n", err))
 		return
 	}
 
-	m.store.Update(func(s *app.AppState) {
-		s.Conversation = sess.Conversation
-		if sess.Conversation.Model != "" {
-			s.Model = sess.Conversation.Model
-		}
-	})
-	if m.engine != nil {
-		observe.GlobalTrace("if: m.engine != nil")
-		m.engine.ResetContentReplacementState(sess.ContentReplacements)
+	snap := m.store.Snapshot()
+	if snap.Conversation.Model != "" {
+		m.toolbar.SetModel(snap.Conversation.Model)
 	}
 
-	if sess.Conversation.Model != "" {
-		observe.GlobalTrace("if: sess.Conversation.Model != \"\"")
-		m.toolbar.SetModel(sess.Conversation.Model)
-	}
-
-	if m.sessionSwitch != nil {
-		observe.GlobalTrace("if: m.sessionSwitch != nil")
-		saveFn, closeFn := m.sessionSwitch(sessionID)
-		if saveFn != nil {
-			observe.GlobalTrace("if: saveFn != nil")
-			if m.sessionClose != nil {
-				observe.GlobalTrace("if: m.sessionClose != nil")
-				m.sessionClose()
-			}
-			m.sessionSave = saveFn
-			m.sessionClose = closeFn
-		}
-	}
-
-	m.outputSegs = nil
-	for _, msg := range sess.Conversation.Messages {
-		observe.GlobalTrace("range sess.Conversation.Messages")
-		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
-	}
-	m.input.SetHistory(extractUserPrompts(sess.Conversation.Messages))
+	m.reloadConversationFromStore()
 
 	shortID := sessionID
 	if len(shortID) > 8 {
 		observe.GlobalTrace("if: len(shortID) > 8")
 		shortID = shortID[:8]
 	}
-	summary := sess.Summary
-	if summary == "" {
-		observe.GlobalTrace("if: summary == \"\"")
-		summary = "(no summary)"
-	}
-	m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Resumed session %s — %s — %d turns\n\n", shortID, summary, sess.TurnCount))
+	m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Resumed session %s\n\n", shortID))
 }
