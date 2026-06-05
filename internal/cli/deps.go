@@ -388,10 +388,11 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
 	}
-	engineCfg.RecordContentReplacements = func(records []model.ContentReplacementRecord) {
+	engineCfg.RecordContentReplacements = func(records []model.ContentReplacementRecord) error {
 		if sessionWriter != nil {
-			_ = sessionWriter.WriteContentReplacement(records)
+			return sessionWriter.WriteContentReplacement(records)
 		}
+		return nil
 	}
 	if cfg.Thinking != nil && cfg.Thinking.Enabled {
 		observe.GlobalTrace("if: cfg.Thinking != nil && cfg.Thinking.Enabled")

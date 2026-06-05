@@ -33,7 +33,7 @@ type EngineConfig struct {
 	Thinking                  *provider.ThinkingConfig
 	TaskID                    string // when set with TaskRegistry, enables PendingMessages drain between turns
 	ContentReplacementRecords []model.ContentReplacementRecord
-	RecordContentReplacements func([]model.ContentReplacementRecord)
+	RecordContentReplacements func([]model.ContentReplacementRecord) error
 	MCPServerStatuses         func() []MCPServerStatus
 }
 

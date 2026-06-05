@@ -139,9 +139,9 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 
 		messagesForQuery := e.messagesForRequest(snap.Conversation)
-		var budgetErr error
-		messagesForQuery, budgetErr = e.applyToolResultBudget(messagesForQuery)
-		if budgetErr != nil {
+		if budgetedMessages, budgetErr := e.applyToolResultBudget(messagesForQuery); budgetErr == nil {
+			messagesForQuery = budgetedMessages
+		} else {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "tool result budget failed, continuing with original messages")
 		}
 
@@ -428,7 +428,10 @@ func (e *Engine) applyToolResultBudget(messages []model.Message) ([]model.Messag
 	out, records, err := toolresult.ApplyToolResultBudget(messages, e.contentReplacementState, snap.Conversation.ID, skipToolNames)
 	if len(records) > 0 && e.config.RecordContentReplacements != nil {
 		observe.GlobalTrace("if: len(records) > 0 && e.config.RecordContentReplacements != nil")
-		e.config.RecordContentReplacements(records)
+		if recordErr := e.config.RecordContentReplacements(records); recordErr != nil {
+			observe.GlobalTrace("if: recordErr != nil")
+			return messages, recordErr
+		}
 	}
 	observe.GlobalTrace("return: out, err")
 	return out, err
