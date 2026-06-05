@@ -1028,12 +1028,16 @@ func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) hoo
 	return hookResult
 }
 
-func endSessionLifecycle(ctx context.Context, d *Deps) {
+const sessionEndHookTimeout = 5 * time.Second
+
+func endSessionLifecycle(_ context.Context, d *Deps) {
 	if d == nil || !d.SessionStarted {
 		return
 	}
 	if d.HookMgr != nil {
 		observe.GlobalTrace("if: d.HookMgr != nil")
+		ctx, cancel := context.WithTimeout(context.Background(), sessionEndHookTimeout)
+		defer cancel()
 		d.HookMgr.Execute(ctx, hook.SessionEnd, hook.HookInput{})
 	}
 	d.SessionStarted = false
