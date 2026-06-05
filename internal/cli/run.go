@@ -21,6 +21,7 @@ import (
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -225,8 +226,8 @@ type InteractiveRuntime struct {
 	Cleanup       func(context.Context)
 }
 
-func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan query.LoopEvent {
-	ch := make(chan query.LoopEvent, 16)
+func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan interactive.Event {
+	ch := make(chan interactive.Event, 16)
 	go func() {
 		defer close(ch)
 		if rt.Deps.HookMgr != nil {
@@ -234,7 +235,7 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 				PromptText: input,
 			})
 			if hookResult.Blocked {
-				ch <- query.ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", hookResult.BlockMsg)}
+				ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", hookResult.BlockMsg)}}
 				return
 			}
 		}
@@ -247,14 +248,14 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 	return ch
 }
 
-func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args string, ch chan<- query.LoopEvent) {
+func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args string, ch chan<- interactive.Event) {
 	deps := rt.SlashDeps
 	if deps.LatestAssistantText == nil {
 		deps.LatestAssistantText = func() string { return latestAssistantText(rt.Deps.Store) }
 	}
 	result, err := rt.SlashCmds.Execute(ctx, name, strings.TrimSpace(args), deps)
 	if err != nil {
-		ch <- query.ErrorEvent{Err: err}
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
 	if result.ClearConversation {
@@ -264,12 +265,12 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args st
 	}
 	if result.ResumeSessionID != "" {
 		if err := rt.Resume(result.ResumeSessionID); err != nil {
-			ch <- query.ErrorEvent{Err: err}
+			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 			return
 		}
 	}
 	if result.DisplayText != "" || result.OpenTeams || result.OpenModelPicker || result.OpenResumePicker || result.ResumeSessionID != "" || result.ClearConversation || result.Quit {
-		ch <- query.SlashResultEvent{Result: result}
+		ch <- interactive.SlashResultEvent{Result: result}
 	}
 	if result.Orchestrate != nil {
 		rt.runOrchestration(ctx, *result.Orchestrate, ch)
@@ -280,29 +281,29 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args st
 	}
 }
 
-func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch chan<- query.LoopEvent) {
+func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch chan<- interactive.Event) {
 	if err := startSessionForCurrentConversation(ctx, rt.Deps); err != nil {
-		ch <- query.ErrorEvent{Err: err}
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
 	if rt.Deps.SessionWriter != nil {
 		_ = rt.Deps.SessionWriter.WritePromptHistory(input)
 	}
 	for ev := range rt.Engine.Run(ctx, input) {
-		ch <- ev
+		ch <- interactive.LoopEvent{Event: ev}
 		if query.ShouldPersistSessionEvent(ev) {
 			rt.sessionSave()
 		}
 	}
 }
 
-func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, ch chan<- query.LoopEvent) {
+func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, ch chan<- interactive.Event) {
 	if err := startSessionForCurrentConversation(ctx, rt.Deps); err != nil {
-		ch <- query.ErrorEvent{Err: err}
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
 	for ev := range orchestration.RunFileEvents(ctx, rt.Engine, req.DefinitionPath, req.PersonaDir, req.Prompt) {
-		ch <- ev
+		ch <- interactive.LoopEvent{Event: ev}
 		if query.ShouldPersistSessionEvent(ev) {
 			rt.sessionSave()
 		}

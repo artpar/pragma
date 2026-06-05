@@ -3,16 +3,16 @@ package tui
 import (
 	"encoding/json"
 
+	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/tool"
 )
 
-// LoopEventMsg wraps a query.LoopEvent for the bubbletea Update loop.
+// LoopEventMsg wraps an interactive event for the bubbletea Update loop.
 // nil Event means the event channel was closed (turn finished).
 type LoopEventMsg struct {
-	Event query.LoopEvent
+	Event interactive.Event
 }
 
 // PermRequestMsg signals that the orchestrator goroutine needs a permission

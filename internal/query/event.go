@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
-	"github.com/artpar/pragma/internal/slash"
 )
 
 // LoopEvent is the sealed interface for events emitted by Engine.Run().
@@ -20,14 +19,6 @@ type TextEvent struct {
 }
 
 func (TextEvent) loopEventSealed() {}
-
-// SlashResultEvent carries UI-only slash command outcomes over the same
-// interactive event stream as model and orchestration work.
-type SlashResultEvent struct {
-	Result slash.Result
-}
-
-func (SlashResultEvent) loopEventSealed() {}
 
 // ThinkingEvent carries a streaming thinking/reasoning delta.
 type ThinkingEvent struct {
@@ -60,7 +51,7 @@ type ToolCallEvent struct {
 func (ToolCallEvent) loopEventSealed() {}
 
 // ToolResultEvent carries the result of a tool execution.
-// Display carries optional TUI-only rendering content from the tool's InvokeResult.
+// Display carries optional presentation-only rendering content from the tool's InvokeResult.
 type ToolResultEvent struct {
 	Result  model.ToolResultPart
 	Display string

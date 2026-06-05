@@ -14,6 +14,7 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/query"
@@ -25,7 +26,7 @@ import (
 // Config holds all dependencies for the TUI model.
 type Config struct {
 	ParentCtx      context.Context // parent context for cancellation propagation (e.g., cmd.Context())
-	RunInput       func(context.Context, string) <-chan query.LoopEvent
+	RunInput       func(context.Context, string) <-chan interactive.Event
 	Resume         func(sessionID string) error
 	CloseSession   func()
 	Store          *app.StateStore
@@ -190,7 +191,7 @@ type segment struct {
 // Model is the main bubbletea model for the interactive TUI.
 type Model struct {
 	// Dependencies
-	runInput       func(context.Context, string) <-chan query.LoopEvent
+	runInput       func(context.Context, string) <-chan interactive.Event
 	resume         func(sessionID string) error
 	closeSession   func()
 	store          *app.StateStore
@@ -231,7 +232,7 @@ type Model struct {
 	outputSegs   []segment        // typed segments for viewport content
 	verbose      bool             // Ctrl+O toggles verbose mode: thinking expanded + tool results full output
 	streamBuf    *strings.Builder // current streaming text (not yet finalized)
-	eventCh      <-chan query.LoopEvent
+	eventCh      <-chan interactive.Event
 	streaming    bool
 	parentCtx    context.Context // original parent context — never overwritten
 	ctx          context.Context

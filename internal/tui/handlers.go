@@ -13,6 +13,7 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/hook"
+	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/query"
@@ -182,15 +183,25 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		return finished, cmd
 	}
 
-	switch e := msg.Event.(type) {
-	case query.SlashResultEvent:
-		observe.GlobalTrace("typecase: query.SlashResultEvent")
-		next, cmd := m.handleRuntimeSlashResult(e.Result)
+	var loopEvent query.LoopEvent
+	switch ev := msg.Event.(type) {
+	case interactive.SlashResultEvent:
+		observe.GlobalTrace("typecase: interactive.SlashResultEvent")
+		next, cmd := m.handleRuntimeSlashResult(ev.Result)
 		if cmd != nil {
 			return next, cmd
 		}
 		return next, waitForEvent(m.eventCh)
+	case interactive.LoopEvent:
+		loopEvent = ev.Event
+	default:
+		return m, waitForEvent(m.eventCh)
+	}
+	if loopEvent == nil {
+		return m, waitForEvent(m.eventCh)
+	}
 
+	switch e := loopEvent.(type) {
 	case query.CompactionStartedEvent:
 		observe.GlobalTrace("typecase: query.CompactionStartedEvent")
 		m.toolbar.SetStatus("compacting conversation...")
@@ -945,7 +956,7 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 }
 
 // waitForEvent returns a tea.Cmd that reads the next event from the channel.
-func waitForEvent(ch <-chan query.LoopEvent) tea.Cmd {
+func waitForEvent(ch <-chan interactive.Event) tea.Cmd {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: func() tea.Msg {\n\tevent, ok := <-ch\n\tif !ok {\n\t\treturn LoopEventMsg{Event: ni...")

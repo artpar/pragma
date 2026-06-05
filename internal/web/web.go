@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -33,7 +34,7 @@ import (
 type Config struct {
 	Bridge         *Bridge
 	ParentCtx      context.Context
-	RunInput       func(context.Context, string) <-chan query.LoopEvent
+	RunInput       func(context.Context, string) <-chan interactive.Event
 	Resume         func(sessionID string) error
 	CloseSession   func()
 	Store          *app.StateStore
@@ -411,13 +412,18 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 		s.hub.publish("user_prompt", rawRequest)
 		events := s.cfg.RunInput(ctx, input)
 		for ev := range events {
-			if handoff, ok := ev.(query.OrchestrationHandoffEvent); ok {
-				s.rememberArtifact(handoff.Path)
+			switch e := ev.(type) {
+			case interactive.SlashResultEvent:
+				s.hub.publish("slash_result", e.Result)
+				continue
+			case interactive.LoopEvent:
+				if handoff, ok := e.Event.(query.OrchestrationHandoffEvent); ok {
+					s.rememberArtifact(handoff.Path)
+				}
+				s.hub.publish("loop_event", e.Event)
+			default:
+				s.hub.publish("interactive_event", e)
 			}
-			if slashResult, ok := ev.(query.SlashResultEvent); ok {
-				s.hub.publish("slash_result", slashResult.Result)
-			}
-			s.hub.publish("loop_event", ev)
 		}
 	}()
 	return true
