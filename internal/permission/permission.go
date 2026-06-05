@@ -60,6 +60,10 @@ type Checker interface {
 	AddPersistentRule(rule Rule) error
 }
 
+type SessionRuleResetter interface {
+	ClearSessionRules()
+}
+
 func SessionRuleForPrompt(toolName string, result CheckResult, decision Decision) Rule {
 	return Rule{
 		ToolName: toolName,

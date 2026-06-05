@@ -378,6 +378,9 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	if err := validateResumeWorkDir(rt.Deps.Store.Snapshot().CWD, sess.Conversation.WorkDir); err != nil {
 		return err
 	}
+	if resetter, ok := rt.Deps.Checker.(permission.SessionRuleResetter); ok {
+		resetter.ClearSessionRules()
+	}
 	rt.Deps.CostTracker.Reset(sess.CostUSD)
 	rt.Deps.Metrics.Reset(observe.MetricsSeed{TokenUsage: sess.TokenUsage, TurnCount: sess.TurnCount})
 	providerBinding, err := rt.resolveResumeProvider(sess.Conversation)

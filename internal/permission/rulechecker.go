@@ -126,6 +126,21 @@ func (rc *RuleChecker) AddSessionRule(rule Rule) {
 	rc.rules = append(rc.rules, rule)
 }
 
+func (rc *RuleChecker) ClearSessionRules() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	filtered := rc.rules[:0]
+	for _, rule := range rc.rules {
+		if rule.Source == SourceSession {
+			continue
+		}
+		filtered = append(filtered, rule)
+	}
+	rc.rules = filtered
+}
+
 func (rc *RuleChecker) AddPersistentRule(rule Rule) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
