@@ -61,57 +61,19 @@ func (e *Executor) Run(ctx context.Context, initial State) (State, error) {
 	observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "enter")
 	defer observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "exit")
 	state := initial.Snapshot()
-	pending := []string{e.graph.initialNode}
-	step := 0
-
-	for len(pending) > 0 && step < e.graph.maxSteps {
-		observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "for: len(pending) > 0 && step < e.graph.maxSteps")
-		step++
-
-		if err := ctx.Err(); err != nil {
-			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "if: err != nil")
-			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "return: state, fmt.Errorf(\"lifecycle: context cancelled at step %d: %w\", step, err)")
-			return state, fmt.Errorf("lifecycle: context cancelled at step %d: %w", step, err)
+	for ev := range e.Stream(ctx, initial) {
+		observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "range e.Stream(ctx, initial)")
+		if ev.Type != "completed" {
+			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "if: ev.Type != \"completed\"")
+			continue
 		}
-
-		e.emitStepStarted(step, pending)
-
-		updates, nodeErrors, _ := e.executeSuperstep(ctx, step, pending, state)
-
-		for node, err := range nodeErrors {
-			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "range nodeErrors")
-			if err != nil {
-				observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "if: err != nil")
-				observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "return: state, fmt.Errorf(\"lifecycle: node %q failed at step %d: %w\", node, step, err)")
-				return state, fmt.Errorf("lifecycle: node %q failed at step %d: %w", node, step, err)
-			}
+		if ev.State != nil {
+			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "if: ev.State != nil")
+			state = ev.State.Snapshot()
 		}
-
-		for _, update := range updates {
-			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "range updates")
-			state = applyUpdate(state, update, e.graph.reducers)
-		}
-
-		if e.checkpointer != nil {
-			observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "if: e.checkpointer != nil")
-			if err := e.checkpointer.Save(step, state); err != nil {
-				observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "if: err != nil")
-				observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "return: state, fmt.Errorf(\"lifecycle: checkpoint save failed at step %d: %w\", step, err)")
-				return state, fmt.Errorf("lifecycle: checkpoint save failed at step %d: %w", step, err)
-			}
-		}
-
-		pending = e.resolveNextNodes(step, pending, state)
+		observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "return: state, ev.Err")
+		return state, ev.Err
 	}
-
-	if step >= e.graph.maxSteps && len(pending) > 0 {
-		observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "if: step >= e.graph.maxSteps && len(pending) > 0")
-		e.emitCompleted(step, ErrMaxStepsExceeded)
-		observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "return: state, ErrMaxStepsExceeded")
-		return state, ErrMaxStepsExceeded
-	}
-
-	e.emitCompleted(step, nil)
 	observe.TraceCtx(ctx, "lifecycle", "Executor.Run", "return: state, nil")
 	return state, nil
 }
@@ -132,7 +94,9 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 			step++
 			if ctx.Err() != nil {
 				observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "if: ctx.Err() != nil")
-				ch <- ExecutionEvent{Type: "completed", Step: step, Err: ctx.Err()}
+				err := fmt.Errorf("lifecycle: context cancelled at step %d: %w", step, ctx.Err())
+				e.emitCompleted(step, err)
+				ch <- ExecutionEvent{Type: "completed", Step: step, State: state.Snapshot(), Err: err}
 				return
 			}
 
@@ -145,8 +109,10 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 				dur := nodeDurations[node]
 				if err != nil {
 					observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "if: err != nil")
+					err = fmt.Errorf("lifecycle: node %q failed at step %d: %w", node, step, err)
 					ch <- ExecutionEvent{Type: "node_completed", Step: step, Node: node, Duration: dur, Err: err}
-					ch <- ExecutionEvent{Type: "completed", Step: step, Err: err}
+					e.emitCompleted(step, err)
+					ch <- ExecutionEvent{Type: "completed", Step: step, State: state.Snapshot(), Err: err}
 					return
 				}
 				ch <- ExecutionEvent{Type: "node_completed", Step: step, Node: node, Duration: dur}
@@ -161,12 +127,16 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 				observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "if: e.checkpointer != nil")
 				if cpErr := e.checkpointer.Save(step, state); cpErr != nil {
 					observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "if: cpErr != nil")
-					ch <- ExecutionEvent{Type: "completed", Step: step, Err: cpErr}
+					err := fmt.Errorf("lifecycle: checkpoint save failed at step %d: %w", step, cpErr)
+					e.emitCompleted(step, err)
+					ch <- ExecutionEvent{Type: "completed", Step: step, State: state.Snapshot(), Err: err}
 					return
 				}
 			}
 
-			nextPending := e.resolveNextNodesWithEvents(step, pending, state, ch)
+			nextPending := e.resolveNextNodes(step, pending, state, func(ev ExecutionEvent) {
+				ch <- ev
+			})
 			pending = nextPending
 		}
 
@@ -175,6 +145,7 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 			observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "if: step >= e.graph.maxSteps && len(pending) > 0")
 			err = ErrMaxStepsExceeded
 		}
+		e.emitCompleted(step, err)
 		ch <- ExecutionEvent{Type: "completed", Step: step, State: state.Snapshot(), Err: err}
 	}()
 	observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "return: ch")
@@ -246,7 +217,7 @@ func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []str
 }
 
 // resolveNextNodes determines which nodes to execute next based on edges.
-func (e *Executor) resolveNextNodes(step int, completed []string, state State) []string {
+func (e *Executor) resolveNextNodes(step int, completed []string, state State, emit func(ExecutionEvent)) []string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	seen := make(map[string]bool)
@@ -260,6 +231,10 @@ func (e *Executor) resolveNextNodes(step int, completed []string, state State) [
 			for _, target := range targets {
 				observe.GlobalTrace("range targets")
 				e.emitTransition(step, node, target, "")
+				if emit != nil {
+					observe.GlobalTrace("if: emit != nil")
+					emit(ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: target})
+				}
 				if !seen[target] {
 					observe.GlobalTrace("if: !seen[target]")
 					seen[target] = true
@@ -277,66 +252,24 @@ func (e *Executor) resolveNextNodes(step int, completed []string, state State) [
 				observe.GlobalTrace("if: target == \"\"")
 
 				e.emitTransition(step, node, "END", key)
-				continue
-			}
-			e.emitTransition(step, node, target, key)
-			if !seen[target] {
-				observe.GlobalTrace("if: !seen[target]")
-				seen[target] = true
-				next = append(next, target)
-			}
-		}
-
-	}
-	observe.GlobalTrace("return: next")
-
-	return next
-}
-
-// resolveNextNodesWithEvents determines which nodes to execute next,
-// emitting transition events both to the EventBus and the streaming channel.
-func (e *Executor) resolveNextNodesWithEvents(step int, completed []string, state State, ch chan<- ExecutionEvent) []string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	seen := make(map[string]bool)
-	var next []string
-
-	for _, node := range completed {
-		observe.GlobalTrace("range completed")
-
-		if targets, ok := e.graph.edges[node]; ok {
-			observe.GlobalTrace("if: ok")
-			for _, target := range targets {
-				observe.GlobalTrace("range targets")
-				e.emitTransition(step, node, target, "")
-				ch <- ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: target}
-				if !seen[target] {
-					observe.GlobalTrace("if: !seen[target]")
-					seen[target] = true
-					next = append(next, target)
+				if emit != nil {
+					observe.GlobalTrace("if: emit != nil")
+					emit(ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: "END", RouteKey: key})
 				}
-			}
-			continue
-		}
-
-		if ce, ok := e.graph.conditionalEdges[node]; ok {
-			observe.GlobalTrace("if: ok")
-			key := ce.Router(state)
-			target := ce.PathMap[key]
-			if target == "" {
-				observe.GlobalTrace("if: target == \"\"")
-				e.emitTransition(step, node, "END", key)
-				ch <- ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: "END", RouteKey: key}
 				continue
 			}
 			e.emitTransition(step, node, target, key)
-			ch <- ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: target, RouteKey: key}
+			if emit != nil {
+				observe.GlobalTrace("if: emit != nil")
+				emit(ExecutionEvent{Type: "transition", Step: step, FromNode: node, ToNode: target, RouteKey: key})
+			}
 			if !seen[target] {
 				observe.GlobalTrace("if: !seen[target]")
 				seen[target] = true
 				next = append(next, target)
 			}
 		}
+
 	}
 	observe.GlobalTrace("return: next")
 
