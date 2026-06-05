@@ -10,6 +10,12 @@ type Event interface {
 	interactiveEventSealed()
 }
 
+type AcceptedPromptEvent struct {
+	Prompt string
+}
+
+func (AcceptedPromptEvent) interactiveEventSealed() {}
+
 // LoopEvent carries a domain/runtime query event through the interactive stream.
 type LoopEvent struct {
 	Event query.LoopEvent

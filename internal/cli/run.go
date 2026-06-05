@@ -241,15 +241,17 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 			}
 		}
 		if name, args, ok := slash.Parse(input); ok && rt.SlashCmds != nil {
-			rt.runSlash(ctx, name, args, promptHookResult, ch)
+			ch <- interactive.AcceptedPromptEvent{Prompt: input}
+			rt.runSlash(ctx, input, name, args, promptHookResult, ch)
 			return
 		}
-		rt.runEngine(ctx, input, promptHookResult, ch)
+		ch <- interactive.AcceptedPromptEvent{Prompt: input}
+		rt.runEngine(ctx, input, input, promptHookResult, ch)
 	}()
 	return ch
 }
 
-func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
+func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput string, name string, args string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
 	deps := rt.SlashDeps
 	if deps.LatestAssistantText == nil {
 		deps.LatestAssistantText = func() string { return latestAssistantText(rt.Deps.Store) }
@@ -278,11 +280,11 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args st
 		ch <- interactive.SlashResultEvent{Result: result}
 	}
 	if result.Orchestrate != nil {
-		rt.runOrchestration(ctx, *result.Orchestrate, promptHookResult, ch)
+		rt.runOrchestration(ctx, *result.Orchestrate, submittedInput, promptHookResult, ch)
 		return
 	}
 	if result.InjectPrompt != "" {
-		rt.runEngine(ctx, result.InjectPrompt, promptHookResult, ch)
+		rt.runEngine(ctx, result.InjectPrompt, submittedInput, promptHookResult, ch)
 	}
 }
 
@@ -298,7 +300,7 @@ func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 }
 
-func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
+func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
 	sessionHookResult, err := startSessionForCurrentConversation(ctx, rt.Deps)
 	if err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
@@ -306,16 +308,21 @@ func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, promp
 	}
 	rt.appendHookContext(hook.SessionStart, sessionHookResult, true)
 	rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false)
-	if rt.Deps.SessionWriter != nil {
-		_ = rt.Deps.SessionWriter.WritePromptHistory(input)
-	}
+	rt.writePromptHistory(submittedInput)
 	for ev := range rt.Engine.Run(ctx, input) {
 		ch <- interactive.LoopEvent{Event: ev}
 		persistSessionAfterLoopEvent(ev, rt.sessionSave)
 	}
 }
 
-func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
+func (rt *InteractiveRuntime) writePromptHistory(input string) {
+	if rt.Deps.SessionWriter == nil {
+		return
+	}
+	_ = rt.Deps.SessionWriter.WritePromptHistory(input)
+}
+
+func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
 	sessionHookResult, err := startSessionForCurrentConversation(ctx, rt.Deps)
 	if err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
@@ -323,6 +330,7 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 	}
 	rt.appendHookContext(hook.SessionStart, sessionHookResult, true)
 	rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false)
+	rt.writePromptHistory(submittedInput)
 	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
 		PersonaDir:   req.PersonaDir,
 		TaskPrompt:   req.Prompt,

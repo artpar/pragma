@@ -94,7 +94,6 @@ func (c *inputComponent) Update(msg tea.Msg) tea.Cmd {
 					observe.GlobalTrace("return: nil")
 					return nil
 				}
-				c.remember(text)
 				c.textarea.Reset()
 				c.historyIndex = -1
 				c.historyDraft = ""

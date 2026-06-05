@@ -445,6 +445,9 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 		events := s.cfg.RunInput(ctx, input)
 		for ev := range events {
 			switch e := ev.(type) {
+			case interactive.AcceptedPromptEvent:
+				s.hub.publish("prompt_accepted", e)
+				continue
 			case interactive.SlashResultEvent:
 				s.hub.publish("slash_result", e.Result)
 				continue
@@ -1448,7 +1451,7 @@ function eventCategory(envelope){
 function eventDisplayTitle(envelope){
   const data = envelope.data || {};
   const typ = typeOfEnvelope(envelope);
-  if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt') return 'You';
+  if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt' || envelope.type === 'prompt_accepted') return 'You';
   if(envelope.type === 'permission_request') return 'Permission needed';
   if(envelope.type === 'permission_response' || envelope.type === 'permission_response_submitted') return 'Permission answered';
   if(envelope.type === 'ask_request') return 'Question';
@@ -1487,7 +1490,7 @@ function eventDisplayMeta(envelope){
 function eventPreview(envelope){
   const data = envelope.data || {};
   const typ = typeOfEnvelope(envelope);
-  if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt') return compactText(data.prompt || data.Prompt || '');
+  if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt' || envelope.type === 'prompt_accepted') return compactText(data.prompt || data.Prompt || '');
   if(typ.includes('TextEvent') || typ.includes('ThinkingEvent')) return compactText(data.Text || data.text || '');
   if(typ.includes('ToolCallEvent') && data.Call) return compactText(field(data.Call, 'Input', 'input'));
   if(typ.includes('ToolResultEvent') && data.Result) return compactText(data.Display || data.display || field(data.Result, 'Content', 'content'));
@@ -2193,6 +2196,7 @@ function renderInspector(){
 
 function appendEnvelope(envelope){
   if(envelope.type === 'workflow_snapshot') state.workflowSnapshot = envelope.data || null;
+  if(envelope.type === 'prompt_accepted') rememberPrompt((envelope.data || {}).Prompt || (envelope.data || {}).prompt || '');
   state.events.push(envelope);
   statusEl.textContent = envelope.type || 'event';
   if(envelope.type === 'run_idle') statusEl.textContent = 'Ready';
@@ -2467,7 +2471,6 @@ document.getElementById('promptForm').onsubmit = async event => {
   event.preventDefault();
   const prompt = promptEl.value;
   if(!prompt.trim()) return;
-  rememberPrompt(prompt);
   resetHistoryNavigation();
   clearCompletions();
   promptEl.value = '';

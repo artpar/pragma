@@ -172,6 +172,10 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 	var loopEvent query.LoopEvent
 	switch ev := msg.Event.(type) {
+	case interactive.AcceptedPromptEvent:
+		observe.GlobalTrace("typecase: interactive.AcceptedPromptEvent")
+		m.input.remember(ev.Prompt)
+		return m, waitForEvent(m.eventCh)
 	case interactive.SlashResultEvent:
 		observe.GlobalTrace("typecase: interactive.SlashResultEvent")
 		next, cmd := m.handleRuntimeSlashResult(ev.Result)

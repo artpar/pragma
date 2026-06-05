@@ -45,8 +45,8 @@ func TestInputComponentReset(t *testing.T) {
 
 func TestInputComponentPromptHistoryRing(t *testing.T) {
 	ic := newInputComponent()
-	submitInput(t, &ic, "first prompt")
-	submitInput(t, &ic, "second prompt")
+	ic.remember("first prompt")
+	ic.remember("second prompt")
 
 	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if got := ic.textarea.Value(); got != "second prompt" {
@@ -71,7 +71,7 @@ func TestInputComponentPromptHistoryRing(t *testing.T) {
 
 func TestInputComponentPromptHistoryRestoresDraft(t *testing.T) {
 	ic := newInputComponent()
-	submitInput(t, &ic, "previous prompt")
+	ic.remember("previous prompt")
 
 	ic.textarea.SetValue("draft prompt")
 	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -124,6 +124,7 @@ func TestInputComponentSetHistoryThenNewPrompts(t *testing.T) {
 	// Add a new prompt in this session
 	ic.textarea.SetValue("new prompt")
 	ic.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	ic.remember("new prompt")
 
 	// Up should show new prompt first
 	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
