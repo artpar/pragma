@@ -147,9 +147,15 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		}
 	}
 
+	orchestrator := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
+	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
+		orchestrator.SetHookManager(d.HookMgr)
+	}
+
 	if os.Getenv("PRAGMA_REPL") == "1" && shouldRegisterBuiltinTool(d, "REPL") {
 		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_REPL\") == \"1\"")
-		replTool := &toolrepl.Tool{Registry: d.Registry, Bus: d.Bus}
+		replTool := &toolrepl.Tool{Registry: d.Registry, Orchestrator: orchestrator, Bus: d.Bus}
 		if err := d.Registry.Register(replTool); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"register REPL tool: %w\", err)")
@@ -158,11 +164,6 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		d.Registry.SetHidden(toolrepl.PrimitiveToolNames)
 	}
 
-	orchestrator := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
-	if d.HookMgr != nil {
-		observe.GlobalTrace("if: d.HookMgr != nil")
-		orchestrator.SetHookManager(d.HookMgr)
-	}
 	lifecycleTool := &toollifecycle.Tool{
 		Provider:       d.Prov,
 		Orchestrator:   orchestrator,

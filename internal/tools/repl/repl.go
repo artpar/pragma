@@ -57,8 +57,9 @@ var inputSchema = json.RawMessage(`{
 // batched execution interface. When enabled, primitive tools are hidden from
 // the LLM's tool list but remain callable through this tool.
 type Tool struct {
-	Registry *tool.Registry
-	Bus      *observe.EventBus
+	Registry     *tool.Registry
+	Orchestrator *tool.Orchestrator
+	Bus          *observe.EventBus
 }
 
 func (t *Tool) Name() string {
@@ -98,39 +99,8 @@ func (t *Tool) Flags() tool.ToolFlags {
 func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
 	observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "exit")
-
-	var in struct {
-		Operations []struct {
-			Tool  string          `json:"tool"`
-			Input json.RawMessage `json:"input"`
-		} `json:"operations"`
-	}
-	if err := json.Unmarshal(input, &in); err != nil || len(in.Operations) == 0 {
-		observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "if: err != nil || len(in.Operations) == 0")
-		observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "return: checker.Check(ctx, \"REPL\", \"\")")
-		return checker.Check(ctx, "REPL", "")
-	}
-
-	if len(in.Operations) == 1 {
-		observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "if: len(in.Operations) == 1")
-		op := in.Operations[0]
-		if !PrimitiveToolNames[op.Tool] {
-			observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "if: !PrimitiveToolNames[op.Tool]")
-			observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "return: permission.CheckResult{Decision: permission.DecisionDeny}")
-			return permission.CheckResult{Decision: permission.DecisionDeny}
-		}
-		desc, ok := t.Registry.Get(op.Tool)
-		if !ok {
-			observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "if: !ok")
-			observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "return: permission.CheckResult{Decision: permission.DecisionDeny}")
-			return permission.CheckResult{Decision: permission.DecisionDeny}
-		}
-		observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "return: desc.CheckPerm(ctx, op.Input, checker)")
-		return desc.CheckPerm(ctx, op.Input, checker)
-	}
-	observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "return: permission.CheckResult{Decision: permission.DecisionAsk}")
-
-	return permission.CheckResult{Decision: permission.DecisionAsk}
+	observe.TraceCtx(ctx, "repl", "Tool.CheckPerm", "return: checker.Check(ctx, \"REPL\", \"\")")
+	return checker.Check(ctx, "REPL", "")
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
@@ -154,42 +124,49 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("at least one operation is required")
 	}
 
-	var results []string
-	var allSupplements []model.ContentPart
+	var calls []model.ToolCallPart
+	var callIndexes []int
+	results := make([]string, len(in.Operations))
 
 	for i, op := range in.Operations {
 		observe.TraceCtx(ctx, "repl", "Tool.Invoke", "range in.Operations")
 		if err := ctx.Err(); err != nil {
 			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: err != nil")
-			results = append(results, fmt.Sprintf("[%d] %s: cancelled", i, op.Tool))
+			for j := i; j < len(in.Operations); j++ {
+				results[j] = fmt.Sprintf("[%d] %s: cancelled", j, in.Operations[j].Tool)
+			}
 			break
 		}
 
 		if !PrimitiveToolNames[op.Tool] {
 			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: !PrimitiveToolNames[op.Tool]")
-			results = append(results, fmt.Sprintf("[%d] %s: error: not a REPL-allowed tool", i, op.Tool))
+			results[i] = fmt.Sprintf("[%d] %s: error: not a REPL-allowed tool", i, op.Tool)
 			continue
 		}
 
-		desc, ok := t.Registry.Get(op.Tool)
-		if !ok {
-			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: !ok")
-			results = append(results, fmt.Sprintf("[%d] %s: error: tool not found in registry", i, op.Tool))
-			continue
+		calls = append(calls, model.ToolCallPart{
+			ID:    fmt.Sprintf("repl-%d", i),
+			Name:  op.Tool,
+			Input: op.Input,
+		})
+		callIndexes = append(callIndexes, i)
+	}
+
+	var allSupplements []model.ContentPart
+	if len(calls) > 0 {
+		if t.Orchestrator == nil {
+			return tool.InvokeResult{}, fmt.Errorf("REPL orchestrator is unavailable")
 		}
-
-		observe.TraceCtx(ctx, "repl", "Tool.Invoke",
-			fmt.Sprintf("executing operation %d: %s", i, op.Tool))
-
-		result, err := desc.Invoke(ctx, op.Input, state)
-		if err != nil {
-			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: err != nil")
-			results = append(results, fmt.Sprintf("[%d] %s: error: %v", i, op.Tool, err))
-			continue
+		execResult := t.Orchestrator.Execute(ctx, calls, state)
+		allSupplements = append(allSupplements, execResult.Supplements...)
+		for j, part := range execResult.Results {
+			i := callIndexes[j]
+			if part.IsError {
+				results[i] = fmt.Sprintf("[%d] %s: error: %s", i, calls[j].Name, part.Content)
+				continue
+			}
+			results[i] = fmt.Sprintf("[%d] %s:\n%s", i, calls[j].Name, part.Content)
 		}
-
-		results = append(results, fmt.Sprintf("[%d] %s:\n%s", i, op.Tool, result.Content))
-		allSupplements = append(allSupplements, result.Supplements...)
 	}
 	observe.TraceCtx(ctx, "repl", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tstrings.Join(results, \"\\n---\\n\"),\n\tSupplements:\t...")
 

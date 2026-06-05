@@ -16,15 +16,33 @@ type echoTool struct {
 	name string
 }
 
-func (e *echoTool) Name() string             { return e.name }
-func (e *echoTool) Description() string      { return "echo tool" }
+func (e *echoTool) Name() string                 { return e.name }
+func (e *echoTool) Description() string          { return "echo tool" }
 func (e *echoTool) InputSchema() json.RawMessage { return json.RawMessage(`{"type":"object"}`) }
-func (e *echoTool) Flags() tool.ToolFlags    { return tool.ToolFlags{} }
+func (e *echoTool) Flags() tool.ToolFlags        { return tool.ToolFlags{} }
 func (e *echoTool) CheckPerm(_ context.Context, _ json.RawMessage, _ permission.Checker) permission.CheckResult {
 	return permission.CheckResult{Decision: permission.DecisionAllow}
 }
 func (e *echoTool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
 	return tool.InvokeResult{Content: "echo: " + string(input)}, nil
+}
+
+type allowChecker struct{}
+
+func (allowChecker) Check(_ context.Context, _ string, _ string) permission.CheckResult {
+	return permission.CheckResult{Decision: permission.DecisionAllow}
+}
+func (allowChecker) AddSessionRule(_ permission.Rule) {}
+func (allowChecker) AddPersistentRule(_ permission.Rule) error {
+	return nil
+}
+
+func newTestREPL(reg *tool.Registry, bus *observe.EventBus) *Tool {
+	return &Tool{
+		Registry:     reg,
+		Orchestrator: tool.NewOrchestrator(reg, allowChecker{}, &permission.NonInteractivePrompter{}, bus),
+		Bus:          bus,
+	}
 }
 
 func TestPrimitiveToolNames(t *testing.T) {
@@ -44,7 +62,7 @@ func TestInvoke_SingleOperation(t *testing.T) {
 	reg := tool.NewRegistry(bus)
 	reg.Register(&echoTool{name: "Bash"})
 
-	tl := &Tool{Registry: reg, Bus: bus}
+	tl := newTestREPL(reg, bus)
 
 	input := `{"operations": [{"tool": "Bash", "input": {"command": "echo hello"}}]}`
 	result, err := tl.Invoke(context.Background(), json.RawMessage(input), nil)
@@ -63,7 +81,7 @@ func TestInvoke_UnauthorizedTool(t *testing.T) {
 	bus := observe.NewEventBus(100)
 	reg := tool.NewRegistry(bus)
 
-	tl := &Tool{Registry: reg, Bus: bus}
+	tl := newTestREPL(reg, bus)
 
 	input := `{"operations": [{"tool": "Config", "input": {}}]}`
 	result, err := tl.Invoke(context.Background(), json.RawMessage(input), nil)
@@ -79,22 +97,22 @@ func TestInvoke_MissingTool(t *testing.T) {
 	bus := observe.NewEventBus(100)
 	reg := tool.NewRegistry(bus)
 	// Read is in PrimitiveToolNames but not registered
-	tl := &Tool{Registry: reg, Bus: bus}
+	tl := newTestREPL(reg, bus)
 
 	input := `{"operations": [{"tool": "Read", "input": {}}]}`
 	result, err := tl.Invoke(context.Background(), json.RawMessage(input), nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if !strings.Contains(result.Content, "tool not found in registry") {
-		t.Errorf("Content = %q, want 'tool not found in registry'", result.Content)
+	if !strings.Contains(result.Content, "unknown tool: Read") {
+		t.Errorf("Content = %q, want 'unknown tool: Read'", result.Content)
 	}
 }
 
 func TestInvoke_EmptyOperations(t *testing.T) {
 	bus := observe.NewEventBus(100)
 	reg := tool.NewRegistry(bus)
-	tl := &Tool{Registry: reg, Bus: bus}
+	tl := newTestREPL(reg, bus)
 
 	input := `{"operations": []}`
 	_, err := tl.Invoke(context.Background(), json.RawMessage(input), nil)
@@ -112,7 +130,7 @@ func TestInvoke_MultipleOperations(t *testing.T) {
 	reg.Register(&echoTool{name: "Bash"})
 	reg.Register(&echoTool{name: "Glob"})
 
-	tl := &Tool{Registry: reg, Bus: bus}
+	tl := newTestREPL(reg, bus)
 
 	input := `{"operations": [
 		{"tool": "Bash", "input": {"cmd": "first"}},
