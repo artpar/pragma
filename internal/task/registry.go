@@ -248,6 +248,40 @@ func (r *Registry) NotifyTask(id string) {
 	}
 }
 
+// RequestShutdown asks a teammate task to shut down gracefully and signals it.
+func (r *Registry) RequestShutdown(id string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	t, ok := r.tasks[id]
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
+		return fmt.Errorf("task %q not found", id)
+	}
+	if t.Status != TaskRunning && t.Status != TaskPending {
+		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
+		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot shutdown\", id, t.Status)")
+		return fmt.Errorf("task %q is %s, cannot shutdown", id, t.Status)
+	}
+	t.ShutdownRequested = true
+	t.UpdatedAt = time.Now()
+
+	if t.Notify != nil {
+		observe.GlobalTrace("if: t.Notify != nil")
+		select {
+		case t.Notify <- struct{}{}:
+			observe.GlobalTrace("select: t.Notify <- struct{}{}")
+		default:
+			observe.GlobalTrace("select: default")
+		}
+	}
+	observe.GlobalTrace("return: nil")
+	return nil
+}
+
 // DrainPendingMessages atomically reads and clears PendingMessages for a task.
 // Returns nil if task not found or no messages pending.
 func (r *Registry) DrainPendingMessages(id string) []string {
@@ -273,33 +307,11 @@ func (r *Registry) DrainPendingMessages(id string) []string {
 func (r *Registry) Shutdown(id string, timeout time.Duration) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	r.mu.Lock()
-	t, ok := r.tasks[id]
-	if !ok {
-		observe.GlobalTrace("if: !ok")
-		r.mu.Unlock()
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
-		return fmt.Errorf("task %q not found", id)
+	if err := r.RequestShutdown(id); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
+		return err
 	}
-	if t.Status != TaskRunning && t.Status != TaskPending {
-		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
-		r.mu.Unlock()
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot shutdown\", id, t.Status)")
-		return fmt.Errorf("task %q is %s, cannot shutdown", id, t.Status)
-	}
-	t.ShutdownRequested = true
-	t.UpdatedAt = time.Now()
-
-	if t.Notify != nil {
-		observe.GlobalTrace("if: t.Notify != nil")
-		select {
-		case t.Notify <- struct{}{}:
-			observe.GlobalTrace("select: t.Notify <- struct{}{}")
-		default:
-			observe.GlobalTrace("select: default")
-		}
-	}
-	r.mu.Unlock()
 
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(100 * time.Millisecond)

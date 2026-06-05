@@ -141,10 +141,11 @@ func (d *teamsDialog) shutdownSelected() {
 		return
 	}
 	e := d.entries[d.selected]
-	_ = d.taskReg.Update(e.TaskID, func(tt *task.Task) {
-		tt.ShutdownRequested = true
-	})
-	d.taskReg.NotifyTask(e.TaskID)
+	if err := d.taskReg.RequestShutdown(e.TaskID); err != nil {
+		d.feedback = fmt.Sprintf("Shutdown failed for %s: %v", e.Name, err)
+		d.Refresh()
+		return
+	}
 	d.feedback = fmt.Sprintf("Shutdown requested for %s", e.Name)
 	d.Refresh()
 }
@@ -158,7 +159,11 @@ func (d *teamsDialog) killSelected() {
 		return
 	}
 	e := d.entries[d.selected]
-	d.taskReg.Cancel(e.TaskID)
+	if err := d.taskReg.Cancel(e.TaskID); err != nil {
+		d.feedback = fmt.Sprintf("Kill failed for %s: %v", e.Name, err)
+		d.Refresh()
+		return
+	}
 	d.feedback = fmt.Sprintf("Killed %s", e.Name)
 	d.Refresh()
 }
