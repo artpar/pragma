@@ -39,6 +39,15 @@ func TestEventJSONRoundTrip(t *testing.T) {
 			ToolName:    "Bash",
 			WasExecuted: true,
 		},
+		PermissionDecisionFinal{
+			EventHeader: NewEventHeader("PermissionDecisionFinal", "t1", "s4b", ""),
+			ToolCallID:  "tc-3",
+			ToolName:    "Bash",
+			Decision:    "allow",
+			Rule:        "Bash(git status)",
+			Source:      "localSettings",
+			WasExecuted: true,
+		},
 		SessionEnded{
 			EventHeader:  NewEventHeader("SessionEnded", "t1", "s5", ""),
 			SessionID:    "sess-1",

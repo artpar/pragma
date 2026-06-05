@@ -301,6 +301,12 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	case "PermissionDecisionFinal":
+		var e PermissionDecisionFinal
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	case "PermissionDenialEnforced":
 		var e PermissionDenialEnforced
 		if err := json.Unmarshal(data, &e); err != nil {

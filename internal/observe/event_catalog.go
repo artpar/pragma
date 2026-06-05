@@ -376,6 +376,19 @@ type PermissionEscalated struct {
 
 func (PermissionEscalated) eventSealed() {}
 
+type PermissionDecisionFinal struct {
+	EventHeader
+	ToolCallID   string `json:"tool_call_id"`
+	ToolName     string `json:"tool_name"`
+	Decision     string `json:"decision"`
+	UserDecision string `json:"user_decision,omitempty"`
+	Rule         string `json:"rule,omitempty"`
+	Source       string `json:"source,omitempty"`
+	WasExecuted  bool   `json:"was_executed"`
+}
+
+func (PermissionDecisionFinal) eventSealed() {}
+
 type PermissionDenialEnforced struct {
 	EventHeader
 	ToolCallID  string `json:"tool_call_id"`

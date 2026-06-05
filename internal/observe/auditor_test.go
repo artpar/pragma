@@ -2,15 +2,16 @@ package observe
 
 import "testing"
 
-func TestAuditorPermissionChecked(t *testing.T) {
+func TestAuditorPermissionDecisionFinal(t *testing.T) {
 	a := NewAuditor()
-	a.HandleEvent(ToolPermissionChecked{
-		EventHeader: NewEventHeader("ToolPermissionChecked", "t1", "s1", ""),
+	a.HandleEvent(PermissionDecisionFinal{
+		EventHeader: NewEventHeader("PermissionDecisionFinal", "t1", "s1", ""),
 		ToolCallID:  "tc-1",
 		ToolName:    "Bash",
 		Decision:    "allow",
-		Rule:        "allow:Bash(git *)",
+		Rule:        "Bash(git *)",
 		Source:      "settings",
+		WasExecuted: true,
 	})
 
 	trail := a.Trail()
@@ -23,24 +24,29 @@ func TestAuditorPermissionChecked(t *testing.T) {
 	if trail[0].ToolName != "Bash" {
 		t.Errorf("ToolName: got %q", trail[0].ToolName)
 	}
+	if trail[0].RuleMatched != "Bash(git *)" {
+		t.Errorf("RuleMatched: got %q", trail[0].RuleMatched)
+	}
 }
 
 func TestAuditorViolations(t *testing.T) {
 	a := NewAuditor()
 
 	// Normal denial — WasExecuted=false (correct behavior)
-	a.HandleEvent(PermissionDenialEnforced{
-		EventHeader: NewEventHeader("PermissionDenialEnforced", "t1", "s1", ""),
+	a.HandleEvent(PermissionDecisionFinal{
+		EventHeader: NewEventHeader("PermissionDecisionFinal", "t1", "s1", ""),
 		ToolCallID:  "tc-1",
 		ToolName:    "Bash",
+		Decision:    "deny",
 		WasExecuted: false,
 	})
 
 	// Violation — WasExecuted=true (bug: denial ignored)
-	a.HandleEvent(PermissionDenialEnforced{
-		EventHeader: NewEventHeader("PermissionDenialEnforced", "t1", "s2", ""),
+	a.HandleEvent(PermissionDecisionFinal{
+		EventHeader: NewEventHeader("PermissionDecisionFinal", "t1", "s2", ""),
 		ToolCallID:  "tc-2",
 		ToolName:    "FileWrite",
+		Decision:    "deny",
 		WasExecuted: true,
 	})
 
@@ -56,21 +62,16 @@ func TestAuditorViolations(t *testing.T) {
 	}
 }
 
-func TestAuditorPromptedUpdatesEntry(t *testing.T) {
+func TestAuditorPromptedDecision(t *testing.T) {
 	a := NewAuditor()
 
-	a.HandleEvent(ToolPermissionChecked{
-		EventHeader: NewEventHeader("ToolPermissionChecked", "t1", "s1", ""),
-		ToolCallID:  "tc-1",
-		ToolName:    "Bash",
-		Decision:    "ask",
-	})
-	a.HandleEvent(ToolPermissionPrompted{
-		EventHeader:  NewEventHeader("ToolPermissionPrompted", "t1", "s2", ""),
+	a.HandleEvent(PermissionDecisionFinal{
+		EventHeader:  NewEventHeader("PermissionDecisionFinal", "t1", "s1", ""),
 		ToolCallID:   "tc-1",
 		ToolName:     "Bash",
+		Decision:     "allow",
 		UserDecision: "allow",
-		DurationMs:   2500,
+		WasExecuted:  true,
 	})
 
 	trail := a.Trail()
@@ -84,11 +85,12 @@ func TestAuditorPromptedUpdatesEntry(t *testing.T) {
 
 func TestAuditorTrailIsCopy(t *testing.T) {
 	a := NewAuditor()
-	a.HandleEvent(ToolPermissionChecked{
-		EventHeader: NewEventHeader("ToolPermissionChecked", "t1", "s1", ""),
+	a.HandleEvent(PermissionDecisionFinal{
+		EventHeader: NewEventHeader("PermissionDecisionFinal", "t1", "s1", ""),
 		ToolCallID:  "tc-1",
 		ToolName:    "Bash",
 		Decision:    "allow",
+		WasExecuted: true,
 	})
 
 	trail := a.Trail()
@@ -97,32 +99,5 @@ func TestAuditorTrailIsCopy(t *testing.T) {
 	fresh := a.Trail()
 	if fresh[0].Decision == "modified" {
 		t.Error("Trail returned a reference, not a copy")
-	}
-}
-
-func TestAuditorOrphanedPromptCreatesEntry(t *testing.T) {
-	a := NewAuditor()
-
-	// ToolPermissionPrompted without prior ToolPermissionChecked
-	a.HandleEvent(ToolPermissionPrompted{
-		EventHeader:  NewEventHeader("ToolPermissionPrompted", "t1", "s1", ""),
-		ToolCallID:   "tc-orphan",
-		ToolName:     "Bash",
-		UserDecision: "allow",
-		DurationMs:   1000,
-	})
-
-	trail := a.Trail()
-	if len(trail) != 1 {
-		t.Fatalf("Trail: got %d, want 1", len(trail))
-	}
-	if trail[0].ToolCallID != "tc-orphan" {
-		t.Errorf("ToolCallID: got %q, want tc-orphan", trail[0].ToolCallID)
-	}
-	if trail[0].Decision != "prompted" {
-		t.Errorf("Decision: got %q, want prompted", trail[0].Decision)
-	}
-	if trail[0].UserResponse != "allow" {
-		t.Errorf("UserResponse: got %q, want allow", trail[0].UserResponse)
 	}
 }

@@ -46,6 +46,19 @@ func (o *Orchestrator) SetHookManager(mgr *hook.Manager) {
 	o.hookMgr = mgr
 }
 
+func (o *Orchestrator) emitPermissionDecision(traceID, spanID, parentSpan, toolCallID, toolName, decision, userDecision, rule, source string, wasExecuted bool) {
+	o.bus.Emit(observe.PermissionDecisionFinal{
+		EventHeader:  observe.NewEventHeader("PermissionDecisionFinal", traceID, spanID, parentSpan),
+		ToolCallID:   toolCallID,
+		ToolName:     toolName,
+		Decision:     decision,
+		UserDecision: userDecision,
+		Rule:         rule,
+		Source:       source,
+		WasExecuted:  wasExecuted,
+	})
+}
+
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
 	Results     []model.ToolResultPart
@@ -340,6 +353,7 @@ func (o *Orchestrator) executeSingle(
 
 	if permResult.Decision == permission.DecisionDeny {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Decision == permission.DecisionDeny")
+		o.emitPermissionDecision(traceID, spanID, parentSpan, call.ID, call.Name, string(permResult.Decision), "", rulePattern, ruleSource, false)
 		o.bus.Emit(observe.PermissionDenialEnforced{
 			EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
 			ToolCallID:  call.ID,
@@ -356,11 +370,15 @@ func (o *Orchestrator) executeSingle(
 		}
 	}
 
+	finalDecision := permResult.Decision
+	userDecision := ""
 	if permResult.Decision == permission.DecisionAsk {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Decision == permission.DecisionAsk")
 		promptStart := time.Now()
 		decision, remember := o.prompter.Prompt(ctx, call.Name, call.Input, permResult.Content, permResult.Reason)
 		promptDuration := time.Since(promptStart)
+		finalDecision = decision
+		userDecision = string(decision)
 
 		if remember {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: remember")
@@ -394,6 +412,7 @@ func (o *Orchestrator) executeSingle(
 
 		if decision != permission.DecisionAllow {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: decision != permission.DecisionAllow")
+			o.emitPermissionDecision(traceID, spanID, parentSpan, call.ID, call.Name, string(decision), userDecision, rulePattern, ruleSource, false)
 			o.bus.Emit(observe.PermissionDenialEnforced{
 				EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
 				ToolCallID:  call.ID,
@@ -413,6 +432,7 @@ func (o *Orchestrator) executeSingle(
 
 	if ctx.Err() != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: ctx.Err() != nil")
+		o.emitPermissionDecision(traceID, spanID, parentSpan, call.ID, call.Name, string(finalDecision), userDecision, rulePattern, ruleSource, false)
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 		return singleResult{
 			part: model.ToolResultPart{
@@ -423,6 +443,7 @@ func (o *Orchestrator) executeSingle(
 		}
 	}
 
+	o.emitPermissionDecision(traceID, spanID, parentSpan, call.ID, call.Name, string(finalDecision), userDecision, rulePattern, ruleSource, true)
 	o.bus.Emit(observe.ToolExecutionStarted{
 		EventHeader:    observe.NewEventHeader("ToolExecutionStarted", traceID, spanID, parentSpan),
 		ToolCallID:     call.ID,

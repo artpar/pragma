@@ -35,37 +35,18 @@ func (a *Auditor) HandleEvent(event Event) {
 	defer a.mu.Unlock()
 
 	switch e := event.(type) {
-	case ToolPermissionChecked:
-		idx := len(a.entries)
+	case PermissionDecisionFinal:
 		a.entries = append(a.entries, AuditEntry{
-			Timestamp:   e.EventTimestamp(),
-			ToolCallID:  e.ToolCallID,
-			ToolName:    e.ToolName,
-			Decision:    e.Decision,
-			RuleMatched: e.Rule,
-			RuleSource:  e.Source,
+			Timestamp:    e.EventTimestamp(),
+			ToolCallID:   e.ToolCallID,
+			ToolName:     e.ToolName,
+			Decision:     e.Decision,
+			UserResponse: e.UserDecision,
+			RuleMatched:  e.Rule,
+			RuleSource:   e.Source,
+			WasExecuted:  e.WasExecuted,
 		})
-		a.index[e.ToolCallID] = idx
-	case ToolPermissionPrompted:
-		// O(1) lookup via index
-		if idx, ok := a.index[e.ToolCallID]; ok {
-			a.entries[idx].UserResponse = e.UserDecision
-		} else {
-			a.entries = append(a.entries, AuditEntry{
-				Timestamp:    e.EventTimestamp(),
-				ToolCallID:   e.ToolCallID,
-				Decision:     "prompted",
-				UserResponse: e.UserDecision,
-			})
-		}
-	case PermissionDenialEnforced:
-		a.entries = append(a.entries, AuditEntry{
-			Timestamp:   e.EventTimestamp(),
-			ToolCallID:  e.ToolCallID,
-			ToolName:    e.ToolName,
-			Decision:    "deny",
-			WasExecuted: e.WasExecuted,
-		})
+		a.index[e.ToolCallID] = len(a.entries) - 1
 	}
 }
 

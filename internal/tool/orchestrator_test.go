@@ -275,6 +275,7 @@ func TestOrchestratorEmitsEvents(t *testing.T) {
 		"ToolCallReceived",
 		"ToolBatchStarted",
 		"ToolPermissionChecked",
+		"PermissionDecisionFinal",
 		"ToolExecutionStarted",
 		"ToolExecutionCompleted",
 		"ToolBatchCompleted",
