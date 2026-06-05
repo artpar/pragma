@@ -19,23 +19,32 @@ type ReplayEngine struct {
 }
 
 // LoadReplay loads a replay from a directory containing events.jsonl,
-// tool-outputs/, and api-responses/.
-func LoadReplay(dir string) (*ReplayEngine, error) {
+// tool-outputs/, and api-responses/, or from a single recorded JSONL file.
+func LoadReplay(path string) (*ReplayEngine, error) {
 	re := &ReplayEngine{
 		toolOutputs:  make(map[string]RecordedToolOutput),
 		apiResponses: make(map[int]model.Response),
 		apiRequests:  make(map[int]APIRequestStarted),
 	}
 
+	artifactDir := path
+	eventsPath := filepath.Join(path, "events.jsonl")
+	if info, err := os.Stat(path); err != nil {
+		return nil, err
+	} else if !info.IsDir() {
+		eventsPath = path
+		artifactDir = filepath.Dir(path)
+	}
+
 	// Load events
-	eventsPath := filepath.Join(dir, "events.jsonl")
 	if err := re.loadEvents(eventsPath); err != nil {
 		return nil, fmt.Errorf("load events: %w", err)
 	}
 	re.indexAPIRequests()
+	re.indexAPIResponses()
 
 	// Load tool outputs (optional)
-	toolDir := filepath.Join(dir, "tool-outputs")
+	toolDir := filepath.Join(artifactDir, "tool-outputs")
 	if entries, err := os.ReadDir(toolDir); err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
@@ -54,7 +63,7 @@ func LoadReplay(dir string) (*ReplayEngine, error) {
 	}
 
 	// Load API responses (optional)
-	apiDir := filepath.Join(dir, "api-responses")
+	apiDir := filepath.Join(artifactDir, "api-responses")
 	if entries, err := os.ReadDir(apiDir); err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
@@ -154,6 +163,30 @@ func (re *ReplayEngine) indexAPIRequests() {
 		if req, ok := ev.(APIRequestStarted); ok {
 			turn++
 			re.apiRequests[turn] = req
+		}
+	}
+}
+
+func (re *ReplayEngine) indexAPIResponses() {
+	turn := 0
+	for _, ev := range re.events {
+		completed, ok := ev.(APIRequestCompleted)
+		if !ok {
+			continue
+		}
+		turn++
+		if len(completed.Content) == 0 {
+			continue
+		}
+		parts, err := model.UnmarshalContentParts(completed.Content)
+		if err != nil {
+			continue
+		}
+		re.apiResponses[turn] = model.Response{
+			Model:      completed.Model,
+			Content:    parts,
+			StopReason: completed.StopReason,
+			Usage:      completed.Usage,
 		}
 	}
 }
