@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
@@ -213,6 +215,10 @@ func RebindProviderBackedTools(d *Deps) {
 func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if d != nil && !d.ToolPolicy.Allows(name) {
+		observe.GlobalTrace("if: d != nil && !d.ToolPolicy.Allows(name)")
+		return false
+	}
 	if isRuntimeBuiltinTool(name) {
 		observe.GlobalTrace("if: isRuntimeBuiltinTool(name)")
 		observe.GlobalTrace("return: true")
@@ -235,6 +241,45 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 	}
 	observe.GlobalTrace("return: d.Toolset.AllowBuiltinTool(name)")
 	return d.Toolset.AllowBuiltinTool(name)
+}
+
+type ToolExposurePolicy struct {
+	HasAllowed bool
+	Allowed    map[string]bool
+	Disallowed map[string]bool
+}
+
+func toolExposurePolicyFromFlags(cmd *cobra.Command) ToolExposurePolicy {
+	var policy ToolExposurePolicy
+	if cmd == nil || cmd.Flags() == nil {
+		return policy
+	}
+	if allowedStr, _ := cmd.Flags().GetString("allowed-tools"); allowedStr != "" {
+		allowed := parseToolList(allowedStr)
+		policy.HasAllowed = true
+		policy.Allowed = make(map[string]bool, len(allowed))
+		for _, name := range allowed {
+			policy.Allowed[name] = true
+		}
+	}
+	if disallowedStr, _ := cmd.Flags().GetString("disallowed-tools"); disallowedStr != "" {
+		disallowed := parseToolList(disallowedStr)
+		policy.Disallowed = make(map[string]bool, len(disallowed))
+		for _, name := range disallowed {
+			policy.Disallowed[name] = true
+		}
+	}
+	return policy
+}
+
+func (p ToolExposurePolicy) Allows(name string) bool {
+	if p.HasAllowed && !p.Allowed[name] {
+		return false
+	}
+	if p.Disallowed[name] {
+		return false
+	}
+	return true
 }
 
 func patchModeActive(d *Deps) bool {

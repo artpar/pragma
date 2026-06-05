@@ -171,6 +171,27 @@ func TestApplyToolFiltersCanExposeBenchMinimalSurface(t *testing.T) {
 	}
 }
 
+func TestToolExposurePolicyFiltersRegistration(t *testing.T) {
+	deps := &Deps{
+		ToolPolicy: ToolExposurePolicy{
+			HasAllowed: true,
+			Allowed: map[string]bool{
+				"Agent": true,
+			},
+		},
+	}
+
+	if shouldRegisterBuiltinTool(deps, "Bash") {
+		t.Fatal("Bash should not register when only Agent is allowed")
+	}
+	if !shouldRegisterBuiltinTool(deps, "Agent") {
+		t.Fatal("Agent should register when explicitly allowed")
+	}
+	if shouldRegisterBuiltinTool(deps, "REPL") {
+		t.Fatal("REPL should not register when only Agent is allowed")
+	}
+}
+
 func TestToolsetHidesBuiltinTools(t *testing.T) {
 	deps := &Deps{
 		Toolset: &toolset.Compiled{

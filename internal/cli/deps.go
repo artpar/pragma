@@ -51,6 +51,7 @@ type Deps struct {
 	EngineCfg      query.EngineConfig
 	TaskReg        *task.Registry
 	Toolset        *toolset.Compiled
+	ToolPolicy     ToolExposurePolicy
 	McpManager     *mcp.Manager
 	CronSched      *cron.Scheduler
 	HookMgr        *hook.Manager
@@ -132,6 +133,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			return nil, err
 		}
 	}
+	toolPolicy := toolExposurePolicyFromFlags(cmd)
 
 	bus := observe.NewEventBus(1024)
 	observe.SetGlobalBus(bus)
@@ -483,6 +485,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		EngineCfg:      engineCfg,
 		TaskReg:        taskReg,
 		Toolset:        activeToolset,
+		ToolPolicy:     toolPolicy,
 		McpManager:     mcpManager,
 		CronSched:      cronSched,
 		HookMgr:        hookMgr,
