@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
@@ -53,8 +54,18 @@ type CompactResult struct {
 	MessagesRemoved     int
 }
 
+// ApplyResult atomically applies a compaction result to conversation state.
+func ApplyResult(store *app.StateStore, result CompactResult) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	store.Update(func(s *app.AppState) {
+		s.Conversation.Messages = result.ReplacementMessages
+		s.Conversation.UpdatedAt = time.Now()
+	})
+}
+
 // Compact summarizes the conversation and returns a CompactResult.
-// The caller is responsible for replacing messages in the conversation.
+// Use ApplyResult to replace messages in the conversation.
 func (s *Service) Compact(ctx context.Context, messages []model.Message, system model.SystemPrompt, customInstructions string) (CompactResult, error) {
 	observe.TraceCtx(ctx, "compact", "Service.Compact", "enter")
 	defer observe.TraceCtx(ctx, "compact", "Service.Compact", "exit")

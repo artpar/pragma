@@ -490,10 +490,7 @@ func (e *Engine) autoCompactBeforeRequest(
 	}
 
 	e.autoTracker.RecordSuccess()
-	e.store.Update(func(s *app.AppState) {
-		s.Conversation.Messages = compResult.ReplacementMessages
-		s.Conversation.UpdatedAt = time.Now()
-	})
+	compact.ApplyResult(e.store, compResult)
 	ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
 	observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: true, compResult.ReplacementMessages")
 	return true, compResult.ReplacementMessages

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 )
@@ -181,10 +182,7 @@ func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) 
 		return Result{}, fmt.Errorf("compaction failed: %w", err)
 	}
 
-	deps.Store.Update(func(s *app.AppState) {
-		s.Conversation.Messages = result.ReplacementMessages
-		s.Conversation.UpdatedAt = time.Now()
-	})
+	compact.ApplyResult(deps.Store, result)
 	observe.TraceCtx(ctx, "slash", "handleCompact", "return: Result{\n\tDisplayText: fmt.Sprintf(\"Compacted: %d → %d tokens (%d messages r...")
 
 	return Result{
