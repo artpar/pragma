@@ -179,6 +179,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	}
 
 	engine := query.NewEngine(d.Prov, d.Registry, orchestrator, d.Store, d.CostTracker, d.Bus, d.EngineCfg)
+	d.Engine = engine
 	if d.HookMgr != nil {
 		observe.GlobalTrace("if: d.HookMgr != nil")
 		engine.SetHookManager(d.HookMgr)

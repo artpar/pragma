@@ -35,6 +35,7 @@ type EngineConfig struct {
 	Thinking                  *provider.ThinkingConfig
 	TaskID                    string // when set with TaskRegistry, enables PendingMessages drain between turns
 	ContentReplacementRecords []model.ContentReplacementRecord
+	FileStateRecords          []tool.FileStateRecord
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
 	MCPServerStatuses         func() []MCPServerStatus
 }
@@ -93,6 +94,8 @@ func NewEngine(
 ) *Engine {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	fileState := tool.NewFileStateCache()
+	fileState.Restore(cfg.FileStateRecords)
 	e := &Engine{
 		provider:     prov,
 		registry:     reg,
@@ -101,7 +104,7 @@ func NewEngine(
 		costTracker:  ct,
 		bus:          bus,
 		config:       cfg,
-		fileState:    tool.NewFileStateCache(),
+		fileState:    fileState,
 	}
 	snap := store.Snapshot()
 	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), cfg.ContentReplacementRecords)
@@ -164,6 +167,24 @@ func (e *Engine) ResetContentReplacementState(records []model.ContentReplacement
 	defer observe.GlobalTrace("exit")
 	snap := e.store.Snapshot()
 	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), records)
+}
+
+func (e *Engine) ResetFileState(records []tool.FileStateRecord) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if e.fileState == nil {
+		e.fileState = tool.NewFileStateCache()
+	}
+	e.fileState.Restore(records)
+}
+
+func (e *Engine) FileStateRecords() []tool.FileStateRecord {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if e.fileState == nil {
+		return nil
+	}
+	return e.fileState.Snapshot()
 }
 
 // Orchestrator returns the engine's tool orchestrator.

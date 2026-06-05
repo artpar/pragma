@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // Writer appends JSONL entries to a session file.
@@ -136,6 +137,10 @@ func (w *Writer) WritePromptHistory(text string) error {
 		Text:      text,
 		Timestamp: time.Now(),
 	})
+}
+
+func (w *Writer) WriteFileState(records []tool.FileStateRecord) error {
+	return w.writeEntry(EntryFileState, FileStateData{Records: records})
 }
 
 func (w *Writer) writeEntry(kind EntryKind, data any) error {

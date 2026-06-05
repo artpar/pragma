@@ -46,6 +46,7 @@ type Deps struct {
 	Checker        permission.Checker
 	Store          *app.StateStore
 	Registry       *tool.Registry
+	Engine         *query.Engine
 	CostTracker    *model.CostTracker
 	EngineCfg      query.EngineConfig
 	TaskReg        *task.Registry
@@ -256,6 +257,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var resumedTokens model.TokenUsage
 	var resumedHandoffState model.HandoffState
 	var resumedContentReplacements []model.ContentReplacementRecord
+	var resumedFileStateRecords []tool.FileStateRecord
 	var sessionWriter *session.Writer
 	var resumedTurnCount int
 	var sessionStart time.Time
@@ -326,6 +328,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		resumedTokens = sess.TokenUsage
 		resumedHandoffState = sess.HandoffState
 		resumedContentReplacements = sess.ContentReplacements
+		resumedFileStateRecords = sess.FileStateRecords
 		resumedTurnCount = sess.TurnCount
 		sessionStart = sess.Conversation.CreatedAt
 		if cfg.Verbose {
@@ -387,6 +390,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		StopAfterToolExec:         cfg.StopAfterToolExec,
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
+		FileStateRecords:          resumedFileStateRecords,
 	}
 	engineCfg.RecordContentReplacements = func(records []model.ContentReplacementRecord) error {
 		if sessionWriter != nil {
@@ -471,6 +475,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Checker:        checker,
 		Store:          store,
 		Registry:       registry,
+		Engine:         nil,
 		CostTracker:    costTracker,
 		EngineCfg:      engineCfg,
 		TaskReg:        taskReg,

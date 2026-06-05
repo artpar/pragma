@@ -12,6 +12,7 @@ import (
 
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // Store persists sessions to ~/.pragma/sessions/.
@@ -82,10 +83,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var handoffState model.HandoffState
 	var replacements []model.ContentReplacementRecord
 	var promptHistory []PromptHistoryData
+	var fileStateRecords []tool.FileStateRecord
 	hasHeader := false
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB max line
+	scanner.Buffer(make([]byte, 1<<20), 64<<20) // file_state entries can include cached file contents
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -124,6 +126,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				promptHistory = append(promptHistory, data)
 			}
+		case EntryFileState:
+			var data FileStateData
+			if err := json.Unmarshal(entry.Data, &data); err == nil {
+				fileStateRecords = data.Records
+			}
 		}
 	}
 
@@ -154,6 +161,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		GitRemote:           header.GitRemote,
 		ContentReplacements: replacements,
 		PromptHistory:       promptHistory,
+		FileStateRecords:    fileStateRecords,
 	}, nil
 }
 

@@ -399,6 +399,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	})
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
+	rt.Engine.ResetFileState(sess.FileStateRecords)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	_ = beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
 	return nil
@@ -1125,6 +1126,11 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 		}
 		if err := d.SessionWriter.WriteHandoffState(snap.HandoffState); err != nil {
 			return
+		}
+		if d.Engine != nil {
+			if err := d.SessionWriter.WriteFileState(d.Engine.FileStateRecords()); err != nil {
+				return
+			}
 		}
 		d.SessionLastIdx = len(snap.Conversation.Messages)
 		if err := d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap)); err != nil {

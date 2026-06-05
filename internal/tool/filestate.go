@@ -56,6 +56,15 @@ type FileEffect struct {
 	Operation string
 }
 
+type FileStateRecord struct {
+	Path          string `json:"path"`
+	Content       string `json:"content"`
+	Timestamp     int64  `json:"timestamp"`
+	Offset        *int   `json:"offset,omitempty"`
+	Limit         *int   `json:"limit,omitempty"`
+	IsPartialView bool   `json:"is_partial_view,omitempty"`
+}
+
 func NewFileStateCache() *FileStateCache {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -65,6 +74,64 @@ func NewFileStateCache() *FileStateCache {
 		order:    make([]string, 0, defaultFileStateEntries),
 		maxItems: defaultFileStateEntries,
 		maxBytes: defaultFileStateBytes,
+	}
+}
+
+func (c *FileStateCache) Snapshot() []FileStateRecord {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]FileStateRecord, 0, len(c.order))
+	for _, key := range c.order {
+		entry, ok := c.entries[key]
+		if !ok {
+			continue
+		}
+		state := cloneFileState(entry.state)
+		out = append(out, FileStateRecord{
+			Path:          key,
+			Content:       state.Content,
+			Timestamp:     state.Timestamp,
+			Offset:        state.Offset,
+			Limit:         state.Limit,
+			IsPartialView: state.IsPartialView,
+		})
+	}
+	return out
+}
+
+func (c *FileStateCache) Restore(records []FileStateRecord) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = make(map[string]fileStateEntry, len(records))
+	c.order = make([]string, 0, len(records))
+	c.bytes = 0
+	for _, record := range records {
+		if record.Path == "" {
+			continue
+		}
+		key := NormalizeFilePath(record.Path)
+		state := FileState{
+			Content:       record.Content,
+			Timestamp:     record.Timestamp,
+			Offset:        cloneIntPtr(record.Offset),
+			Limit:         cloneIntPtr(record.Limit),
+			IsPartialView: record.IsPartialView,
+		}
+		size := len([]byte(state.Content))
+		if old, ok := c.entries[key]; ok {
+			c.bytes -= old.size
+			c.removeOrderLocked(key)
+		}
+		c.entries[key] = fileStateEntry{state: state, size: size}
+		c.order = append(c.order, key)
+		c.bytes += size
+		c.evictLocked()
 	}
 }
 

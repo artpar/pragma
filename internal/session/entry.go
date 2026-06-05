@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 // EntryKind discriminates JSONL line types in session files.
@@ -17,6 +18,7 @@ const (
 	EntryHandoffState       EntryKind = "handoff_state"
 	EntryContentReplacement EntryKind = "content_replacement"
 	EntryPromptHistory      EntryKind = "prompt_history"
+	EntryFileState          EntryKind = "file_state"
 )
 
 // Entry is a single JSONL line in a session file. Discriminated by Kind.
@@ -56,6 +58,10 @@ type ContentReplacementData struct {
 type PromptHistoryData struct {
 	Text      string    `json:"text"`
 	Timestamp time.Time `json:"timestamp"`
+}
+
+type FileStateData struct {
+	Records []tool.FileStateRecord `json:"records"`
 }
 
 type HandoffStateData struct {
