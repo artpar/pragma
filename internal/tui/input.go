@@ -459,13 +459,13 @@ func orchestrateCompletionItems(value, cwd string) []completionItem {
 		}
 	}
 
-	state := parseOrchestrateCompletionState(args, currentArgIndex)
+	state := slash.ParseOrchestrateCompletionState(args, currentArgIndex)
 	switch {
-	case state.currentRole == "definition":
+	case state.CurrentRole == "definition":
 		return pathCompletionItems(value, current, cwd, pathCompletionYAML)
-	case state.currentRole == "persona":
+	case state.CurrentRole == "persona":
 		return pathCompletionItems(value, current, cwd, pathCompletionDir)
-	case state.currentRole == "flag":
+	case state.CurrentRole == "flag":
 		if strings.HasPrefix(current, "--persona-dir=") {
 			prefix := strings.TrimPrefix(current, "--persona-dir=")
 			items := pathCompletionItems(value, prefix, cwd, pathCompletionDir)
@@ -475,15 +475,15 @@ func orchestrateCompletionItems(value, cwd string) []completionItem {
 			}
 			return items
 		}
-		return flagCompletionItems(value, current, state.flagCandidates())
+		return flagCompletionItems(value, current, state.FlagCandidates())
 	case endsSpace && previous != "--prompt":
 		switch {
 		case previous == "--persona-dir":
 			return pathCompletionItems(value, "", cwd, pathCompletionDir)
-		case !state.hasDefinition:
+		case !state.HasDefinition:
 			return pathCompletionItems(value, "", cwd, pathCompletionYAML)
 		default:
-			return flagCompletionItems(value, "", state.flagCandidates())
+			return flagCompletionItems(value, "", state.FlagCandidates())
 		}
 	}
 	return nil
@@ -497,7 +497,7 @@ func flagCompletionItems(value, prefix string, flags []string) []completionItem 
 			scored = append(scored, scoredCompletionItem{
 				item: completionItem{
 					Label:       flag,
-					Detail:      flagDetail(flag),
+					Detail:      slash.OrchestrateFlagDetail(flag),
 					Replacement: replaceCurrentToken(value, flag+" "),
 				},
 				score: score,
@@ -505,76 +505,6 @@ func flagCompletionItems(value, prefix string, flags []string) []completionItem 
 		}
 	}
 	return sortedCompletionItems(scored)
-}
-
-func flagDetail(flag string) string {
-	switch flag {
-	case "--persona-dir":
-		return "persona directory"
-	case "--prompt":
-		return "task prompt"
-	default:
-		return "flag"
-	}
-}
-
-type orchestrateCompletionState struct {
-	hasDefinition bool
-	hasPersonaDir bool
-	hasPrompt     bool
-	currentRole   string
-}
-
-func parseOrchestrateCompletionState(args []string, currentIndex int) orchestrateCompletionState {
-	state := orchestrateCompletionState{}
-	expectPersona := false
-	inPrompt := false
-	for i, arg := range args {
-		role := "prompt"
-		switch {
-		case inPrompt:
-			role = "prompt"
-		case expectPersona:
-			role = "persona"
-			expectPersona = false
-		case arg == "--persona-dir":
-			role = "flag"
-			state.hasPersonaDir = true
-			expectPersona = true
-		case strings.HasPrefix(arg, "--persona-dir="):
-			role = "flag"
-			state.hasPersonaDir = true
-		case arg == "--prompt":
-			role = "flag"
-			state.hasPrompt = true
-			inPrompt = true
-		case strings.HasPrefix(arg, "--prompt="):
-			role = "flag"
-			state.hasPrompt = true
-		case strings.HasPrefix(arg, "--"):
-			role = "flag"
-		case !state.hasDefinition:
-			role = "definition"
-			state.hasDefinition = true
-		}
-		if i == currentIndex {
-			state.currentRole = role
-		}
-	}
-	if state.currentRole == "" && currentIndex >= 0 {
-		state.currentRole = "prompt"
-	}
-	return state
-}
-
-func (s orchestrateCompletionState) flagCandidates() []string {
-	if !s.hasPersonaDir {
-		return []string{"--persona-dir"}
-	}
-	if !s.hasPrompt {
-		return []string{"--prompt"}
-	}
-	return nil
 }
 
 type pathCompletionKind int

@@ -72,3 +72,73 @@ func parseOrchestrateArgs(args string) (OrchestrationRequest, error) {
 	}
 	return req, nil
 }
+
+type OrchestrateCompletionState struct {
+	HasDefinition bool
+	HasPersonaDir bool
+	HasPrompt     bool
+	CurrentRole   string
+}
+
+func ParseOrchestrateCompletionState(args []string, currentIndex int) OrchestrateCompletionState {
+	state := OrchestrateCompletionState{}
+	expectPersona := false
+	inPrompt := false
+	for i, arg := range args {
+		role := "prompt"
+		switch {
+		case inPrompt:
+			role = "prompt"
+		case expectPersona:
+			role = "persona"
+			expectPersona = false
+		case arg == "--persona-dir":
+			role = "flag"
+			state.HasPersonaDir = true
+			expectPersona = true
+		case strings.HasPrefix(arg, "--persona-dir="):
+			role = "flag"
+			state.HasPersonaDir = true
+		case arg == "--prompt":
+			role = "flag"
+			state.HasPrompt = true
+			inPrompt = true
+		case strings.HasPrefix(arg, "--prompt="):
+			role = "flag"
+			state.HasPrompt = true
+		case strings.HasPrefix(arg, "--"):
+			role = "flag"
+		case !state.HasDefinition:
+			role = "definition"
+			state.HasDefinition = true
+		}
+		if i == currentIndex {
+			state.CurrentRole = role
+		}
+	}
+	if state.CurrentRole == "" && currentIndex >= 0 {
+		state.CurrentRole = "prompt"
+	}
+	return state
+}
+
+func (s OrchestrateCompletionState) FlagCandidates() []string {
+	if !s.HasPersonaDir {
+		return []string{"--persona-dir"}
+	}
+	if !s.HasPrompt {
+		return []string{"--prompt"}
+	}
+	return nil
+}
+
+func OrchestrateFlagDetail(flag string) string {
+	switch flag {
+	case "--persona-dir":
+		return "persona directory"
+	case "--prompt":
+		return "task prompt"
+	default:
+		return "flag"
+	}
+}
