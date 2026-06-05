@@ -529,8 +529,28 @@ func RunTUIInteractive(cmd *cobra.Command) error {
 	return nil
 }
 
+type nonInteractiveRunOptions struct {
+	AllowStructuredOutput bool
+	PrintCost             bool
+	ConfigureDeps         func(*Deps)
+	PreparePrompt         func(context.Context, *Deps) (nonInteractivePromptPlan, error)
+}
+
+type nonInteractivePromptPlan struct {
+	Prompt      string
+	DisplayText string
+	Run         bool
+}
+
 // RunNonInteractive runs a single prompt and exits.
 func RunNonInteractive(cmd *cobra.Command, _ []string) error {
+	return runNonInteractive(cmd, nonInteractiveRunOptions{
+		AllowStructuredOutput: true,
+		PrintCost:             true,
+	})
+}
+
+func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	d, err := SetupDeps(cmd)
@@ -563,6 +583,9 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 		observe.GlobalTrace("if: !cmd.Flags().Changed(\"permission-mode\")")
 		d.Checker = permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
 	}
+	if opts.ConfigureDeps != nil {
+		opts.ConfigureDeps(d)
+	}
 
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tool.NonInteractiveAsker{}
@@ -574,6 +597,9 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	}
 
 	schemaFlag, _ := cmd.Flags().GetString("output-schema")
+	if !opts.AllowStructuredOutput {
+		schemaFlag = ""
+	}
 	if schemaFlag != "" {
 		observe.GlobalTrace("if: schemaFlag != \"\"")
 		schemaJSON, err := loadOutputSchema(schemaFlag)
@@ -610,6 +636,19 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 	if resumeID != "" && prompt == "" {
 		observe.GlobalTrace("if: resumeID != \"\" && prompt == \"\"")
 		prompt = "Continue from where we left off."
+	}
+	if opts.PreparePrompt != nil {
+		plan, err := opts.PreparePrompt(cmd.Context(), d)
+		if err != nil {
+			return err
+		}
+		if plan.DisplayText != "" {
+			fmt.Println(plan.DisplayText)
+		}
+		if !plan.Run {
+			return nil
+		}
+		prompt = plan.Prompt
 	}
 
 	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
@@ -721,7 +760,9 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 
 	sessionCloseFn()
 
-	fmt.Fprintf(os.Stderr, "\ntotal cost: $%.6f\n", d.CostTracker.TotalUSD())
+	if opts.PrintCost {
+		fmt.Fprintf(os.Stderr, "\ntotal cost: $%.6f\n", d.CostTracker.TotalUSD())
+	}
 	observe.GlobalTrace("return: nil")
 	return nil
 }

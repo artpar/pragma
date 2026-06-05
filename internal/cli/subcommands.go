@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -10,11 +11,9 @@ import (
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/slash"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // RegisterSubcommands creates Cobra subcommands from slash.Registry commands
@@ -58,128 +57,42 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	d, err := SetupDeps(cmd)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: err")
-		return err
-	}
-	if d.Cleanup != nil {
-		observe.GlobalTrace("if: d.Cleanup != nil")
-		defer d.Cleanup()
-	}
-	d.Bus.Subscribe(d.StderrLogger)
-
-	defer func() {
-		endSessionLifecycle(cmd.Context(), d)
-	}()
-
-	for _, spec := range slashCmd.AllowedTools {
-		observe.GlobalTrace("range slashCmd.AllowedTools")
-		rule := parseAllowedToolSpec(spec)
-		d.Checker.AddSessionRule(rule)
-	}
-
-	prompter := &permission.NonInteractivePrompter{}
-	asker := &tool.NonInteractiveAsker{}
-	engine, err := RegisterTools(d, prompter, asker)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: err")
-		return err
-	}
-	applyToolFilters(cmd, d.Registry)
-	waitForToolsetMCP(cmd.Context(), d)
-
-	compDeps, _ := BuildCompactionDeps(d)
-	engine.SetCompaction(compDeps)
-
-	sessStore, _ := session.NewStore()
-	skillLoader := skill.NewLoader(d.Cwd)
-
-	slashDeps := slash.Deps{
-		Store:        d.Store,
-		CostTracker:  d.CostTracker,
-		Bus:          d.Bus,
-		ModelName:    d.Cfg.Model,
-		Provider:     d.Cfg.Provider,
-		Cwd:          d.Cwd,
-		SessionStore: sessStore,
-		SkillLoader:  skillLoader,
-	}
-
-	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: fmt.Errorf(\"command /%s: %w\", slashCmd.Name, err)")
-		return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
-	}
-
-	if result.InjectPrompt == "" {
-		observe.GlobalTrace("if: result.InjectPrompt == \"\"")
-		if result.DisplayText != "" {
-			observe.GlobalTrace("if: result.DisplayText != \"\"")
-			fmt.Println(result.DisplayText)
-		}
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
-
-	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
-
-	ctx := cmd.Context()
-	if err := startSessionForCurrentConversation(ctx, d); err != nil {
-		return err
-	}
-	events := engine.Run(ctx, result.InjectPrompt)
-
-	for ev := range events {
-		observe.GlobalTrace("range events")
-		switch e := ev.(type) {
-		case query.TextEvent:
-			observe.GlobalTrace("typecase: query.TextEvent")
-			fmt.Print(e.Text)
-		case query.ThinkingEvent:
-			observe.GlobalTrace("typecase: query.ThinkingEvent")
-			if d.Cfg.Verbose {
-				fmt.Fprint(os.Stderr, e.Text)
+	return runNonInteractive(cmd, nonInteractiveRunOptions{
+		AllowStructuredOutput: true,
+		PrintCost:             true,
+		ConfigureDeps: func(d *Deps) {
+			for _, spec := range slashCmd.AllowedTools {
+				observe.GlobalTrace("range slashCmd.AllowedTools")
+				rule := parseAllowedToolSpec(spec)
+				d.Checker.AddSessionRule(rule)
 			}
-		case query.ToolCallEvent:
-			observe.GlobalTrace("typecase: query.ToolCallEvent")
-			if d.Cfg.Verbose {
-				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
+		},
+		PreparePrompt: func(ctx context.Context, d *Deps) (nonInteractivePromptPlan, error) {
+			sessStore, _ := session.NewStore()
+			skillLoader := skill.NewLoader(d.Cwd)
+			slashDeps := slash.Deps{
+				Store:        d.Store,
+				CostTracker:  d.CostTracker,
+				Bus:          d.Bus,
+				ModelName:    d.Cfg.Model,
+				Provider:     d.Cfg.Provider,
+				Cwd:          d.Cwd,
+				SessionStore: sessStore,
+				SkillLoader:  skillLoader,
 			}
-		case query.ToolResultEvent:
-			observe.GlobalTrace("typecase: query.ToolResultEvent")
-			if d.Cfg.Verbose {
-				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
+			result, err := slashCmd.Handle(ctx, args, slashDeps)
+			if err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: fmt.Errorf(\"command /%s: %w\", slashCmd.Name, err)")
+				return nonInteractivePromptPlan{}, fmt.Errorf("command /%s: %w", slashCmd.Name, err)
 			}
-		case query.CompactionEvent:
-			observe.GlobalTrace("typecase: query.CompactionEvent")
-			if d.Cfg.Verbose {
-				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
+			if result.InjectPrompt == "" {
+				observe.GlobalTrace("if: result.InjectPrompt == \"\"")
+				return nonInteractivePromptPlan{DisplayText: result.DisplayText}, nil
 			}
-		case query.TurnCompleteEvent:
-			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
-			fmt.Println()
-		case query.ErrorEvent:
-			observe.GlobalTrace("typecase: query.ErrorEvent")
-			sessionCloseFn()
-			return e.Err
-		}
-		if query.ShouldPersistSessionEvent(ev) {
-			sessionSaveFn()
-		}
-	}
-
-	sessionCloseFn()
-
-	if d.Cfg.Verbose {
-		observe.GlobalTrace("if: d.Cfg.Verbose")
-		fmt.Fprintf(os.Stderr, "total cost: $%.6f\n", d.CostTracker.TotalUSD())
-	}
-	observe.GlobalTrace("return: nil")
-	return nil
+			return nonInteractivePromptPlan{Prompt: result.InjectPrompt, Run: true}, nil
+		},
+	})
 }
 
 // RunLocalCommand runs a local-type slash command that needs no engine.
