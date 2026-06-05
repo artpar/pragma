@@ -1184,12 +1184,22 @@ func rewriteCurrentSession(d *Deps) error {
 
 func sessionMetadataForSnapshot(d *Deps, snap app.AppState) session.MetadataData {
 	msnap := d.Metrics.Snapshot()
+	modelID := snap.Model
+	if modelID == "" {
+		modelID = d.Cfg.Model
+	}
+	providerName := snap.Provider
+	if providerName == "" {
+		providerName = d.Cfg.Provider
+	}
 	return session.MetadataData{
 		CostUSD:    d.CostTracker.TotalUSD(),
 		TurnCount:  countUserTurns(snap.Conversation.Messages),
 		TokenUsage: msnap.TokenUsage,
 		UpdatedAt:  snap.Conversation.UpdatedAt,
 		Summary:    extractSummary(snap.Conversation.Messages),
+		Model:      modelID,
+		Provider:   providerName,
 	}
 }
 

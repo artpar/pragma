@@ -353,6 +353,9 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		observe.GlobalTrace("if: deps.OnModelChanged != nil")
 		deps.OnModelChanged(args)
 	}
+	if deps.SessionSave != nil {
+		deps.SessionSave()
+	}
 
 	msg := fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)
 	if deps.ContextWindowFunc != nil {

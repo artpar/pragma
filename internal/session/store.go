@@ -135,8 +135,8 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		ID:        header.SessionID,
 		Messages:  messages,
 		System:    header.System,
-		Model:     header.Model,
-		Provider:  header.Provider,
+		Model:     firstNonEmpty(meta.Model, header.Model),
+		Provider:  firstNonEmpty(meta.Provider, header.Provider),
 		WorkDir:   header.WorkDir,
 		CreatedAt: header.CreatedAt,
 		UpdatedAt: meta.UpdatedAt,
@@ -259,13 +259,23 @@ func (s *Store) readJSONLSummary(path string, info os.FileInfo) (SessionSummary,
 	return SessionSummary{
 		ID:        header.SessionID,
 		Summary:   summary,
-		Model:     header.Model,
+		Model:     firstNonEmpty(meta.Model, header.Model),
+		Provider:  firstNonEmpty(meta.Provider, header.Provider),
 		WorkDir:   header.WorkDir,
 		TurnCount: meta.TurnCount,
 		CostUSD:   meta.CostUSD,
 		CreatedAt: header.CreatedAt,
 		UpdatedAt: updatedAt,
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // Delete removes a session JSONL file.

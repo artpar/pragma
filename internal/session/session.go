@@ -25,6 +25,7 @@ type SessionSummary struct {
 	ID        string    `json:"id"`
 	Summary   string    `json:"summary"`
 	Model     string    `json:"model"`
+	Provider  string    `json:"provider"`
 	WorkDir   string    `json:"work_dir"`
 	TurnCount int       `json:"turn_count"`
 	CostUSD   float64   `json:"cost_usd"`

@@ -45,6 +45,8 @@ type MetadataData struct {
 	TokenUsage model.TokenUsage `json:"token_usage"`
 	UpdatedAt  time.Time        `json:"updated_at"`
 	Summary    string           `json:"summary,omitempty"`
+	Model      string           `json:"model,omitempty"`
+	Provider   string           `json:"provider,omitempty"`
 }
 
 type ContentReplacementData struct {
