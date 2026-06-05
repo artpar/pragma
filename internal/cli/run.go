@@ -290,7 +290,7 @@ func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch ch
 	}
 	for ev := range rt.Engine.Run(ctx, input) {
 		ch <- ev
-		if shouldSaveOnEvent(ev) {
+		if query.ShouldPersistSessionEvent(ev) {
 			rt.sessionSave()
 		}
 	}
@@ -303,7 +303,7 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 	}
 	for ev := range orchestration.RunFileEvents(ctx, rt.Engine, req.DefinitionPath, req.PersonaDir, req.Prompt) {
 		ch <- ev
-		if shouldSaveOnEvent(ev) {
+		if query.ShouldPersistSessionEvent(ev) {
 			rt.sessionSave()
 		}
 	}
@@ -657,12 +657,10 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			observe.GlobalTrace("typecase: query.ModelRequestEvent")
 			fmt.Fprintf(os.Stderr, "[model request: %s attempt %d]\n", e.Model, e.Attempt)
 			flushWriter(os.Stderr)
-			sessionSaveFn()
 		case query.ModelResponseEvent:
 			observe.GlobalTrace("typecase: query.ModelResponseEvent")
 			fmt.Fprintf(os.Stderr, "[model response: %s stop=%s]\n", e.Model, e.StopReason)
 			flushWriter(os.Stderr)
-			sessionSaveFn()
 		case query.ToolCallEvent:
 			observe.GlobalTrace("typecase: query.ToolCallEvent")
 			if hasStructuredOutput && e.Call.Name == "StructuredOutput" {
@@ -675,21 +673,18 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 				fmt.Fprintf(os.Stderr, "  ⏺ %s\n", e.Call.Name)
 			}
 			flushWriter(os.Stderr)
-			sessionSaveFn()
 		case query.ToolResultEvent:
 			observe.GlobalTrace("typecase: query.ToolResultEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
 				flushWriter(os.Stderr)
 			}
-			sessionSaveFn()
 		case query.CompactionEvent:
 			observe.GlobalTrace("typecase: query.CompactionEvent")
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[auto-compacted: %d → %d tokens]\n", e.PreTokens, e.PostTokens)
 				flushWriter(os.Stderr)
 			}
-			sessionSaveFn()
 		case query.TurnCompleteEvent:
 			observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 			turnCount++
@@ -702,7 +697,6 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 				fmt.Fprintln(out)
 				flushWriter(out)
 			}
-			sessionSaveFn()
 		case query.ErrorEvent:
 			observe.GlobalTrace("typecase: query.ErrorEvent")
 			if e.Guidance != "" {
@@ -711,6 +705,9 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 			}
 			sessionCloseFn()
 			return e.Err
+		}
+		if query.ShouldPersistSessionEvent(ev) {
+			sessionSaveFn()
 		}
 	}
 
@@ -798,15 +795,6 @@ func endSessionLifecycle(ctx context.Context, d *Deps) {
 		d.HookMgr.Execute(ctx, hook.SessionEnd, hook.HookInput{})
 	}
 	d.SessionStarted = false
-}
-
-func shouldSaveOnEvent(ev query.LoopEvent) bool {
-	switch ev.(type) {
-	case query.ModelRequestEvent, query.ModelResponseEvent, query.ToolCallEvent, query.ToolResultEvent, query.TurnCompleteEvent, query.CompactionEvent:
-		return true
-	default:
-		return false
-	}
 }
 
 func latestAssistantText(store *app.StateStore) string {

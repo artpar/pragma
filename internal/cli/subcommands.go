@@ -167,7 +167,7 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 			sessionCloseFn()
 			return e.Err
 		}
-		if shouldSaveOnEvent(ev) {
+		if query.ShouldPersistSessionEvent(ev) {
 			sessionSaveFn()
 		}
 	}
