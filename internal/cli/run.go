@@ -477,14 +477,15 @@ func resumeAPIKeyForProvider(providerName string, d *Deps) string {
 
 func (rt *InteractiveRuntime) applyResumeProvider(binding resumeProviderBinding) {
 	rt.Deps.Cfg = binding.cfg
-	rt.Deps.Prov = binding.prov
+	accountedProvider := provider.WithAccounting(binding.prov, rt.Deps.CostTracker, rt.Deps.Bus)
+	rt.Deps.Prov = accountedProvider
 	rt.Deps.EngineCfg.Model = binding.modelID
-	rt.Engine.RebindProvider(binding.prov, binding.modelID)
+	rt.Engine.RebindProvider(accountedProvider, binding.modelID)
 	RebindProviderBackedTools(rt.Deps)
 	rt.SlashDeps.ModelName = binding.modelID
 	rt.SlashDeps.Provider = binding.providerName
-	rt.SlashDeps.ContextWindowFunc = binding.prov.ContextWindow
-	if cw, ok := binding.prov.ContextWindow(binding.modelID); ok {
+	rt.SlashDeps.ContextWindowFunc = accountedProvider.ContextWindow
+	if cw, ok := accountedProvider.ContextWindow(binding.modelID); ok {
 		rt.Deps.TokenMonitor.SetBudget(cw)
 	}
 }

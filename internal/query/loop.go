@@ -259,19 +259,6 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		debug.Log("Assistant response: StopReason=%s, ContentParts=%d", response.StopReason, len(response.Content))
 		e.appendConversationMessage(assistantMsg, nil)
 
-		pricing, known := e.provider.Pricing(resolvedModel)
-		if !known {
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: !known")
-			e.bus.Emit(observe.ErrorOccurred{
-				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-				Severity:     "warn",
-				Component:    "query",
-				ErrorType:    "unknown_model_pricing",
-				ErrorMessage: fmt.Sprintf("no pricing data for model %q, costs will be zero", resolvedModel),
-			})
-		}
-		e.costTracker.Record(resolvedModel, e.provider.Name(), response.Usage, pricing)
-
 		if e.autoTracker != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.autoTracker != nil")
 			e.autoTracker.IncrementTurn()

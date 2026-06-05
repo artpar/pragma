@@ -38,7 +38,7 @@ func NewService(prov provider.Provider, bus *observe.EventBus, ct *model.CostTra
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Service{\n\tprovider:\tprov,\n\tbus:\t\tbus,\n\tcostTracker:\tct,\n\tmodel:\t\tmodelName,\n}")
 	return &Service{
-		provider:    prov,
+		provider:    provider.WithAccounting(prov, ct, bus),
 		bus:         bus,
 		costTracker: ct,
 		model:       modelName,
@@ -114,11 +114,6 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 		s.emitFailed("api_error", err.Error())
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "return: CompactResult{}, fmt.Errorf(\"compaction API call: %w\", err)")
 		return CompactResult{}, fmt.Errorf("compaction API call: %w", err)
-	}
-
-	if pricing, known := s.provider.Pricing(s.model); known {
-		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: known")
-		s.costTracker.Record(s.model, s.provider.Name(), response.Usage, pricing)
 	}
 
 	summaryText := extractText(response.Content)

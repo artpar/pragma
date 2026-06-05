@@ -389,6 +389,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		cronSched = cron.NewScheduler(bus, nil)
 	}
 	costTracker := model.NewCostTracker(resumedCost)
+	prov = provider.WithAccounting(prov, costTracker, bus)
 	engineCfg := query.EngineConfig{
 		Model:                     cfg.Model,
 		MaxTokens:                 cfg.MaxTokens,

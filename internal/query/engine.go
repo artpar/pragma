@@ -96,6 +96,7 @@ func NewEngine(
 	defer observe.GlobalTrace("exit")
 	fileState := tool.NewFileStateCache()
 	fileState.Restore(cfg.FileStateRecords)
+	prov = provider.WithAccounting(prov, ct, bus)
 	e := &Engine{
 		provider:     prov,
 		registry:     reg,
@@ -144,7 +145,7 @@ func (e *Engine) SetTaskID(id string) {
 func (e *Engine) RebindProvider(prov provider.Provider, modelID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	e.provider = prov
+	e.provider = provider.WithAccounting(prov, e.costTracker, e.bus)
 	if modelID != "" {
 		e.config.Model = modelID
 	}

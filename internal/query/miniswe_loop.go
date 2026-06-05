@@ -157,10 +157,6 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 		}
 		e.appendConversationMessage(assistantMsg, nil)
 
-		pricing, known := e.provider.Pricing(resolvedModel)
-		if known {
-			e.costTracker.Record(resolvedModel, e.provider.Name(), response.Usage, pricing)
-		}
 		if e.autoTracker != nil {
 			e.autoTracker.IncrementTurn()
 		}
