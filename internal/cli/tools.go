@@ -185,6 +185,28 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	return engine, nil
 }
 
+func RebindProviderBackedTools(d *Deps) {
+	secondaryModel := SecondaryModelFor(d.Cfg.Provider)
+	if desc, ok := d.Registry.Get("Agent"); ok {
+		if tl, ok := desc.(*toolagent.Tool); ok {
+			tl.Provider = d.Prov
+			tl.SecondaryModel = secondaryModel
+		}
+	}
+	if desc, ok := d.Registry.Get("LifecycleRun"); ok {
+		if tl, ok := desc.(*toollifecycle.Tool); ok {
+			tl.Provider = d.Prov
+			tl.SecondaryModel = secondaryModel
+		}
+	}
+	if desc, ok := d.Registry.Get("WebFetch"); ok {
+		if tl, ok := desc.(*toolwebfetch.Tool); ok {
+			tl.Provider = d.Prov
+			tl.SecondaryModel = secondaryModel
+		}
+	}
+}
+
 func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

@@ -338,6 +338,10 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	if err != nil {
 		return err
 	}
+	providerBinding, err := rt.resolveResumeProvider(sess.Conversation)
+	if err != nil {
+		return err
+	}
 	w, err := sessStore.Open(sessionID)
 	if err != nil {
 		return err
@@ -350,17 +354,80 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Deps.SessionHeader = session.HeaderData{}
 	rt.Deps.SessionLastIdx = len(sess.Conversation.Messages)
 	rt.Deps.SessionStarted = false
+	rt.applyResumeProvider(providerBinding)
 	rt.Deps.Store.Update(func(st *app.AppState) {
 		st.Conversation = sess.Conversation
-		if sess.Conversation.Model != "" {
-			st.Model = sess.Conversation.Model
-		}
+		st.Model = providerBinding.modelID
+		st.Provider = providerBinding.providerName
 		st.HandoffState = sess.HandoffState
 	})
 	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
 	return nil
+}
+
+type resumeProviderBinding struct {
+	cfg          config.Config
+	prov         provider.Provider
+	providerName string
+	modelID      string
+}
+
+func (rt *InteractiveRuntime) resolveResumeProvider(conv model.Conversation) (resumeProviderBinding, error) {
+	cfg := rt.Deps.Cfg
+	if conv.Provider != "" {
+		cfg.Provider = conv.Provider
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "lilac"
+	}
+	if conv.Model != "" {
+		cfg.Model = conv.Model
+	}
+	if cfg.Model == "" {
+		cfg.Model = DefaultModelFor(cfg.Provider)
+	}
+	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
+	cfg.APIKey = resumeAPIKeyForProvider(cfg.Provider, rt.Deps)
+
+	prov, err := CreateProvider(cfg, rt.Deps.Bus)
+	if err != nil {
+		return resumeProviderBinding{}, err
+	}
+	return resumeProviderBinding{
+		cfg:          cfg,
+		prov:         prov,
+		providerName: cfg.Provider,
+		modelID:      cfg.Model,
+	}, nil
+}
+
+func resumeAPIKeyForProvider(providerName string, d *Deps) string {
+	if providerName == "google-vertex" {
+		return ""
+	}
+	if d.Cfg.Provider == providerName && d.Cfg.APIKey != "" {
+		return d.Cfg.APIKey
+	}
+	if key := d.Creds.CredentialFor(providerName).APIKey; key != "" {
+		return key
+	}
+	return os.Getenv(envVarForProvider(providerName))
+}
+
+func (rt *InteractiveRuntime) applyResumeProvider(binding resumeProviderBinding) {
+	rt.Deps.Cfg = binding.cfg
+	rt.Deps.Prov = binding.prov
+	rt.Deps.EngineCfg.Model = binding.modelID
+	rt.Engine.RebindProvider(binding.prov, binding.modelID)
+	RebindProviderBackedTools(rt.Deps)
+	rt.SlashDeps.ModelName = binding.modelID
+	rt.SlashDeps.Provider = binding.providerName
+	rt.SlashDeps.ContextWindowFunc = binding.prov.ContextWindow
+	if cw, ok := binding.prov.ContextWindow(binding.modelID); ok {
+		rt.Deps.TokenMonitor.SetBudget(cw)
+	}
 }
 
 func (rt *InteractiveRuntime) CloseSession() {

@@ -135,6 +135,16 @@ func (e *Engine) SetTaskID(id string) {
 	e.config.TaskID = id
 }
 
+// RebindProvider switches the engine to a new provider/model runtime.
+func (e *Engine) RebindProvider(prov provider.Provider, modelID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	e.provider = prov
+	if modelID != "" {
+		e.config.Model = modelID
+	}
+}
+
 // SetCompaction configures auto-compaction after engine creation.
 // Useful when the engine is created before compaction deps are ready.
 func (e *Engine) SetCompaction(deps CompactionDeps) {
