@@ -190,6 +190,7 @@ func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) 
 	return Result{
 		DisplayText: fmt.Sprintf("Compacted: %d → %d tokens (%d messages removed)",
 			result.PreTokenCount, result.PostTokenCount, result.MessagesRemoved),
+		RewriteSession: true,
 	}, nil
 }
 

@@ -259,9 +259,13 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args st
 		return
 	}
 	if result.ClearConversation {
-		rt.Deps.Store.Update(func(st *app.AppState) {
-			st.Conversation.Messages = nil
-		})
+		rt.closeCurrentSessionAfterClear(ctx)
+	}
+	if result.RewriteSession {
+		if err := rewriteCurrentSession(rt.Deps); err != nil {
+			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+			return
+		}
 	}
 	if result.ResumeSessionID != "" {
 		if err := rt.Resume(result.ResumeSessionID); err != nil {
@@ -279,6 +283,18 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, name string, args st
 	if result.InjectPrompt != "" {
 		rt.runEngine(ctx, result.InjectPrompt, ch)
 	}
+}
+
+func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context) {
+	endSessionLifecycle(ctx, rt.Deps)
+	if rt.sessionClose != nil {
+		rt.sessionClose()
+	}
+	rt.Deps.SessionWriter = nil
+	rt.Deps.SessionHeader = session.HeaderData{}
+	rt.Deps.SessionLastIdx = 0
+	rt.Deps.SessionStarted = false
+	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 }
 
 func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch chan<- interactive.Event) {
@@ -351,7 +367,6 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		rt.sessionClose()
 	}
 	rt.Deps.SessionWriter = w
-	rt.Deps.SessionHeader = session.HeaderData{}
 	rt.Deps.SessionLastIdx = len(sess.Conversation.Messages)
 	rt.Deps.SessionStarted = false
 	rt.applyResumeProvider(providerBinding)
@@ -361,6 +376,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.Provider = providerBinding.providerName
 		st.HandoffState = sess.HandoffState
 	})
+	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
@@ -866,17 +882,7 @@ func startSessionForCurrentConversation(ctx context.Context, d *Deps) error {
 	}
 	header := d.SessionHeader
 	if header.SessionID == "" {
-		snap := d.Store.Snapshot()
-		header = session.HeaderData{
-			SessionID:      snap.Conversation.ID,
-			Model:          d.Cfg.Model,
-			Provider:       d.Cfg.Provider,
-			WorkDir:        d.Cwd,
-			GitRemote:      sysprompt.GitRemoteURL(d.Cwd),
-			SystemOverride: d.Cfg.SystemPrompt,
-			CreatedAt:      snap.Conversation.CreatedAt,
-			System:         snap.Conversation.System,
-		}
+		header = sessionHeaderForCurrentConversation(d)
 	}
 	sessStore, err := session.NewStore()
 	if err != nil {
@@ -891,6 +897,28 @@ func startSessionForCurrentConversation(ctx context.Context, d *Deps) error {
 	d.SessionLastIdx = 0
 	beginSessionLifecycle(ctx, d, "")
 	return nil
+}
+
+func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
+	snap := d.Store.Snapshot()
+	modelID := snap.Model
+	if modelID == "" {
+		modelID = d.Cfg.Model
+	}
+	providerName := snap.Provider
+	if providerName == "" {
+		providerName = d.Cfg.Provider
+	}
+	return session.HeaderData{
+		SessionID:      snap.Conversation.ID,
+		Model:          modelID,
+		Provider:       providerName,
+		WorkDir:        d.Cwd,
+		GitRemote:      sysprompt.GitRemoteURL(d.Cwd),
+		SystemOverride: d.Cfg.SystemPrompt,
+		CreatedAt:      snap.Conversation.CreatedAt,
+		System:         snap.Conversation.System,
+	}
 }
 
 func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) {
@@ -1024,19 +1052,12 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 			return
 		}
 		snap := d.Store.Snapshot()
-		msnap := d.Metrics.Snapshot()
 		for i := d.SessionLastIdx; i < len(snap.Conversation.Messages); i++ {
 			d.SessionWriter.WriteMessage(snap.Conversation.Messages[i])
 		}
 		d.SessionWriter.WriteHandoffState(snap.HandoffState)
 		d.SessionLastIdx = len(snap.Conversation.Messages)
-		d.SessionWriter.WriteMetadata(session.MetadataData{
-			CostUSD:    d.CostTracker.TotalUSD(),
-			TurnCount:  countUserTurns(snap.Conversation.Messages),
-			TokenUsage: msnap.TokenUsage,
-			UpdatedAt:  snap.Conversation.UpdatedAt,
-			Summary:    extractSummary(snap.Conversation.Messages),
-		})
+		d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap))
 	}
 	closeFn = func() {
 		if d.SessionWriter != nil {
@@ -1044,6 +1065,34 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 		}
 	}
 	return
+}
+
+func rewriteCurrentSession(d *Deps) error {
+	if d.SessionWriter == nil {
+		return nil
+	}
+	snap := d.Store.Snapshot()
+	header := d.SessionHeader
+	if header.SessionID == "" {
+		header = sessionHeaderForCurrentConversation(d)
+		d.SessionHeader = header
+	}
+	if err := d.SessionWriter.Rewrite(header, snap.Conversation.Messages, sessionMetadataForSnapshot(d, snap)); err != nil {
+		return err
+	}
+	d.SessionLastIdx = len(snap.Conversation.Messages)
+	return nil
+}
+
+func sessionMetadataForSnapshot(d *Deps, snap app.AppState) session.MetadataData {
+	msnap := d.Metrics.Snapshot()
+	return session.MetadataData{
+		CostUSD:    d.CostTracker.TotalUSD(),
+		TurnCount:  countUserTurns(snap.Conversation.Messages),
+		TokenUsage: msnap.TokenUsage,
+		UpdatedAt:  snap.Conversation.UpdatedAt,
+		Summary:    extractSummary(snap.Conversation.Messages),
+	}
 }
 
 func promptHistoryFromSessions(store *session.Store, limit int) []string {
