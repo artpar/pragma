@@ -302,12 +302,30 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
-	for ev := range orchestration.RunFileEvents(ctx, rt.Engine, req.DefinitionPath, req.PersonaDir, req.Prompt) {
+	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
+		PersonaDir:   req.PersonaDir,
+		TaskPrompt:   req.Prompt,
+		ArtifactRoot: interactiveOrchestrationArtifactRoot(rt.Deps),
+	}) {
 		ch <- interactive.LoopEvent{Event: ev}
 		if query.ShouldPersistSessionEvent(ev) {
 			rt.sessionSave()
 		}
 	}
+}
+
+func interactiveOrchestrationArtifactRoot(d *Deps) string {
+	sessionID := "unknown-session"
+	if d != nil && d.Store != nil {
+		if id := d.Store.Snapshot().Conversation.ID; id != "" {
+			sessionID = id
+		}
+	}
+	runID := time.Now().UTC().Format("20060102T150405.000000000Z")
+	if home, err := config.PragmaHome(); err == nil {
+		return filepath.Join(home, "orchestrations", sessionID, runID)
+	}
+	return filepath.Join(os.TempDir(), "pragma", "orchestrations", sessionID, runID)
 }
 
 func (rt *InteractiveRuntime) Resume(sessionID string) error {

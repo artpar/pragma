@@ -103,12 +103,14 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 type server struct {
-	cfg       Config
-	hub       *hub
-	mu        sync.Mutex
-	running   bool
-	cancel    context.CancelFunc
-	artifacts map[string]struct{}
+	cfg        Config
+	hub        *hub
+	mu         sync.Mutex
+	running    bool
+	cancel     context.CancelFunc
+	artifacts  map[string]struct{}
+	workflow   workflowSnapshot
+	workflowOn bool
 }
 
 func newServer(cfg Config) *server {
@@ -117,6 +119,44 @@ func newServer(cfg Config) *server {
 		hub:       newHub(),
 		artifacts: make(map[string]struct{}),
 	}
+}
+
+type workflowSnapshot struct {
+	Name        string                    `json:"name,omitempty"`
+	Initial     string                    `json:"initial,omitempty"`
+	Current     string                    `json:"current,omitempty"`
+	Completed   bool                      `json:"completed,omitempty"`
+	States      map[string]*workflowState `json:"states"`
+	Transitions []workflowTransition      `json:"transitions"`
+	Handoffs    []workflowHandoff         `json:"handoffs"`
+}
+
+type workflowState struct {
+	ID        string    `json:"id"`
+	Persona   string    `json:"persona,omitempty"`
+	Control   string    `json:"control,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	LastEvent string    `json:"last_event,omitempty"`
+	Started   time.Time `json:"started,omitempty"`
+	Completed time.Time `json:"completed,omitempty"`
+	Duration  string    `json:"duration,omitempty"`
+}
+
+type workflowTransition struct {
+	From  string `json:"from"`
+	Event string `json:"event"`
+	To    string `json:"to"`
+}
+
+type workflowHandoff struct {
+	StateID   string `json:"state_id"`
+	Event     string `json:"event"`
+	Path      string `json:"path"`
+	Direction string `json:"direction"`
+}
+
+func newWorkflowSnapshot() workflowSnapshot {
+	return workflowSnapshot{States: make(map[string]*workflowState)}
 }
 
 type eventEnvelope struct {
@@ -420,6 +460,9 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 				if handoff, ok := e.Event.(query.OrchestrationHandoffEvent); ok {
 					s.rememberArtifact(handoff.Path)
 				}
+				if snapshot, ok := s.updateWorkflow(e.Event); ok {
+					s.hub.publish("workflow_snapshot", snapshot)
+				}
 				s.hub.publish("loop_event", e.Event)
 			default:
 				s.hub.publish("interactive_event", e)
@@ -427,6 +470,101 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 		}
 	}()
 	return true
+}
+
+func (s *server) updateWorkflow(ev query.LoopEvent) (workflowSnapshot, bool) {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch e := ev.(type) {
+	case query.OrchestrationStartedEvent:
+		s.workflow = newWorkflowSnapshot()
+		s.workflow.Name = e.Name
+		s.workflow.Initial = e.Initial
+		s.workflow.Current = e.Initial
+		s.workflowOn = true
+	case query.OrchestrationStateStartedEvent:
+		s.ensureWorkflow()
+		row := s.workflowState(e.StateID)
+		row.Persona = firstNonEmpty(row.Persona, e.PersonaID)
+		row.Control = firstNonEmpty(row.Control, e.Control)
+		row.Status = "running"
+		row.Started = now
+		s.workflow.Current = e.StateID
+	case query.OrchestrationStateCompletedEvent:
+		s.ensureWorkflow()
+		row := s.workflowState(e.StateID)
+		row.Status = "completed"
+		row.Completed = now
+		row.Duration = e.Duration.Round(time.Second).String()
+	case query.OrchestrationControlEvent:
+		s.ensureWorkflow()
+		row := s.workflowState(e.StateID)
+		row.Control = firstNonEmpty(row.Control, e.Control)
+		row.LastEvent = firstNonEmpty(e.Event, row.LastEvent)
+	case query.OrchestrationTransitionEvent:
+		s.ensureWorkflow()
+		s.workflow.Transitions = append(s.workflow.Transitions, workflowTransition{From: e.From, Event: e.Event, To: e.To})
+		if e.To != "" {
+			s.workflow.Current = e.To
+		}
+	case query.OrchestrationHandoffEvent:
+		s.ensureWorkflow()
+		s.workflow.Handoffs = append(s.workflow.Handoffs, workflowHandoff{
+			StateID: e.StateID, Event: e.Event, Path: e.Path, Direction: e.Direction,
+		})
+	case query.OrchestrationCompletedEvent:
+		s.ensureWorkflow()
+		s.workflow.Name = firstNonEmpty(s.workflow.Name, e.Name)
+		s.workflow.Completed = true
+		s.workflow.Current = "completed"
+	default:
+		return workflowSnapshot{}, false
+	}
+	return cloneWorkflowSnapshot(s.workflow), true
+}
+
+func (s *server) ensureWorkflow() {
+	if !s.workflowOn || s.workflow.States == nil {
+		s.workflow = newWorkflowSnapshot()
+		s.workflowOn = true
+	}
+}
+
+func (s *server) workflowState(id string) *workflowState {
+	if id == "" {
+		id = "unknown"
+	}
+	if s.workflow.States == nil {
+		s.workflow.States = make(map[string]*workflowState)
+	}
+	row := s.workflow.States[id]
+	if row == nil {
+		row = &workflowState{ID: id}
+		s.workflow.States[id] = row
+	}
+	return row
+}
+
+func cloneWorkflowSnapshot(in workflowSnapshot) workflowSnapshot {
+	out := in
+	out.States = make(map[string]*workflowState, len(in.States))
+	for id, row := range in.States {
+		cp := *row
+		out.States[id] = &cp
+	}
+	out.Transitions = append([]workflowTransition(nil), in.Transitions...)
+	out.Handoffs = append([]workflowHandoff(nil), in.Handoffs...)
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *server) rememberArtifact(path string) {
@@ -1310,6 +1448,7 @@ const state = {
   search: '',
   tab: 'raw',
   artifacts: {},
+  workflowSnapshot: null,
   historyIndex: -1,
   historyDraft: '',
   completions: [],
@@ -1447,95 +1586,36 @@ function matchesCurrentView(envelope){
   return filterMatch && searchMatch;
 }
 
-function isOrchestrationEvent(envelope){
-  return typeOfEnvelope(envelope).includes('Orchestration');
-}
-
-function fieldAny(obj, names){
-  if(!obj) return undefined;
-  for(const name of names){
-    const value = field(obj, name);
-    if(value !== undefined) return value;
-  }
-  return undefined;
-}
-
 function workflowView(){
+  const snap = state.workflowSnapshot || {};
   const wf = {
-    name: '',
-    initial: '',
-    current: '',
+    name: snap.name || '',
+    initial: snap.initial || '',
+    current: snap.current || '',
+    completed: Boolean(snap.completed),
     states: new Map(),
-    transitions: [],
-    handoffs: [],
-    events: []
+    transitions: (snap.transitions || []).map(t => ({from: t.from, event: t.event, to: t.to})),
+    handoffs: (snap.handoffs || []).map(h => ({
+      stateID: h.state_id,
+      event: h.event,
+      path: h.path,
+      direction: h.direction
+    })),
+    events: state.events.filter(envelope => envelope.type === 'workflow_snapshot')
   };
-  state.events.filter(isOrchestrationEvent).forEach(envelope => {
-    const data = envelope.data || {};
-    const typ = typeOfEnvelope(envelope);
-    wf.events.push(envelope);
-    if(typ.includes('OrchestrationStartedEvent')){
-      wf.name = fieldAny(data, ['Name','name']) || wf.name;
-      wf.initial = fieldAny(data, ['Initial','initial']) || wf.initial;
-      wf.current = wf.initial || wf.current;
-    }
-    if(typ.includes('OrchestrationStateStartedEvent')){
-      const id = fieldAny(data, ['StateID','state_id','stateId']);
-      if(id){
-        const row = wf.states.get(id) || {id, events: []};
-        row.persona = fieldAny(data, ['PersonaID','persona_id','personaId']) || row.persona;
-        row.control = fieldAny(data, ['Control','control']) || row.control;
-        row.status = 'running';
-        row.started = envelope.received_at;
-        row.events.push(envelope);
-        wf.states.set(id, row);
-        wf.current = id;
-      }
-    }
-    if(typ.includes('OrchestrationStateCompletedEvent')){
-      const id = fieldAny(data, ['StateID','state_id','stateId']);
-      if(id){
-        const row = wf.states.get(id) || {id, events: []};
-        row.status = 'completed';
-        row.duration = fieldAny(data, ['Duration','duration']);
-        row.completed = envelope.received_at;
-        row.events.push(envelope);
-        wf.states.set(id, row);
-      }
-    }
-    if(typ.includes('OrchestrationControlEvent')){
-      const id = fieldAny(data, ['StateID','state_id','stateId']);
-      if(id){
-        const row = wf.states.get(id) || {id, events: []};
-        row.control = fieldAny(data, ['Control','control']) || row.control;
-        row.lastEvent = fieldAny(data, ['Event','event']) || row.lastEvent;
-        row.events.push(envelope);
-        wf.states.set(id, row);
-      }
-    }
-    if(typ.includes('OrchestrationTransitionEvent')){
-      const t = {
-        from: fieldAny(data, ['From','from']),
-        event: fieldAny(data, ['Event','event']),
-        to: fieldAny(data, ['To','to']),
-        envelope
-      };
-      wf.transitions.push(t);
-      if(t.to) wf.current = t.to;
-    }
-    if(typ.includes('OrchestrationHandoffEvent')){
-      wf.handoffs.push({
-        stateID: fieldAny(data, ['StateID','state_id','stateId']),
-        event: fieldAny(data, ['Event','event']),
-        path: fieldAny(data, ['Path','path']),
-        direction: fieldAny(data, ['Direction','direction']),
-        envelope
-      });
-    }
-    if(typ.includes('OrchestrationCompletedEvent')){
-      wf.completed = true;
-      wf.current = 'completed';
-    }
+  Object.values(snap.states || {}).forEach(row => {
+    if(!row || !row.id) return;
+    wf.states.set(row.id, {
+      id: row.id,
+      persona: row.persona,
+      control: row.control,
+      status: row.status,
+      lastEvent: row.last_event,
+      started: row.started,
+      completed: row.completed,
+      duration: row.duration,
+      events: []
+    });
   });
   return wf;
 }
@@ -1866,7 +1946,7 @@ function renderWorkflow(){
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'item-row';
-    button.onclick = () => selectItem('event', t.envelope, 'Workflow transition', eventDisplayMeta(t.envelope));
+    button.onclick = () => selectItem('workflow_transition', t, 'Workflow transition', [t.from, t.event, t.to].filter(Boolean).join(' -> '));
     const main = document.createElement('div');
     main.className = 'item-main';
     const title = document.createElement('div');
@@ -1878,7 +1958,7 @@ function renderWorkflow(){
     main.append(title, meta);
     const pill = document.createElement('div');
     pill.className = 'pill';
-    pill.textContent = '#' + label(t.envelope.sequence);
+    pill.textContent = 'transition';
     button.append(main, pill);
     tlist.appendChild(button);
   });
@@ -1931,10 +2011,10 @@ function handoffRow(h){
   button.className = 'item-row';
   button.onclick = () => {
     if(h.path) {
-      loadArtifact(h.path, h.envelope);
+      loadArtifact(h.path, h);
       return;
     }
-    selectItem('handoff_event', h.envelope, 'Handoff ' + label(h.direction), label(h.path));
+    selectItem('handoff_event', h, 'Handoff ' + label(h.direction), label(h.path));
   };
   const main = document.createElement('div');
   main.className = 'item-main';
@@ -2190,6 +2270,7 @@ function renderInspector(){
 }
 
 function appendEnvelope(envelope){
+  if(envelope.type === 'workflow_snapshot') state.workflowSnapshot = envelope.data || null;
   state.events.push(envelope);
   statusEl.textContent = envelope.type || 'event';
   if(envelope.type === 'run_idle') statusEl.textContent = 'Ready';

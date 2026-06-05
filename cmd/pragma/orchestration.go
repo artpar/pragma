@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -73,7 +74,7 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	return printOrchestrationEvents(orchestration.RunEventsWithOptions(cmd.Context(), engine, def, orchestration.RunOptions{
 		PersonaDir:   personaDir,
 		TaskPrompt:   taskPrompt,
-		ArtifactRoot: orchestration.DefaultArtifactRoot,
+		ArtifactRoot: filepath.Join(os.TempDir(), "pragma", "orchestrations", fmt.Sprintf("cli-%d-%s", os.Getpid(), time.Now().UTC().Format("20060102T150405.000000000Z"))),
 	}))
 }
 
