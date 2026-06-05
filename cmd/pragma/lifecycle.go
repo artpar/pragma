@@ -15,7 +15,6 @@ import (
 	"github.com/artpar/pragma/internal/lifecycle"
 	"github.com/artpar/pragma/internal/lifecycle/bridge"
 	"github.com/artpar/pragma/internal/lifecycle/definition"
-	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
 )
@@ -139,31 +138,18 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Build initial state
-	initialState := lifecycle.State{
-		bridge.KeyMessages: []model.Message{
-			{
-				ID:        model.NewUUID(),
-				Role:      model.RoleUser,
-				Content:   []model.ContentPart{model.TextPart{Text: prompt}},
-				Timestamp: time.Now(),
-			},
-		},
-		bridge.KeySystem: model.SystemPrompt{
-			Blocks: []model.SystemBlock{{Text: "You are a helpful AI assistant."}},
-		},
-		bridge.KeyModelID:   d.EngineCfg.Model,
-		bridge.KeyMaxTokens: d.EngineCfg.MaxTokens,
-		bridge.KeyTools:     d.Registry.ToolDefs(),
-	}
-
-	// Run the lifecycle graph
-	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(d.Bus))
-
 	ctx := cmd.Context()
-	events := executor.Stream(ctx, initialState)
+	snap := d.Store.Snapshot()
+	runner := bridge.NewRunner(graph, bridge.RunnerConfig{
+		System:    snap.Conversation.System,
+		ModelID:   d.EngineCfg.Model,
+		MaxTokens: d.EngineCfg.MaxTokens,
+		Tools:     d.Registry.ToolDefs(),
+		Bus:       d.Bus,
+	})
 
-	for ev := range events {
+	for runEv := range runner.Stream(ctx, prompt) {
+		ev := runEv.Event
 		switch ev.Type {
 		case "step_started":
 			if len(ev.Nodes) > 0 {
@@ -192,16 +178,8 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "✓ Completed in %d steps\n", ev.Step)
 
 			// Print final assistant message to stdout.
-			msgs := bridge.Messages(ev.State)
-			for i := len(msgs) - 1; i >= 0; i-- {
-				if msgs[i].Role == model.RoleAssistant {
-					for _, part := range msgs[i].Content {
-						if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
-							fmt.Println(tp.Text)
-						}
-					}
-					break
-				}
+			if runEv.Result.AssistantText != "" {
+				fmt.Println(runEv.Result.AssistantText)
 			}
 		}
 	}
@@ -211,28 +189,7 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 
 func generateGraph(cmd *cobra.Command, d *cli.Deps, structure string, infra bridge.Infra) (*lifecycle.Graph, error) {
 	modelID := cli.SecondaryModelFor(d.Cfg.Provider)
-
-	def, err := bridge.GenerateGraph(cmd.Context(), d.Prov, d.Bus, modelID, structure)
-	if err != nil {
-		return nil, err
-	}
-
-	if def.Graph.Reducers == nil {
-		def.Graph.Reducers = make(map[string]string)
-	}
-	def.Graph.Reducers["total_usage"] = "total_usage"
-	def.Graph.Reducers["turn_count"] = "sum"
-
-	factory := bridge.NewNodeFactory(infra)
-	opts := &definition.ResolveOptions{
-		CustomReducers: map[string]lifecycle.ReducerFunc{
-			"messages":    bridge.MessageReducer,
-			"reflections": bridge.ReflectionReducer,
-			"total_usage": bridge.UsageReducer,
-		},
-	}
-
-	return definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
+	return bridge.GenerateAndResolveGraph(cmd.Context(), d.Prov, d.Bus, modelID, structure, infra)
 }
 
 func loadYAMLGraph(path string, infra bridge.Infra) (*lifecycle.Graph, error) {
@@ -241,19 +198,5 @@ func loadYAMLGraph(path string, infra bridge.Infra) (*lifecycle.Graph, error) {
 		return nil, err
 	}
 
-	factory := bridge.NewNodeFactory(infra)
-	opts := &definition.ResolveOptions{
-		CustomReducers: map[string]lifecycle.ReducerFunc{
-			"messages":    bridge.MessageReducer,
-			"reflections": bridge.ReflectionReducer,
-			"total_usage": bridge.UsageReducer,
-		},
-	}
-
-	return definition.Resolve(
-		def,
-		factory.Create,
-		definition.DefaultRouterCreator(),
-		opts,
-	)
+	return bridge.ResolveGraph(def, infra)
 }

@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/compact"
@@ -204,28 +203,18 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	defer observe.TraceCtx(ctx, "query", "Engine.runGraph", "exit")
 
 	snap := e.store.Snapshot()
+	runner := bridge.NewRunner(graph, bridge.RunnerConfig{
+		System:    snap.Conversation.System,
+		ModelID:   e.config.Model,
+		MaxTokens: e.config.MaxTokens,
+		Tools:     e.registry.ToolDefs(),
+		Bus:       e.bus,
+	})
 
-	userMsg := model.Message{
-		ID:      model.NewUUID(),
-		Role:    model.RoleUser,
-		Content: []model.ContentPart{model.TextPart{Text: prompt}},
-	}
-
-	initialState := lifecycle.State{
-		bridge.KeyMessages:  []model.Message{userMsg},
-		bridge.KeySystem:    snap.Conversation.System,
-		bridge.KeyModelID:   e.config.Model,
-		bridge.KeyMaxTokens: e.config.MaxTokens,
-		bridge.KeyTools:     e.registry.ToolDefs(),
-	}
-
-	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(e.bus))
-	events := executor.Stream(ctx, initialState)
-
-	var finalState lifecycle.State
-	var runErr error
-	for ev := range events {
+	var result bridge.RunResult
+	for runEv := range runner.Stream(ctx, prompt) {
 		observe.TraceCtx(ctx, "query", "Engine.runGraph", "range events")
+		ev := runEv.Event
 		if ev.Err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ev.Err != nil")
 			errStr := ev.Err.Error()
@@ -244,58 +233,19 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		}
 		if ev.Type == "completed" {
 			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ev.Type == \"completed\"")
-			finalState = ev.State
-			runErr = ev.Err
+			result = runEv.Result
 		}
 	}
 
-	if runErr != nil {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: runErr != nil")
-		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", runErr)}
+	if result.Err != nil {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: result.Err != nil")
+		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", result.Err)}
 		return
 	}
 
-	// Extract final assistant text
-	var resultText strings.Builder
-	msgs := bridge.Messages(finalState)
-	for i := len(msgs) - 1; i >= 0; i-- {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "for: i >= 0")
-		if msgs[i].Role == model.RoleAssistant {
-			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: msgs[i].Role == model.RoleAssistant")
-			for _, part := range msgs[i].Content {
-				observe.TraceCtx(ctx, "query", "Engine.runGraph", "range msgs[i].Content")
-				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
-					observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ok && tp.Text != \"\"")
-					resultText.WriteString(tp.Text)
-				}
-			}
-			if resultText.Len() > 0 {
-				observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: resultText.Len() > 0")
-				break
-			}
-		}
+	if result.AssistantText != "" {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: result.AssistantText != \"\"")
+		ch <- TextEvent{Text: result.AssistantText}
 	}
-
-	if resultText.Len() > 0 {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: resultText.Len() > 0")
-		ch <- TextEvent{Text: resultText.String()}
-	}
-
-	stopReason := model.StopEndTurn
-	if sr := bridge.StopReason(finalState); sr != "" {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: sr != \"\"")
-		stopReason = model.StopReason(sr)
-	}
-	var resp model.Response
-	if r, ok := finalState[bridge.KeyResponse].(model.Response); ok {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ok")
-		resp = r
-	}
-
-	totalUsage := bridge.TotalUsage(finalState)
-	if totalUsage.InputTokens > 0 || totalUsage.OutputTokens > 0 {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: totalUsage.InputTokens > 0 || totalUsage.OutputTokens > 0")
-		resp.Usage = totalUsage
-	}
-	ch <- TurnCompleteEvent{Response: resp, StopReason: stopReason}
+	ch <- TurnCompleteEvent{Response: result.Response, StopReason: result.StopReason}
 }

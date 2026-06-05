@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/lifecycle"
 	"github.com/artpar/pragma/internal/lifecycle/bridge"
-	"github.com/artpar/pragma/internal/lifecycle/definition"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -147,8 +145,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("resolve graph: %w", err)
 	}
 
-	initialState := t.buildInitialState(in, snap)
-
 	// Get progress reporter from state if available (optional interface pattern).
 	var progressCh tool.ProgressReporter
 	if ps, ok := state.(tool.ProgressSource); ok {
@@ -156,13 +152,23 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		progressCh = ps.Progress()
 	}
 
-	executor := lifecycle.NewExecutor(graph, lifecycle.WithEventBus(t.Bus))
-	events := executor.Stream(ctx, initialState)
+	sys := snap.Conversation.System
+	if in.System != "" {
+		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.System != \"\"")
+		sys = model.SystemPrompt{Blocks: []model.SystemBlock{{Text: in.System, Cacheable: true}}}
+	}
+	runner := bridge.NewRunner(graph, bridge.RunnerConfig{
+		System:    sys,
+		ModelID:   snap.Model,
+		MaxTokens: snap.MaxTokens,
+		Tools:     t.workflowToolDefs(),
+		Bus:       t.Bus,
+	})
 
-	var finalState lifecycle.State
-	var runErr error
-	for ev := range events {
+	var result bridge.RunResult
+	for runEv := range runner.Stream(ctx, in.Prompt) {
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "range events")
+		ev := runEv.Event
 
 		if progressCh != nil {
 			observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: progressCh != nil")
@@ -184,13 +190,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		}
 		if ev.Type == "completed" {
 			observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: ev.Type == \"completed\"")
-			finalState = ev.State
-			runErr = ev.Err
+			result = runEv.Result
 		}
 	}
 
-	observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: t.buildResult(finalState, runErr)")
-	return t.buildResult(finalState, runErr)
+	observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: t.buildResult(result)")
+	return t.buildResult(result)
 }
 
 func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge.Infra) (*lifecycle.Graph, error) {
@@ -203,30 +208,7 @@ func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge
 		modelID = t.Store.Snapshot().Model
 	}
 
-	def, err := bridge.GenerateGraph(ctx, t.Provider, t.Bus, modelID, in.Structure)
-	if err != nil {
-		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: err != nil")
-		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "return: nil, fmt.Errorf(\"generate graph: %w\", err)")
-		return nil, fmt.Errorf("generate graph: %w", err)
-	}
-
-	if def.Graph.Reducers == nil {
-		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: def.Graph.Reducers == nil")
-		def.Graph.Reducers = make(map[string]string)
-	}
-	def.Graph.Reducers["total_usage"] = "total_usage"
-	def.Graph.Reducers["turn_count"] = "sum"
-
-	factory := bridge.NewNodeFactory(infra)
-	opts := &definition.ResolveOptions{
-		CustomReducers: map[string]lifecycle.ReducerFunc{
-			"messages":    bridge.MessageReducer,
-			"reflections": bridge.ReflectionReducer,
-			"total_usage": bridge.UsageReducer,
-		},
-	}
-
-	g, err := definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
+	g, err := bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, in.Structure, infra)
 	if err != nil {
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "if: err != nil")
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.resolveGraph", "return: nil, fmt.Errorf(\"resolve generated graph: %w\", err)")
@@ -236,22 +218,9 @@ func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge
 	return g, nil
 }
 
-func (t *Tool) buildInitialState(in lifecycleInput, snap app.AppState) lifecycle.State {
+func (t *Tool) workflowToolDefs() []model.ToolDef {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-
-	userMsg := model.Message{
-		Role:    model.RoleUser,
-		Content: []model.ContentPart{model.TextPart{Text: in.Prompt}},
-	}
-
-	sys := snap.Conversation.System
-	if in.System != "" {
-		observe.GlobalTrace("if: in.System != \"\"")
-		sys = model.SystemPrompt{Blocks: []model.SystemBlock{{Text: in.System, Cacheable: true}}}
-	}
-	observe.GlobalTrace("return: lifecycle.State{\n\tbridge.KeyMessages:\t[]model.Message{userMsg},\n\tbridge.KeySy...")
-
 	allDefs := t.Registry.ToolDefs()
 	filteredDefs := make([]model.ToolDef, 0, len(allDefs))
 	for _, td := range allDefs {
@@ -262,15 +231,8 @@ func (t *Tool) buildInitialState(in lifecycleInput, snap app.AppState) lifecycle
 		}
 		filteredDefs = append(filteredDefs, td)
 	}
-	observe.GlobalTrace("return: lifecycle.State{\n\tbridge.KeyMessages:\t[]model.Message{userMsg},\n\tbridge.KeySy...")
-
-	return lifecycle.State{
-		bridge.KeyMessages:  []model.Message{userMsg},
-		bridge.KeySystem:    sys,
-		bridge.KeyModelID:   snap.Model,
-		bridge.KeyMaxTokens: snap.MaxTokens,
-		bridge.KeyTools:     filteredDefs,
-	}
+	observe.GlobalTrace("return: filteredDefs")
+	return filteredDefs
 }
 
 // toolCallRecord captures one actual tool invocation for verification.
@@ -281,40 +243,20 @@ type toolCallRecord struct {
 	IsError bool   `json:"is_error,omitempty"`
 }
 
-func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.InvokeResult, error) {
+func (t *Tool) buildResult(run bridge.RunResult) (tool.InvokeResult, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
 	status := "completed"
 	var errMsg string
-	if runErr != nil {
-		observe.GlobalTrace("if: runErr != nil")
+	if run.Err != nil {
+		observe.GlobalTrace("if: run.Err != nil")
 		status = "failed"
-		errMsg = runErr.Error()
+		errMsg = run.Err.Error()
 	}
 
 	// Extract the LLM's narrative (last assistant text).
-	var resultText string
-	msgs := bridge.Messages(finalState)
-	for i := len(msgs) - 1; i >= 0; i-- {
-		observe.GlobalTrace("for: i >= 0")
-		if msgs[i].Role == model.RoleAssistant {
-			observe.GlobalTrace("if: msgs[i].Role == model.RoleAssistant")
-			var parts []string
-			for _, part := range msgs[i].Content {
-				observe.GlobalTrace("range msgs[i].Content")
-				if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
-					observe.GlobalTrace("if: ok && tp.Text != \"\"")
-					parts = append(parts, tp.Text)
-				}
-			}
-			if len(parts) > 0 {
-				observe.GlobalTrace("if: len(parts) > 0")
-				resultText = strings.Join(parts, "\n")
-				break
-			}
-		}
-	}
+	resultText := run.AssistantText
 
 	// Extract actual tool call receipts from conversation history.
 	// This is verified data — what tools actually ran and their real results.
@@ -322,6 +264,7 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 	modifiedSet := make(map[string]bool)
 	readSet := make(map[string]bool)
 
+	msgs := bridge.Messages(run.State)
 	for mi := 0; mi < len(msgs); mi++ {
 		observe.GlobalTrace("for: mi < len(msgs)")
 		msg := msgs[mi]
@@ -400,7 +343,7 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 		Note          string           `json:"note,omitempty"`
 	}
 
-	turnCount, _ := finalState[bridge.KeyTurnCount].(int)
+	turnCount, _ := run.State[bridge.KeyTurnCount].(int)
 
 	var note string
 	if status == "completed" {
@@ -412,9 +355,9 @@ func (t *Tool) buildResult(finalState lifecycle.State, runErr error) (tool.Invok
 		Status:        status,
 		Result:        resultText,
 		Steps:         turnCount,
-		Passed:        bridge.Passed(finalState),
-		Score:         bridge.Score(finalState),
-		Reflections:   bridge.Reflections(finalState),
+		Passed:        bridge.Passed(run.State),
+		Score:         bridge.Score(run.State),
+		Reflections:   bridge.Reflections(run.State),
 		ToolCalls:     toolCalls,
 		FilesModified: filesModified,
 		FilesRead:     filesRead,

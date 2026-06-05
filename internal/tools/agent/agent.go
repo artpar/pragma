@@ -13,7 +13,6 @@ import (
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/lifecycle"
 	"github.com/artpar/pragma/internal/lifecycle/bridge"
-	"github.com/artpar/pragma/internal/lifecycle/definition"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -716,19 +715,6 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 		modelID = t.Store.Snapshot().Model
 	}
 
-	def, err := bridge.GenerateGraph(ctx, t.Provider, t.Bus, modelID, structure)
-	if err != nil {
-		observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "if: err != nil")
-		observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: nil, err")
-		return nil, err
-	}
-
-	if def.Graph.Reducers == nil {
-		observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "if: def.Graph.Reducers == nil")
-		def.Graph.Reducers = make(map[string]string)
-	}
-	def.Graph.Reducers["total_usage"] = "total_usage"
-
 	snap := subStore.Snapshot()
 	infra := bridge.Infra{
 		Provider:     t.Provider,
@@ -737,18 +723,8 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 		Bus:          t.Bus,
 		Cwd:          snap.CWD,
 	}
-
-	factory := bridge.NewNodeFactory(infra)
-	opts := &definition.ResolveOptions{
-		CustomReducers: map[string]lifecycle.ReducerFunc{
-			"messages":    bridge.MessageReducer,
-			"reflections": bridge.ReflectionReducer,
-			"total_usage": bridge.UsageReducer,
-		},
-	}
-	observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)")
-
-	return definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
+	observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, structure, infra)")
+	return bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, structure, infra)
 }
 
 // runGraphSync runs a lifecycle graph synchronously and returns the result.
