@@ -200,13 +200,14 @@ func newHub() *hub {
 }
 
 func (h *hub) publish(kind string, data interface{}) {
+	kind, dataType, data := normalizeWebEvent(kind, data)
 	h.mu.Lock()
 	h.sequence++
 	ev := eventEnvelope{
 		Sequence: h.sequence,
 		Received: time.Now(),
 		Type:     kind,
-		DataType: dataType(data),
+		DataType: dataType,
 		Data:     data,
 	}
 	h.recent = append(h.recent, ev)
@@ -227,6 +228,211 @@ func dataType(data interface{}) string {
 		return ""
 	}
 	return fmt.Sprintf("%T", data)
+}
+
+type webPromptEvent struct {
+	Prompt string `json:"prompt"`
+}
+
+type webTextEvent struct {
+	Text string `json:"text"`
+}
+
+type webModelRequestEvent struct {
+	Model   string `json:"model"`
+	Attempt int    `json:"attempt"`
+}
+
+type webModelResponseEvent struct {
+	Model      string `json:"model"`
+	StopReason string `json:"stop_reason"`
+}
+
+type webToolCallEvent struct {
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
+type webFileEffect struct {
+	Path      string `json:"path"`
+	Operation string `json:"operation"`
+}
+
+type webToolResultEvent struct {
+	ID          string          `json:"id"`
+	Content     string          `json:"content"`
+	Display     string          `json:"display,omitempty"`
+	IsError     bool            `json:"is_error,omitempty"`
+	FileEffects []webFileEffect `json:"file_effects,omitempty"`
+}
+
+type webTurnCompleteEvent struct {
+	StopReason string `json:"stop_reason"`
+}
+
+type webCompactionEvent struct {
+	PreTokens           int    `json:"pre_tokens,omitempty"`
+	PostTokens          int    `json:"post_tokens,omitempty"`
+	Attempt             int    `json:"attempt,omitempty"`
+	MaxRetry            int    `json:"max_retry,omitempty"`
+	Error               string `json:"error,omitempty"`
+	ConsecutiveFailures int    `json:"consecutive_failures,omitempty"`
+}
+
+type webLifecycleProgressEvent struct {
+	Step       int      `json:"step"`
+	Node       string   `json:"node,omitempty"`
+	Nodes      []string `json:"nodes,omitempty"`
+	Status     string   `json:"status"`
+	DurationMs int64    `json:"duration_ms,omitempty"`
+	Error      string   `json:"error,omitempty"`
+	FromNode   string   `json:"from_node,omitempty"`
+	ToNode     string   `json:"to_node,omitempty"`
+	RouteKey   string   `json:"route_key,omitempty"`
+}
+
+type webOrchestrationStartedEvent struct {
+	Name    string `json:"name"`
+	Initial string `json:"initial"`
+}
+
+type webOrchestrationStateEvent struct {
+	StateID    string `json:"state_id"`
+	PersonaID  string `json:"persona_id,omitempty"`
+	Control    string `json:"control,omitempty"`
+	DurationMs int64  `json:"duration_ms,omitempty"`
+	Event      string `json:"event,omitempty"`
+}
+
+type webOrchestrationTransitionEvent struct {
+	From  string `json:"from"`
+	Event string `json:"event"`
+	To    string `json:"to"`
+}
+
+type webOrchestrationHandoffEvent struct {
+	StateID   string `json:"state_id"`
+	Event     string `json:"event"`
+	Path      string `json:"path"`
+	Direction string `json:"direction"`
+}
+
+type webOrchestrationCompletedEvent struct {
+	Name string `json:"name"`
+}
+
+type webAgentProgressEvent struct {
+	AgentID     string `json:"agent_id"`
+	Description string `json:"description"`
+	ToolCount   int    `json:"tool_count"`
+	TokenCount  int    `json:"token_count"`
+	LastTool    string `json:"last_tool,omitempty"`
+	Status      string `json:"status"`
+	Background  bool   `json:"background"`
+	Error       string `json:"error,omitempty"`
+}
+
+type webRetryEvent struct {
+	Attempt     int    `json:"attempt"`
+	MaxAttempts int    `json:"max_attempts"`
+	DelayMs     int64  `json:"delay_ms"`
+	Kind        string `json:"kind"`
+	Error       string `json:"error"`
+}
+
+type webErrorEvent struct {
+	Message  string `json:"message"`
+	Kind     string `json:"kind,omitempty"`
+	Guidance string `json:"guidance,omitempty"`
+}
+
+func normalizeWebEvent(kind string, data interface{}) (string, string, interface{}) {
+	switch kind {
+	case "prompt_accepted":
+		if ev, ok := data.(interactive.AcceptedPromptEvent); ok {
+			return "prompt_accepted", "web.prompt", webPromptEvent{Prompt: ev.Prompt}
+		}
+	case "loop_event":
+		return normalizeLoopEvent(data)
+	}
+	return kind, dataType(data), data
+}
+
+func normalizeLoopEvent(data interface{}) (string, string, interface{}) {
+	switch ev := data.(type) {
+	case query.TextEvent:
+		return "text", "web.text", webTextEvent{Text: ev.Text}
+	case query.ThinkingEvent:
+		return "thinking", "web.thinking", webTextEvent{Text: ev.Text}
+	case query.ModelRequestEvent:
+		return "model_request", "web.model_request", webModelRequestEvent{Model: ev.Model, Attempt: ev.Attempt}
+	case query.ModelResponseEvent:
+		return "model_response", "web.model_response", webModelResponseEvent{Model: ev.Model, StopReason: string(ev.StopReason)}
+	case query.ToolCallEvent:
+		return "tool_call", "web.tool_call", webToolCallEvent{ID: ev.Call.ID, Name: ev.Call.Name, Input: ev.Call.Input}
+	case query.ToolResultEvent:
+		effects := make([]webFileEffect, 0, len(ev.FileEffects))
+		for _, effect := range ev.FileEffects {
+			effects = append(effects, webFileEffect{Path: effect.Path, Operation: effect.Operation})
+		}
+		return "tool_result", "web.tool_result", webToolResultEvent{
+			ID:          ev.Result.ToolCallID,
+			Content:     ev.Result.Content,
+			Display:     ev.Display,
+			IsError:     ev.Result.IsError,
+			FileEffects: effects,
+		}
+	case query.TurnCompleteEvent:
+		return "turn_complete", "web.turn_complete", webTurnCompleteEvent{StopReason: string(ev.StopReason)}
+	case query.CompactionStartedEvent:
+		return "compaction_started", "web.compaction_started", webCompactionEvent{}
+	case query.CompactionEvent:
+		return "compaction", "web.compaction", webCompactionEvent{PreTokens: ev.PreTokens, PostTokens: ev.PostTokens}
+	case query.CompactionFailedEvent:
+		return "compaction_failed", "web.compaction_failed", webCompactionEvent{Attempt: ev.Attempt, MaxRetry: ev.MaxRetry, Error: ev.ErrorMsg}
+	case query.CompactionDisabledEvent:
+		return "compaction_disabled", "web.compaction_disabled", webCompactionEvent{ConsecutiveFailures: ev.ConsecutiveFailures}
+	case query.LifecycleProgressEvent:
+		return "lifecycle_progress", "web.lifecycle_progress", webLifecycleProgressEvent{
+			Step: ev.Step, Node: ev.Node, Nodes: ev.Nodes, Status: ev.Status,
+			DurationMs: ev.Duration.Milliseconds(), Error: ev.Error,
+			FromNode: ev.FromNode, ToNode: ev.ToNode, RouteKey: ev.RouteKey,
+		}
+	case query.OrchestrationStartedEvent:
+		return "orchestration_started", "web.orchestration_started", webOrchestrationStartedEvent{Name: ev.Name, Initial: ev.Initial}
+	case query.OrchestrationStateStartedEvent:
+		return "orchestration_state_started", "web.orchestration_state_started", webOrchestrationStateEvent{StateID: ev.StateID, PersonaID: ev.PersonaID, Control: ev.Control}
+	case query.OrchestrationStateCompletedEvent:
+		return "orchestration_state_completed", "web.orchestration_state_completed", webOrchestrationStateEvent{StateID: ev.StateID, DurationMs: ev.Duration.Milliseconds()}
+	case query.OrchestrationControlEvent:
+		return "orchestration_control", "web.orchestration_control", webOrchestrationStateEvent{StateID: ev.StateID, Control: ev.Control, Event: ev.Event}
+	case query.OrchestrationTransitionEvent:
+		return "orchestration_transition", "web.orchestration_transition", webOrchestrationTransitionEvent{From: ev.From, Event: ev.Event, To: ev.To}
+	case query.OrchestrationHandoffEvent:
+		return "orchestration_handoff", "web.orchestration_handoff", webOrchestrationHandoffEvent{StateID: ev.StateID, Event: ev.Event, Path: ev.Path, Direction: ev.Direction}
+	case query.OrchestrationCompletedEvent:
+		return "orchestration_completed", "web.orchestration_completed", webOrchestrationCompletedEvent{Name: ev.Name}
+	case query.AgentProgressEvent:
+		return "agent_progress", "web.agent_progress", webAgentProgressEvent{
+			AgentID: ev.AgentID, Description: ev.Description, ToolCount: ev.ToolCount,
+			TokenCount: ev.TokenCount, LastTool: ev.LastTool, Status: ev.Status,
+			Background: ev.Background, Error: ev.Error,
+		}
+	case query.RetryEvent:
+		return "retry", "web.retry", webRetryEvent{
+			Attempt: ev.Attempt, MaxAttempts: ev.MaxAttempts,
+			DelayMs: ev.Delay.Milliseconds(), Kind: string(ev.Kind), Error: ev.ErrorMsg,
+		}
+	case query.ErrorEvent:
+		message := ""
+		if ev.Err != nil {
+			message = ev.Err.Error()
+		}
+		return "run_error", "web.error", webErrorEvent{Message: message, Kind: string(ev.Kind), Guidance: ev.Guidance}
+	default:
+		return "loop_event", dataType(data), data
+	}
 }
 
 func (h *hub) subscribe() (chan eventEnvelope, []eventEnvelope, func()) {
@@ -1416,17 +1622,9 @@ const viewDefs = [
 ];
 
 function json(value){ return JSON.stringify(value, null, 2); }
-function typeOfEnvelope(envelope){ return envelope.data_type || envelope.type || 'event'; }
 function label(value){ return value === undefined || value === null || value === '' ? 'none' : String(value); }
 function receivedTime(value){ const d = new Date(value); return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(); }
 function fullText(value){ try { return json(value).toLowerCase(); } catch { return String(value).toLowerCase(); } }
-function field(obj, ...names){
-  if(!obj) return undefined;
-  for(const name of names){
-    if(Object.prototype.hasOwnProperty.call(obj, name)) return obj[name];
-  }
-  return undefined;
-}
 function displayValue(value){
   if(value === undefined || value === null) return '';
   if(typeof value === 'string') return value;
@@ -1437,20 +1635,42 @@ function compactText(value, limit=220){
   return text.length > limit ? text.slice(0, limit - 1) + '…' : text;
 }
 function eventCategory(envelope){
-  const haystack = ((envelope.type || '') + ' ' + (envelope.data_type || '')).toLowerCase();
-  if(haystack.includes('permission')) return 'permission';
-  if(haystack.includes('ask')) return 'ask';
-  if(haystack.includes('tool')) return 'tool';
-  if(haystack.includes('model')) return 'model';
-  if(haystack.includes('orchestration')) return 'orchestration';
-  if(haystack.includes('error')) return 'error';
-  if(haystack.includes('text') || haystack.includes('thinking')) return 'text';
-  return 'all';
+  switch(envelope.type){
+    case 'permission_request':
+    case 'permission_response':
+    case 'permission_response_submitted':
+      return 'permission';
+    case 'ask_request':
+    case 'ask_response':
+    case 'ask_response_submitted':
+      return 'ask';
+    case 'tool_call':
+    case 'tool_result':
+      return 'tool';
+    case 'model_request':
+    case 'model_response':
+      return 'model';
+    case 'orchestration_started':
+    case 'orchestration_state_started':
+    case 'orchestration_state_completed':
+    case 'orchestration_control':
+    case 'orchestration_transition':
+    case 'orchestration_handoff':
+    case 'orchestration_completed':
+    case 'workflow_snapshot':
+      return 'orchestration';
+    case 'run_error':
+      return 'error';
+    case 'text':
+    case 'thinking':
+      return 'text';
+    default:
+      return 'all';
+  }
 }
 
 function eventDisplayTitle(envelope){
   const data = envelope.data || {};
-  const typ = typeOfEnvelope(envelope);
   if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt' || envelope.type === 'prompt_accepted') return 'You';
   if(envelope.type === 'permission_request') return 'Permission needed';
   if(envelope.type === 'permission_response' || envelope.type === 'permission_response_submitted') return 'Permission answered';
@@ -1460,23 +1680,22 @@ function eventDisplayTitle(envelope){
   if(envelope.type === 'resume_requested') return 'Resume requested';
   if(envelope.type === 'slash_result') return 'Command result';
   if(envelope.type === 'run_idle') return 'Ready';
-  if(typ.includes('TextEvent')) return 'Assistant';
-  if(typ.includes('ThinkingEvent')) return 'Thinking';
-  if(typ.includes('ToolCallEvent')){
-    const name = field(data.Call, 'Name', 'name');
-    return 'Tool call' + (name ? ': ' + name : '');
+  switch(envelope.type){
+    case 'text': return 'Assistant';
+    case 'thinking': return 'Thinking';
+    case 'tool_call': return 'Tool call' + (data.name ? ': ' + data.name : '');
+    case 'tool_result': return 'Tool result';
+    case 'model_request': return 'Contacting model';
+    case 'model_response': return 'Model responded';
+    case 'run_error': return 'Run error';
+    case 'orchestration_started': return 'Workflow started';
+    case 'orchestration_state_started': return 'Workflow step started';
+    case 'orchestration_control': return 'Workflow control step';
+    case 'orchestration_handoff': return 'Workflow handoff';
+    case 'orchestration_transition': return 'Workflow moved';
+    case 'orchestration_state_completed': return 'Workflow step completed';
+    case 'orchestration_completed': return 'Workflow completed';
   }
-  if(typ.includes('ToolResultEvent')) return 'Tool result';
-  if(typ.includes('ModelRequestEvent')) return 'Contacting model';
-  if(typ.includes('ModelResponseEvent')) return 'Model responded';
-  if(typ.includes('ErrorEvent')) return 'Run error';
-  if(typ.includes('OrchestrationStartedEvent')) return 'Workflow started';
-  if(typ.includes('OrchestrationStateStartedEvent')) return 'Workflow step started';
-  if(typ.includes('OrchestrationControlEvent')) return 'Workflow control step';
-  if(typ.includes('OrchestrationHandoffEvent')) return 'Workflow handoff';
-  if(typ.includes('OrchestrationTransitionEvent')) return 'Workflow moved';
-  if(typ.includes('OrchestrationStateCompletedEvent')) return 'Workflow step completed';
-  if(typ.includes('OrchestrationCompletedEvent')) return 'Workflow completed';
   return envelope.type || 'Activity';
 }
 
@@ -1489,12 +1708,11 @@ function eventDisplayMeta(envelope){
 
 function eventPreview(envelope){
   const data = envelope.data || {};
-  const typ = typeOfEnvelope(envelope);
   if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt' || envelope.type === 'prompt_accepted') return compactText(data.prompt || data.Prompt || '');
-  if(typ.includes('TextEvent') || typ.includes('ThinkingEvent')) return compactText(data.Text || data.text || '');
-  if(typ.includes('ToolCallEvent') && data.Call) return compactText(field(data.Call, 'Input', 'input'));
-  if(typ.includes('ToolResultEvent') && data.Result) return compactText(data.Display || data.display || field(data.Result, 'Content', 'content'));
-  if(typ.includes('ErrorEvent') && data.Err) return compactText(data.Err.message || data.Err);
+  if(envelope.type === 'text' || envelope.type === 'thinking') return compactText(data.text || '');
+  if(envelope.type === 'tool_call') return compactText(data.input || '');
+  if(envelope.type === 'tool_result') return compactText(data.display || data.content || '');
+  if(envelope.type === 'run_error') return compactText(data.message || '');
   if(envelope.type === 'permission_request') return compactText([data.tool, data.content, data.reason].filter(Boolean).join(' · '));
   if(envelope.type === 'ask_request') {
     const req = data.request || data.Request || {};
@@ -1502,7 +1720,7 @@ function eventPreview(envelope){
     const questions = req.Questions || req.questions || [];
     if(questions.length) return compactText(questions.map(q => q.Question || q.question).join(' · '));
   }
-  if(typ.includes('Orchestration')) return compactText(Object.entries(data).map(([k,v]) => k + ': ' + displayValue(v)).join(' · '));
+  if(eventCategory(envelope) === 'orchestration') return compactText(Object.entries(data).map(([k,v]) => k + ': ' + displayValue(v)).join(' · '));
   return '';
 }
 function matchesCurrentView(envelope){
