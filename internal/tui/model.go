@@ -24,25 +24,26 @@ import (
 
 // Config holds all dependencies for the TUI model.
 type Config struct {
-	ParentCtx    context.Context // parent context for cancellation propagation (e.g., cmd.Context())
-	Engine       *query.Engine
-	Store        *app.StateStore
-	CostTracker  *model.CostTracker
-	ModelName    string
-	Provider     string
-	SessionSave   func()
-	SessionClose  func()
-	SessionSwitch func(sessionID string) (saveFn func(), closeFn func()) // returns new save/close for resumed session
-	SlashCmds     *slash.Registry
-	SlashDeps    slash.Deps
-	HookMgr      *hook.Manager         // nil if no hooks configured
-	TokenMonitor *observe.TokenMonitor // nil if no token monitoring
-	Metrics      *observe.Metrics      // always non-nil (created in deps.go)
-	Workspace       string                // full workspace directory path (run.go passes d.Cwd)
-	Version         string                // build version (from buildinfo.Version)
-	TaskReg         *task.Registry        // task registry for teammate visibility
-	SessionStart    time.Time             // original session start (for resume elapsed time)
-	McpServerNames  []string              // connected MCP server names for welcome banner
+	ParentCtx      context.Context // parent context for cancellation propagation (e.g., cmd.Context())
+	Engine         *query.Engine
+	Store          *app.StateStore
+	CostTracker    *model.CostTracker
+	ModelName      string
+	Provider       string
+	SessionSave    func()
+	SessionClose   func()
+	SessionSwitch  func(sessionID string) (saveFn func(), closeFn func()) // returns new save/close for resumed session
+	SlashCmds      *slash.Registry
+	SlashDeps      slash.Deps
+	Orchestrate    func(context.Context, slash.OrchestrationRequest) <-chan query.LoopEvent
+	HookMgr        *hook.Manager         // nil if no hooks configured
+	TokenMonitor   *observe.TokenMonitor // nil if no token monitoring
+	Metrics        *observe.Metrics      // always non-nil (created in deps.go)
+	Workspace      string                // full workspace directory path (run.go passes d.Cwd)
+	Version        string                // build version (from buildinfo.Version)
+	TaskReg        *task.Registry        // task registry for teammate visibility
+	SessionStart   time.Time             // original session start (for resume elapsed time)
+	McpServerNames []string              // connected MCP server names for welcome banner
 }
 
 // segmentKind distinguishes text (pre-rendered) from thinking/tool (rendered on demand).
@@ -190,17 +191,18 @@ type segment struct {
 // Model is the main bubbletea model for the interactive TUI.
 type Model struct {
 	// Dependencies
-	engine       *query.Engine
-	store        *app.StateStore
-	costTracker  *model.CostTracker
-	sessionSave   func()
-	sessionClose  func()
-	sessionSwitch func(sessionID string) (saveFn func(), closeFn func())
-	slashCmds     *slash.Registry
-	slashDeps    slash.Deps
-	hookMgr      *hook.Manager
-	tokenMonitor *observe.TokenMonitor
-	metrics      *observe.Metrics
+	engine         *query.Engine
+	store          *app.StateStore
+	costTracker    *model.CostTracker
+	sessionSave    func()
+	sessionClose   func()
+	sessionSwitch  func(sessionID string) (saveFn func(), closeFn func())
+	slashCmds      *slash.Registry
+	slashDeps      slash.Deps
+	orchestrate    func(context.Context, slash.OrchestrationRequest) <-chan query.LoopEvent
+	hookMgr        *hook.Manager
+	tokenMonitor   *observe.TokenMonitor
+	metrics        *observe.Metrics
 	version        string   // build version for welcome display
 	workspace      string   // full workspace path for welcome display
 	mcpServerNames []string // connected MCP server names for welcome banner
@@ -210,15 +212,15 @@ type Model struct {
 	teammateEntries []render.TeammateEntry
 
 	// Components
-	viewport viewport.Model
-	input    inputComponent
-	perm     permissionDialog
-	ask      askDialog
-	teams    teamsDialog
+	viewport  viewport.Model
+	input     inputComponent
+	perm      permissionDialog
+	ask       askDialog
+	teams     teamsDialog
 	modelDlg  modelDialog
 	resumeDlg resumeDialog
 	toolbar   toolbar
-	spin     spinner.Model
+	spin      spinner.Model
 
 	// Rendering
 	mdRenderer      *render.MarkdownRenderer
@@ -286,6 +288,7 @@ func New(cfg Config) Model {
 		sessionSwitch:   cfg.SessionSwitch,
 		slashCmds:       cfg.SlashCmds,
 		slashDeps:       cfg.SlashDeps,
+		orchestrate:     cfg.Orchestrate,
 		hookMgr:         cfg.HookMgr,
 		tokenMonitor:    cfg.TokenMonitor,
 		metrics:         cfg.Metrics,

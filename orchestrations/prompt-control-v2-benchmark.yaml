@@ -95,7 +95,7 @@ transitions:
     to: mark_item_completed
   - event: complete
     from: [mark_item_completed]
-    to: next_item
+    to: checklist_writer
   - event: item_block
     from: [item_reviewer]
     to: patch_planner

@@ -1,0 +1,16 @@
+id: float_artist
+description: Draws one tiny parade float card.
+properties:
+  output: float_card
+prompt: |
+  You are float_artist.
+
+  Read /tmp/pragma/play/current-item.json and the handoff from parade_master.
+  Create one tiny parade card for the current float under:
+  /tmp/pragma/play/floats/
+
+  Then write /tmp/pragma/play/float-card.md naming the card path and the
+  current float id. Do not make cards for any other float.
+
+  Respond with exactly one fenced bash block. The shell script must end with:
+  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

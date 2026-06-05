@@ -1,0 +1,27 @@
+id: ribbon_judge
+description: Gives a ribbon note for one tiny parade float.
+properties:
+  output: ribbon_note
+prompt: |
+  You are ribbon_judge.
+
+  Read /tmp/pragma/play/current-item.json and /tmp/pragma/play/float-card.md.
+  If the float card names the current float id and a card path, write
+  /tmp/pragma/play/item-verdict.md with:
+
+  Findings:
+  - The float card names the current parade float.
+  - The float card names a card path.
+
+  Required repair:
+  None
+
+  Decision:
+  APPROVE
+
+  Also write /tmp/pragma/handoff-prompts/ribbon_judge/item_approve.md for
+  parade_master. This ribbon note is for the parade master only, not the next
+  artist.
+
+  Respond with exactly one fenced bash block. The shell script must end with:
+  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

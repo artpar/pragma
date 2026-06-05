@@ -65,6 +65,15 @@ prompt: |
   Purpose:
   Write small implementation items tied to concrete surfaces.
 
+  Checklist controller loop:
+  This state may run more than once in the same orchestration. On the first
+  run, create /tmp/pragma/checklist.json from the patch plan. On later runs
+  after an item approval, use the received handoff plus the existing checklist,
+  current item, implementer report, and item verdict to prepare the next
+  pending item handoff. The next item implementor must receive a fresh handoff
+  written by this state, not a handoff copied from the previous item worker or
+  reviewer.
+
   Missing required field rule:
   If the patch plan lacks a concrete source path, consumer/defaulting path,
   validation command, or allowed files for a behavior, do not infer or broaden.
@@ -160,8 +169,10 @@ prompt: |
   Work method:
   1. Read the verdict first if present; extract concrete_missing_or_wrong_surfaces.
   2. Read patch plan only to preserve source/validation guidance.
-  3. Write /tmp/pragma/checklist.json as JSON.
-  4. Stop.
+  3. Write or preserve /tmp/pragma/checklist.json as JSON.
+  4. Write /tmp/pragma/handoff-prompts/checklist_writer/complete.md for the
+     next selected phase.
+  5. Stop.
 
   When writing the checklist, use one heredoc shell script inside the fenced
   bash block. The file content must have this JSON shape:
@@ -178,9 +189,11 @@ prompt: |
     checklist and is being preserved during a repair pass
 
   Boundary:
-  Once /tmp/pragma/checklist.json exists, this state is complete.
+  Once /tmp/pragma/checklist.json and the complete-event handoff are written,
+  this state is complete.
   The final line of the same shell script must be:
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
   Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
   inspection command. Echo it only when the same shell script has just written
-  /tmp/pragma/checklist.json.
+  /tmp/pragma/checklist.json and
+  /tmp/pragma/handoff-prompts/checklist_writer/complete.md.

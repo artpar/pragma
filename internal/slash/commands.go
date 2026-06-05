@@ -153,6 +153,13 @@ func registerBuiltins(r *Registry) {
 		Type:        TypeLocal,
 		CLIUse:      "mcp",
 	})
+	r.Register(Command{
+		Name:        "orchestrate",
+		Aliases:     []string{"fsm"},
+		Description: "Run an orchestration FSM",
+		Handle:      handleOrchestrate,
+		Type:        TypeLocal,
+	})
 }
 
 func handleCompact(ctx context.Context, args string, deps Deps) (Result, error) {

@@ -23,6 +23,7 @@ import (
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/orchestration"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/query"
@@ -314,8 +315,11 @@ func RunInteractive(cmd *cobra.Command) error {
 			d.SessionWriter = w
 			return makeSessionSaveClose(d)
 		},
-		SlashCmds:      slashCmds,
-		SlashDeps:      slashDeps,
+		SlashCmds: slashCmds,
+		SlashDeps: slashDeps,
+		Orchestrate: func(ctx context.Context, req slash.OrchestrationRequest) <-chan query.LoopEvent {
+			return orchestration.RunFileEvents(ctx, engine, req.DefinitionPath, req.PersonaDir, req.Prompt)
+		},
 		HookMgr:        d.HookMgr,
 		TokenMonitor:   d.TokenMonitor,
 		Metrics:        d.Metrics,

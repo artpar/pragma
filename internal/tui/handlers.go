@@ -132,6 +132,14 @@ func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
 			observe.GlobalTrace("return: m.startEngineFromPrompt(msg.Result.InjectPrompt)")
 			return m.startEngineFromPrompt(msg.Result.InjectPrompt)
 		}
+		if msg.Result.Orchestrate != nil {
+			observe.GlobalTrace("if: msg.Result.Orchestrate != nil")
+			if m.orchestrate == nil {
+				m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: orchestration runner is not available")+"\n\n")
+			} else {
+				return m.startOrchestration(*msg.Result.Orchestrate)
+			}
+		}
 		if msg.Result.ShowTeamsDialog {
 			observe.GlobalTrace("if: msg.Result.ShowTeamsDialog")
 			m.teams.Show(m.taskReg)
@@ -451,6 +459,25 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	}
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
+	return m, waitForEvent(m.eventCh)
+}
+
+func (m Model) startOrchestration(req slash.OrchestrationRequest) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
+	m.viewport.SetContent(m.viewportContent())
+	m.viewport.GotoBottom()
+
+	m.streaming = true
+	m.input.SetStreaming(true)
+	m.toolbar.SetStatus("orchestration...")
+
+	m.cancel()
+	m.ctx, m.cancel = context.WithCancel(m.parentCtx)
+	m.eventCh = m.orchestrate(m.ctx, req)
+
+	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 	return m, waitForEvent(m.eventCh)
 }
 

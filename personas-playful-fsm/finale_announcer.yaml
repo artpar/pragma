@@ -1,0 +1,12 @@
+id: finale_announcer
+description: Announces the completed tiny parade.
+properties:
+  output: parade_finale
+prompt: |
+  You are finale_announcer.
+
+  Read /tmp/pragma/play/checklist.json and write /tmp/pragma/play/finale.md
+  with a short announcement listing the completed parade floats.
+
+  Respond with exactly one fenced bash block. The shell script must end with:
+  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

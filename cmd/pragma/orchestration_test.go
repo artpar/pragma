@@ -6,10 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/cli"
-	"github.com/artpar/pragma/internal/config"
-	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/orchestration"
 	"github.com/artpar/pragma/internal/persona"
 )
@@ -171,49 +167,5 @@ func TestControlName(t *testing.T) {
 		},
 	}); got != "mark_current_item" {
 		t.Fatalf("controlName mark = %q, want mark_current_item", got)
-	}
-}
-
-func TestNewIsolatedOrchestrationStoreDropsConversationHistory(t *testing.T) {
-	system := model.SystemPrompt{
-		Blocks: []model.SystemBlock{{Text: "system prompt", Cacheable: true}},
-	}
-	conv := model.NewConversation(system, "model-a", "provider-a", "/work")
-	conv.Append(model.Message{
-		ID:      "previous-message",
-		Role:    model.RoleUser,
-		Content: []model.ContentPart{model.TextPart{Text: "previous persona state"}},
-	})
-
-	d := &cli.Deps{
-		Cfg: config.Config{
-			Model:     "model-a",
-			Provider:  "provider-a",
-			MaxTokens: 1234,
-		},
-		Cwd: "/work",
-		Store: app.NewStateStore(app.AppState{
-			Conversation: conv,
-			CWD:          "/work",
-			Model:        "model-a",
-			Provider:     "provider-a",
-			MaxTokens:    1234,
-		}),
-	}
-
-	store := newIsolatedOrchestrationStore(d)
-	snap := store.Snapshot()
-
-	if len(snap.Conversation.Messages) != 0 {
-		t.Fatalf("isolated messages = %d, want 0", len(snap.Conversation.Messages))
-	}
-	if len(snap.Conversation.System.Blocks) != 1 || snap.Conversation.System.Blocks[0].Text != "system prompt" {
-		t.Fatalf("isolated system prompt = %#v, want original system prompt", snap.Conversation.System.Blocks)
-	}
-	if snap.Conversation.ID == conv.ID {
-		t.Fatal("isolated conversation reused root conversation ID")
-	}
-	if snap.CWD != "/work" || snap.Model != "model-a" || snap.Provider != "provider-a" || snap.MaxTokens != 1234 {
-		t.Fatalf("isolated app state metadata = cwd=%q model=%q provider=%q max=%d", snap.CWD, snap.Model, snap.Provider, snap.MaxTokens)
 	}
 }

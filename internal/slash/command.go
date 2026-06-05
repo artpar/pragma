@@ -26,10 +26,17 @@ type Result struct {
 	ClearConversation bool   // true for /clear — TUI should reset display
 	Quit              bool   // true for /exit — TUI should exit
 	InjectPrompt      string // if set, TUI feeds this as a user message to the engine
+	Orchestrate       *OrchestrationRequest
 	ShowTeamsDialog   bool   // true for /teams — TUI opens interactive teams dialog
 	ShowModelDialog   bool   // true for /model with no args — TUI opens model picker
 	ShowResumeDialog  bool   // true for /resume with no args — TUI opens session picker
 	ResumeSessionID   string // if set, TUI loads this session into conversation
+}
+
+type OrchestrationRequest struct {
+	DefinitionPath string
+	PersonaDir     string
+	Prompt         string
 }
 
 // Handler is the function signature for a slash command handler.

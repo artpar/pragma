@@ -1,0 +1,72 @@
+name: playful-checklist-loop
+initial: parade_master
+states:
+  - id: parade_master
+    persona: parade_master
+
+  - id: parade_next
+    control:
+      foreach_next:
+        list_path: /tmp/pragma/play/checklist.json
+        cursor_path: /tmp/pragma/play/current-item.json
+        pending_status: pending
+        done_status: completed
+        item_event: item_available
+        done_event: all_items_done
+
+  - id: float_artist
+    persona: float_artist
+    task_prompt: none
+
+  - id: ribbon_judge
+    persona: ribbon_judge
+    task_prompt: none
+    event:
+      from_file:
+        path: /tmp/pragma/play/item-verdict.md
+        rules:
+          - contains: "Decision:\nAPPROVE"
+            event: item_approve
+          - contains: "Decision:\nBLOCK"
+            event: item_block
+
+  - id: stamp_float_done
+    control:
+      mark_current_item:
+        list_path: /tmp/pragma/play/checklist.json
+        cursor_path: /tmp/pragma/play/current-item.json
+        status: completed
+        event: complete
+
+  - id: finale_announcer
+    persona: finale_announcer
+    task_prompt: none
+
+  - id: done
+    terminal: true
+
+transitions:
+  - event: complete
+    from: [parade_master]
+    to: parade_next
+  - event: item_available
+    from: [parade_next]
+    to: float_artist
+  - event: all_items_done
+    from: [parade_next]
+    to: finale_announcer
+  - event: complete
+    from: [float_artist]
+    to: ribbon_judge
+  - event: item_approve
+    from: [ribbon_judge]
+    to: stamp_float_done
+  - event: item_block
+    from: [ribbon_judge]
+    to: parade_master
+  - event: complete
+    from: [stamp_float_done]
+    to: parade_master
+  - event: complete
+    from: [finale_announcer]
+    to: done
