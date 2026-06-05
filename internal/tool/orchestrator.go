@@ -318,12 +318,6 @@ func (o *Orchestrator) executeSingle(
 		})
 		if hookResult.Blocked {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: hookResult.Blocked")
-			o.bus.Emit(observe.PermissionDenialEnforced{
-				EventHeader: observe.NewEventHeader("PermissionDenialEnforced", traceID, spanID, parentSpan),
-				ToolCallID:  call.ID,
-				ToolName:    call.Name,
-				WasExecuted: false,
-			})
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
 			return singleResult{
 				part: model.ToolResultPart{
