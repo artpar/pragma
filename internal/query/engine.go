@@ -332,6 +332,8 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		}
 	}
 
+	e.appendLifecycleMessages(result.State)
+
 	if result.Err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: result.Err != nil")
 		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", result.Err)}
@@ -343,4 +345,13 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		ch <- TextEvent{Text: result.AssistantText}
 	}
 	ch <- TurnCompleteEvent{Response: result.Response, StopReason: result.StopReason}
+}
+
+func (e *Engine) appendLifecycleMessages(state lifecycle.State) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for _, msg := range bridge.Messages(state) {
+		observe.GlobalTrace("range bridge.Messages(state)")
+		e.appendConversationMessage(msg, nil)
+	}
 }
