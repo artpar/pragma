@@ -24,7 +24,7 @@ func NewStatusSubscriber(registry *Registry) *StatusSubscriber {
 func (s *StatusSubscriber) HandleEvent(event observe.Event) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	switch event.(type) {
+	switch e := event.(type) {
 	case observe.APIRequestStarted:
 		observe.GlobalTrace("typecase: observe.APIRequestStarted")
 		s.registry.UpdateStatus(s.pid, StatusBusy)
@@ -37,5 +37,8 @@ func (s *StatusSubscriber) HandleEvent(event observe.Event) {
 	case observe.ToolPermissionPrompted:
 		observe.GlobalTrace("typecase: observe.ToolPermissionPrompted")
 		s.registry.UpdateStatus(s.pid, StatusWaiting)
+	case observe.SessionStarted:
+		observe.GlobalTrace("typecase: observe.SessionStarted")
+		s.registry.UpdateSessionID(s.pid, e.SessionID)
 	}
 }

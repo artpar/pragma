@@ -104,6 +104,25 @@ func (r *Registry) UpdateStatus(pid int, status Status) {
 	_ = r.Register(info)
 }
 
+// UpdateSessionID attaches the real session identity after the child runtime
+// starts a domain session.
+func (r *Registry) UpdateSessionID(pid int, sessionID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if sessionID == "" {
+		observe.GlobalTrace("if: sessionID == \"\"")
+		return
+	}
+	info, err := r.Get(pid)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return
+	}
+	info.SessionID = sessionID
+	info.UpdatedAt = time.Now()
+	_ = r.Register(info)
+}
+
 // List returns all active background sessions.
 // Validates each PID is alive, removes stale entries, sorts by StartedAt descending.
 func (r *Registry) List() ([]ProcessInfo, error) {
