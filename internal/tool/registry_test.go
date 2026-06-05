@@ -133,6 +133,12 @@ func TestRegistryScoped(t *testing.T) {
 	if _, ok := scoped.Get("FileWrite"); ok {
 		t.Error("Scoped should not contain FileWrite")
 	}
+	if scoped.GetSchema("Bash") == nil {
+		t.Fatal("Scoped should preserve compiled schema for Bash")
+	}
+	if schema := scoped.GetSchema("FileWrite"); schema != nil {
+		t.Fatal("Scoped should not contain schema for FileWrite")
+	}
 }
 
 func TestRegistryGetNotFound(t *testing.T) {

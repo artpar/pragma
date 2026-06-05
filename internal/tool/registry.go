@@ -1,7 +1,7 @@
 package tool
 
 import (
-	"bytes"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -45,13 +45,16 @@ func (r *Registry) Register(desc Descriptor) error {
 		observe.GlobalTrace("return: fmt.Errorf(\"%w: %q\", model.ErrToolAlreadyRegistered, name)")
 		return fmt.Errorf("%w: %q", model.ErrToolAlreadyRegistered, name)
 	}
-	compiler := jsonschema.NewCompiler()
-
-	if err := compiler.AddResource("schema.json", bytes.NewReader(desc.InputSchema())); err == nil {
+	var schemaDoc any
+	if err := json.Unmarshal(desc.InputSchema(), &schemaDoc); err == nil {
 		observe.GlobalTrace("if: err == nil")
-		if compiled, err := compiler.Compile("schema.json"); err == nil {
+		compiler := jsonschema.NewCompiler()
+		if err := compiler.AddResource("schema.json", schemaDoc); err == nil {
 			observe.GlobalTrace("if: err == nil")
-			r.schemas[name] = compiled
+			if compiled, err := compiler.Compile("schema.json"); err == nil {
+				observe.GlobalTrace("if: err == nil")
+				r.schemas[name] = compiled
+			}
 		}
 	}
 	r.tools[name] = desc
@@ -175,6 +178,9 @@ func (r *Registry) Scoped(names []string) *Registry {
 		if nameSet[name] {
 			observe.GlobalTrace("if: nameSet[name]")
 			scoped.tools[name] = desc
+			if schema := r.schemas[name]; schema != nil {
+				scoped.schemas[name] = schema
+			}
 			if r.hidden[name] {
 				observe.GlobalTrace("if: r.hidden[name]")
 				if scoped.hidden == nil {
