@@ -58,3 +58,12 @@ type Checker interface {
 	Check(ctx context.Context, toolName string, content string) CheckResult
 	AddSessionRule(rule Rule)
 }
+
+func SessionRuleForPrompt(toolName string, result CheckResult, decision Decision) Rule {
+	return Rule{
+		ToolName: toolName,
+		Content:  result.Content,
+		Decision: decision,
+		Source:   SourceSession,
+	}
+}

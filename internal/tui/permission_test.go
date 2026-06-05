@@ -77,8 +77,8 @@ func TestPermissionDialogAllow(t *testing.T) {
 	if resp.Decision != permission.DecisionAllow {
 		t.Errorf("expected Allow, got %s", resp.Decision)
 	}
-	if resp.Rule != nil {
-		t.Error("Allow (once) should not create a rule")
+	if resp.Remember {
+		t.Error("Allow (once) should not request remember")
 	}
 }
 
@@ -104,14 +104,8 @@ func TestPermissionDialogAlwaysAllow(t *testing.T) {
 	if resp.Decision != permission.DecisionAllow {
 		t.Errorf("expected Allow, got %s", resp.Decision)
 	}
-	if resp.Rule == nil {
-		t.Fatal("Always Allow should create a session rule")
-	}
-	if resp.Rule.ToolName != "FileWrite" {
-		t.Errorf("rule tool name should be FileWrite, got %s", resp.Rule.ToolName)
-	}
-	if resp.Rule.Source != permission.SourceSession {
-		t.Errorf("rule source should be session, got %s", resp.Rule.Source)
+	if !resp.Remember {
+		t.Fatal("Always Allow should request remember")
 	}
 }
 

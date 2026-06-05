@@ -13,12 +13,12 @@ import (
 func TestInteractivePrompterNilProgram(t *testing.T) {
 	p := NewInteractivePrompter()
 	// Without a program set, Prompt should return deny
-	decision, rule := p.Prompt(context.Background(), "Bash", nil, "ls", "needs approval")
+	decision, remember := p.Prompt(context.Background(), "Bash", nil, "ls", "needs approval")
 	if decision != permission.DecisionDeny {
 		t.Errorf("expected DecisionDeny, got %s", decision)
 	}
-	if rule != nil {
-		t.Error("expected nil rule")
+	if remember {
+		t.Error("expected remember=false")
 	}
 }
 
@@ -42,12 +42,12 @@ func TestInteractivePrompterContextCancellation(t *testing.T) {
 	// Cancel immediately — the prompter should return deny without waiting for user
 	cancel()
 
-	decision, rule := p.Prompt(ctx, "Bash", nil, "rm -rf /", "dangerous")
+	decision, remember := p.Prompt(ctx, "Bash", nil, "rm -rf /", "dangerous")
 	if decision != permission.DecisionDeny {
 		t.Errorf("expected DecisionDeny on cancelled ctx, got %s", decision)
 	}
-	if rule != nil {
-		t.Error("expected nil rule on cancelled ctx")
+	if remember {
+		t.Error("expected remember=false on cancelled ctx")
 	}
 
 	program.Quit()

@@ -270,7 +270,7 @@ type permissionResponse struct {
 	Remember bool
 }
 
-func (b *Bridge) Prompt(ctx context.Context, toolName string, toolInput json.RawMessage, content string, reason string) (permission.Decision, *permission.Rule) {
+func (b *Bridge) Prompt(ctx context.Context, toolName string, toolInput json.RawMessage, content string, reason string) (permission.Decision, bool) {
 	id := newID()
 	respCh := make(chan permissionResponse, 1)
 	b.mu.Lock()
@@ -285,18 +285,10 @@ func (b *Bridge) Prompt(ctx context.Context, toolName string, toolInput json.Raw
 	}
 	select {
 	case resp := <-respCh:
-		if resp.Remember {
-			return resp.Decision, &permission.Rule{
-				ToolName: toolName,
-				Content:  content,
-				Decision: resp.Decision,
-				Source:   permission.SourceSession,
-			}
-		}
-		return resp.Decision, nil
+		return resp.Decision, resp.Remember
 	case <-ctx.Done():
 		b.dropPermission(id)
-		return permission.DecisionDeny, nil
+		return permission.DecisionDeny, false
 	}
 }
 

@@ -359,12 +359,12 @@ func (o *Orchestrator) executeSingle(
 	if permResult.Decision == permission.DecisionAsk {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Decision == permission.DecisionAsk")
 		promptStart := time.Now()
-		decision, sessionRule := o.prompter.Prompt(ctx, call.Name, call.Input, permResult.Content, permResult.Reason)
+		decision, remember := o.prompter.Prompt(ctx, call.Name, call.Input, permResult.Content, permResult.Reason)
 		promptDuration := time.Since(promptStart)
 
-		if sessionRule != nil {
-			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: sessionRule != nil")
-			o.checker.AddSessionRule(*sessionRule)
+		if remember {
+			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: remember")
+			o.checker.AddSessionRule(permission.SessionRuleForPrompt(call.Name, permResult, decision))
 		}
 
 		o.bus.Emit(observe.ToolPermissionPrompted{
