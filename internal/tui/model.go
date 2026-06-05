@@ -357,10 +357,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("typecase: AskRequestMsg")
 		return m.handleAskRequest(msg)
 
-	case SlashResultMsg:
-		observe.GlobalTrace("typecase: SlashResultMsg")
-		return m.handleSlashResult(msg)
-
 	case spinner.TickMsg:
 		observe.GlobalTrace("typecase: spinner.TickMsg")
 		if m.spinnerActive {

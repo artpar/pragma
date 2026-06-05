@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/artpar/pragma/internal/app"
@@ -56,52 +55,6 @@ func latestAssistantText(store *app.StateStore) string {
 		}
 	}
 	return ""
-}
-
-// handleSlashCommand dispatches a slash command and returns a SlashResultMsg.
-func (m Model) handleSlashCommand(name, args string) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	trimmedArgs := strings.TrimSpace(args)
-	label := "/" + name
-	if trimmedArgs != "" {
-		observe.GlobalTrace("if: trimmedArgs != \"\"")
-		label += " " + trimmedArgs
-	}
-	m.outputSegs = appendText(m.outputSegs, userLabelStyle.Render("❯")+" "+label+"\n\n")
-	m.viewport.SetContent(m.viewportContent())
-	m.viewport.GotoBottom()
-
-	slashCmds := m.slashCmds
-	slashDeps := m.slashDeps
-	if slashDeps.LatestAssistantText == nil {
-		store := m.store
-		slashDeps.LatestAssistantText = func() string {
-			return latestAssistantText(store)
-		}
-	}
-	if slashDeps.ClipboardWrite == nil {
-		slashDeps.ClipboardWrite = clipboard.WriteAll
-	}
-	observe.GlobalTrace("return: m, func() tea.Msg {\n\tresult, err := slashCmds.Execute(m.ctx, name, trimmedArg...")
-	return m, func() tea.Msg {
-		result, err := slashCmds.Execute(m.ctx, name, trimmedArgs, slashDeps)
-		return SlashResultMsg{Result: result, Err: err}
-	}
-}
-
-// handleSlashResult processes the output of a slash command.
-func (m Model) handleSlashResult(msg SlashResultMsg) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if msg.Err != nil {
-		observe.GlobalTrace("if: msg.Err != nil")
-		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: "+msg.Err.Error())+"\n\n")
-		m.viewport.SetContent(m.viewportContent())
-		m.viewport.GotoBottom()
-		return m, nil
-	}
-	return m.handleRuntimeSlashResult(msg.Result)
 }
 
 func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd) {
@@ -579,17 +532,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: m.modelDlg.active && msg.Type != tea.KeyCtrlC")
 		if selected := m.modelDlg.Update(msg); selected != "" {
 			observe.GlobalTrace("if: selected != \"\" — model chosen: " + selected)
-			if m.slashCmds == nil {
+			if m.runInput == nil {
 				m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: model command is not available")+"\n\n")
 				m.viewport.SetContent(m.viewportContent())
 				return m, nil
 			}
-			result, err := m.slashCmds.Execute(m.ctx, "model", selected, m.slashDeps)
-			next, cmd := m.handleSlashResult(SlashResultMsg{Result: result, Err: err})
-			if cmd != nil {
-				return next, cmd
-			}
-			return next, nil
+			return m.submitPrompt("/model " + selected)
 		}
 		m.viewport.SetContent(m.viewportContent())
 		observe.GlobalTrace("return: m, nil")
@@ -600,7 +548,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: m.resumeDlg.active && msg.Type != tea.KeyCtrlC")
 		if selectedID := m.resumeDlg.Update(msg); selectedID != "" {
 			observe.GlobalTrace("if: selectedID != \"\" — session chosen")
-			m.loadResumedSession(selectedID)
+			if m.runInput != nil {
+				return m.submitPrompt("/resume " + selectedID)
+			}
+			m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: interactive runtime is not available")+"\n\n")
+			m.viewport.SetContent(m.viewportContent())
+			return m, nil
 		}
 		m.viewport.SetContent(m.viewportContent())
 		observe.GlobalTrace("return: m, nil")
@@ -750,9 +703,6 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 		return m, nil
 	}
 	if m.runInput == nil {
-		if name, args, ok := slash.Parse(msg.Text); ok && m.slashCmds != nil {
-			return m.handleSlashCommand(name, args)
-		}
 		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: interactive runtime is not available")+"\n\n")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
@@ -966,33 +916,4 @@ func truncateToolbar(s string, max int) string {
 	}
 	observe.GlobalTrace("return: string(runes[:max-3]) + \"...\"")
 	return string(runes[:max-3]) + "..."
-}
-
-// loadResumedSession loads a session by ID and replaces the current conversation.
-func (m *Model) loadResumedSession(sessionID string) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-
-	if m.resume == nil {
-		m.outputSegs = appendText(m.outputSegs, "\n  Session resume is not available.\n\n")
-		return
-	}
-	if err := m.resume(sessionID); err != nil {
-		m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Error loading session: %s\n\n", err))
-		return
-	}
-
-	snap := m.store.Snapshot()
-	if snap.Conversation.Model != "" {
-		m.toolbar.SetModel(snap.Conversation.Model)
-	}
-
-	m.reloadConversationFromStore()
-
-	shortID := sessionID
-	if len(shortID) > 8 {
-		observe.GlobalTrace("if: len(shortID) > 8")
-		shortID = shortID[:8]
-	}
-	m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("\n  Resumed session %s\n\n", shortID))
 }

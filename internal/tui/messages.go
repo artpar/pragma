@@ -5,7 +5,6 @@ import (
 
 	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/tool"
 )
 
@@ -36,12 +35,6 @@ type PermResponseMsg struct {
 // InputSubmittedMsg carries a user message from the input component.
 type InputSubmittedMsg struct {
 	Text string
-}
-
-// SlashResultMsg carries the result of a slash command execution.
-type SlashResultMsg struct {
-	Result slash.Result
-	Err    error
 }
 
 // AskRequestMsg signals that a tool goroutine needs to ask the user a question.
