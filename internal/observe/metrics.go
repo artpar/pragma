@@ -64,6 +64,23 @@ func NewMetrics(seed MetricsSeed) *Metrics {
 	}
 }
 
+func (m *Metrics) Reset(seed MetricsSeed) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tokenUsage = seed.TokenUsage
+	m.latestContextFill = 0
+	m.turnCount = seed.TurnCount
+	m.toolCalls = make(map[string]int)
+	m.toolDurations = make(map[string]int64)
+	m.toolErrors = make(map[string]int)
+	m.apiCalls = 0
+	m.apiErrors = 0
+	m.apiTotalLatencyMs = 0
+	m.compactions = 0
+	m.sessionStart = time.Time{}
+	m.sessionDurationMs = 0
+}
+
 func (m *Metrics) HandleEvent(event Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

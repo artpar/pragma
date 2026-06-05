@@ -43,6 +43,13 @@ func NewCostTracker(initialCost float64) *CostTracker {
 	return &CostTracker{totalUSD: initialCost}
 }
 
+func (ct *CostTracker) Reset(initialCost float64) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	ct.entries = nil
+	ct.totalUSD = initialCost
+}
+
 // Record adds a cost entry calculated from usage and pricing.
 func (ct *CostTracker) Record(model string, provider string, usage TokenUsage, pricing Pricing) {
 	cost := float64(usage.InputTokens)*pricing.InputPerMToken/1_000_000 +
