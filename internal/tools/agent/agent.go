@@ -80,6 +80,7 @@ type agentResult struct {
 	TaskID       string `json:"task_id,omitempty"`
 	WorktreePath string `json:"worktree_path,omitempty"`
 	Branch       string `json:"branch,omitempty"`
+	HeadCommit   string `json:"head_commit,omitempty"`
 }
 
 // EngineFactory creates a sub-Engine for a forked conversation with scoped tools.
@@ -140,7 +141,7 @@ Usage notes:
 - The agent's outputs should generally be trusted
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
 - If the user specifies that they want you to run agents "in parallel", you MUST send a single message with multiple tool-use content blocks.
-- You can optionally set ` + "`isolation: \"worktree\"`" + ` to run the agent in a temporary git worktree, giving it an isolated copy of the repository. The worktree is automatically cleaned up if the agent makes no changes; if changes are made, the worktree path and branch are returned in the result.
+- You can optionally set ` + "`isolation: \"worktree\"`" + ` to run the agent in a temporary git worktree, giving it an isolated copy of the repository. The worktree is retained and its path, branch, and creation HEAD are returned in the result.
 
 ## Writing the prompt
 
@@ -280,8 +281,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				tt.Status = task.TaskFailed
 				tt.Error = err.Error()
 			})
-			t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
 			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"compile structure: %w\", err)")
+			if wtPath != "" {
+				return tool.InvokeResult{}, fmt.Errorf("compile structure: %w%s", err, retainedWorktreeNote(wtPath, wtHeadCommit))
+			}
 			return tool.InvokeResult{}, fmt.Errorf("compile structure: %w", err)
 		}
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runGraphSync(ctx, tk.ID, engine, graph, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)")
@@ -331,15 +334,12 @@ func (t *Tool) runSync(
 	drain := t.drainAgentRunEvents(ctx, events, taskID, subject, progressCh, false)
 	if drain.Err != nil {
 		t.failAgentTask(taskID, "agent_error", drain.Err)
-		t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
-		return tool.InvokeResult{Content: fmt.Sprintf("Agent failed: %v", drain.Err)}, nil
+		return tool.InvokeResult{Content: fmt.Sprintf("Agent failed: %v%s", drain.Err, retainedWorktreeNote(wtPath, wtHeadCommit))}, nil
 	}
 	emitAgentProgress(progressCh, taskID, subject, "completed", drain.ToolCount,
 		drain.ProgressTokens(), drain.LastToolName, false)
 	resultStr := drain.Result
 	t.completeAgentTask(taskID, resultStr, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
-
-	t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
 
 	ar := agentResult{
 		Status:       "completed",
@@ -348,6 +348,7 @@ func (t *Tool) runSync(
 		TokensUsed:   drain.TokensUsed(),
 		WorktreePath: wtPath,
 		Branch:       wtBranch,
+		HeadCommit:   wtHeadCommit,
 	}
 	data, err := json.Marshal(ar)
 	if err != nil {
@@ -485,8 +486,6 @@ func (t *Tool) runBackground(
 		} else {
 			t.completeAgentTask(taskID, drain.Result, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
 		}
-
-		t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
 	}()
 
 	ar := agentResult{
@@ -496,6 +495,7 @@ func (t *Tool) runBackground(
 		TaskID:       taskID,
 		WorktreePath: wtPath,
 		Branch:       wtBranch,
+		HeadCommit:   wtHeadCommit,
 	}
 	data, err := json.Marshal(ar)
 	if err != nil {
@@ -685,23 +685,18 @@ func (t *Tool) createWorktree(ctx context.Context, workDir, taskID string) (stri
 	return dir, branch, headCommit, nil
 }
 
-// cleanupWorktreeIfEmpty removes a worktree if it has no changes.
-// Does nothing if wtPath is empty.
-func (t *Tool) cleanupWorktreeIfEmpty(wtPath, headCommit string) {
+func retainedWorktreeNote(wtPath, headCommit string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if wtPath == "" {
 		observe.GlobalTrace("if: wtPath == \"\"")
-		return
+		return ""
 	}
-	changed, err := worktree.HasChanges(wtPath, headCommit)
-	if err != nil || changed {
-		observe.GlobalTrace("if: err != nil || changed")
-		return
+	if headCommit == "" {
+		observe.GlobalTrace("if: headCommit == \"\"")
+		return fmt.Sprintf(" (worktree retained at %s)", wtPath)
 	}
-
-	cmd := exec.Command("git", "worktree", "remove", "--force", wtPath)
-	_ = cmd.Run()
+	return fmt.Sprintf(" (worktree retained at %s, head %s)", wtPath, headCommit)
 }
 
 // compileStructure generates a lifecycle graph from a natural language description.
@@ -749,15 +744,12 @@ func (t *Tool) runGraphSync(
 	drain := t.drainAgentRunEvents(ctx, events, taskID, subject, progressCh, false)
 	if drain.Err != nil {
 		t.failAgentTask(taskID, "graph_error", drain.Err)
-		t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
-		return tool.InvokeResult{Content: fmt.Sprintf("Agent graph failed: %v", drain.Err)}, nil
+		return tool.InvokeResult{Content: fmt.Sprintf("Agent graph failed: %v%s", drain.Err, retainedWorktreeNote(wtPath, wtHeadCommit))}, nil
 	}
 	emitAgentProgress(progressCh, taskID, subject, "completed", drain.ToolCount,
 		drain.ProgressTokens(), drain.LastToolName, false)
 	resultStr := drain.Result
 	t.completeAgentTask(taskID, resultStr, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
-
-	t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
 
 	ar := agentResult{
 		Status:       "completed",
@@ -765,6 +757,7 @@ func (t *Tool) runGraphSync(
 		Result:       resultStr,
 		WorktreePath: wtPath,
 		Branch:       wtBranch,
+		HeadCommit:   wtHeadCommit,
 	}
 	data, _ := json.Marshal(ar)
 	observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "return: tool.InvokeResult{Content: string(data)}, nil")
