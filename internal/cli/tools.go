@@ -297,7 +297,7 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_FEATURE_AGENT_TEAMS\") == \"1\"")
 		tools = append(tools,
 			&toolteamcreate.Tool{Store: d.Store, Bus: d.Bus},
-			&toolteamdelete.Tool{Store: d.Store, Bus: d.Bus},
+			&toolteamdelete.Tool{Store: d.Store, Tasks: d.TaskReg, Bus: d.Bus},
 		)
 	}
 

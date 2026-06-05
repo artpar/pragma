@@ -8,20 +8,22 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/team"
 )
 
-func newTestTool(t *testing.T) (*Tool, *app.StateStore) {
+func newTestTool(t *testing.T) (*Tool, *app.StateStore, *task.Registry) {
 	t.Helper()
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	store := app.NewStateStore(app.AppState{CWD: tmp})
 	bus := observe.NewEventBus(100)
-	return &Tool{Store: store, Bus: bus}, store
+	reg := task.NewRegistry(bus)
+	return &Tool{Store: store, Tasks: reg, Bus: bus}, store, reg
 }
 
 func TestInvoke_NoActiveTeam(t *testing.T) {
-	tl, _ := newTestTool(t)
+	tl, _, _ := newTestTool(t)
 
 	result, err := tl.Invoke(context.Background(), nil, nil)
 	if err != nil {
@@ -41,7 +43,7 @@ func TestInvoke_NoActiveTeam(t *testing.T) {
 }
 
 func TestInvoke_SuccessfulDelete(t *testing.T) {
-	tl, store := newTestTool(t)
+	tl, store, _ := newTestTool(t)
 
 	// Create a team first
 	tf := &team.TeamFile{
@@ -94,7 +96,7 @@ func TestInvoke_SuccessfulDelete(t *testing.T) {
 }
 
 func TestInvoke_ActiveMembersRejection(t *testing.T) {
-	tl, store := newTestTool(t)
+	tl, store, reg := newTestTool(t)
 
 	// Create team with an active non-lead member
 	tf := &team.TeamFile{
@@ -122,6 +124,13 @@ func TestInvoke_ActiveMembersRejection(t *testing.T) {
 	if err := team.WriteTeamFile("active-test", tf); err != nil {
 		t.Fatalf("WriteTeamFile: %v", err)
 	}
+	tk := reg.Create("worker-1", "active teammate")
+	if err := reg.Update(tk.ID, func(tt *task.Task) {
+		tt.Status = task.TaskRunning
+		tt.AgentName = "worker-1"
+	}); err != nil {
+		t.Fatalf("Update task: %v", err)
+	}
 
 	store.Update(func(s *app.AppState) {
 		s.TeamContext = &app.TeamContext{
@@ -141,8 +150,8 @@ func TestInvoke_ActiveMembersRejection(t *testing.T) {
 	if out.Success {
 		t.Error("expected Success = false for active members")
 	}
-	if !strings.Contains(out.Message, "active member") {
-		t.Errorf("Message = %q, want mention of active members", out.Message)
+	if !strings.Contains(out.Message, "active teammate") {
+		t.Errorf("Message = %q, want mention of active teammates", out.Message)
 	}
 	if !strings.Contains(out.Message, "worker-1") {
 		t.Errorf("Message = %q, want worker-1 name listed", out.Message)
