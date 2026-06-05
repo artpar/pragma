@@ -588,23 +588,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("if: m.modelDlg.active && msg.Type != tea.KeyCtrlC")
 		if selected := m.modelDlg.Update(msg); selected != "" {
 			observe.GlobalTrace("if: selected != \"\" — model chosen: " + selected)
-			m.slashDeps.Store.Update(func(s *app.AppState) {
-				s.Model = selected
-			})
-			if m.slashDeps.OnModelChanged != nil {
-				observe.GlobalTrace("if: m.slashDeps.OnModelChanged != nil")
-				m.slashDeps.OnModelChanged(selected)
+			if m.slashCmds == nil {
+				m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: model command is not available")+"\n\n")
+				m.viewport.SetContent(m.viewportContent())
+				return m, nil
 			}
-			m.toolbar.SetModel(selected)
-			confirmMsg := fmt.Sprintf("Model switched to: %s", selected)
-			if m.slashDeps.ContextWindowFunc != nil {
-				observe.GlobalTrace("if: m.slashDeps.ContextWindowFunc != nil")
-				if cw, ok := m.slashDeps.ContextWindowFunc(selected); ok {
-					observe.GlobalTrace("if: ok")
-					confirmMsg = fmt.Sprintf("Model switched to: %s (context: %dk, takes effect on next turn)", selected, cw/1000)
-				}
+			result, err := m.slashCmds.Execute(m.ctx, "model", selected, m.slashDeps)
+			next, cmd := m.handleSlashResult(SlashResultMsg{Result: result, Err: err})
+			if cmd != nil {
+				return next, cmd
 			}
-			m.outputSegs = appendText(m.outputSegs, "\n  "+confirmMsg+"\n\n")
+			return next, nil
 		}
 		m.viewport.SetContent(m.viewportContent())
 		observe.GlobalTrace("return: m, nil")
