@@ -307,9 +307,7 @@ func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, ch ch
 	}
 	for ev := range rt.Engine.Run(ctx, input) {
 		ch <- interactive.LoopEvent{Event: ev}
-		if query.ShouldPersistSessionEvent(ev) {
-			rt.sessionSave()
-		}
+		persistSessionAfterLoopEvent(ev, rt.sessionSave)
 	}
 }
 
@@ -324,9 +322,7 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		ArtifactRoot: interactiveOrchestrationArtifactRoot(rt.Deps),
 	}) {
 		ch <- interactive.LoopEvent{Event: ev}
-		if query.ShouldPersistSessionEvent(ev) {
-			rt.sessionSave()
-		}
+		persistSessionAfterLoopEvent(ev, rt.sessionSave)
 	}
 }
 
@@ -844,12 +840,11 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 				fmt.Fprintf(os.Stderr, "Hint: %s\n", e.Guidance)
 				flushWriter(os.Stderr)
 			}
+			persistSessionAfterLoopEvent(ev, sessionSaveFn)
 			sessionCloseFn()
 			return e.Err
 		}
-		if query.ShouldPersistSessionEvent(ev) {
-			sessionSaveFn()
-		}
+		persistSessionAfterLoopEvent(ev, sessionSaveFn)
 	}
 
 	if hasStructuredOutput && structuredJSON != nil {
@@ -872,6 +867,24 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 func flushWriter(w io.Writer) {
 	if f, ok := w.(*os.File); ok {
 		_ = f.Sync()
+	}
+}
+
+func persistSessionAfterLoopEvent(ev query.LoopEvent, saveFn func()) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if saveFn == nil {
+		observe.GlobalTrace("if: saveFn == nil")
+		return
+	}
+	if query.ShouldPersistSessionEvent(ev) {
+		observe.GlobalTrace("if: query.ShouldPersistSessionEvent(ev)")
+		saveFn()
+		return
+	}
+	if _, ok := ev.(query.ErrorEvent); ok {
+		observe.GlobalTrace("if: _, ok := ev.(query.ErrorEvent); ok")
+		saveFn()
 	}
 }
 
