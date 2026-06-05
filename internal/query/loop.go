@@ -166,13 +166,14 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		}
 
 		params := provider.RequestParams{
-			Model:       resolvedModel,
-			MaxTokens:   e.config.MaxTokens,
-			Messages:    messagesForQuery,
-			System:      systemForQuery,
-			Tools:       tools,
-			Temperature: e.config.Temperature,
-			Thinking:    e.config.Thinking,
+			Model:          resolvedModel,
+			MaxTokens:      e.config.MaxTokens,
+			Messages:       messagesForQuery,
+			System:         systemForQuery,
+			Tools:          tools,
+			Temperature:    e.config.Temperature,
+			Thinking:       e.config.Thinking,
+			ResponseSchema: e.config.ResponseSchema,
 		}
 
 		// Stream with retry: exponential backoff for retryable errors.

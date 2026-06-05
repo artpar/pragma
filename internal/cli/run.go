@@ -736,6 +736,29 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		opts.ConfigureDeps(d)
 	}
 
+	schemaFlag, _ := cmd.Flags().GetString("output-schema")
+	if !opts.AllowStructuredOutput {
+		schemaFlag = ""
+	}
+	var schemaJSON json.RawMessage
+	var nativeStructuredOutput bool
+	var fallbackStructuredOutput bool
+	if schemaFlag != "" {
+		observe.GlobalTrace("if: schemaFlag != \"\"")
+		var err error
+		schemaJSON, err = loadOutputSchema(schemaFlag)
+		if err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"invalid output schema: %w\", err)")
+			return fmt.Errorf("invalid output schema: %w", err)
+		}
+		nativeStructuredOutput = d.Prov.SupportsFeature(provider.FeatureStructuredOutput)
+		fallbackStructuredOutput = !nativeStructuredOutput
+		if nativeStructuredOutput {
+			d.EngineCfg.ResponseSchema = schemaJSON
+		}
+	}
+
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tool.NonInteractiveAsker{}
 	engine, err := RegisterTools(d, prompter, asker)
@@ -745,18 +768,7 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		return err
 	}
 
-	schemaFlag, _ := cmd.Flags().GetString("output-schema")
-	if !opts.AllowStructuredOutput {
-		schemaFlag = ""
-	}
-	if schemaFlag != "" {
-		observe.GlobalTrace("if: schemaFlag != \"\"")
-		schemaJSON, err := loadOutputSchema(schemaFlag)
-		if err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: fmt.Errorf(\"invalid output schema: %w\", err)")
-			return fmt.Errorf("invalid output schema: %w", err)
-		}
+	if fallbackStructuredOutput {
 		synTool, err := toolsynthetic.New(schemaJSON)
 		if err != nil {
 			observe.GlobalTrace("if: err != nil")
@@ -814,6 +826,7 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 
 	hasStructuredOutput := schemaFlag != ""
 	var structuredJSON json.RawMessage
+	var nativeStructuredText strings.Builder
 
 	out := os.Stdout
 	if bgLog := os.Getenv("PRAGMA_BG_SESSION_LOG"); bgLog != "" {
@@ -833,7 +846,9 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		switch e := ev.(type) {
 		case query.TextEvent:
 			observe.GlobalTrace("typecase: query.TextEvent")
-			if !hasStructuredOutput {
+			if nativeStructuredOutput {
+				nativeStructuredText.WriteString(e.Text)
+			} else if !hasStructuredOutput {
 				fmt.Fprint(out, e.Text)
 				flushWriter(out)
 			}
@@ -900,10 +915,14 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		persistSessionAfterLoopEvent(ev, sessionSaveFn)
 	}
 
-	if hasStructuredOutput && structuredJSON != nil {
+	if fallbackStructuredOutput && structuredJSON != nil {
 		observe.GlobalTrace("if: hasStructuredOutput && structuredJSON != nil")
 		fmt.Fprintln(out, string(structuredJSON))
-	} else if hasStructuredOutput {
+	} else if nativeStructuredOutput {
+		if text := strings.TrimSpace(nativeStructuredText.String()); text != "" {
+			fmt.Fprintln(out, text)
+		}
+	} else if fallbackStructuredOutput {
 		observe.GlobalTrace("else-if: hasStructuredOutput")
 		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}

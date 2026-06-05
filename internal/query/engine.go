@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ type EngineConfig struct {
 	StopAfterToolExec         bool
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
+	ResponseSchema            json.RawMessage
 	TaskID                    string // when set with TaskRegistry, enables PendingMessages drain between turns
 	ContentReplacementRecords []model.ContentReplacementRecord
 	FileStateRecords          []tool.FileStateRecord

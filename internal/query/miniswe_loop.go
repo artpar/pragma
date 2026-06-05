@@ -133,12 +133,13 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 
 		messagesForQuery := e.messagesForRequest(snap.Conversation)
 		params := provider.RequestParams{
-			Model:       resolvedModel,
-			MaxTokens:   e.config.MaxTokens,
-			Messages:    messagesForQuery,
-			System:      system,
-			Temperature: e.config.Temperature,
-			Thinking:    e.config.Thinking,
+			Model:          resolvedModel,
+			MaxTokens:      e.config.MaxTokens,
+			Messages:       messagesForQuery,
+			System:         system,
+			Temperature:    e.config.Temperature,
+			Thinking:       e.config.Thinking,
+			ResponseSchema: e.config.ResponseSchema,
 		}
 
 		ch <- ModelRequestEvent{Model: resolvedModel, Attempt: 1}
