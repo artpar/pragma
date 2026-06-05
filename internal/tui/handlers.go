@@ -127,21 +127,8 @@ func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd
 		m.modelDlg.Show(models, currentModel)
 	}
 	if result.OpenResumePicker {
-		if m.slashDeps.SessionStore != nil {
-			summaries, err := m.slashDeps.SessionStore.List()
-			if err == nil && len(summaries) > 0 {
-				entries := make([]SessionEntry, len(summaries))
-				for i, s := range summaries {
-					entries[i] = SessionEntry{
-						ID:        s.ID,
-						Summary:   s.Summary,
-						WorkDir:   s.WorkDir,
-						TurnCount: s.TurnCount,
-						UpdatedAt: s.UpdatedAt,
-					}
-				}
-				m.resumeDlg.Show(entries, m.workspace)
-			}
+		if len(result.ResumeCandidates) > 0 {
+			m.resumeDlg.Show(result.ResumeCandidates, result.ResumeScope)
 		}
 	}
 	if result.ResumeSessionID != "" {

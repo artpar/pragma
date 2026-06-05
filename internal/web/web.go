@@ -940,16 +940,16 @@ func (s *server) handleAsk(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.SlashDeps.SessionStore == nil {
-		writeJSON(w, []interface{}{})
-		return
-	}
-	summaries, err := s.cfg.SlashDeps.SessionStore.List()
+	candidates, err := slash.BrowseResumeCandidates(s.cfg.SlashDeps)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, summaries)
+	if candidates.Candidates == nil {
+		writeJSON(w, []interface{}{})
+		return
+	}
+	writeJSON(w, candidates.Candidates)
 }
 
 func (s *server) handleResume(w http.ResponseWriter, r *http.Request) {

@@ -10,6 +10,25 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
+const (
+	ResumeScopeCurrentDirectory = "current_directory"
+	ResumeScopeAllSessions      = "all_sessions"
+)
+
+type ResumeCandidate struct {
+	ID               string    `json:"id"`
+	Summary          string    `json:"summary"`
+	WorkDir          string    `json:"work_dir"`
+	TurnCount        int       `json:"turn_count"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	InCurrentWorkDir bool      `json:"in_current_work_dir"`
+}
+
+type ResumeCandidatesResult struct {
+	Candidates []ResumeCandidate
+	Scope      string
+}
+
 func handleResume(_ context.Context, args string, deps Deps) (Result, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -24,23 +43,30 @@ func handleResume(_ context.Context, args string, deps Deps) (Result, error) {
 
 	if args == "" {
 		observe.GlobalTrace("if: args == \"\"")
+		candidates, err := BrowseResumeCandidates(deps)
+		if err != nil {
+			return Result{DisplayText: fmt.Sprintf("Error listing sessions: %s", err)}, nil
+		}
+		if len(candidates.Candidates) == 0 {
+			return Result{DisplayText: "No sessions found."}, nil
+		}
 		observe.GlobalTrace("return: Result{OpenResumePicker: true}, nil")
-		return Result{OpenResumePicker: true}, nil
+		return Result{OpenResumePicker: true, ResumeCandidates: candidates.Candidates, ResumeScope: candidates.Scope}, nil
 	}
 
-	summaries, err := deps.SessionStore.List()
+	candidates, err := BrowseResumeCandidates(deps)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Error listing sessions: %s\", err)}, nil")
 		return Result{DisplayText: fmt.Sprintf("Error listing sessions: %s", err)}, nil
 	}
 
-	var matches []string
-	for _, s := range summaries {
-		observe.GlobalTrace("range summaries")
+	var matches []ResumeCandidate
+	for _, s := range candidates.Candidates {
+		observe.GlobalTrace("range candidates.Candidates")
 		if strings.HasPrefix(s.ID, args) {
 			observe.GlobalTrace("if: strings.HasPrefix(s.ID, args)")
-			matches = append(matches, s.ID)
+			matches = append(matches, s)
 		}
 	}
 
@@ -53,15 +79,15 @@ func handleResume(_ context.Context, args string, deps Deps) (Result, error) {
 		observe.GlobalTrace("if: len(matches) > 1")
 		var b strings.Builder
 		fmt.Fprintf(&b, "Ambiguous session ID %q — %d matches:\n", args, len(matches))
-		for _, id := range matches {
+		for _, candidate := range matches {
 			observe.GlobalTrace("range matches")
-			fmt.Fprintf(&b, "  %s\n", id)
+			fmt.Fprintf(&b, "  %s\n", candidate.ID)
 		}
 		observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
 		return Result{DisplayText: b.String()}, nil
 	}
 
-	sess, err := deps.SessionStore.Load(matches[0])
+	sess, err := deps.SessionStore.Load(matches[0].ID)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Error loading session: %s\", err)}, nil")
@@ -86,8 +112,39 @@ func handleResume(_ context.Context, args string, deps Deps) (Result, error) {
 	return Result{
 		DisplayText: fmt.Sprintf("Resumed session %s\n  %s — %s — %d turns — %s",
 			shortID, summary, dir, sess.TurnCount, ago),
-		ResumeSessionID: matches[0],
+		ResumeSessionID: matches[0].ID,
 	}, nil
+}
+
+func BrowseResumeCandidates(deps Deps) (ResumeCandidatesResult, error) {
+	if deps.SessionStore == nil {
+		return ResumeCandidatesResult{}, nil
+	}
+	summaries, err := deps.SessionStore.List()
+	if err != nil {
+		return ResumeCandidatesResult{}, err
+	}
+	all := make([]ResumeCandidate, 0, len(summaries))
+	current := make([]ResumeCandidate, 0, len(summaries))
+	cwd := filepath.Clean(strings.TrimSpace(deps.Cwd))
+	for _, summary := range summaries {
+		candidate := ResumeCandidate{
+			ID:        summary.ID,
+			Summary:   summary.Summary,
+			WorkDir:   summary.WorkDir,
+			TurnCount: summary.TurnCount,
+			UpdatedAt: summary.UpdatedAt,
+		}
+		if cwd != "" && filepath.Clean(summary.WorkDir) == cwd {
+			candidate.InCurrentWorkDir = true
+			current = append(current, candidate)
+		}
+		all = append(all, candidate)
+	}
+	if len(current) > 0 {
+		return ResumeCandidatesResult{Candidates: current, Scope: ResumeScopeCurrentDirectory}, nil
+	}
+	return ResumeCandidatesResult{Candidates: all, Scope: ResumeScopeAllSessions}, nil
 }
 
 // formatTimeAgo returns a human-readable relative time string.

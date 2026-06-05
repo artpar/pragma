@@ -28,9 +28,11 @@ type Result struct {
 	Quit              bool   // true for /exit: presentation should exit
 	InjectPrompt      string // if set, presentation feeds this as a user message to the engine
 	Orchestrate       *OrchestrationRequest
-	OpenTeams         bool   // true for /teams: presentation opens team selection
-	OpenModelPicker   bool   // true for /model with no args: presentation opens model picker
-	OpenResumePicker  bool   // true for /resume with no args: presentation opens session picker
+	OpenTeams         bool // true for /teams: presentation opens team selection
+	OpenModelPicker   bool // true for /model with no args: presentation opens model picker
+	OpenResumePicker  bool // true for /resume with no args: presentation opens session picker
+	ResumeCandidates  []ResumeCandidate
+	ResumeScope       string
 	ResumeSessionID   string // if set, presentation loads this session into conversation
 }
 

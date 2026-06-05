@@ -10,17 +10,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/slash"
 )
 
-// SessionEntry is a lightweight session summary for the resume dialog.
-// Decoupled from session.SessionSummary to avoid DAG violation (tui/ cannot import session/).
-type SessionEntry struct {
-	ID        string
-	Summary   string
-	WorkDir   string
-	TurnCount int
-	UpdatedAt time.Time
-}
+type SessionEntry = slash.ResumeCandidate
 
 var (
 	resumeDlgBorder = lipgloss.NewStyle().
@@ -46,12 +39,11 @@ type resumeDialog struct {
 	active   bool
 	sessions []SessionEntry
 	selected int
-	showAll  bool   // false = filter to cwd, true = all sessions
-	cwd      string // current working directory for filtering
+	scope    string
 }
 
 // Show activates the session picker dialog.
-func (d *resumeDialog) Show(sessions []SessionEntry, cwd string) {
+func (d *resumeDialog) Show(sessions []SessionEntry, scope string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if len(sessions) == 0 {
@@ -61,8 +53,7 @@ func (d *resumeDialog) Show(sessions []SessionEntry, cwd string) {
 	d.active = true
 	d.sessions = sessions
 	d.selected = 0
-	d.showAll = false
-	d.cwd = cwd
+	d.scope = scope
 }
 
 // Dismiss closes the dialog without selecting.
@@ -71,33 +62,15 @@ func (d *resumeDialog) Dismiss() {
 	defer observe.GlobalTrace("exit")
 	d.active = false
 	d.sessions = nil
+	d.scope = ""
 }
 
 // filtered returns sessions matching the current filter mode.
 func (d *resumeDialog) filtered() []SessionEntry {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if d.showAll {
-		observe.GlobalTrace("if: d.showAll")
-		observe.GlobalTrace("return: d.sessions")
-		return d.sessions
-	}
-	var result []SessionEntry
-	for _, s := range d.sessions {
-		observe.GlobalTrace("range d.sessions")
-		if s.WorkDir == d.cwd {
-			observe.GlobalTrace("if: s.WorkDir == d.cwd")
-			result = append(result, s)
-		}
-	}
-
-	if len(result) == 0 {
-		observe.GlobalTrace("if: len(result) == 0")
-		observe.GlobalTrace("return: d.sessions")
-		return d.sessions
-	}
-	observe.GlobalTrace("return: result")
-	return result
+	observe.GlobalTrace("return: d.sessions")
+	return d.sessions
 }
 
 // Update handles keyboard events while the dialog is active.
@@ -134,10 +107,6 @@ func (d *resumeDialog) Update(msg tea.Msg) string {
 		if d.selected < len(items)-1 {
 			d.selected++
 		}
-	case tea.KeyTab:
-		observe.GlobalTrace("case: tea.KeyTab")
-		d.showAll = !d.showAll
-		d.selected = 0
 	case tea.KeyEnter:
 		observe.GlobalTrace("case: tea.KeyEnter")
 		if d.selected < len(items) {
@@ -182,12 +151,10 @@ func (d *resumeDialog) View(width int) string {
 	var b strings.Builder
 
 	title := "Resume Session"
-	if d.showAll {
-		observe.GlobalTrace("if: d.showAll")
-		title += " (all)"
-	} else {
-		observe.GlobalTrace("else: d.showAll")
+	if d.scope == slash.ResumeScopeCurrentDirectory {
 		title += " (this directory)"
+	} else if d.scope == slash.ResumeScopeAllSessions {
+		title += " (all)"
 	}
 	b.WriteString(resumeDlgTitle.Render(title))
 	b.WriteString("\n\n")
@@ -240,7 +207,7 @@ func (d *resumeDialog) View(width int) string {
 	}
 
 	b.WriteByte('\n')
-	hint := "[↑↓] navigate  [1-9] jump  [Enter] select  [Tab] toggle filter  [Esc] cancel"
+	hint := "[↑↓] navigate  [1-9] jump  [Enter] select  [Esc] cancel"
 	b.WriteString(resumeDlgFaint.Render(hint))
 
 	innerWidth := width - 8
