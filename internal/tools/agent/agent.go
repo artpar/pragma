@@ -305,7 +305,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.RunInBackground")
 		emitAgentProgress(progressCh, tk.ID, subject, "initializing", 0, 0, "", true)
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)")
-		return t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)
+		return t.runBackground(tk.ID, engine, subStore, in, subject, wtPath, wtBranch, wtHeadCommit)
 	}
 	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)")
 	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, progressCh, subject, wtPath, wtBranch, wtHe...")
@@ -329,81 +329,16 @@ func (t *Tool) runSync(
 
 	emitAgentProgress(progressCh, taskID, subject, "initializing", 0, 0, "", false)
 
-	var result strings.Builder
-	var usage model.TokenUsage
-	var turnCount int
-	var toolCount int
-	var lastToolName string
-	var latestInputTokens, cumulativeOutputTokens int
-
-	for ev := range events {
-		observe.TraceCtx(ctx, "agent", "Tool.runSync", "range events")
-		switch e := ev.(type) {
-		case query.TextEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.TextEvent")
-			result.WriteString(e.Text)
-		case query.ToolCallEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.ToolCallEvent")
-			lastToolName = e.Call.Name
-			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-		case query.ToolResultEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.ToolResultEvent")
-			toolCount++
-			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-		case query.TurnCompleteEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.TurnCompleteEvent")
-			turnCount++
-			usage.InputTokens += e.Response.Usage.InputTokens
-			usage.OutputTokens += e.Response.Usage.OutputTokens
-			usage.CacheCreationInputTokens += e.Response.Usage.CacheCreationInputTokens
-			usage.CacheReadInputTokens += e.Response.Usage.CacheReadInputTokens
-
-			latestInputTokens = e.Response.Usage.InputTokens +
-				e.Response.Usage.CacheCreationInputTokens + e.Response.Usage.CacheReadInputTokens
-			cumulativeOutputTokens += e.Response.Usage.OutputTokens
-			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-		case query.ErrorEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runSync", "typecase: query.ErrorEvent")
-			emitAgentProgress(progressCh, taskID, subject, "error", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false, e.Err.Error())
-			t.updateTask(taskID, func(tt *task.Task) {
-				tt.Status = task.TaskFailed
-				tt.Error = e.Err.Error()
-			})
-			t.Bus.Emit(observe.SubAgentFailed{
-				EventHeader:  observe.NewEventHeader("SubAgentFailed", "", observe.NewSpanID(), ""),
-				SubAgentID:   taskID,
-				ErrorType:    "agent_error",
-				ErrorMessage: e.Err.Error(),
-			})
-			t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
-			return tool.InvokeResult{
-				Content: fmt.Sprintf("Agent failed: %v", e.Err),
-			}, nil
-		}
+	drain := t.drainAgentRunEvents(ctx, events, taskID, subject, progressCh, false)
+	if drain.Err != nil {
+		t.failAgentTask(taskID, "agent_error", drain.Err)
+		t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
+		return tool.InvokeResult{Content: fmt.Sprintf("Agent failed: %v", drain.Err)}, nil
 	}
-
-	tokensUsed := usage.InputTokens + usage.OutputTokens
-	emitAgentProgress(progressCh, taskID, subject, "completed", toolCount,
-		latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-
-	resultStr := result.String()
-	t.updateTask(taskID, func(tt *task.Task) {
-		tt.Status = task.TaskCompleted
-		tt.Result = resultStr
-		tt.TokensUsed = tokensUsed
-	})
-
-	t.Bus.Emit(observe.SubAgentCompleted{
-		EventHeader: observe.NewEventHeader("SubAgentCompleted", "", observe.NewSpanID(), ""),
-		SubAgentID:  taskID,
-		DurationMs:  time.Since(startTime).Milliseconds(),
-		TurnCount:   turnCount,
-		Usage:       usage,
-	})
+	emitAgentProgress(progressCh, taskID, subject, "completed", drain.ToolCount,
+		drain.ProgressTokens(), drain.LastToolName, false)
+	resultStr := drain.Result
+	t.completeAgentTask(taskID, resultStr, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
 
 	t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
 
@@ -411,7 +346,7 @@ func (t *Tool) runSync(
 		Status:       "completed",
 		Prompt:       in.Prompt,
 		Result:       resultStr,
-		TokensUsed:   tokensUsed,
+		TokensUsed:   drain.TokensUsed(),
 		WorktreePath: wtPath,
 		Branch:       wtBranch,
 	}
@@ -425,12 +360,110 @@ func (t *Tool) runSync(
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
+type agentRunDrain struct {
+	Result                 string
+	Usage                  model.TokenUsage
+	TurnCount              int
+	ToolCount              int
+	LastToolName           string
+	LatestInputTokens      int
+	CumulativeOutputTokens int
+	Err                    error
+}
+
+func (r agentRunDrain) TokensUsed() int {
+	return r.Usage.InputTokens + r.Usage.OutputTokens
+}
+
+func (r agentRunDrain) ProgressTokens() int {
+	return r.LatestInputTokens + r.CumulativeOutputTokens
+}
+
+func (t *Tool) drainAgentRunEvents(
+	ctx context.Context,
+	events <-chan query.LoopEvent,
+	taskID, subject string,
+	progressCh tool.ProgressReporter,
+	background bool,
+) agentRunDrain {
+	observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "enter")
+	defer observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "exit")
+	var result strings.Builder
+	var out agentRunDrain
+	for ev := range events {
+		observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "range events")
+		switch e := ev.(type) {
+		case query.TextEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "typecase: query.TextEvent")
+			result.WriteString(e.Text)
+		case query.ToolCallEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "typecase: query.ToolCallEvent")
+			out.LastToolName = e.Call.Name
+			emitAgentProgress(progressCh, taskID, subject, "running", out.ToolCount,
+				out.ProgressTokens(), out.LastToolName, background)
+		case query.ToolResultEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "typecase: query.ToolResultEvent")
+			out.ToolCount++
+			emitAgentProgress(progressCh, taskID, subject, "running", out.ToolCount,
+				out.ProgressTokens(), out.LastToolName, background)
+		case query.TurnCompleteEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "typecase: query.TurnCompleteEvent")
+			out.TurnCount++
+			out.Usage.InputTokens += e.Response.Usage.InputTokens
+			out.Usage.OutputTokens += e.Response.Usage.OutputTokens
+			out.Usage.CacheCreationInputTokens += e.Response.Usage.CacheCreationInputTokens
+			out.Usage.CacheReadInputTokens += e.Response.Usage.CacheReadInputTokens
+			out.LatestInputTokens = e.Response.Usage.InputTokens +
+				e.Response.Usage.CacheCreationInputTokens + e.Response.Usage.CacheReadInputTokens
+			out.CumulativeOutputTokens += e.Response.Usage.OutputTokens
+			emitAgentProgress(progressCh, taskID, subject, "running", out.ToolCount,
+				out.ProgressTokens(), out.LastToolName, background)
+		case query.ErrorEvent:
+			observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "typecase: query.ErrorEvent")
+			out.Err = e.Err
+			emitAgentProgress(progressCh, taskID, subject, "error", out.ToolCount,
+				out.ProgressTokens(), out.LastToolName, background, e.Err.Error())
+		}
+	}
+	out.Result = result.String()
+	return out
+}
+
+func (t *Tool) failAgentTask(taskID, errorType string, err error) {
+	t.updateTask(taskID, func(tt *task.Task) {
+		tt.Status = task.TaskFailed
+		tt.Error = err.Error()
+	})
+	t.Bus.Emit(observe.SubAgentFailed{
+		EventHeader:  observe.NewEventHeader("SubAgentFailed", "", observe.NewSpanID(), ""),
+		SubAgentID:   taskID,
+		ErrorType:    errorType,
+		ErrorMessage: err.Error(),
+	})
+}
+
+func (t *Tool) completeAgentTask(taskID, result string, tokensUsed int, duration time.Duration, turnCount int, usage model.TokenUsage) {
+	t.updateTask(taskID, func(tt *task.Task) {
+		tt.Status = task.TaskCompleted
+		tt.Result = result
+		tt.TokensUsed = tokensUsed
+	})
+	t.Bus.Emit(observe.SubAgentCompleted{
+		EventHeader: observe.NewEventHeader("SubAgentCompleted", "", observe.NewSpanID(), ""),
+		SubAgentID:  taskID,
+		DurationMs:  duration.Milliseconds(),
+		TurnCount:   turnCount,
+		Usage:       usage,
+	})
+}
+
 // runBackground launches the sub-agent in a goroutine and returns immediately.
 func (t *Tool) runBackground(
 	taskID string,
 	engine *query.Engine,
 	subStore *app.StateStore,
 	in AgentInput,
+	subject string,
 	wtPath, wtBranch, wtHeadCommit string,
 ) (tool.InvokeResult, error) {
 	observe.GlobalTrace("enter")
@@ -447,57 +480,11 @@ func (t *Tool) runBackground(
 		startTime := time.Now()
 
 		events := engine.Run(childCtx, in.Prompt)
-
-		var result strings.Builder
-		var usage model.TokenUsage
-		var turnCount int
-		var failed bool
-
-		for ev := range events {
-			observe.GlobalTrace("range events")
-			switch e := ev.(type) {
-			case query.TextEvent:
-				observe.GlobalTrace("typecase: query.TextEvent")
-				result.WriteString(e.Text)
-			case query.TurnCompleteEvent:
-				observe.GlobalTrace("typecase: query.TurnCompleteEvent")
-				turnCount++
-				usage.InputTokens += e.Response.Usage.InputTokens
-				usage.OutputTokens += e.Response.Usage.OutputTokens
-				usage.CacheCreationInputTokens += e.Response.Usage.CacheCreationInputTokens
-				usage.CacheReadInputTokens += e.Response.Usage.CacheReadInputTokens
-			case query.ErrorEvent:
-				observe.GlobalTrace("typecase: query.ErrorEvent")
-				t.updateTask(taskID, func(tt *task.Task) {
-					tt.Status = task.TaskFailed
-					tt.Error = e.Err.Error()
-				})
-				t.Bus.Emit(observe.SubAgentFailed{
-					EventHeader:  observe.NewEventHeader("SubAgentFailed", "", observe.NewSpanID(), ""),
-					SubAgentID:   taskID,
-					ErrorType:    "agent_error",
-					ErrorMessage: e.Err.Error(),
-				})
-				failed = true
-			}
-		}
-
-		if !failed {
-			observe.GlobalTrace("if: !failed")
-			tokensUsed := usage.InputTokens + usage.OutputTokens
-			resultStr := result.String()
-			t.updateTask(taskID, func(tt *task.Task) {
-				tt.Status = task.TaskCompleted
-				tt.Result = resultStr
-				tt.TokensUsed = tokensUsed
-			})
-			t.Bus.Emit(observe.SubAgentCompleted{
-				EventHeader: observe.NewEventHeader("SubAgentCompleted", "", observe.NewSpanID(), ""),
-				SubAgentID:  taskID,
-				DurationMs:  time.Since(startTime).Milliseconds(),
-				TurnCount:   turnCount,
-				Usage:       usage,
-			})
+		drain := t.drainAgentRunEvents(childCtx, events, taskID, subject, nil, true)
+		if drain.Err != nil {
+			t.failAgentTask(taskID, "agent_error", drain.Err)
+		} else {
+			t.completeAgentTask(taskID, drain.Result, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
 		}
 
 		t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
@@ -627,41 +614,20 @@ func (t *Tool) drainTeammateEvents(
 ) {
 	observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "enter")
 	defer observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "exit")
-	var lastToolName string
-	for ev := range events {
-		observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "range events")
-		switch e := ev.(type) {
-		case query.TextEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.TextEvent")
-
-		case query.ToolCallEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.ToolCallEvent")
-			lastToolName = e.Call.Name
-			emitAgentProgress(progressCh, taskID, subject, "running", *toolCount,
-				int(usage.InputTokens+usage.OutputTokens), lastToolName, false)
-		case query.ToolResultEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.ToolResultEvent")
-			*toolCount++
-		case query.TurnCompleteEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.TurnCompleteEvent")
-			usage.InputTokens += e.Response.Usage.InputTokens
-			usage.OutputTokens += e.Response.Usage.OutputTokens
-			usage.CacheCreationInputTokens += e.Response.Usage.CacheCreationInputTokens
-			usage.CacheReadInputTokens += e.Response.Usage.CacheReadInputTokens
-			emitAgentProgress(progressCh, taskID, subject, "running", *toolCount,
-				int(usage.InputTokens+usage.OutputTokens), lastToolName, false)
-		case query.ErrorEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "typecase: query.ErrorEvent")
-			t.Bus.Emit(observe.ErrorOccurred{
-				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-				Severity:     "error",
-				Component:    "agent",
-				ErrorType:    "teammate_error",
-				ErrorMessage: fmt.Sprintf("teammate %q: %v", subject, e.Err),
-			})
-			emitAgentProgress(progressCh, taskID, subject, "error", *toolCount,
-				int(usage.InputTokens+usage.OutputTokens), lastToolName, false, e.Err.Error())
-		}
+	drain := t.drainAgentRunEvents(ctx, events, taskID, subject, progressCh, false)
+	usage.InputTokens += drain.Usage.InputTokens
+	usage.OutputTokens += drain.Usage.OutputTokens
+	usage.CacheCreationInputTokens += drain.Usage.CacheCreationInputTokens
+	usage.CacheReadInputTokens += drain.Usage.CacheReadInputTokens
+	*toolCount += drain.ToolCount
+	if drain.Err != nil {
+		t.Bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+			Severity:     "error",
+			Component:    "agent",
+			ErrorType:    "teammate_error",
+			ErrorMessage: fmt.Sprintf("teammate %q: %v", subject, drain.Err),
+		})
 	}
 }
 
@@ -804,76 +770,16 @@ func (t *Tool) runGraphSync(
 
 	emitAgentProgress(progressCh, taskID, subject, "initializing", 0, 0, "", false)
 
-	var result strings.Builder
-	var turnCount int
-	var usage model.TokenUsage
-	var toolCount int
-	var lastToolName string
-	var latestInputTokens, cumulativeOutputTokens int
-
-	for ev := range events {
-		observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "range events")
-		switch e := ev.(type) {
-		case query.TextEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.TextEvent")
-			result.WriteString(e.Text)
-		case query.ToolCallEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.ToolCallEvent")
-			lastToolName = e.Call.Name
-			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-		case query.ToolResultEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.ToolResultEvent")
-			toolCount++
-			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-		case query.TurnCompleteEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.TurnCompleteEvent")
-			turnCount++
-			usage = e.Response.Usage
-			latestInputTokens = e.Response.Usage.InputTokens +
-				e.Response.Usage.CacheCreationInputTokens + e.Response.Usage.CacheReadInputTokens
-			cumulativeOutputTokens += e.Response.Usage.OutputTokens
-			emitAgentProgress(progressCh, taskID, subject, "running", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-		case query.LifecycleProgressEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.LifecycleProgressEvent")
-
-		case query.ErrorEvent:
-			observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "typecase: query.ErrorEvent")
-			emitAgentProgress(progressCh, taskID, subject, "error", toolCount,
-				latestInputTokens+cumulativeOutputTokens, lastToolName, false, e.Err.Error())
-			t.updateTask(taskID, func(tt *task.Task) {
-				tt.Status = task.TaskFailed
-				tt.Error = e.Err.Error()
-			})
-			t.Bus.Emit(observe.SubAgentFailed{
-				EventHeader:  observe.NewEventHeader("SubAgentFailed", "", observe.NewSpanID(), ""),
-				SubAgentID:   taskID,
-				ErrorType:    "graph_error",
-				ErrorMessage: e.Err.Error(),
-			})
-			t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
-			return tool.InvokeResult{Content: fmt.Sprintf("Agent graph failed: %v", e.Err)}, nil
-		}
+	drain := t.drainAgentRunEvents(ctx, events, taskID, subject, progressCh, false)
+	if drain.Err != nil {
+		t.failAgentTask(taskID, "graph_error", drain.Err)
+		t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
+		return tool.InvokeResult{Content: fmt.Sprintf("Agent graph failed: %v", drain.Err)}, nil
 	}
-
-	emitAgentProgress(progressCh, taskID, subject, "completed", toolCount,
-		latestInputTokens+cumulativeOutputTokens, lastToolName, false)
-
-	resultStr := result.String()
-	t.updateTask(taskID, func(tt *task.Task) {
-		tt.Status = task.TaskCompleted
-		tt.Result = resultStr
-	})
-
-	t.Bus.Emit(observe.SubAgentCompleted{
-		EventHeader: observe.NewEventHeader("SubAgentCompleted", "", observe.NewSpanID(), ""),
-		SubAgentID:  taskID,
-		DurationMs:  time.Since(startTime).Milliseconds(),
-		TurnCount:   turnCount,
-		Usage:       usage,
-	})
+	emitAgentProgress(progressCh, taskID, subject, "completed", drain.ToolCount,
+		drain.ProgressTokens(), drain.LastToolName, false)
+	resultStr := drain.Result
+	t.completeAgentTask(taskID, resultStr, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
 
 	t.cleanupWorktreeIfEmpty(wtPath, wtHeadCommit)
 
