@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/query"
 	skillpkg "github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/tool"
+	toolagent "github.com/artpar/pragma/internal/tools/agent"
 )
 
 // SkillInput defines the parameters for the Skill tool.
@@ -37,15 +35,10 @@ var inputSchema = json.RawMessage(`{
 	}
 }`)
 
-// EngineFactory creates a sub-Engine for a forked conversation with scoped tools.
-type EngineFactory func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore)
-
 // Tool implements the Skill tool for executing user-defined skills.
 type Tool struct {
-	EngineFactory EngineFactory
-	Store         *app.StateStore
-	Bus           *observe.EventBus
-	Loader        *skillpkg.Loader
+	Agent  *toolagent.Tool
+	Loader *skillpkg.Loader
 }
 
 func (t *Tool) Name() string {
@@ -145,7 +138,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if s.IsForked() {
 		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "forked execution")
 		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "return: t.invokeForked(ctx, s, content)")
-		return t.invokeForked(ctx, s, content)
+		return t.invokeForked(ctx, s, content, state)
 	}
 
 	observe.TraceCtx(ctx, "skill", "Tool.Invoke", "inline execution")
@@ -154,52 +147,24 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 }
 
 // invokeForked runs the skill as a forked sub-agent.
-func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content string) (tool.InvokeResult, error) {
+func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content string, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "enter")
 	defer observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "exit")
 
-	snapshot := t.Store.Snapshot()
-	forkedConv := snapshot.Conversation.Fork(model.NewUUID())
-
-	engine, _ := t.EngineFactory(forkedConv, s.AllowedTools, s.Model)
-
-	t.Bus.Emit(observe.SubAgentSpawned{
-		EventHeader: observe.NewEventHeader("SubAgentSpawned", "", observe.NewSpanID(), ""),
-		SubAgentID:  "skill_" + s.Name,
-		AgentName:   "skill:" + s.Name,
-		Model:       s.Model,
-	})
-
-	events := engine.Run(ctx, content)
-
-	var result strings.Builder
-	var firstErr error
-	for ev := range events {
-		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "range events")
-		switch e := ev.(type) {
-		case query.TextEvent:
-			observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "typecase: query.TextEvent")
-			if firstErr == nil {
-				result.WriteString(e.Text)
-			}
-		case query.ErrorEvent:
-			observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "typecase: query.ErrorEvent")
-			if firstErr == nil {
-				firstErr = e.Err
-				observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "error: "+e.Err.Error())
-			}
-		}
-	}
-
-	if firstErr != nil {
-		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: firstErr != nil")
-		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Skill %q failed: %v\", s.Name, first...")
+	if t.Agent == nil {
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: t.Agent == nil")
 		return tool.InvokeResult{
-			Content: fmt.Sprintf("Skill %q failed: %v", s.Name, firstErr),
+			Content: fmt.Sprintf("Skill %q failed: agent runner is unavailable", s.Name),
 		}, nil
 	}
 
-	resultText := result.String()
+	result, err := t.Agent.RunForked(ctx, content, "skill:"+s.Name, s.Model, s.AllowedTools, state)
+	if err != nil {
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: err != nil")
+		return result, err
+	}
+
+	resultText := skillAgentResultText(result.Content)
 	if resultText == "" {
 		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: resultText == \"\"")
 		resultText = "(skill produced no output)"
@@ -209,6 +174,17 @@ func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content strin
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("Skill completed with result:\n\n%s", resultText),
 	}, nil
+}
+
+func skillAgentResultText(content string) string {
+	var ar struct {
+		Status string `json:"status"`
+		Result string `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(content), &ar); err == nil && ar.Status == "completed" {
+		return ar.Result
+	}
+	return content
 }
 
 // availableSkillNames returns a sorted list of all discoverable skill names.

@@ -185,21 +185,36 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
+	return t.invoke(ctx, in, state, excludeTool(nil, "Agent"))
+}
+
+// RunForked runs a forked prompt through the agent task lifecycle with a scoped tool set.
+func (t *Tool) RunForked(ctx context.Context, prompt, description, modelOverride string, scopedToolNames []string, state tool.StateSnapshot) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "agent", "Tool.RunForked", "enter")
+	defer observe.TraceCtx(ctx, "agent", "Tool.RunForked", "exit")
+	return t.invoke(ctx, AgentInput{
+		Prompt:      prompt,
+		Description: description,
+		Model:       modelOverride,
+	}, state, excludeTool(scopedToolNames, "Agent"))
+}
+
+func (t *Tool) invoke(ctx context.Context, in AgentInput, state tool.StateSnapshot, scopedTools []string) (tool.InvokeResult, error) {
+	observe.TraceCtx(ctx, "agent", "Tool.invoke", "enter")
+	defer observe.TraceCtx(ctx, "agent", "Tool.invoke", "exit")
 	if in.Prompt == "" {
-		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Prompt == \"\"")
-		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
+		observe.TraceCtx(ctx, "agent", "Tool.invoke", "if: in.Prompt == \"\"")
+		observe.TraceCtx(ctx, "agent", "Tool.invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"prompt is required\")")
 		return tool.InvokeResult{}, fmt.Errorf("prompt is required")
 	}
 	if in.Isolation != "" && in.Isolation != "worktree" {
-		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Isolation != \"\" && in.Isolation != \"worktree\"")
-		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"isolation must be 'worktree' or empty, got %...")
+		observe.TraceCtx(ctx, "agent", "Tool.invoke", "if: in.Isolation != \"\" && in.Isolation != \"worktree\"")
+		observe.TraceCtx(ctx, "agent", "Tool.invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"isolation must be 'worktree' or empty, got %...")
 		return tool.InvokeResult{}, fmt.Errorf("isolation must be 'worktree' or empty, got %q", in.Isolation)
 	}
 
 	snapshot := t.Store.Snapshot()
 	forkedConv := snapshot.Conversation.Fork(model.NewUUID())
-
-	scopedTools := excludeTool(nil, "Agent")
 
 	subject := in.Description
 	if subject == "" {

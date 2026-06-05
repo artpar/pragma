@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/observe"
 	skillpkg "github.com/artpar/pragma/internal/skill"
 )
 
@@ -19,14 +17,10 @@ func (s staticState) WorkDir() string { return s.dir }
 
 func newTestTool(t *testing.T, skillDir string) *Tool {
 	t.Helper()
-	store := app.NewStateStore(app.AppState{CWD: "/tmp"})
-	bus := observe.NewEventBus(100)
 	loader := skillpkg.NewLoader(skillDir)
 	return &Tool{
-		Store:  store,
-		Bus:    bus,
 		Loader: loader,
-		// EngineFactory is nil — only inline skills can be tested without engine
+		// Agent is nil — only inline skills can be tested without a sub-agent runner.
 	}
 }
 

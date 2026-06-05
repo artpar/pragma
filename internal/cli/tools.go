@@ -131,10 +131,8 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 
 	skillLoader := skill.NewLoader(d.Cwd)
 	skillTool := &toolskill.Tool{
-		EngineFactory: engineFactory,
-		Store:         d.Store,
-		Bus:           d.Bus,
-		Loader:        skillLoader,
+		Agent:  agentTool,
+		Loader: skillLoader,
 	}
 	if shouldRegisterBuiltinTool(d, skillTool.Name()) {
 		observe.GlobalTrace("if: shouldRegisterBuiltinTool(d, skillTool.Name())")
