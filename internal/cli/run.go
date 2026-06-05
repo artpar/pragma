@@ -375,6 +375,9 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateResumeWorkDir(rt.Deps.Store.Snapshot().CWD, sess.Conversation.WorkDir); err != nil {
+		return err
+	}
 	providerBinding, err := rt.resolveResumeProvider(sess.Conversation)
 	if err != nil {
 		return err
@@ -403,6 +406,18 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	_ = beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
 	return nil
+}
+
+func validateResumeWorkDir(activeWorkDir, sessionWorkDir string) error {
+	if activeWorkDir == "" || sessionWorkDir == "" {
+		return nil
+	}
+	activeClean := filepath.Clean(activeWorkDir)
+	sessionClean := filepath.Clean(sessionWorkDir)
+	if activeClean == sessionClean {
+		return nil
+	}
+	return fmt.Errorf("cannot resume session from %s while runtime working directory is %s", sessionClean, activeClean)
 }
 
 type resumeProviderBinding struct {

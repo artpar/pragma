@@ -314,6 +314,9 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"resume session: %w\", loadErr)")
 			return nil, fmt.Errorf("resume session: %w", loadErr)
 		}
+		if err := validateResumeWorkDir(cwd, sess.Conversation.WorkDir); err != nil {
+			return nil, err
+		}
 		conv = sess.Conversation
 		if sess.SystemOverride != "" {
 			observe.GlobalTrace("if: sess.SystemOverride != \"\"")
