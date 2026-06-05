@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/observe"
@@ -24,8 +23,6 @@ type Tool struct {
 	Transport  string // "sse", "http", or "stdio"
 	Auth       mcp.AuthConfig
 	Manager    *mcp.Manager
-	Registry   *tool.Registry
-	Bus        *observe.EventBus
 }
 
 func (t *Tool) Name() string {
@@ -87,40 +84,18 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 		}, nil
 	}
 
-	verifier, challenge, err := mcp.GeneratePKCE()
+	if t.Manager == nil {
+		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: t.Manager == nil")
+		return tool.InvokeResult{
+			Content: fmt.Sprintf("MCP manager is not available. Ask the user to restart Pragma and try authenticating %q again.", t.ServerName),
+		}, nil
+	}
+
+	authURL, err := t.Manager.StartOAuthFlow(t.ServerName, t.Auth)
 	if err != nil {
 		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to generate PKCE parameters: %...")
-		return tool.InvokeResult{Content: fmt.Sprintf("Failed to generate PKCE parameters: %v", err)}, nil
+		return tool.InvokeResult{Content: fmt.Sprintf("Failed to start OAuth flow: %v", err)}, nil
 	}
-
-	state, err := mcp.GenerateState()
-	if err != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to generate state: %v\", err)},...")
-		return tool.InvokeResult{Content: fmt.Sprintf("Failed to generate state: %v", err)}, nil
-	}
-
-	port, err := mcp.FindCallbackPort()
-	if err != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to find callback port: %v\", er...")
-		return tool.InvokeResult{Content: fmt.Sprintf("Failed to find callback port: %v", err)}, nil
-	}
-
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
-	authURL := mcp.BuildAuthURL(t.Auth.AuthURL, t.Auth.ClientID, redirectURI, challenge, state, t.Auth.Scopes)
-
-	if t.Bus != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: t.Bus != nil")
-		t.Bus.Emit(observe.McpOAuthStarted{
-			EventHeader: observe.NewEventHeader("McpOAuthStarted", "", observe.NewSpanID(), ""),
-			ServerName:  t.ServerName,
-			AuthURL:     authURL,
-		})
-	}
-
-	go t.handleOAuthCallback(context.Background(), port, state, verifier, redirectURI)
 	observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\n\t\t\"Ask the user to open this URL in...")
 
 	return tool.InvokeResult{
@@ -130,65 +105,4 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 			t.ServerName, authURL,
 		),
 	}, nil
-}
-
-// handleOAuthCallback waits for the OAuth callback, exchanges the code, stores the token,
-// and reconnects the MCP server.
-func (t *Tool) handleOAuthCallback(ctx context.Context, port int, expectedState, verifier, redirectURI string) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	code, err := mcp.StartCallbackServer(ctx, port, expectedState)
-	if err != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.handleOAuthCallback", "if: err != nil")
-		t.emitCompletion(false, err.Error())
-		return
-	}
-
-	token, err := mcp.ExchangeCode(ctx, t.Auth.TokenURL, code, verifier, redirectURI, t.Auth.ClientID, t.Auth.ClientSecret)
-	if err != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.handleOAuthCallback", "if: err != nil")
-		t.emitCompletion(false, "token exchange failed: "+err.Error())
-		return
-	}
-
-	if err := mcp.SaveToken(t.ServerName, token); err != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.handleOAuthCallback", "if: err != nil")
-		t.emitCompletion(false, "failed to save token: "+err.Error())
-		return
-	}
-
-	if t.Manager != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.handleOAuthCallback", "if: t.Manager != nil")
-		if err := t.Manager.ReconnectServer(ctx, t.ServerName); err != nil {
-			observe.TraceCtx(ctx, "mcpauth", "Tool.handleOAuthCallback", "if: err != nil")
-			t.emitCompletion(false, "reconnect failed: "+err.Error())
-			return
-		}
-	}
-
-	if t.Registry != nil {
-		observe.TraceCtx(ctx, "mcpauth", "Tool.handleOAuthCallback", "if: t.Registry != nil")
-		t.Registry.Unregister(t.Name())
-	}
-
-	t.emitCompletion(true, "")
-}
-
-func (t *Tool) emitCompletion(success bool, errMsg string) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if t.Bus == nil {
-		observe.GlobalTrace("if: t.Bus == nil")
-		return
-	}
-	t.Bus.Emit(observe.McpOAuthCompleted{
-		EventHeader: observe.NewEventHeader("McpOAuthCompleted", "", observe.NewSpanID(), ""),
-		ServerName:  t.ServerName,
-		Success:     success,
-		Error:       errMsg,
-	})
 }

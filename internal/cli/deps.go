@@ -427,6 +427,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		mcpManager.ConfigureServers(mcpServers)
 		var mcpCtx context.Context
 		mcpCtx, mcpCancel = context.WithCancel(cmd.Context())
+		mcpManager.SetLifecycleContext(mcpCtx)
 		mcpWG.Add(1)
 		go func() {
 			defer mcpWG.Done()

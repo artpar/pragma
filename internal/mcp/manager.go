@@ -46,6 +46,7 @@ type Manager struct {
 	mu              sync.RWMutex
 	bus             *observe.EventBus
 	registry        *tool.Registry
+	lifecycleCtx    context.Context
 }
 
 // NewManager creates a Manager.
@@ -62,7 +63,33 @@ func NewManager(bus *observe.EventBus, registry *tool.Registry) *Manager {
 		lastErrors:      make(map[string]string),
 		bus:             bus,
 		registry:        registry,
+		lifecycleCtx:    context.Background(),
 	}
+}
+
+// SetLifecycleContext scopes manager-owned async work such as OAuth callbacks.
+func (m *Manager) SetLifecycleContext(ctx context.Context) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if ctx == nil {
+		observe.GlobalTrace("if: ctx == nil")
+		ctx = context.Background()
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lifecycleCtx = ctx
+}
+
+func (m *Manager) LifecycleContext() context.Context {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.lifecycleCtx == nil {
+		observe.GlobalTrace("if: m.lifecycleCtx == nil")
+		return context.Background()
+	}
+	return m.lifecycleCtx
 }
 
 // SetToolFilter limits which MCP tools can be registered.
