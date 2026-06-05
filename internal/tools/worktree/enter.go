@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
@@ -31,13 +32,16 @@ var enterSchema = json.RawMessage(`{
 }`)
 
 type enterResult struct {
-	WorktreePath string `json:"worktree_path"`
-	Branch       string `json:"branch"`
-	HeadCommit   string `json:"head_commit"`
+	WorktreePath    string `json:"worktree_path"`
+	Branch          string `json:"branch"`
+	HeadCommit      string `json:"head_commit"`
+	OriginalWorkDir string `json:"original_work_dir"`
 }
 
 // EnterTool creates a git worktree for isolated work.
-type EnterTool struct{}
+type EnterTool struct {
+	Store *app.StateStore
+}
 
 func (t *EnterTool) Name() string {
 	observe.GlobalTrace("enter")
@@ -114,6 +118,17 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
 
+	originalWorkDir := state.WorkDir()
+	if t.Store != nil {
+		snap := t.Store.Snapshot()
+		if snap.Worktree != nil {
+			return tool.InvokeResult{}, fmt.Errorf("already in worktree session at %s", snap.Worktree.WorktreePath)
+		}
+		if snap.CWD != "" {
+			originalWorkDir = snap.CWD
+		}
+	}
+
 	slug := in.Slug
 	if slug == "" {
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: slug == \"\"")
@@ -128,7 +143,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 
 	flatSlug := FlattenSlug(slug)
 	branch := "worktree-" + flatSlug
-	dir := filepath.Join(state.WorkDir(), ".pragma", "worktrees", flatSlug)
+	dir := filepath.Join(originalWorkDir, ".pragma", "worktrees", flatSlug)
 
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: err != nil")
@@ -137,7 +152,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "worktree", "add", "-B", branch, dir, "HEAD")
-	cmd.Dir = state.WorkDir()
+	cmd.Dir = originalWorkDir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -156,9 +171,21 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 	headCommit := strings.TrimSpace(string(revOut))
 
 	result := enterResult{
-		WorktreePath: dir,
-		Branch:       branch,
-		HeadCommit:   headCommit,
+		WorktreePath:    dir,
+		Branch:          branch,
+		HeadCommit:      headCommit,
+		OriginalWorkDir: originalWorkDir,
+	}
+	if t.Store != nil {
+		t.Store.Update(func(s *app.AppState) {
+			s.CWD = dir
+			s.Worktree = &app.WorktreeSession{
+				OriginalCWD:  originalWorkDir,
+				WorktreePath: dir,
+				Branch:       branch,
+				HeadCommit:   headCommit,
+			}
+		})
 	}
 	data, err := json.Marshal(result)
 	if err != nil {

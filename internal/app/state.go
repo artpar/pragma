@@ -16,6 +16,14 @@ type TeamContext struct {
 	LeadAgentID  string `json:"lead_agent_id"`
 }
 
+// WorktreeSession tracks a temporary worktree entered during the active session.
+type WorktreeSession struct {
+	OriginalCWD  string `json:"original_cwd"`
+	WorktreePath string `json:"worktree_path"`
+	Branch       string `json:"branch"`
+	HeadCommit   string `json:"head_commit"`
+}
+
 // AppState is the full application state.
 // Satisfies tool.StateSnapshot via WorkDir() method.
 type AppState struct {
@@ -30,6 +38,7 @@ type AppState struct {
 	Todos        []TodoItem         `json:"todos,omitempty"`
 	AdvisorModel string             `json:"advisor_model,omitempty"`
 	TeamContext  *TeamContext       `json:"team_context,omitempty"`
+	Worktree     *WorktreeSession   `json:"worktree,omitempty"`
 }
 
 // WorkDir returns the current working directory.

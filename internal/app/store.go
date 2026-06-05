@@ -35,6 +35,10 @@ func (s *StateStore) Snapshot() AppState {
 		snap.Todos = make([]TodoItem, len(s.state.Todos))
 		copy(snap.Todos, s.state.Todos)
 	}
+	if s.state.Worktree != nil {
+		wt := *s.state.Worktree
+		snap.Worktree = &wt
+	}
 	return snap
 }
 

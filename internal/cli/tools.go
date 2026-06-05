@@ -63,8 +63,16 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	}
 
 	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
+		subStore := app.NewStateStore(app.AppState{
+			Conversation: forkedConv,
+			CWD:          d.Cwd,
+			Model:        d.Cfg.Model,
+			Provider:     d.Cfg.Provider,
+			MaxTokens:    d.Cfg.MaxTokens,
+			Temperature:  d.Cfg.Temperature,
+		})
 		subRegistry := tool.NewRegistry(d.Bus)
-		for _, td := range BaseTools(d) {
+		for _, td := range baseTools(d, subStore) {
 			if !shouldRegisterBuiltinTool(d, td.Name()) {
 				observe.GlobalTrace("if: !shouldRegisterBuiltinTool(d, td.Name())")
 				continue
@@ -75,14 +83,6 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		if scopedToolNames != nil {
 			subRegistry = subRegistry.Scoped(scopedToolNames)
 		}
-		subStore := app.NewStateStore(app.AppState{
-			Conversation: forkedConv,
-			CWD:          d.Cwd,
-			Model:        d.Cfg.Model,
-			Provider:     d.Cfg.Provider,
-			MaxTokens:    d.Cfg.MaxTokens,
-			Temperature:  d.Cfg.Temperature,
-		})
 		subOrch := tool.NewOrchestrator(subRegistry, d.Checker, prompter, d.Bus)
 		subCfg := d.EngineCfg
 		if modelOverride != "" {
@@ -273,6 +273,10 @@ func mcpStatusesForQuery(mgr interface {
 // BaseTools returns all tool descriptors except Agent and AskUserQuestion
 // (which need the engine factory / asker).
 func BaseTools(d *Deps) []tool.Descriptor {
+	return baseTools(d, d.Store)
+}
+
+func baseTools(d *Deps, store *app.StateStore) []tool.Descriptor {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: []tool.Descriptor{\n\t&toolglob.Tool{},\n\t&toolgrep.Tool{},\n\t&toolapplypatch.Tool{...")
@@ -304,8 +308,8 @@ func BaseTools(d *Deps) []tool.Descriptor {
 			},
 		},
 		&toolresultread.Tool{},
-		&toolworktree.EnterTool{},
-		&toolworktree.ExitTool{},
+		&toolworktree.EnterTool{Store: store},
+		&toolworktree.ExitTool{Store: store},
 		&toolcron.CreateTool{Scheduler: d.CronSched},
 		&toolcron.DeleteTool{Scheduler: d.CronSched},
 		&toolcron.ListTool{Scheduler: d.CronSched},
@@ -406,7 +410,7 @@ func switchActiveModel(d *Deps, modelID string) error {
 	if err := validateActiveModel(d, modelID); err != nil {
 		return err
 	}
-	if d.Store != nil {
+	if d != nil && d.Store != nil {
 		d.Store.Update(func(s *app.AppState) {
 			s.Model = modelID
 		})

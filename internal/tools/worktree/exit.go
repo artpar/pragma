@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
@@ -38,12 +39,15 @@ type exitResult struct {
 	Status       string `json:"status"`
 	WorktreePath string `json:"worktree_path"`
 	Branch       string `json:"branch,omitempty"`
+	RestoredCWD  string `json:"restored_cwd,omitempty"`
 	DiffStat     string `json:"diff_stat,omitempty"`
 	Message      string `json:"message,omitempty"`
 }
 
 // ExitTool cleans up a git worktree, preserving it if there are changes.
-type ExitTool struct{}
+type ExitTool struct {
+	Store *app.StateStore
+}
 
 func (t *ExitTool) Name() string {
 	observe.GlobalTrace("enter")
@@ -129,6 +133,33 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"resolve worktree path: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("resolve worktree path: %w", err)
 	}
+	wtPath = filepath.Clean(wtPath)
+
+	originalWorkDir := ""
+	if t.Store != nil {
+		snap := t.Store.Snapshot()
+		if snap.Worktree == nil {
+			result := exitResult{
+				Status:       "no_active_worktree",
+				WorktreePath: wtPath,
+				Message:      "No worktree session is active",
+			}
+			data, _ := json.Marshal(result)
+			return tool.InvokeResult{Content: string(data)}, nil
+		}
+		activePath, err := filepath.Abs(snap.Worktree.WorktreePath)
+		if err != nil {
+			return tool.InvokeResult{}, fmt.Errorf("resolve active worktree path: %w", err)
+		}
+		activePath = filepath.Clean(activePath)
+		if activePath != wtPath {
+			return tool.InvokeResult{}, fmt.Errorf("active worktree is %s, not %s", activePath, wtPath)
+		}
+		originalWorkDir = snap.Worktree.OriginalCWD
+		if in.HeadCommit == "" {
+			in.HeadCommit = snap.Worktree.HeadCommit
+		}
+	}
 
 	branchCmd := exec.CommandContext(ctx, "git", "-C", wtPath, "rev-parse", "--abbrev-ref", "HEAD")
 	branchOut, err := branchCmd.Output()
@@ -163,7 +194,11 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 	if !changed {
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: !changed")
 
-		gitRootCmd := exec.CommandContext(ctx, "git", "-C", state.WorkDir(), "rev-parse", "--show-toplevel")
+		gitBase := state.WorkDir()
+		if originalWorkDir != "" {
+			gitBase = originalWorkDir
+		}
+		gitRootCmd := exec.CommandContext(ctx, "git", "-C", gitBase, "rev-parse", "--show-toplevel")
 		gitRootOut, err := gitRootCmd.Output()
 		if err != nil {
 			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
@@ -183,8 +218,10 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		result := exitResult{
 			Status:       "removed",
 			WorktreePath: wtPath,
+			RestoredCWD:  originalWorkDir,
 			Message:      "Worktree removed (no changes detected)",
 		}
+		t.restoreSessionCWD(originalWorkDir)
 		data, _ := json.Marshal(result)
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 		return tool.InvokeResult{Content: string(data)}, nil
@@ -211,10 +248,22 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		Status:       "kept",
 		WorktreePath: wtPath,
 		Branch:       branch,
+		RestoredCWD:  originalWorkDir,
 		DiffStat:     diffStat,
 		Message:      "Worktree kept — has uncommitted changes or new commits",
 	}
+	t.restoreSessionCWD(originalWorkDir)
 	data, _ := json.Marshal(result)
 	observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
+}
+
+func (t *ExitTool) restoreSessionCWD(originalWorkDir string) {
+	if t.Store == nil || originalWorkDir == "" {
+		return
+	}
+	t.Store.Update(func(s *app.AppState) {
+		s.CWD = originalWorkDir
+		s.Worktree = nil
+	})
 }
