@@ -38,8 +38,10 @@ var inputSchema = json.RawMessage(`{
 
 // Tool implements the Config tool for getting/setting configuration.
 type Tool struct {
-	Store   *app.StateStore
-	WorkDir string
+	Store             *app.StateStore
+	WorkDir           string
+	ValidateLiveValue func(setting string, value any) error
+	ApplyLiveValue    func(setting string, value any)
 }
 
 func (t *Tool) Name() string { return "Config" }
@@ -144,6 +146,12 @@ func (t *Tool) handleSet(ctx context.Context, def *SettingDef, value any) (tool.
 		}
 	}
 
+	if def.AppStateKey != "" && t.ValidateLiveValue != nil {
+		if err := t.ValidateLiveValue(def.Name, value); err != nil {
+			return tool.InvokeResult{Content: err.Error()}, nil
+		}
+	}
+
 	// Determine target file
 	var targetPath string
 	if def.Source == "global" {
@@ -162,15 +170,19 @@ func (t *Tool) handleSet(ctx context.Context, def *SettingDef, value any) (tool.
 	}
 
 	// Sync to AppState if applicable
-	t.syncToAppState(def, value)
+	t.applyLiveValue(def, value)
 
 	valueJSON, _ := json.Marshal(value)
 	return tool.InvokeResult{Content: fmt.Sprintf("Set %s to %s", def.Name, string(valueJSON))}, nil
 }
 
-// syncToAppState updates the live AppState for settings that have immediate effect.
-func (t *Tool) syncToAppState(def *SettingDef, value any) {
+// applyLiveValue updates the live runtime for settings that have immediate effect.
+func (t *Tool) applyLiveValue(def *SettingDef, value any) {
 	if def.AppStateKey == "" || t.Store == nil {
+		return
+	}
+	if t.ApplyLiveValue != nil {
+		t.ApplyLiveValue(def.Name, value)
 		return
 	}
 	t.Store.Update(func(s *app.AppState) {

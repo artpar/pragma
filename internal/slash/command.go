@@ -62,6 +62,7 @@ type Deps struct {
 	// Model switching support — nil-safe (graceful degradation when unavailable).
 	ModelLister       func() []string                  // returns available model names for current provider
 	ContextWindowFunc func(modelID string) (int, bool) // validates model + returns context window
+	ModelSwitcher     func(modelID string) error       // validates and applies a live model switch
 	OnModelChanged    func(modelID string)             // callback: update budget + compaction on model switch
 
 	// MCP status — nil-safe.

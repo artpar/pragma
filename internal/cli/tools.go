@@ -312,7 +312,12 @@ func BaseTools(d *Deps) []tool.Descriptor {
 		&toolsendmsg.Tool{Tasks: d.TaskReg},
 		&toolwebsearch.Tool{Token: d.Creds.CredentialFor("brave").APIKey},
 		&toolbrief.Tool{Bus: d.Bus},
-		&toolconfig.Tool{Store: d.Store, WorkDir: d.Cwd},
+		&toolconfig.Tool{
+			Store:             d.Store,
+			WorkDir:           d.Cwd,
+			ValidateLiveValue: validateLiveConfigValue(d),
+			ApplyLiveValue:    applyLiveConfigValue(d),
+		},
 		&toolselftrace.Tool{LogFilePath: d.LogFilePath},
 		&toolpowershell.Tool{},
 	}
@@ -357,4 +362,59 @@ func BaseTools(d *Deps) []tool.Descriptor {
 	observe.GlobalTrace("return: tools")
 
 	return tools
+}
+
+func validateLiveConfigValue(d *Deps) func(string, any) error {
+	return func(setting string, value any) error {
+		switch setting {
+		case "model":
+			modelID, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("model must be a string")
+			}
+			return validateActiveModel(d, modelID)
+		default:
+			return nil
+		}
+	}
+}
+
+func applyLiveConfigValue(d *Deps) func(string, any) {
+	return func(setting string, value any) {
+		switch setting {
+		case "model":
+			modelID, ok := value.(string)
+			if !ok {
+				return
+			}
+			_ = switchActiveModel(d, modelID)
+		}
+	}
+}
+
+func validateActiveModel(d *Deps, modelID string) error {
+	if d == nil || d.Prov == nil {
+		return nil
+	}
+	if _, ok := d.Prov.ContextWindow(modelID); !ok {
+		return fmt.Errorf("Unknown model: %s", modelID)
+	}
+	return nil
+}
+
+func switchActiveModel(d *Deps, modelID string) error {
+	if err := validateActiveModel(d, modelID); err != nil {
+		return err
+	}
+	if d.Store != nil {
+		d.Store.Update(func(s *app.AppState) {
+			s.Model = modelID
+		})
+	}
+	if d != nil && d.Prov != nil && d.TokenMonitor != nil {
+		if cw, ok := d.Prov.ContextWindow(modelID); ok {
+			d.TokenMonitor.SetBudget(cw)
+		}
+	}
+	return nil
 }

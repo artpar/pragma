@@ -217,7 +217,7 @@ func TestHandleSet_BoolCoercion(t *testing.T) {
 	}
 }
 
-func TestSyncToAppState_Model(t *testing.T) {
+func TestApplyLiveValue_Model(t *testing.T) {
 	store := app.NewStateStore(app.AppState{
 		CWD:          "/tmp",
 		Conversation: model.NewConversation(model.SystemPrompt{}, "test", "", "/tmp"),
@@ -225,7 +225,7 @@ func TestSyncToAppState_Model(t *testing.T) {
 	tl := &Tool{Store: store, WorkDir: "/tmp"}
 
 	def := FindSetting("model")
-	tl.syncToAppState(def, "new-model")
+	tl.applyLiveValue(def, "new-model")
 
 	snap := store.Snapshot()
 	if snap.Model != "new-model" {

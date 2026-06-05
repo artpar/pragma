@@ -537,6 +537,9 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 			return nil
 		},
 		ContextWindowFunc: d.Prov.ContextWindow,
+		ModelSwitcher: func(modelID string) error {
+			return switchActiveModel(d, modelID)
+		},
 		OnModelChanged: func(modelID string) {
 			if cw, ok := d.Prov.ContextWindow(modelID); ok {
 				d.TokenMonitor.SetBudget(cw)

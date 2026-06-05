@@ -324,6 +324,32 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		return Result{DisplayText: msg}, nil
 	}
 
+	if deps.ModelSwitcher != nil {
+		if err := deps.ModelSwitcher(args); err != nil {
+			var b strings.Builder
+			b.WriteString(err.Error())
+			if deps.ModelLister != nil {
+				if models := deps.ModelLister(); len(models) > 0 {
+					b.WriteString("\n\nAvailable models:")
+					for _, m := range models {
+						b.WriteString("\n  " + m)
+					}
+				}
+			}
+			return Result{DisplayText: b.String()}, nil
+		}
+		if deps.SessionSave != nil {
+			deps.SessionSave()
+		}
+		msg := fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)
+		if deps.ContextWindowFunc != nil {
+			if cw, ok := deps.ContextWindowFunc(args); ok {
+				msg += fmt.Sprintf("\nContext window: %d tokens", cw)
+			}
+		}
+		return Result{DisplayText: msg}, nil
+	}
+
 	if deps.ContextWindowFunc != nil {
 		observe.GlobalTrace("if: deps.ContextWindowFunc != nil")
 		if _, ok := deps.ContextWindowFunc(args); !ok {
