@@ -86,6 +86,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var promptHistory []PromptHistoryData
 	var fileStateRecords []tool.FileStateRecord
 	var todos []app.TodoItem
+	var orchestrationArtifacts []app.OrchestrationArtifact
 	var taskResults []TaskResultData
 	hasHeader := false
 
@@ -139,6 +140,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				todos = data.Items
 			}
+		case EntryOrchestrationArtifacts:
+			var data OrchestrationArtifactsData
+			if err := json.Unmarshal(entry.Data, &data); err == nil {
+				orchestrationArtifacts = data.Artifacts
+			}
 		case EntryTaskResult:
 			var data TaskResultData
 			if err := json.Unmarshal(entry.Data, &data); err == nil && data.TaskID != "" {
@@ -164,20 +170,21 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	sanitizeConversation(&conv)
 
 	return Session{
-		Conversation:        conv,
-		HandoffState:        handoffState,
-		Summary:             meta.Summary,
-		CostUSD:             meta.CostUSD,
-		TurnCount:           meta.TurnCount,
-		TokenUsage:          meta.TokenUsage,
-		SystemOverride:      header.SystemOverride,
-		GitRemote:           header.GitRemote,
-		ContentReplacements: replacements,
-		PromptHistory:       promptHistory,
-		FileStateRecords:    fileStateRecords,
-		Todos:               todos,
-		TaskResults:         taskResults,
-		Worktree:            copyWorktreeSession(meta.Worktree),
+		Conversation:           conv,
+		HandoffState:           handoffState,
+		Summary:                meta.Summary,
+		CostUSD:                meta.CostUSD,
+		TurnCount:              meta.TurnCount,
+		TokenUsage:             meta.TokenUsage,
+		SystemOverride:         header.SystemOverride,
+		GitRemote:              header.GitRemote,
+		ContentReplacements:    replacements,
+		PromptHistory:          promptHistory,
+		FileStateRecords:       fileStateRecords,
+		Todos:                  todos,
+		OrchestrationArtifacts: orchestrationArtifacts,
+		TaskResults:            taskResults,
+		Worktree:               copyWorktreeSession(meta.Worktree),
 	}, nil
 }
 

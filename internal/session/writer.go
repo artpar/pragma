@@ -24,15 +24,16 @@ type Writer struct {
 }
 
 type RewriteData struct {
-	Header              HeaderData
-	Messages            []model.Message
-	Metadata            MetadataData
-	HandoffState        model.HandoffState
-	ContentReplacements []model.ContentReplacementRecord
-	PromptHistory       []PromptHistoryData
-	FileStateRecords    []tool.FileStateRecord
-	Todos               []app.TodoItem
-	TaskResults         []TaskResultData
+	Header                 HeaderData
+	Messages               []model.Message
+	Metadata               MetadataData
+	HandoffState           model.HandoffState
+	ContentReplacements    []model.ContentReplacementRecord
+	PromptHistory          []PromptHistoryData
+	FileStateRecords       []tool.FileStateRecord
+	Todos                  []app.TodoItem
+	OrchestrationArtifacts []app.OrchestrationArtifact
+	TaskResults            []TaskResultData
 }
 
 // NewWriter creates a new session JSONL file at path.
@@ -160,6 +161,13 @@ func (w *Writer) WriteTodos(items []app.TodoItem) error {
 	return w.writeEntry(EntryTodos, TodosData{Items: items})
 }
 
+func (w *Writer) WriteOrchestrationArtifacts(artifacts []app.OrchestrationArtifact) error {
+	if len(artifacts) == 0 {
+		return nil
+	}
+	return w.writeEntry(EntryOrchestrationArtifacts, OrchestrationArtifactsData{Artifacts: artifacts})
+}
+
 func (w *Writer) WriteTaskResult(result TaskResultData) error {
 	if result.TaskID == "" {
 		return nil
@@ -250,6 +258,11 @@ func (w *Writer) Rewrite(data RewriteData) error {
 	}
 	if len(data.Todos) > 0 {
 		if err := w.encodeRewriteEntry(EntryTodos, TodosData{Items: data.Todos}); err != nil {
+			return err
+		}
+	}
+	if len(data.OrchestrationArtifacts) > 0 {
+		if err := w.encodeRewriteEntry(EntryOrchestrationArtifacts, OrchestrationArtifactsData{Artifacts: data.OrchestrationArtifacts}); err != nil {
 			return err
 		}
 	}

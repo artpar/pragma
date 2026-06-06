@@ -253,6 +253,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var resumedContentReplacements []model.ContentReplacementRecord
 	var resumedFileStateRecords []tool.FileStateRecord
 	var resumedTodos []app.TodoItem
+	var resumedOrchestrationArtifacts []app.OrchestrationArtifact
 	var resumedWorktree *app.WorktreeSession
 	var sessionWriter *session.Writer
 	var resumedTurnCount int
@@ -333,6 +334,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		resumedContentReplacements = sess.ContentReplacements
 		resumedFileStateRecords = sess.FileStateRecords
 		resumedTodos = sess.Todos
+		resumedOrchestrationArtifacts = sess.OrchestrationArtifacts
 		resumedWorktree = copyWorktreeSession(sess.Worktree)
 		resumedTurnCount = sess.TurnCount
 		sessionStart = sess.Conversation.CreatedAt
@@ -363,15 +365,16 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	bus.Subscribe(metrics)
 
 	store := app.NewStateStore(app.AppState{
-		Conversation: conv,
-		HandoffState: resumedHandoffState,
-		CWD:          runtimeCWD,
-		Model:        cfg.Model,
-		Provider:     cfg.Provider,
-		MaxTokens:    cfg.MaxTokens,
-		Temperature:  cfg.Temperature,
-		Todos:        resumedTodos,
-		Worktree:     resumedWorktree,
+		Conversation:           conv,
+		HandoffState:           resumedHandoffState,
+		CWD:                    runtimeCWD,
+		Model:                  cfg.Model,
+		Provider:               cfg.Provider,
+		MaxTokens:              cfg.MaxTokens,
+		Temperature:            cfg.Temperature,
+		Todos:                  resumedTodos,
+		OrchestrationArtifacts: append([]app.OrchestrationArtifact(nil), resumedOrchestrationArtifacts...),
+		Worktree:               resumedWorktree,
 	})
 
 	hookMgr.SetSessionID(conv.ID)

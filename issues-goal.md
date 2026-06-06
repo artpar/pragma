@@ -2204,6 +2204,25 @@ What not to do:
 
 Do not make `handleArtifact` fall back to arbitrary path reads when the allowlist misses. Do not repopulate `server.artifacts` by scanning `~/.pragma/orchestrations` from the web route. Both approaches keep artifact ownership in presentation code and either weaken the file boundary or rebuild runtime state from filesystem guesses.
 
+Status:
+
+Resolved in current worktree. Orchestration handoff artifacts are now recorded in shared app/session state when the runtime receives an `OrchestrationHandoffEvent`, persisted as session JSONL metadata, restored on resume/startup resume, and served by web only when the requested path appears in that session-owned manifest. The web server no longer owns artifact existence through a volatile `server.artifacts` allowlist.
+
+Source evidence:
+
+- `internal/app/state.go` and `internal/app/store.go`: added `OrchestrationArtifact` and `AppState.OrchestrationArtifacts`, with snapshot copying so the runtime store owns the artifact manifest.
+- `internal/cli/run.go`: `InteractiveRuntime.runOrchestration` computes the run artifact root once, records each non-empty handoff path through `recordOrchestrationArtifact`, and writes the updated manifest through the session writer when the event is emitted.
+- `internal/session/entry.go`, `internal/session/writer.go`, `internal/session/store.go`, and `internal/session/session.go`: added `orchestration_artifacts` session entries, load/rewrite support, and `Session.OrchestrationArtifacts` so artifact metadata survives close, compaction rewrite, startup resume, and explicit resume.
+- `internal/cli/deps.go` and `internal/cli/run.go`: startup `--resume` and `InteractiveRuntime.Resume` hydrate `AppState.OrchestrationArtifacts` from the loaded session.
+- `internal/web/web.go`: removed `server.artifacts` and `rememberArtifact`; `handleArtifact` now calls `sessionOwnsArtifact`, which validates the cleaned path against `cfg.Store.Snapshot().OrchestrationArtifacts`.
+- `internal/web/web.go`: browser `workflowView` merges persisted `app_state.orchestration_artifacts` with live workflow snapshot handoffs, so resumed sessions can render and open durable handoff artifact rows.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/app/state.go internal/app/store.go internal/session/entry.go internal/session/session.go internal/session/store.go internal/session/writer.go internal/cli/run.go internal/cli/deps.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/app ./internal/session ./internal/cli ./internal/web ./internal/orchestration ./internal/query ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "OrchestrationArtifacts|orchestration_artifacts|OrchestrationHandoffEvent|WriteOrchestrationArtifacts|EntryOrchestrationArtifacts|sessionOwnsArtifact|rememberArtifact|artifacts map|handleArtifact|workflowView|handoffs|server\\.artifacts" internal/app internal/session internal/cli/run.go internal/cli/deps.go internal/web/web.go internal/orchestration internal/query -g'*.go'` confirmed the durable manifest lives in app/session/runtime state, with no web-owned artifact allowlist remaining.
+
 ## 46. Standalone Orchestration Run Bypasses Prompt And Session Lifecycle
 
 Severity: high

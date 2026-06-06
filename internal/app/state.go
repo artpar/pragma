@@ -1,6 +1,10 @@
 package app
 
-import "github.com/artpar/pragma/internal/model"
+import (
+	"time"
+
+	"github.com/artpar/pragma/internal/model"
+)
 
 // TodoItem represents a single item in the session task checklist.
 type TodoItem struct {
@@ -24,22 +28,32 @@ type WorktreeSession struct {
 	HeadCommit   string `json:"head_commit"`
 }
 
+type OrchestrationArtifact struct {
+	StateID   string    `json:"state_id,omitempty"`
+	Event     string    `json:"event,omitempty"`
+	Path      string    `json:"path"`
+	Direction string    `json:"direction,omitempty"`
+	Root      string    `json:"root,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
 // AppState is the full application state.
 // Satisfies tool.StateSnapshot via WorkDir() method.
 type AppState struct {
-	Conversation      model.Conversation `json:"conversation"`
-	HandoffState      model.HandoffState `json:"handoff_state,omitempty"`
-	CWD               string             `json:"cwd"`
-	Model             string             `json:"model"`
-	Provider          string             `json:"provider"`
-	MaxTokens         int                `json:"max_tokens"`
-	Temperature       *float64           `json:"temperature,omitempty"`
-	Thinking          *bool              `json:"thinking,omitempty"`
-	Todos             []TodoItem         `json:"todos,omitempty"`
-	AdvisorModel      string             `json:"advisor_model,omitempty"`
-	TeamContext       *TeamContext       `json:"team_context,omitempty"`
-	Worktree          *WorktreeSession   `json:"worktree,omitempty"`
-	ArtifactSessionID string             `json:"artifact_session_id,omitempty"`
+	Conversation           model.Conversation      `json:"conversation"`
+	HandoffState           model.HandoffState      `json:"handoff_state,omitempty"`
+	CWD                    string                  `json:"cwd"`
+	Model                  string                  `json:"model"`
+	Provider               string                  `json:"provider"`
+	MaxTokens              int                     `json:"max_tokens"`
+	Temperature            *float64                `json:"temperature,omitempty"`
+	Thinking               *bool                   `json:"thinking,omitempty"`
+	Todos                  []TodoItem              `json:"todos,omitempty"`
+	OrchestrationArtifacts []OrchestrationArtifact `json:"orchestration_artifacts,omitempty"`
+	AdvisorModel           string                  `json:"advisor_model,omitempty"`
+	TeamContext            *TeamContext            `json:"team_context,omitempty"`
+	Worktree               *WorktreeSession        `json:"worktree,omitempty"`
+	ArtifactSessionID      string                  `json:"artifact_session_id,omitempty"`
 }
 
 // WorkDir returns the current working directory.

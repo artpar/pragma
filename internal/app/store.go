@@ -35,6 +35,10 @@ func (s *StateStore) Snapshot() AppState {
 		snap.Todos = make([]TodoItem, len(s.state.Todos))
 		copy(snap.Todos, s.state.Todos)
 	}
+	if len(s.state.OrchestrationArtifacts) > 0 {
+		snap.OrchestrationArtifacts = make([]OrchestrationArtifact, len(s.state.OrchestrationArtifacts))
+		copy(snap.OrchestrationArtifacts, s.state.OrchestrationArtifacts)
+	}
 	if s.state.Worktree != nil {
 		wt := *s.state.Worktree
 		snap.Worktree = &wt

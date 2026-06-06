@@ -106,21 +106,19 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 type server struct {
-	cfg       Config
-	hub       *hub
-	mu        sync.Mutex
-	running   bool
-	cancel    context.CancelFunc
-	artifacts map[string]struct{}
+	cfg     Config
+	hub     *hub
+	mu      sync.Mutex
+	running bool
+	cancel  context.CancelFunc
 }
 
 var errRuntimeBusy = errors.New("interactive run already in progress")
 
 func newServer(cfg Config) *server {
 	return &server{
-		cfg:       cfg,
-		hub:       newHub(),
-		artifacts: make(map[string]struct{}),
+		cfg: cfg,
+		hub: newHub(),
 	}
 }
 
@@ -647,9 +645,6 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 				s.hub.publish("runtime_terminated", e)
 				continue
 			case interactive.LoopEvent:
-				if handoff, ok := e.Event.(query.OrchestrationHandoffEvent); ok {
-					s.rememberArtifact(handoff.Path)
-				}
 				s.hub.publish("loop_event", e.Event)
 			default:
 				s.hub.publish("interactive_event", e)
@@ -657,15 +652,6 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 		}
 	}()
 	return true
-}
-
-func (s *server) rememberArtifact(path string) {
-	if strings.TrimSpace(path) == "" {
-		return
-	}
-	s.mu.Lock()
-	s.artifacts[filepath.Clean(path)] = struct{}{}
-	s.mu.Unlock()
 }
 
 func (s *server) handleArtifact(w http.ResponseWriter, r *http.Request) {
@@ -678,11 +664,8 @@ func (s *server) handleArtifact(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path is required", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	_, known := s.artifacts[path]
-	s.mu.Unlock()
-	if !known {
-		http.Error(w, "artifact path was not emitted by this run", http.StatusForbidden)
+	if !s.sessionOwnsArtifact(path) {
+		http.Error(w, "artifact path is not recorded in this session", http.StatusForbidden)
 		return
 	}
 	content, err := os.ReadFile(path)
@@ -694,6 +677,18 @@ func (s *server) handleArtifact(w http.ResponseWriter, r *http.Request) {
 		"path":    path,
 		"content": string(content),
 	})
+}
+
+func (s *server) sessionOwnsArtifact(path string) bool {
+	if s.cfg.Store == nil {
+		return false
+	}
+	for _, artifact := range s.cfg.Store.Snapshot().OrchestrationArtifacts {
+		if filepath.Clean(artifact.Path) == path {
+			return true
+		}
+	}
+	return false
 }
 
 type completionItem struct {
@@ -1423,6 +1418,25 @@ function matchesCurrentView(envelope){
 
 function workflowView(){
   const snap = state.workflowSnapshot || {};
+  const handoffs = [];
+  const seenHandoffs = new Set();
+  const pushHandoff = h => {
+    if(!h || !h.path) return;
+    const row = {
+      stateID: h.state_id || h.stateID,
+      event: h.event,
+      path: h.path,
+      direction: h.direction,
+      root: h.root
+    };
+    const key = [row.stateID || '', row.event || '', row.path || '', row.direction || ''].join('\u0000');
+    if(seenHandoffs.has(key)) return;
+    seenHandoffs.add(key);
+    handoffs.push(row);
+  };
+  (snap.handoffs || []).forEach(pushHandoff);
+  const appArtifacts = state.appState && (state.appState.orchestration_artifacts || state.appState.OrchestrationArtifacts);
+  (appArtifacts || []).forEach(pushHandoff);
   const wf = {
     name: snap.name || '',
     initial: snap.initial || '',
@@ -1430,12 +1444,7 @@ function workflowView(){
     completed: Boolean(snap.completed),
     states: new Map(),
     transitions: (snap.transitions || []).map(t => ({from: t.from, event: t.event, to: t.to})),
-    handoffs: (snap.handoffs || []).map(h => ({
-      stateID: h.state_id,
-      event: h.event,
-      path: h.path,
-      direction: h.direction
-    })),
+    handoffs,
     events: state.events.filter(envelope => envelope.type === 'workflow_snapshot')
   };
   Object.values(snap.states || {}).forEach(row => {

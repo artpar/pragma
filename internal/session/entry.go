@@ -13,15 +13,16 @@ import (
 type EntryKind string
 
 const (
-	EntryHeader             EntryKind = "header"
-	EntryMessage            EntryKind = "message"
-	EntryMetadata           EntryKind = "metadata"
-	EntryHandoffState       EntryKind = "handoff_state"
-	EntryContentReplacement EntryKind = "content_replacement"
-	EntryPromptHistory      EntryKind = "prompt_history"
-	EntryFileState          EntryKind = "file_state"
-	EntryTodos              EntryKind = "todos"
-	EntryTaskResult         EntryKind = "task_result"
+	EntryHeader                 EntryKind = "header"
+	EntryMessage                EntryKind = "message"
+	EntryMetadata               EntryKind = "metadata"
+	EntryHandoffState           EntryKind = "handoff_state"
+	EntryContentReplacement     EntryKind = "content_replacement"
+	EntryPromptHistory          EntryKind = "prompt_history"
+	EntryFileState              EntryKind = "file_state"
+	EntryTodos                  EntryKind = "todos"
+	EntryTaskResult             EntryKind = "task_result"
+	EntryOrchestrationArtifacts EntryKind = "orchestration_artifacts"
 )
 
 // Entry is a single JSONL line in a session file. Discriminated by Kind.
@@ -71,6 +72,10 @@ type FileStateData struct {
 
 type TodosData struct {
 	Items []app.TodoItem `json:"items"`
+}
+
+type OrchestrationArtifactsData struct {
+	Artifacts []app.OrchestrationArtifact `json:"artifacts"`
 }
 
 type TaskResultData struct {

@@ -10,20 +10,21 @@ import (
 
 // Session wraps a Conversation with persistence metadata.
 type Session struct {
-	Conversation        model.Conversation               `json:"conversation"`
-	HandoffState        model.HandoffState               `json:"handoff_state,omitempty"`
-	Summary             string                           `json:"summary,omitempty"`
-	CostUSD             float64                          `json:"cost_usd,omitempty"`
-	TurnCount           int                              `json:"turn_count"`
-	TokenUsage          model.TokenUsage                 `json:"token_usage,omitzero"`
-	SystemOverride      string                           `json:"system_override,omitempty"`
-	GitRemote           string                           `json:"git_remote,omitempty"`
-	ContentReplacements []model.ContentReplacementRecord `json:"content_replacements,omitempty"`
-	PromptHistory       []PromptHistoryData              `json:"prompt_history,omitempty"`
-	FileStateRecords    []tool.FileStateRecord           `json:"file_state_records,omitempty"`
-	Todos               []app.TodoItem                   `json:"todos,omitempty"`
-	TaskResults         []TaskResultData                 `json:"task_results,omitempty"`
-	Worktree            *app.WorktreeSession             `json:"worktree,omitempty"`
+	Conversation           model.Conversation               `json:"conversation"`
+	HandoffState           model.HandoffState               `json:"handoff_state,omitempty"`
+	Summary                string                           `json:"summary,omitempty"`
+	CostUSD                float64                          `json:"cost_usd,omitempty"`
+	TurnCount              int                              `json:"turn_count"`
+	TokenUsage             model.TokenUsage                 `json:"token_usage,omitzero"`
+	SystemOverride         string                           `json:"system_override,omitempty"`
+	GitRemote              string                           `json:"git_remote,omitempty"`
+	ContentReplacements    []model.ContentReplacementRecord `json:"content_replacements,omitempty"`
+	PromptHistory          []PromptHistoryData              `json:"prompt_history,omitempty"`
+	FileStateRecords       []tool.FileStateRecord           `json:"file_state_records,omitempty"`
+	Todos                  []app.TodoItem                   `json:"todos,omitempty"`
+	OrchestrationArtifacts []app.OrchestrationArtifact      `json:"orchestration_artifacts,omitempty"`
+	TaskResults            []TaskResultData                 `json:"task_results,omitempty"`
+	Worktree               *app.WorktreeSession             `json:"worktree,omitempty"`
 }
 
 // SessionSummary is a lightweight view for listing sessions.

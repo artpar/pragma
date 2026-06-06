@@ -395,13 +395,61 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
+	artifactRoot := interactiveOrchestrationArtifactRoot(rt.Deps)
 	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
 		PersonaDir:   req.PersonaDir,
 		TaskPrompt:   req.Prompt,
-		ArtifactRoot: interactiveOrchestrationArtifactRoot(rt.Deps),
+		ArtifactRoot: artifactRoot,
 	}) {
+		if handoff, ok := ev.(query.OrchestrationHandoffEvent); ok {
+			if err := rt.recordOrchestrationArtifact(artifactRoot, handoff); err != nil {
+				ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+				return
+			}
+		}
 		ch <- interactive.LoopEvent{Event: ev}
 	}
+}
+
+func (rt *InteractiveRuntime) recordOrchestrationArtifact(root string, ev query.OrchestrationHandoffEvent) error {
+	if rt == nil || rt.Deps == nil || rt.Deps.Store == nil || strings.TrimSpace(ev.Path) == "" {
+		return nil
+	}
+	artifact := app.OrchestrationArtifact{
+		StateID:   ev.StateID,
+		Event:     ev.Event,
+		Path:      filepath.Clean(ev.Path),
+		Direction: ev.Direction,
+		Root:      cleanNonEmptyPath(root),
+		CreatedAt: time.Now(),
+	}
+	rt.Deps.Store.Update(func(st *app.AppState) {
+		st.OrchestrationArtifacts = upsertOrchestrationArtifact(st.OrchestrationArtifacts, artifact)
+	})
+	if rt.Deps.SessionWriter == nil {
+		return nil
+	}
+	return rt.Deps.SessionWriter.WriteOrchestrationArtifacts(rt.Deps.Store.Snapshot().OrchestrationArtifacts)
+}
+
+func upsertOrchestrationArtifact(artifacts []app.OrchestrationArtifact, artifact app.OrchestrationArtifact) []app.OrchestrationArtifact {
+	for i := range artifacts {
+		if artifacts[i].Path == artifact.Path &&
+			artifacts[i].StateID == artifact.StateID &&
+			artifacts[i].Event == artifact.Event &&
+			artifacts[i].Direction == artifact.Direction {
+			artifacts[i] = artifact
+			return artifacts
+		}
+	}
+	return append(artifacts, artifact)
+}
+
+func cleanNonEmptyPath(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	return filepath.Clean(path)
 }
 
 func (rt *InteractiveRuntime) sessionStartHookForNextRun(ctx context.Context) (hook.AggregatedResult, bool, error) {
@@ -477,6 +525,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.CWD = sess.Conversation.WorkDir
 		st.HandoffState = sess.HandoffState
 		st.Todos = sess.Todos
+		st.OrchestrationArtifacts = append([]app.OrchestrationArtifact(nil), sess.OrchestrationArtifacts...)
 		st.Worktree = copyWorktreeSession(sess.Worktree)
 	})
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
@@ -1406,6 +1455,9 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 		if err := d.SessionWriter.WriteTodos(snap.Todos); err != nil {
 			return err
 		}
+		if err := d.SessionWriter.WriteOrchestrationArtifacts(snap.OrchestrationArtifacts); err != nil {
+			return err
+		}
 		d.SessionLastIdx = len(snap.Conversation.Messages)
 		if err := d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap)); err != nil {
 			return err
@@ -1471,15 +1523,16 @@ func rewriteCurrentSession(d *Deps) error {
 		fileStateRecords = existing.FileStateRecords
 	}
 	if err := d.SessionWriter.Rewrite(session.RewriteData{
-		Header:              header,
-		Messages:            snap.Conversation.Messages,
-		Metadata:            sessionMetadataForSnapshot(d, snap),
-		HandoffState:        snap.HandoffState,
-		ContentReplacements: existing.ContentReplacements,
-		PromptHistory:       existing.PromptHistory,
-		FileStateRecords:    fileStateRecords,
-		Todos:               snap.Todos,
-		TaskResults:         existing.TaskResults,
+		Header:                 header,
+		Messages:               snap.Conversation.Messages,
+		Metadata:               sessionMetadataForSnapshot(d, snap),
+		HandoffState:           snap.HandoffState,
+		ContentReplacements:    existing.ContentReplacements,
+		PromptHistory:          existing.PromptHistory,
+		FileStateRecords:       fileStateRecords,
+		Todos:                  snap.Todos,
+		OrchestrationArtifacts: snap.OrchestrationArtifacts,
+		TaskResults:            existing.TaskResults,
 	}); err != nil {
 		return err
 	}
