@@ -3325,6 +3325,10 @@ Do not patch this by changing `pendingInput string` to `[]string` inside the TUI
 
 Severity: medium
 
+Status: fixed in this worktree. Global trace installation is now an owned dependency operation: `observe.InstallGlobalBus` and `observe.InstallTraceFilter` install the per-run values and return compare-and-swap restore functions. `SetupDepsWithOptions` installs a per-run bus and always installs a per-run trace filter value (`nil` when `PRAGMA_TRACE_FILTER` is unset), then `compositeCleanup` restores those globals before draining the bus so later `GlobalTrace` calls cannot target the closed runtime bus or inherit a stale filter.
+
+Verification: `gofmt -w internal/observe/trace.go internal/cli/deps.go`; `go build ./cmd/pragma`; `go vet ./internal/observe ./internal/cli ./cmd/pragma`; `git diff --check`; ownership scan for `InstallGlobalBus|InstallTraceFilter|SetGlobalBus|SetTraceFilter|restoreTraceGlobals|bus.Drain|PRAGMA_TRACE_FILTER|GlobalTrace`.
+
 Concrete files/functions involved:
 
 - `internal/cli/deps.go`: `SetupDeps`, `compositeCleanup`

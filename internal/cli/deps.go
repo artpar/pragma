@@ -148,11 +148,16 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	toolPolicy := toolExposurePolicyFromFlags(cmd)
 
 	bus := observe.NewEventBus(1024)
-	observe.SetGlobalBus(bus)
-
-	if traceFilter := os.Getenv("PRAGMA_TRACE_FILTER"); traceFilter != "" {
+	restoreGlobalBus := observe.InstallGlobalBus(bus)
+	var traceFilter *observe.TraceFilter
+	if traceFilterEnv := os.Getenv("PRAGMA_TRACE_FILTER"); traceFilterEnv != "" {
 		observe.GlobalTrace("if: traceFilter != \"\"")
-		observe.SetTraceFilter(observe.ParseTraceFilter(traceFilter))
+		traceFilter = observe.ParseTraceFilter(traceFilterEnv)
+	}
+	restoreTraceFilter := observe.InstallTraceFilter(traceFilter)
+	restoreTraceGlobals := func() {
+		restoreTraceFilter()
+		restoreGlobalBus()
 	}
 
 	logLevel := observe.LevelError
@@ -489,6 +494,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		case <-done:
 		case <-time.After(500 * time.Millisecond):
 		}
+		restoreTraceGlobals()
 		bus.Drain()
 		if deps != nil && deps.recorder != nil {
 			_ = deps.recorder.Close()

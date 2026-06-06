@@ -41,6 +41,15 @@ func SetGlobalBus(bus *EventBus) {
 	globalBus.Store(bus)
 }
 
+// InstallGlobalBus sets the package-level EventBus and returns a restore
+// function that only rolls back if the installed bus is still current.
+func InstallGlobalBus(bus *EventBus) func() {
+	previous := globalBus.Swap(bus)
+	return func() {
+		globalBus.CompareAndSwap(bus, previous)
+	}
+}
+
 // GlobalTrace emits a FlowTrace using runtime.Caller to derive component/function.
 // Works in any function regardless of signature — no ctx needed.
 func GlobalTrace(msg string) {
@@ -92,6 +101,15 @@ var activeFilter atomic.Pointer[TraceFilter]
 // SetTraceFilter sets the runtime trace filter. nil clears the filter.
 func SetTraceFilter(f *TraceFilter) {
 	activeFilter.Store(f)
+}
+
+// InstallTraceFilter sets the runtime trace filter and returns a restore
+// function that only rolls back if the installed filter is still current.
+func InstallTraceFilter(f *TraceFilter) func() {
+	previous := activeFilter.Swap(f)
+	return func() {
+		activeFilter.CompareAndSwap(f, previous)
+	}
 }
 
 // GetTraceFilter returns the current runtime trace filter (may be nil).
