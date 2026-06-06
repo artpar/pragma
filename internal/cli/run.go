@@ -242,10 +242,12 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 			return
 		}
 		if name, args, ok := slash.Parse(input); ok && rt.SlashCmds != nil {
+			rt.rememberAcceptedPrompt(input)
 			ch <- interactive.AcceptedPromptEvent{Prompt: input}
 			rt.runSlash(ctx, input, name, args, promptHookResult, ch)
 			return
 		}
+		rt.rememberAcceptedPrompt(input)
 		ch <- interactive.AcceptedPromptEvent{Prompt: input}
 		rt.runEngine(ctx, input, input, promptHookResult, ch)
 	}()
@@ -376,6 +378,18 @@ func (rt *InteractiveRuntime) writePromptHistory(input string) error {
 		return nil
 	}
 	return rt.Deps.SessionWriter.WritePromptHistory(input)
+}
+
+func (rt *InteractiveRuntime) rememberAcceptedPrompt(input string) {
+	if rt == nil || rt.Deps == nil || rt.Deps.Store == nil {
+		return
+	}
+	var updated []string
+	rt.Deps.Store.Update(func(st *app.AppState) {
+		st.PromptHistory = appendPromptHistory(st.PromptHistory, input, tui.InputHistoryLimit)
+		updated = append([]string(nil), st.PromptHistory...)
+	})
+	rt.PromptHistory = updated
 }
 
 func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
@@ -522,6 +536,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Deps.SessionLastIdx = len(sess.Conversation.Messages)
 	rt.Deps.SessionStarted = false
 	rt.applyResumeProvider(providerBinding)
+	promptHistory := sessionPromptHistory(sess)
 	rt.Deps.Store.Update(func(st *app.AppState) {
 		st.Conversation = sess.Conversation
 		st.Model = providerBinding.modelID
@@ -529,9 +544,11 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.CWD = sess.Conversation.WorkDir
 		st.HandoffState = sess.HandoffState
 		st.Todos = sess.Todos
+		st.PromptHistory = promptHistory
 		st.OrchestrationArtifacts = append([]app.OrchestrationArtifact(nil), sess.OrchestrationArtifacts...)
 		st.Worktree = copyWorktreeSession(sess.Worktree)
 	})
+	rt.PromptHistory = promptHistory
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
 	rt.Engine.ResetFileState(sess.FileStateRecords)
@@ -763,7 +780,13 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 	}
 
 	sessStore, _ := session.NewStore()
-	promptHistory := promptHistoryFromSessions(sessStore, tui.InputHistoryLimit)
+	promptHistory := d.Store.Snapshot().PromptHistory
+	if len(promptHistory) == 0 {
+		promptHistory = promptHistoryFromSessions(sessStore, tui.InputHistoryLimit)
+		d.Store.Update(func(st *app.AppState) {
+			st.PromptHistory = append([]string(nil), promptHistory...)
+		})
+	}
 	slashDeps := slash.Deps{
 		Store:       d.Store,
 		CostTracker: d.CostTracker,
@@ -846,7 +869,6 @@ func RunInteractive(cmd *cobra.Command) error {
 		SessionStore:   rt.SlashDeps.SessionStore,
 		SessionStart:   rt.Deps.SessionStart,
 		McpServerNames: connectedMcpNames(rt.Deps.McpManager),
-		PromptHistory:  rt.PromptHistory,
 	})
 }
 
@@ -941,6 +963,7 @@ func RunStandaloneOrchestration(cmd *cobra.Command, opts StandaloneOrchestration
 	if err != nil {
 		return err
 	}
+	rt.rememberAcceptedPrompt(opts.Prompt)
 
 	events := make(chan interactive.Event, 16)
 	go func() {
@@ -1765,6 +1788,22 @@ func reversePromptHistory(newestFirst []string) []string {
 		history[len(newestFirst)-1-i] = newestFirst[i]
 	}
 	return history
+}
+
+func appendPromptHistory(history []string, text string, limit int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return append([]string(nil), history...)
+	}
+	out := append([]string(nil), history...)
+	if len(out) > 0 && out[len(out)-1] == text {
+		return out
+	}
+	out = append(out, text)
+	if limit > 0 && len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out
 }
 
 // countUserTurns counts all RoleUser messages (matching old SaveSession behavior).

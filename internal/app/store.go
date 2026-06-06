@@ -35,6 +35,10 @@ func (s *StateStore) Snapshot() AppState {
 		snap.Todos = make([]TodoItem, len(s.state.Todos))
 		copy(snap.Todos, s.state.Todos)
 	}
+	if len(s.state.PromptHistory) > 0 {
+		snap.PromptHistory = make([]string, len(s.state.PromptHistory))
+		copy(snap.PromptHistory, s.state.PromptHistory)
+	}
 	if len(s.state.OrchestrationArtifacts) > 0 {
 		snap.OrchestrationArtifacts = make([]OrchestrationArtifact, len(s.state.OrchestrationArtifacts))
 		copy(snap.OrchestrationArtifacts, s.state.OrchestrationArtifacts)

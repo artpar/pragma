@@ -49,6 +49,7 @@ type AppState struct {
 	Temperature            *float64                `json:"temperature,omitempty"`
 	Thinking               *bool                   `json:"thinking,omitempty"`
 	Todos                  []TodoItem              `json:"todos,omitempty"`
+	PromptHistory          []string                `json:"prompt_history,omitempty"`
 	OrchestrationArtifacts []OrchestrationArtifact `json:"orchestration_artifacts,omitempty"`
 	AdvisorModel           string                  `json:"advisor_model,omitempty"`
 	TeamContext            *TeamContext            `json:"team_context,omitempty"`

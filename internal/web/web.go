@@ -50,7 +50,6 @@ type Config struct {
 	SessionStore   *session.Store
 	SessionStart   time.Time
 	McpServerNames []string
-	PromptHistory  []string
 }
 
 // Run starts the browser UI and blocks until the server shuts down.
@@ -533,7 +532,7 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"runtime":        runtime,
 		"app_state":      snap,
-		"prompt_history": s.cfg.PromptHistory,
+		"prompt_history": snap.PromptHistory,
 	})
 }
 

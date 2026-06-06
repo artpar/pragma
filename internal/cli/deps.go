@@ -253,6 +253,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var resumedContentReplacements []model.ContentReplacementRecord
 	var resumedFileStateRecords []tool.FileStateRecord
 	var resumedTodos []app.TodoItem
+	var resumedPromptHistory []string
 	var resumedOrchestrationArtifacts []app.OrchestrationArtifact
 	var resumedWorktree *app.WorktreeSession
 	var sessionWriter *session.Writer
@@ -334,6 +335,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		resumedContentReplacements = sess.ContentReplacements
 		resumedFileStateRecords = sess.FileStateRecords
 		resumedTodos = sess.Todos
+		resumedPromptHistory = sessionPromptHistory(sess)
 		resumedOrchestrationArtifacts = sess.OrchestrationArtifacts
 		resumedWorktree = copyWorktreeSession(sess.Worktree)
 		resumedTurnCount = sess.TurnCount
@@ -373,6 +375,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		MaxTokens:              cfg.MaxTokens,
 		Temperature:            cfg.Temperature,
 		Todos:                  resumedTodos,
+		PromptHistory:          append([]string(nil), resumedPromptHistory...),
 		OrchestrationArtifacts: append([]app.OrchestrationArtifact(nil), resumedOrchestrationArtifacts...),
 		Worktree:               resumedWorktree,
 	})

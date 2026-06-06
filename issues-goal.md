@@ -2404,6 +2404,26 @@ What not to do:
 
 Do not patch only the browser to push more strings into `state.promptHistory`, and do not make TUI overwrite history on every render. Those are presentation-side repairs that keep the durable history, runtime state, and UI navigation state as independent owners.
 
+Status:
+
+Resolved in current worktree. Accepted prompt history now has a live runtime projection in `AppState.PromptHistory`. The runtime updates it when a prompt is accepted, session persistence still writes durable `prompt_history` entries, web state exposes the live projection, and TUI resume/reload replaces input history from the runtime snapshot instead of preserving stale UI-local history.
+
+Source evidence:
+
+- `internal/app/state.go` and `internal/app/store.go`: added `AppState.PromptHistory` with snapshot copying, making prompt history part of shared runtime state.
+- `internal/cli/deps.go`: startup resume hydrates `AppState.PromptHistory` from the loaded session's persisted prompt history.
+- `internal/cli/run.go`: `RunInput` calls `rememberAcceptedPrompt` before emitting `AcceptedPromptEvent`; standalone orchestration does the same before running the shared orchestration path.
+- `internal/cli/run.go`: `rememberAcceptedPrompt` updates `AppState.PromptHistory` through the runtime store and keeps `InteractiveRuntime.PromptHistory` in sync for UI initial seeding.
+- `internal/cli/run.go`: `InteractiveRuntime.Resume` replaces prompt history from the resumed session, while fresh interactive startup seeds the runtime store from `promptHistoryFromSessions` only when the active session has no prompt history.
+- `internal/web/web.go`: `/api/state` now returns `snap.PromptHistory`; the stale `web.Config.PromptHistory` owner was removed.
+- `internal/tui/handlers.go` and `internal/tui/model.go`: resume/reload paths call `promptHistoryFromSnapshot` and replace the input ring from runtime state, falling back to extracted conversation prompts only when the runtime projection is absent.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/app/state.go internal/app/store.go internal/cli/deps.go internal/cli/run.go internal/tui/handlers.go internal/tui/model.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/app ./internal/cli ./internal/web ./internal/tui ./internal/session ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "PromptHistory|prompt_history|writePromptHistory|rememberAcceptedPrompt|appendPromptHistory|promptHistoryFromSnapshot|promptHistoryFromSessions|sessionPromptHistory|rememberPrompt|AcceptedPromptEvent|SetHistory|extractUserPrompts|s\\.cfg\\.PromptHistory|Config\\.PromptHistory" internal/app internal/cli/run.go internal/cli/deps.go internal/web/web.go internal/tui internal/session -g'*.go'` confirmed app/session runtime state is the canonical projection, web no longer has a config history owner, and TUI resume consumes the runtime snapshot.
+
 ## 50. Tool Result Blobs Live Outside The Session Store Lifecycle
 
 Severity: medium

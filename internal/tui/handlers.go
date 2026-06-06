@@ -92,14 +92,22 @@ func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd
 }
 
 func (m *Model) reloadConversationFromStore() {
-	conv := m.store.Snapshot().Conversation
+	snap := m.store.Snapshot()
+	conv := snap.Conversation
 	m.outputSegs = nil
 	for _, msg := range conv.Messages {
 		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 	}
-	if len(m.input.history) == 0 {
-		m.input.SetHistory(extractUserPrompts(conv.Messages))
+	m.input.SetHistory(promptHistoryFromSnapshot(snap))
+}
+
+func promptHistoryFromSnapshot(snap app.AppState) []string {
+	if len(snap.PromptHistory) > 0 {
+		out := make([]string, len(snap.PromptHistory))
+		copy(out, snap.PromptHistory)
+		return out
 	}
+	return extractUserPrompts(snap.Conversation.Messages)
 }
 
 // handleLoopEvent processes a streaming event from the query engine.
