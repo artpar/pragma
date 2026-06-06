@@ -4026,6 +4026,10 @@ Do not patch only by deleting `TeamFilePath(finalName)` after `MkdirAll` fails i
 
 Severity: medium
 
+Status: fixed in this worktree. `team.CleanupTeamDirectories` now treats the team config as the authoritative cleanup ledger: read/parse errors and missing config fail the operation, recorded worktree removals use `CombinedOutput`, and any git failure is returned before team/task directories are deleted. `TeamDelete.Invoke` already clears `AppState.TeamContext` and emits `TeamDeleted` only after this helper succeeds, so cleanup failure now preserves the durable ledger for retry/recovery.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/team ./internal/tools/teamdelete ./internal/tools/teamcreate ./internal/task ./internal/app ./cmd/pragma`; `git diff --check`; ownership scan for `CleanupTeamDirectories`, `ReadTeamFile`, `CombinedOutput`, `cmd.Run`, `RemoveAll`, `TeamContext = nil`, `TeamDeleted`, and `ListTeammates`.
+
 Concrete files/functions involved:
 
 - `internal/tools/teamdelete/teamdelete.go`: `Tool.Invoke`, `activeTeammateNames`

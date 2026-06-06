@@ -173,20 +173,31 @@ func CleanupTeamDirectories(teamName string, bus *observe.EventBus) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	tf, _ := ReadTeamFile(teamName)
-	if tf != nil {
-		observe.GlobalTrace("if: tf != nil")
-		for _, m := range tf.Members {
-			observe.GlobalTrace("range tf.Members")
-			if m.WorktreePath != "" {
-				observe.GlobalTrace("if: m.WorktreePath != \"\"")
+	tf, err := ReadTeamFile(teamName)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return err
+	}
+	if tf == nil {
+		observe.GlobalTrace("if: tf == nil")
+		return fmt.Errorf("team config for %q not found", teamName)
+	}
+	for _, m := range tf.Members {
+		observe.GlobalTrace("range tf.Members")
+		if m.WorktreePath != "" {
+			observe.GlobalTrace("if: m.WorktreePath != \"\"")
 
-				cmd := exec.Command("git", "worktree", "remove", "--force", m.WorktreePath)
-				if m.CWD != "" {
-					observe.GlobalTrace("if: m.CWD != \"\"")
-					cmd.Dir = m.CWD
+			cmd := exec.Command("git", "worktree", "remove", "--force", m.WorktreePath)
+			if m.CWD != "" {
+				observe.GlobalTrace("if: m.CWD != \"\"")
+				cmd.Dir = m.CWD
+			}
+			if out, err := cmd.CombinedOutput(); err != nil {
+				msg := strings.TrimSpace(string(out))
+				if msg != "" {
+					return fmt.Errorf("remove worktree %s: %w: %s", m.WorktreePath, err, msg)
 				}
-				_ = cmd.Run()
+				return fmt.Errorf("remove worktree %s: %w", m.WorktreePath, err)
 			}
 		}
 	}
