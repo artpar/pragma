@@ -122,6 +122,14 @@ func (t *toolbar) SetModel(name string) {
 	t.modelName = name
 }
 
+func (t *toolbar) SetStartTime(startTime time.Time) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if !startTime.IsZero() {
+		t.startTime = startTime
+	}
+}
+
 // SetStatus updates the status text.
 func (t *toolbar) SetStatus(status string) {
 	observe.GlobalTrace("enter")

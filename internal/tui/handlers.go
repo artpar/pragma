@@ -82,6 +82,7 @@ func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd
 	}
 	if result.ResumeSessionID != "" {
 		m.reloadConversationFromStore()
+		m.toolbar.SetStartTime(m.store.Snapshot().Conversation.CreatedAt)
 	}
 	if snap := m.store.Snapshot(); snap.Model != "" {
 		m.toolbar.SetModel(snap.Model)

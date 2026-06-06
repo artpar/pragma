@@ -540,13 +540,18 @@ func (s *server) runtimeState(snap app.AppState) map[string]interface{} {
 	modelName := firstNonEmptyString(snap.Model, snap.Conversation.Model, s.cfg.ModelName)
 	providerName := firstNonEmptyString(snap.Provider, snap.Conversation.Provider, s.cfg.Provider)
 	workspace := firstNonEmptyString(snap.CWD, snap.Conversation.WorkDir, s.cfg.Workspace)
+	sessionStart := snap.Conversation.CreatedAt
+	if sessionStart.IsZero() {
+		sessionStart = s.cfg.SessionStart
+	}
 	return map[string]interface{}{
-		"version":     s.cfg.Version,
-		"workspace":   workspace,
-		"model":       modelName,
-		"provider":    providerName,
-		"mcp_servers": s.cfg.McpServerNames,
-		"running":     s.isRunning(),
+		"version":       s.cfg.Version,
+		"workspace":     workspace,
+		"model":         modelName,
+		"provider":      providerName,
+		"mcp_servers":   s.cfg.McpServerNames,
+		"session_start": sessionStart,
+		"running":       s.isRunning(),
 	}
 }
 
@@ -2564,6 +2569,7 @@ new EventSource('/api/events').onmessage = event => {
   if(envelope.type === 'permission_request') showPermission(envelope);
   if(envelope.type === 'ask_request') showAsk(envelope);
   if(envelope.type === 'run_idle') setRunning(false);
+  if(envelope.type === 'slash_result') refreshState().catch(err => appendLocalError(err.message));
   if(envelope.type === 'session_resumed') refreshState().catch(err => appendLocalError(err.message));
 };
 </script>

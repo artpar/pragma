@@ -555,6 +555,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	})
 	rt.PromptHistory = promptHistory
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
+	rt.Deps.SessionStart = sessionStartForConversation(sess.Conversation)
 	rt.Engine.ResetSessionState(sess.ContentReplacements, sess.FileStateRecords)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
@@ -565,6 +566,13 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.pendingSessionStartHook = sessionHookResult
 	rt.hasPendingSessionStartHook = true
 	return nil
+}
+
+func sessionStartForConversation(conv model.Conversation) time.Time {
+	if !conv.CreatedAt.IsZero() {
+		return conv.CreatedAt
+	}
+	return time.Now()
 }
 
 func validateResumeWorkDir(activeWorkDir string, sess session.Session) error {

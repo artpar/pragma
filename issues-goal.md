@@ -2658,6 +2658,25 @@ What not to do:
 
 Do not patch only the TUI toolbar elapsed clock. The stale value also feeds session close metadata, so the fix belongs in the runtime resume lifecycle, not in a presentation timer.
 
+Status:
+
+Resolved in current worktree. Runtime resume now updates the session timing metadata from the resumed conversation, so `makeSessionSaveClose` computes close duration against the active session. TUI and web surfaces now project the active session start from the resumed store state instead of keeping only their startup config value.
+
+Source evidence:
+
+- `internal/cli/run.go`: `InteractiveRuntime.Resume` now sets `rt.Deps.SessionStart` from the resumed conversation before rebuilding save/close callbacks.
+- `internal/cli/run.go`: added `sessionStartForConversation`, preserving the existing startup resume policy of using `Conversation.CreatedAt` with a current-time fallback for malformed sessions.
+- `internal/tui/toolbar.go`: added `SetStartTime` so runtime resume can update the elapsed-time source without reconstructing the toolbar.
+- `internal/tui/handlers.go`: slash-result resume reloads the conversation and updates toolbar start time from `Store.Snapshot().Conversation.CreatedAt`.
+- `internal/web/web.go`: runtime state now includes `session_start` from the active conversation, falling back to config only if the conversation lacks a creation time.
+- `internal/web/web.go`: browser event handling refreshes state after `slash_result`, covering `/resume` issued through the prompt as well as direct session-list resume.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/run.go internal/tui/toolbar.go internal/tui/handlers.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/tui ./internal/web ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "SessionStart|sessionStartForConversation|SetStartTime|session_start|session_resumed|slash_result|DurationMs|makeSessionSaveClose|Resume\\(" internal/cli internal/tui internal/web -g'*.go'` confirmed resume updates runtime-owned timing before close callbacks, TUI updates elapsed state on resume, and web state projects the active session start.
+
 ## 55. Team Leadership State Is Stored In AppState But Has No Session Persistence Boundary
 
 Severity: medium
