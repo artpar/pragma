@@ -233,7 +233,6 @@ type Model struct {
 	parentCtx    context.Context // original parent context — never overwritten
 	ctx          context.Context
 	cancel       context.CancelFunc
-	pendingInput string           // queued message to submit after current turn completes
 	quitPending  bool             // true after idle Ctrl+C, waiting for second to quit
 	permQueue    []PermRequestMsg // queued permission requests when dialog is already visible
 	retryAttempt int              // generation counter for stale countdown tick detection

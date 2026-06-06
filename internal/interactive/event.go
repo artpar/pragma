@@ -16,6 +16,13 @@ type AcceptedPromptEvent struct {
 
 func (AcceptedPromptEvent) interactiveEventSealed() {}
 
+type RejectedPromptEvent struct {
+	Prompt string
+	Reason string
+}
+
+func (RejectedPromptEvent) interactiveEventSealed() {}
+
 // LoopEvent carries a domain/runtime query event through the interactive stream.
 type LoopEvent struct {
 	Event query.LoopEvent

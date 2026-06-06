@@ -445,20 +445,6 @@ func (c *inputComponent) SetStreaming(v bool) {
 	}
 }
 
-// SetQueued updates the placeholder to indicate a queued message.
-// Only shown when there actually IS a queued message (avoids TS #17157).
-func (c *inputComponent) SetQueued(queued bool) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if queued {
-		observe.GlobalTrace("if: queued")
-		c.textarea.Placeholder = "Message queued — will send when ready"
-	} else {
-		observe.GlobalTrace("else: queued")
-		c.textarea.Placeholder = ""
-	}
-}
-
 // SetHistory replaces the navigation history with the given entries.
 // Used when opening or resuming a conversation to include prior user prompts.
 func (c *inputComponent) SetHistory(prompts []string) {

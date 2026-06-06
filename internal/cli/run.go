@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -221,6 +222,8 @@ type InteractiveRuntime struct {
 	SlashCmds                  *slash.Registry
 	SlashDeps                  slash.Deps
 	PromptHistory              []string
+	admissionMu                sync.Mutex
+	turnActive                 bool
 	sessionSave                func() error
 	sessionClose               func() error
 	pendingSessionStartHook    hook.AggregatedResult
@@ -235,8 +238,14 @@ type InteractiveRuntimeOptions struct {
 
 func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan interactive.Event {
 	ch := make(chan interactive.Event, 16)
+	if !rt.beginInputTurn() {
+		ch <- interactive.RejectedPromptEvent{Prompt: input, Reason: "busy"}
+		close(ch)
+		return ch
+	}
 	go func() {
 		defer close(ch)
+		defer rt.finishInputTurn()
 		promptHookResult, err := acceptPromptSubmission(ctx, rt.Deps, input)
 		if err != nil {
 			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
@@ -253,6 +262,22 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 		rt.runEngine(ctx, input, input, promptHookResult, ch)
 	}()
 	return ch
+}
+
+func (rt *InteractiveRuntime) beginInputTurn() bool {
+	rt.admissionMu.Lock()
+	defer rt.admissionMu.Unlock()
+	if rt.turnActive {
+		return false
+	}
+	rt.turnActive = true
+	return true
+}
+
+func (rt *InteractiveRuntime) finishInputTurn() {
+	rt.admissionMu.Lock()
+	defer rt.admissionMu.Unlock()
+	rt.turnActive = false
 }
 
 func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput string, name string, args string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {

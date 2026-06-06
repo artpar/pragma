@@ -135,6 +135,13 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.input.remember(ev.Prompt)
 		m.renderAcceptedPrompt(ev.Prompt)
 		return m, waitForEvent(m.eventCh)
+	case interactive.RejectedPromptEvent:
+		observe.GlobalTrace("typecase: interactive.RejectedPromptEvent")
+		m.toolbar.SetStatus("busy")
+		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Prompt rejected: another turn is still running")+"\n\n")
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+		return m, waitForEvent(m.eventCh)
 	case interactive.SlashResultEvent:
 		observe.GlobalTrace("typecase: interactive.SlashResultEvent")
 		next, cmd := m.handleRuntimeSlashResult(ev.Result)
@@ -707,28 +714,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleInputSubmitted processes user message submission.
-// If streaming, queues the message to auto-submit after the current turn.
 func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if m.streaming {
-		observe.GlobalTrace("if: m.streaming — queuing message")
-		m.pendingInput = msg.Text
-		m.input.SetQueued(true)
-		label := msg.Text
-		if len(label) > 40 {
-			observe.GlobalTrace("if: len(label) > 40")
-			label = label[:37] + "..."
-		}
-		m.toolbar.SetStatus("queued: " + label)
-		observe.GlobalTrace("return: m, nil")
-		return m, nil
-	}
 	if m.runInput == nil {
 		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: interactive runtime is not available")+"\n\n")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 		return m, nil
+	}
+	if m.streaming {
+		observe.GlobalTrace("if: m.streaming — asking runtime admission")
+		events := m.runInput(m.parentCtx, msg.Text)
+		return m, waitForEvent(events)
 	}
 	observe.GlobalTrace("return: m.submitPrompt(msg.Text)")
 
@@ -766,29 +764,18 @@ func (m *Model) renderAcceptedPrompt(text string) {
 	m.viewport.GotoBottom()
 }
 
-// finishTurn resets streaming state. If a message was queued during streaming,
-// it returns a tea.Cmd to auto-submit it as the next turn.
+// finishTurn resets streaming state after the active runtime turn closes.
 func (m Model) finishTurn() (Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	m.streaming = false
 	m.input.SetStreaming(false)
-	m.input.SetQueued(false)
 	m.spinnerActive = false
 	m.eventCh = nil
 	m.toolbar.SetStatus("ready")
 	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
 
-	if m.pendingInput != "" {
-		observe.GlobalTrace("if: m.pendingInput != \"\"")
-		text := m.pendingInput
-		m.pendingInput = ""
-		observe.GlobalTrace("return: m, func() tea.Msg {\n\treturn InputSubmittedMsg{Text: text}\n}")
-		return m, func() tea.Msg {
-			return InputSubmittedMsg{Text: text}
-		}
-	}
 	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }

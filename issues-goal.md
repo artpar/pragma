@@ -3290,6 +3290,10 @@ Do not patch this by adding more ad hoc checks in `runNonInteractive`, such as l
 
 Severity: medium
 
+Status: fixed in this worktree. `InteractiveRuntime.RunInput` now owns concurrent prompt admission with an active-turn guard and emits `interactive.RejectedPromptEvent` for rejected submissions. The TUI no longer stores `Model.pendingInput`, no longer calls `inputComponent.SetQueued`, and no longer auto-submits a queued `InputSubmittedMsg` from `finishTurn`; during streaming it asks the runtime for admission and renders the runtime rejection while continuing the active event stream.
+
+Verification: `gofmt -w internal/interactive/event.go internal/cli/run.go internal/tui/model.go internal/tui/handlers.go internal/tui/input.go`; `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/interactive ./cmd/pragma`; `git diff --check`; production ownership scan for `pendingInput|SetQueued|queued:|Message queued|RejectedPromptEvent|beginInputTurn|turnActive|admission`. `go vet ./internal/tui` was not used as verification because the existing TUI tests still compile against the intentionally removed `pendingInput` field.
+
 Concrete files/functions involved:
 
 - `internal/tui/input.go`: `inputComponent.Update`, `inputComponent.SetStreaming`, `inputComponent.SetQueued`
