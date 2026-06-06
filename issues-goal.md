@@ -2354,6 +2354,23 @@ What not to do:
 
 Do not patch the browser to prefer `appState.model` over `runtime.model` while leaving `/api/state.runtime` stale. That would hide one symptom in one view and leave other web consumers, event summaries, and future UI code reading the wrong runtime contract.
 
+Status:
+
+Resolved in current worktree. `/api/state.runtime` now projects model, provider, and workspace from the live `StateStore.Snapshot`, using startup config only as a fallback when the store has no value. The browser renders the runtime projection directly, so resume and `/model` updates flow through one authoritative state contract.
+
+Source evidence:
+
+- `internal/web/web.go`: `handleState` now calls `runtimeState(snap)` instead of filling runtime model/provider/workspace from immutable `web.Config`.
+- `internal/web/web.go`: `runtimeState` derives `model` from `AppState.Model` or conversation model, `provider` from `AppState.Provider` or conversation provider, and `workspace` from `AppState.CWD` or conversation workdir, with config fields only as fallback labels.
+- `internal/web/web.go`: browser `renderState` and `renderOverview` now render `runtime.model` directly rather than masking stale runtime fields with app-state fallbacks.
+- Existing runtime owners remain unchanged: `InteractiveRuntime.Resume` updates `AppState.Model` and `AppState.Provider`, and `switchActiveModel` updates `AppState.Model`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/web ./internal/cli ./internal/slash ./internal/app ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "handleState|runtimeState|firstNonEmptyString|Config\\.ModelName|Config\\.Provider|runtime\\.model|runtime\\.provider|appState\\.model|app\\.model|applyResumeProvider|switchActiveModel|st\\.Model|st\\.Provider|s\\.cfg\\.ModelName|s\\.cfg\\.Provider" internal/web/web.go internal/cli/run.go internal/cli/tools.go internal/slash/commands.go -g'*.go'` confirmed web runtime projection uses the live store and config appears only as fallback.
+
 ## 49. Prompt History Has Separate Session, Runtime, And UI Owners
 
 Severity: medium

@@ -529,18 +529,35 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 	snap := s.cfg.Store.Snapshot()
+	runtime := s.runtimeState(snap)
 	writeJSON(w, map[string]interface{}{
-		"runtime": map[string]interface{}{
-			"version":     s.cfg.Version,
-			"workspace":   s.cfg.Workspace,
-			"model":       s.cfg.ModelName,
-			"provider":    s.cfg.Provider,
-			"mcp_servers": s.cfg.McpServerNames,
-			"running":     s.isRunning(),
-		},
+		"runtime":        runtime,
 		"app_state":      snap,
 		"prompt_history": s.cfg.PromptHistory,
 	})
+}
+
+func (s *server) runtimeState(snap app.AppState) map[string]interface{} {
+	modelName := firstNonEmptyString(snap.Model, snap.Conversation.Model, s.cfg.ModelName)
+	providerName := firstNonEmptyString(snap.Provider, snap.Conversation.Provider, s.cfg.Provider)
+	workspace := firstNonEmptyString(snap.CWD, snap.Conversation.WorkDir, s.cfg.Workspace)
+	return map[string]interface{}{
+		"version":     s.cfg.Version,
+		"workspace":   workspace,
+		"model":       modelName,
+		"provider":    providerName,
+		"mcp_servers": s.cfg.McpServerNames,
+		"running":     s.isRunning(),
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *server) isRunning() bool {
@@ -1537,7 +1554,7 @@ function renderState(s){
   const conversation = appState.conversation || appState.Conversation || {};
   const rows = [
     ['Provider', runtime.provider],
-    ['Model', runtime.model || appState.model || appState.Model],
+    ['Model', runtime.model],
     ['Session', currentSessionLabel(conversation.id || conversation.ID)],
     ['Workspace', runtime.workspace]
   ];
@@ -1637,7 +1654,7 @@ function renderOverview(){
   const active = band('Active run', state.events.length + ' events');
   appendFactList(active, [
     ['Provider', runtime.provider],
-    ['Model', runtime.model || app.model || app.Model],
+    ['Model', runtime.model],
     ['Workspace', runtime.workspace],
     ['Session', currentSessionLabel(conversation.id || conversation.ID)],
     ['Status', statusEl.textContent]
