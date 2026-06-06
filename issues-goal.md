@@ -3731,6 +3731,10 @@ Do not patch individual hook inputs to print the active cwd while still loading 
 
 Severity: high
 
+Status: fixed in this worktree. Runtime workdir transitions now rebuild the model-visible system prompt from the active workdir instead of leaving startup project instructions/environment in place. `Deps.SystemPromptForWorkDir` builds the prompt through `sysprompt.New(activeWorkDir, ...)`, so `AGENT.md`, skills, and environment metadata are projected from the active project. `EnterWorktree`, `ExitWorktree`, and live `Resume` update both `Conversation.WorkDir` and `Conversation.System`; the query loop already sends `snap.Conversation.System` in model requests.
+
+Verification: source inspection and ownership scan for `SystemPromptForWorkDir|buildRuntimeSystemPrompt|Conversation.System|Conversation.WorkDir|sysprompt.New|LoadAgentMD|DetectEnv|EnterTool|ExitTool|Resume` across `internal/cli`, `internal/sysprompt`, `internal/tools/worktree`, `internal/query`, and `internal/model`.
+
 Concrete files/functions involved:
 
 - `internal/cli/deps.go`: `SetupDeps`
