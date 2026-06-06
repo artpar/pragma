@@ -216,14 +216,16 @@ func RunBackground(cmd *cobra.Command) error {
 // InteractiveRuntime is the presentation-neutral runtime for an interactive session.
 // cli owns construction; presentation packages own transport and rendering.
 type InteractiveRuntime struct {
-	Deps          *Deps
-	Engine        *query.Engine
-	SlashCmds     *slash.Registry
-	SlashDeps     slash.Deps
-	PromptHistory []string
-	sessionSave   func() error
-	sessionClose  func() error
-	Cleanup       func(context.Context)
+	Deps                       *Deps
+	Engine                     *query.Engine
+	SlashCmds                  *slash.Registry
+	SlashDeps                  slash.Deps
+	PromptHistory              []string
+	sessionSave                func() error
+	sessionClose               func() error
+	pendingSessionStartHook    hook.AggregatedResult
+	hasPendingSessionStartHook bool
+	Cleanup                    func(context.Context)
 }
 
 func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan interactive.Event {
@@ -340,7 +342,7 @@ func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context)
 }
 
 func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
-	sessionHookResult, err := startSessionForCurrentConversation(ctx, rt.Deps)
+	sessionHookResult, consumedPendingSessionHook, err := rt.sessionStartHookForNextRun(ctx)
 	if err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
@@ -348,6 +350,9 @@ func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, submi
 	if err := rt.appendHookContext(hook.SessionStart, sessionHookResult, true); err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
+	}
+	if consumedPendingSessionHook {
+		rt.clearPendingSessionStartHook()
 	}
 	if err := rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false); err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
@@ -370,7 +375,7 @@ func (rt *InteractiveRuntime) writePromptHistory(input string) error {
 }
 
 func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
-	sessionHookResult, err := startSessionForCurrentConversation(ctx, rt.Deps)
+	sessionHookResult, consumedPendingSessionHook, err := rt.sessionStartHookForNextRun(ctx)
 	if err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
@@ -378,6 +383,9 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 	if err := rt.appendHookContext(hook.SessionStart, sessionHookResult, true); err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
+	}
+	if consumedPendingSessionHook {
+		rt.clearPendingSessionStartHook()
 	}
 	if err := rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false); err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
@@ -394,6 +402,14 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 	}) {
 		ch <- interactive.LoopEvent{Event: ev}
 	}
+}
+
+func (rt *InteractiveRuntime) sessionStartHookForNextRun(ctx context.Context) (hook.AggregatedResult, bool, error) {
+	if rt.hasPendingSessionStartHook {
+		return rt.pendingSessionStartHook, true, nil
+	}
+	result, err := startSessionForCurrentConversation(ctx, rt.Deps)
+	return result, false, err
 }
 
 func (rt *InteractiveRuntime) appendHookContext(event hook.Event, result hook.AggregatedResult, includeStdout bool) error {
@@ -468,8 +484,13 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Engine.ResetFileState(sess.FileStateRecords)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
-	_, err = beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
-	return err
+	sessionHookResult, err := beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
+	if err != nil {
+		return err
+	}
+	rt.pendingSessionStartHook = sessionHookResult
+	rt.hasPendingSessionStartHook = true
+	return nil
 }
 
 func validateResumeWorkDir(activeWorkDir string, sess session.Session) error {
@@ -602,6 +623,7 @@ func (rt *InteractiveRuntime) closeCurrentSession(ctx context.Context) error {
 	if rt == nil || rt.Deps == nil {
 		return nil
 	}
+	rt.clearPendingSessionStartHook()
 	if rt.sessionSave != nil {
 		if err := rt.sessionSave(); err != nil {
 			return err
@@ -614,6 +636,14 @@ func (rt *InteractiveRuntime) closeCurrentSession(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (rt *InteractiveRuntime) clearPendingSessionStartHook() {
+	if rt == nil {
+		return
+	}
+	rt.pendingSessionStartHook = hook.AggregatedResult{}
+	rt.hasPendingSessionStartHook = false
 }
 
 // BuildInteractiveRuntime wires the shared dependencies for an interactive UI.
@@ -637,13 +667,18 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 		return nil, err
 	}
 	waitForToolsetMCP(cmd.Context(), d)
+	var pendingSessionStartHook hook.AggregatedResult
+	hasPendingSessionStartHook := false
 	if d.SessionWriter != nil {
-		if _, err := beginSessionLifecycle(cmd.Context(), d, ""); err != nil {
+		sessionHookResult, err := beginSessionLifecycle(cmd.Context(), d, "")
+		if err != nil {
 			if d.Cleanup != nil {
 				d.Cleanup()
 			}
 			return nil, err
 		}
+		pendingSessionStartHook = sessionHookResult
+		hasPendingSessionStartHook = true
 	}
 
 	compDeps, compactor := BuildCompactionDeps(d)
@@ -697,13 +732,15 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 	}
 
 	rt := &InteractiveRuntime{
-		Deps:          d,
-		Engine:        engine,
-		SlashCmds:     slashCmds,
-		SlashDeps:     slashDeps,
-		PromptHistory: promptHistory,
-		sessionSave:   sessionSaveFn,
-		sessionClose:  sessionCloseFn,
+		Deps:                       d,
+		Engine:                     engine,
+		SlashCmds:                  slashCmds,
+		SlashDeps:                  slashDeps,
+		PromptHistory:              promptHistory,
+		sessionSave:                sessionSaveFn,
+		sessionClose:               sessionCloseFn,
+		pendingSessionStartHook:    pendingSessionStartHook,
+		hasPendingSessionStartHook: hasPendingSessionStartHook,
 	}
 	rt.SlashDeps.ModelSwitcher = rt.switchActiveModel
 	d.ModelSwitcher = rt.switchActiveModel

@@ -2050,6 +2050,25 @@ What not to do:
 
 Do not rerun `SessionStart` on the next prompt just to recover the missing context. That would duplicate lifecycle hooks and could repeat external side effects. The single lifecycle event needs a single owner and a durable handoff to the engine context consumer.
 
+Status:
+
+Resolved in current worktree. Interactive resumed sessions now preserve the single `SessionStart` hook result until the next engine or orchestration run appends it to model context. The hook is not rerun; the runtime stores the returned result from the lifecycle start and consumes it exactly once after successful context append.
+
+Source evidence:
+
+- `internal/cli/run.go`: `InteractiveRuntime` now has `pendingSessionStartHook` and `hasPendingSessionStartHook` runtime state for a lifecycle-start result that occurs before a turn can consume it.
+- `internal/cli/run.go`: `BuildInteractiveRuntime` captures the `beginSessionLifecycle` result when startup opened a resumed `SessionWriter` and stores it on the runtime instead of discarding it.
+- `internal/cli/run.go`: `InteractiveRuntime.Resume` captures the `beginSessionLifecycle` result for `/resume` and stores it on the runtime instead of discarding it.
+- `internal/cli/run.go`: `runEngine` and `runOrchestration` use `sessionStartHookForNextRun`, append `hook.SessionStart` context through the existing engine context owner, then clear pending context exactly once after a successful append.
+- `internal/cli/run.go`: `closeCurrentSession` clears pending `SessionStart` context so an abandoned resumed session cannot leak hook output into a later session.
+- `internal/cli/run.go`: non-interactive runs still use `startSessionForCurrentConversation` and append the returned `SessionStart` context directly, preserving the existing non-interactive path.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/query ./internal/session ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "pendingSessionStartHook|hasPendingSessionStartHook|sessionStartHookForNextRun|clearPendingSessionStartHook|beginSessionLifecycle|startSessionForCurrentConversation|appendHookContext\\(hook\\.SessionStart|AppendHookContext\\(string\\(hook\\.SessionStart\\)|SessionWriter != nil|Resume\\(" internal/cli/run.go internal/cli/deps.go internal/query/engine.go -g'*.go'` confirmed early interactive lifecycle starts store one hook result and turn execution consumes it through the same engine context append path.
+
 ## 43. Web Resume Can Mutate Runtime Session State While A Turn Is Running
 
 Severity: high
