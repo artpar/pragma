@@ -187,7 +187,7 @@ func eventLevel(kind string) Level {
 		"ConversationStarted", "SessionStarted", "SessionSaved", "SessionEnded",
 		"MCPServerConnected", "MCPToolCallCompleted", "SubAgentSpawned",
 		"SubAgentCompleted", "ToolBatchStarted", "ToolBatchCompleted",
-		"ToolPermissionChecked", "ToolPermissionPrompted",
+		"ToolPermissionChecked", "ToolPermissionPromptStarted", "ToolPermissionPrompted",
 		"PermissionRuleMatched", "SlashCommandExecuted",
 		"AgentMDLoaded", "SystemPromptBuilt",
 		"BriefMessageSent", "McpOAuthCompleted":
@@ -215,7 +215,7 @@ func eventTopic(kind string) string {
 	case "APIRequestStarted", "APIStreamChunk", "APIRequestCompleted",
 		"APIRequestFailed", "APIRetryScheduled":
 		return "api"
-	case "ToolCallReceived", "ToolPermissionChecked", "ToolPermissionPrompted",
+	case "ToolCallReceived", "ToolPermissionChecked", "ToolPermissionPromptStarted", "ToolPermissionPrompted",
 		"ToolExecutionStarted", "ToolExecutionCompleted", "ToolExecutionFailed",
 		"ToolBatchStarted", "ToolBatchCompleted":
 		return "tool"

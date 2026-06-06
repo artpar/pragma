@@ -126,6 +126,14 @@ type ToolPermissionChecked struct {
 
 func (ToolPermissionChecked) eventSealed() {}
 
+type ToolPermissionPromptStarted struct {
+	EventHeader
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name"`
+}
+
+func (ToolPermissionPromptStarted) eventSealed() {}
+
 type ToolPermissionPrompted struct {
 	EventHeader
 	ToolCallID   string `json:"tool_call_id"`

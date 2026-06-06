@@ -1653,6 +1653,23 @@ What not to do:
 
 Do not clear `waiting` only in `ToolBatchCompleted` as a one-off repair. That would still leave the status layer guessing permission lifecycle from unrelated batch events and would be wrong for concurrent prompts or future permission flows.
 
+Status:
+
+Resolved in current worktree. Permission waiting is now driven by an explicit pre-prompt lifecycle event, while the existing post-prompt decision record remains audit/duration data. The background status subscriber no longer treats a completed prompt record as the beginning of the waiting state.
+
+Source evidence:
+
+- `internal/observe/event_catalog.go`: added `ToolPermissionPromptStarted` as a first-class observe event with the tool call ID and tool name.
+- `internal/observe/event.go` and `internal/observe/logger.go`: registered `ToolPermissionPromptStarted` for event decoding, logging, and tool-topic classification.
+- `internal/tool/orchestrator.go`: emits `ToolPermissionPromptStarted` immediately before `prompter.Prompt(...)`; `ToolPermissionPrompted` remains after prompt completion with user decision and prompt duration.
+- `internal/background/subscriber.go`: sets `waiting = true` only on `ToolPermissionPromptStarted`; clears it on `ToolPermissionPrompted` and `PermissionDecisionFinal`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/observe/event_catalog.go internal/observe/event.go internal/observe/logger.go internal/tool/orchestrator.go internal/background/subscriber.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/background ./internal/tool ./internal/observe ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "ToolPermissionPromptStarted|ToolPermissionPrompted|PermissionDecisionFinal|waiting|Prompt\\(|emitPermissionDecision" internal/background/subscriber.go internal/tool/orchestrator.go internal/observe/event_catalog.go internal/observe/event.go internal/observe/logger.go -g'*.go'` confirmed prompt-start, post-prompt, and final-decision events are handled at their owning boundaries.
+
 ## 35. Subagent ToolSearch Reads The Root Registry Instead Of The Child Registry
 
 Severity: medium

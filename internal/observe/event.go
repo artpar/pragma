@@ -138,6 +138,12 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	case "ToolPermissionPromptStarted":
+		var e ToolPermissionPromptStarted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	case "ToolPermissionPrompted":
 		var e ToolPermissionPrompted
 		if err := json.Unmarshal(data, &e); err != nil {

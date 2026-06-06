@@ -372,6 +372,11 @@ func (o *Orchestrator) executeSingle(
 	userDecision := ""
 	if permResult.Decision == permission.DecisionAsk {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: permResult.Decision == permission.DecisionAsk")
+		o.bus.Emit(observe.ToolPermissionPromptStarted{
+			EventHeader: observe.NewEventHeader("ToolPermissionPromptStarted", traceID, spanID, parentSpan),
+			ToolCallID:  call.ID,
+			ToolName:    call.Name,
+		})
 		promptStart := time.Now()
 		decision, rememberScope := o.prompter.Prompt(ctx, call.Name, call.Input, permResult.Content, permResult.Reason)
 		promptDuration := time.Since(promptStart)

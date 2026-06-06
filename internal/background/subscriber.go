@@ -79,10 +79,22 @@ func (s *StatusSubscriber) HandleEvent(event observe.Event) {
 		s.waiting = false
 		s.updateStatusLocked()
 		s.mu.Unlock()
+	case observe.ToolPermissionPromptStarted:
+		observe.GlobalTrace("typecase: observe.ToolPermissionPromptStarted")
+		s.mu.Lock()
+		s.waiting = true
+		s.updateStatusLocked()
+		s.mu.Unlock()
 	case observe.ToolPermissionPrompted:
 		observe.GlobalTrace("typecase: observe.ToolPermissionPrompted")
 		s.mu.Lock()
-		s.waiting = true
+		s.waiting = false
+		s.updateStatusLocked()
+		s.mu.Unlock()
+	case observe.PermissionDecisionFinal:
+		observe.GlobalTrace("typecase: observe.PermissionDecisionFinal")
+		s.mu.Lock()
+		s.waiting = false
 		s.updateStatusLocked()
 		s.mu.Unlock()
 	case observe.SessionStarted:
