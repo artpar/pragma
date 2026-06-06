@@ -130,12 +130,14 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 
 	snap := t.Store.Snapshot()
+	fileState, _ := tool.FileStateCacheFrom(state)
 	infra := bridge.Infra{
 		Provider:     t.Provider,
 		Orchestrator: t.Orchestrator,
 		Registry:     t.Registry,
 		Bus:          t.Bus,
 		Cwd:          snap.CWD,
+		FileState:    fileState,
 	}
 
 	graph, err := t.resolveGraph(ctx, in, infra)

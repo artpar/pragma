@@ -17,6 +17,7 @@ type Infra struct {
 	Registry     *tool.Registry
 	Bus          *observe.EventBus
 	Cwd          string
+	FileState    *tool.FileStateCache
 }
 
 // NodeFactory resolves node type names + config into lifecycle.NodeFunc values.
@@ -60,7 +61,7 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 
 	case "tools":
 		observe.GlobalTrace("case: \"tools\"")
-		return ToolNode(f.infra.Orchestrator, f.infra.Cwd, toolNamesFromConfig(config["tools"])), nil
+		return ToolNodeWithFileState(f.infra.Orchestrator, f.infra.Cwd, f.infra.FileState, toolNamesFromConfig(config["tools"])), nil
 
 	case "eval":
 		observe.GlobalTrace("case: \"eval\"")

@@ -2560,6 +2560,23 @@ What not to do:
 
 Do not make `ToolNode` write its private cache directly to session files. That would create a second file-state persistence writer. The fix is to route lifecycle tool effects through the existing runtime/session file-state owner.
 
+Status:
+
+Resolved in current worktree. Lifecycle bridge tool nodes can now consume the runtime-owned file-state cache through `bridge.Infra`, and generated lifecycle graphs are wired to the active engine/tool snapshot cache instead of always creating a private cache. The session persistence boundary remains unchanged: `makeSessionSaveClose` continues to persist `d.Engine.FileStateRecords()`.
+
+Source evidence:
+
+- `internal/lifecycle/bridge/factory.go`: `Infra` now carries an optional `FileState` cache and the tools-node factory uses `ToolNodeWithFileState`.
+- `internal/lifecycle/bridge/tool_node.go`: `ToolNodeWithFileState` records file effects in the caller-owned cache; the existing `ToolNode` wrapper remains as a compatibility fallback that creates an isolated cache only for legacy direct callers.
+- `internal/tools/lifecycle/lifecycle.go`: `LifecycleRun` obtains the active file-state cache via `tool.FileStateCacheFrom(state)` and passes it through `bridge.Infra` for generated graph tool nodes.
+- `internal/tools/agent/agent.go`: agent-compiled lifecycle graphs pass `engine.FileStateCache()` through `bridge.Infra`; subagent engines already share the parent engine cache through `SetFileStateCache`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/lifecycle/bridge/factory.go internal/lifecycle/bridge/tool_node.go internal/tools/lifecycle/lifecycle.go internal/tools/agent/agent.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/lifecycle/bridge ./internal/tools/lifecycle ./internal/tools/agent ./internal/query ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "Infra\\{|FileState:|ToolNode\\(|ToolNodeWithFileState|NewFileStateCache\\(\\)|FileStateCacheFrom|ReadFileState\\(\\)|FileStateCache\\(\\)" internal/lifecycle/bridge internal/tools/lifecycle internal/tools/agent internal/query internal/cli -g'*.go'` confirmed generated lifecycle tool nodes receive the runtime cache and only the compatibility `ToolNode` wrapper falls back to a private cache.
+
 ## 53. `/clear` Starts A New Conversation Without Resetting Engine-Owned Session State
 
 Severity: medium

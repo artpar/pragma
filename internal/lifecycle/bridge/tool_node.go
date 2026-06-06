@@ -39,7 +39,19 @@ func (s simpleSnapshot) ReadFileState() *tool.FileStateCache {
 func ToolNode(orch *tool.Orchestrator, cwd string, allowedToolNames ...[]string) lifecycle.NodeFunc {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	fileState := tool.NewFileStateCache()
+	observe.GlobalTrace("return: ToolNodeWithFileState(orch, cwd, tool.NewFileStateCache(), allowedToolNames...)")
+	return ToolNodeWithFileState(orch, cwd, tool.NewFileStateCache(), allowedToolNames...)
+}
+
+// ToolNodeWithFileState returns a NodeFunc that records file effects in the
+// caller-owned file-state cache.
+func ToolNodeWithFileState(orch *tool.Orchestrator, cwd string, fileState *tool.FileStateCache, allowedToolNames ...[]string) lifecycle.NodeFunc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if fileState == nil {
+		observe.GlobalTrace("if: fileState == nil")
+		fileState = tool.NewFileStateCache()
+	}
 	var allowedTools map[string]struct{}
 	if len(allowedToolNames) > 0 && len(allowedToolNames[0]) > 0 {
 		allowedTools = make(map[string]struct{}, len(allowedToolNames[0]))

@@ -780,6 +780,7 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 		Registry:     engine.Registry(),
 		Bus:          t.Bus,
 		Cwd:          snap.CWD,
+		FileState:    engine.FileStateCache(),
 	}
 	observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, structure, infra)")
 	return bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, structure, infra)
