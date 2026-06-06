@@ -1144,6 +1144,23 @@ What not to do:
 
 Do not add another `endSessionLifecycle` call in web or TUI. That would preserve presentation ownership of session lifecycle ordering.
 
+Status:
+
+Resolved in current worktree. Interactive session shutdown now goes through a single runtime-owned close transition. The exported UI callback `InteractiveRuntime.CloseSession` delegates to `closeCurrentSession`, and the same method is reused by `/clear`, resume replacement, and deferred runtime cleanup. Web and TUI still call only the runtime callback; they do not own `SessionEnd` hook ordering.
+
+Source evidence:
+
+- `internal/cli/run.go`: `InteractiveRuntime.closeCurrentSession` saves pending session state, runs `endSessionLifecycle`, then closes the session writer through `sessionClose`, preserving `SessionEnd` before `SessionEnded`.
+- `internal/cli/run.go`: `InteractiveRuntime.CloseSession` now calls `closeCurrentSession(context.Background())` instead of directly calling `sessionClose`.
+- `internal/cli/run.go`: `closeCurrentSessionAfterClear`, `InteractiveRuntime.Resume`, and `InteractiveRuntime.Cleanup` now reuse `closeCurrentSession`, so clear, resume, UI shutdown, and deferred cleanup share the same close ordering.
+- `internal/web/web.go` and `internal/tui/handlers.go`: presentation code continues to call only the runtime-provided close callback; no new presentation-owned `endSessionLifecycle` call was added.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/web ./internal/tui ./cmd/pragma`.
+- Ownership scan: `rg -n "CloseSession\\(|closeCurrentSession\\(|closeCurrentSessionAfterClear|endSessionLifecycle\\(|sessionClose\\(\\)|sessionSave\\(\\)" internal/cli/run.go internal/web/web.go internal/tui/handlers.go -g'*.go'` showed web/TUI still call only the callback, while interactive runtime paths route through `closeCurrentSession`; the remaining direct `endSessionLifecycle` hit is the separate non-interactive command runner.
+
 ## 25. Model And Provider Switches Leave Compaction Runtime Bound To Old State
 
 Severity: high

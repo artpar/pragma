@@ -292,16 +292,12 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput strin
 }
 
 func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context) error {
-	endSessionLifecycle(ctx, rt.Deps)
-	if rt.sessionClose != nil {
-		if err := rt.sessionClose(); err != nil {
-			return err
-		}
+	if err := rt.closeCurrentSession(ctx); err != nil {
+		return err
 	}
 	rt.Deps.SessionWriter = nil
 	rt.Deps.SessionHeader = session.HeaderData{}
 	rt.Deps.SessionLastIdx = 0
-	rt.Deps.SessionStarted = false
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
 	return nil
@@ -414,12 +410,9 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	if rt.sessionClose != nil {
-		endSessionLifecycle(context.Background(), rt.Deps)
-		if err := rt.sessionClose(); err != nil {
-			w.Close()
-			return err
-		}
+	if err := rt.closeCurrentSession(context.Background()); err != nil {
+		w.Close()
+		return err
 	}
 	rt.Deps.SessionWriter = w
 	rt.Deps.SessionLastIdx = len(sess.Conversation.Messages)
@@ -549,8 +542,23 @@ func (rt *InteractiveRuntime) applyResumeProvider(binding resumeProviderBinding)
 }
 
 func (rt *InteractiveRuntime) CloseSession() error {
+	return rt.closeCurrentSession(context.Background())
+}
+
+func (rt *InteractiveRuntime) closeCurrentSession(ctx context.Context) error {
+	if rt == nil || rt.Deps == nil {
+		return nil
+	}
+	if rt.sessionSave != nil {
+		if err := rt.sessionSave(); err != nil {
+			return err
+		}
+	}
+	endSessionLifecycle(ctx, rt.Deps)
 	if rt.sessionClose != nil {
-		return rt.sessionClose()
+		if err := rt.sessionClose(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -646,12 +654,12 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 		PromptHistory: promptHistory,
 		sessionSave:   sessionSaveFn,
 		sessionClose:  sessionCloseFn,
-		Cleanup: func(ctx context.Context) {
-			endSessionLifecycle(ctx, d)
-			if d.Cleanup != nil {
-				d.Cleanup()
-			}
-		},
+	}
+	rt.Cleanup = func(ctx context.Context) {
+		_ = rt.closeCurrentSession(ctx)
+		if d.Cleanup != nil {
+			d.Cleanup()
+		}
 	}
 	observe.GlobalTrace("return: rt, nil")
 	return rt, nil
