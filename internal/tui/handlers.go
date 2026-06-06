@@ -125,6 +125,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	case interactive.AcceptedPromptEvent:
 		observe.GlobalTrace("typecase: interactive.AcceptedPromptEvent")
 		m.input.remember(ev.Prompt)
+		m.renderAcceptedPrompt(ev.Prompt)
 		return m, waitForEvent(m.eventCh)
 	case interactive.SlashResultEvent:
 		observe.GlobalTrace("typecase: interactive.SlashResultEvent")
@@ -732,17 +733,6 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	userMsg := model.Message{
-		ID:   model.NewUUID(),
-		Role: model.RoleUser,
-		Content: []model.ContentPart{
-			model.TextPart{Text: text},
-		},
-	}
-	m.outputSegs = appendText(m.outputSegs, render.RenderMessage(userMsg, m.mdRenderer))
-	m.viewport.SetContent(m.viewportContent())
-	m.viewport.GotoBottom()
-
 	m.streaming = true
 	m.input.SetStreaming(true)
 	m.toolbar.SetStatus("streaming...")
@@ -754,6 +744,19 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
+}
+
+func (m *Model) renderAcceptedPrompt(text string) {
+	userMsg := model.Message{
+		ID:   model.NewUUID(),
+		Role: model.RoleUser,
+		Content: []model.ContentPart{
+			model.TextPart{Text: text},
+		},
+	}
+	m.outputSegs = appendText(m.outputSegs, render.RenderMessage(userMsg, m.mdRenderer))
+	m.viewport.SetContent(m.viewportContent())
+	m.viewport.GotoBottom()
 }
 
 // finishTurn resets streaming state. If a message was queued during streaming,

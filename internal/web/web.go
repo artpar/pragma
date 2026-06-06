@@ -641,7 +641,6 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 			s.mu.Unlock()
 			s.hub.publish("run_idle", nil)
 		}()
-		s.hub.publish("user_prompt", rawRequest)
 		events := s.cfg.RunInput(ctx, input)
 		for ev := range events {
 			switch e := ev.(type) {
@@ -1342,7 +1341,7 @@ function eventCategory(envelope){
 
 function eventDisplayTitle(envelope){
   const data = envelope.data || {};
-  if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt' || envelope.type === 'prompt_accepted') return 'You';
+  if(envelope.type === 'prompt_accepted') return 'You';
   if(envelope.type === 'permission_request') return 'Permission needed';
   if(envelope.type === 'permission_response' || envelope.type === 'permission_response_submitted') return 'Permission answered';
   if(envelope.type === 'ask_request') return 'Question';
@@ -1380,7 +1379,7 @@ function eventDisplayMeta(envelope){
 
 function eventPreview(envelope){
   const data = envelope.data || {};
-  if(envelope.type === 'prompt_submitted' || envelope.type === 'user_prompt' || envelope.type === 'prompt_accepted') return compactText(data.prompt || data.Prompt || '');
+  if(envelope.type === 'prompt_accepted') return compactText(data.prompt || data.Prompt || '');
   if(envelope.type === 'text' || envelope.type === 'thinking') return compactText(data.text || '');
   if(envelope.type === 'tool_call') return compactText(data.input || '');
   if(envelope.type === 'tool_result') return compactText(data.display || data.content || '');
@@ -2392,7 +2391,6 @@ document.getElementById('promptForm').onsubmit = async event => {
   promptEl.value = '';
   setRunning(true);
   const requestBody = {prompt};
-  appendEnvelope({sequence:'local', received_at:new Date().toISOString(), type:'prompt_submitted', data_type:'browser.promptRequest', data:requestBody});
   try{
     const response = await fetch('/api/prompt', {
       method:'POST',

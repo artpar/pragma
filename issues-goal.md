@@ -1951,6 +1951,24 @@ What not to do:
 
 Do not add a UI-side filter that hides the later `prompt_accepted` event or suppresses blocked-hook errors. That preserves the incorrect ownership by making the presentation layer guess which prompts count instead of using the runtime acceptance event.
 
+Status:
+
+Resolved in current worktree. `AcceptedPromptEvent` is now the single source of visible accepted prompt state for interactive surfaces. TUI still starts the runtime immediately, but it renders and remembers the user prompt only after runtime acceptance. Web no longer appends or broadcasts pre-runtime prompt events into the event log; it renders user turns from `prompt_accepted`.
+
+Source evidence:
+
+- `internal/tui/handlers.go`: `submitPrompt` no longer creates and renders a `model.RoleUser` message before calling `runInput`.
+- `internal/tui/handlers.go`: `AcceptedPromptEvent` now calls `renderAcceptedPrompt`, which renders the user message and records input history after runtime acceptance.
+- `internal/web/web.go`: removed the server-side `user_prompt` broadcast before reading the runtime event stream.
+- `internal/web/web.go`: removed the browser-side local `prompt_submitted` event-log append before `/api/prompt` returns.
+- `internal/web/web.go`: active prompt titles and compact text now treat only `prompt_accepted` as the user prompt event.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/tui/handlers.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/tui ./internal/web ./internal/interactive ./internal/cli ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "AcceptedPromptEvent|renderAcceptedPrompt|prompt_accepted|prompt_submitted|user_prompt|RoleUser|runInput\\(|appendEnvelope|hub\\.publish\\(\\\"user_prompt\\\"|input\\.remember|submitPrompt|streaming = true" internal/tui/handlers.go internal/web/web.go internal/cli/run.go internal/interactive/event.go -g'*.go'` confirmed prompt rendering/history now flows from `AcceptedPromptEvent`.
+
 ## 41. UserPromptSubmit Hooks Only Gate Interactive Runtime Prompts
 
 Severity: high
