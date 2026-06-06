@@ -24,6 +24,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
@@ -46,6 +47,7 @@ type Config struct {
 	Workspace      string
 	Version        string
 	TaskReg        *task.Registry
+	SessionStore   *session.Store
 	SessionStart   time.Time
 	McpServerNames []string
 	PromptHistory  []string
@@ -804,16 +806,65 @@ func (s *server) handleAsk(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleSessions(w http.ResponseWriter, r *http.Request) {
-	candidates, err := slash.BrowseResumeCandidates(s.cfg.SlashDeps)
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	store := s.cfg.SessionStore
+	if store == nil {
+		var err error
+		store, err = session.NewStore()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	summaries, err := store.List()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if candidates.Candidates == nil {
+	if summaries == nil {
 		writeJSON(w, []interface{}{})
 		return
 	}
-	writeJSON(w, candidates.Candidates)
+	writeJSON(w, webSessionSummaries(summaries, s.cfg.Workspace))
+}
+
+type webSessionSummary struct {
+	ID               string    `json:"id"`
+	Summary          string    `json:"summary"`
+	Model            string    `json:"model"`
+	Provider         string    `json:"provider"`
+	WorkDir          string    `json:"work_dir"`
+	TurnCount        int       `json:"turn_count"`
+	CostUSD          float64   `json:"cost_usd"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	InCurrentWorkDir bool      `json:"in_current_work_dir"`
+}
+
+func webSessionSummaries(summaries []session.SessionSummary, workspace string) []webSessionSummary {
+	out := make([]webSessionSummary, 0, len(summaries))
+	cwd := filepath.Clean(strings.TrimSpace(workspace))
+	for _, summary := range summaries {
+		row := webSessionSummary{
+			ID:        summary.ID,
+			Summary:   summary.Summary,
+			Model:     summary.Model,
+			Provider:  summary.Provider,
+			WorkDir:   summary.WorkDir,
+			TurnCount: summary.TurnCount,
+			CostUSD:   summary.CostUSD,
+			CreatedAt: summary.CreatedAt,
+			UpdatedAt: summary.UpdatedAt,
+		}
+		if cwd != "" && filepath.Clean(summary.WorkDir) == cwd {
+			row.InCurrentWorkDir = true
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 func (s *server) handleResume(w http.ResponseWriter, r *http.Request) {
@@ -1927,7 +1978,9 @@ function sessionTitle(session){
 }
 
 function sessionMeta(session){
-  return [session.model, session.updated_at].filter(Boolean).join(' · ');
+  const cost = typeof session.cost_usd === 'number' && session.cost_usd > 0 ? '$' + session.cost_usd.toFixed(4) : '';
+  const scope = session.in_current_work_dir ? 'current workspace' : '';
+  return [session.model, session.provider, cost, scope, session.updated_at].filter(Boolean).join(' · ');
 }
 
 async function refreshState(){

@@ -843,6 +843,7 @@ func RunInteractive(cmd *cobra.Command) error {
 		Workspace:      rt.Deps.Cwd,
 		Version:        buildinfo.Version,
 		TaskReg:        rt.Deps.TaskReg,
+		SessionStore:   rt.SlashDeps.SessionStore,
 		SessionStart:   rt.Deps.SessionStart,
 		McpServerNames: connectedMcpNames(rt.Deps.McpManager),
 		PromptHistory:  rt.PromptHistory,

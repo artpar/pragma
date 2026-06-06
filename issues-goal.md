@@ -2304,6 +2304,24 @@ What not to do:
 
 Do not add `Model` and `Provider` fields to `slash.ResumeCandidate` just to satisfy the web sidebar. That keeps the command-layer picker type as the HTTP API and invites the next web/session metadata requirement to grow the slash command contract again.
 
+Status:
+
+Resolved in current worktree. The web session list API now reads session summaries from the session store and returns a web-owned summary DTO with model, provider, cost, timestamps, turn count, workdir, and an explicit current-workdir marker. Slash `ResumeCandidate` remains the `/resume` command picker contract and is no longer the HTTP response type for `/api/sessions`.
+
+Source evidence:
+
+- `internal/web/web.go`: `handleSessions` now handles `GET /api/sessions` through `session.Store.List` via `web.Config.SessionStore`, falling back to `session.NewStore` only when no store was supplied.
+- `internal/web/web.go`: added `webSessionSummary` and `webSessionSummaries`, preserving all session-owned metadata needed by the browser and marking `InCurrentWorkDir` without filtering away other sessions.
+- `internal/cli/run.go`: `RunInteractive` passes the runtime session store into `web.Config`, so web does not reach through slash deps for browsing.
+- `internal/web/web.go`: browser `sessionMeta` now renders `model`, `provider`, `cost_usd`, `in_current_work_dir`, and `updated_at` from the web session summary contract.
+- `internal/slash/resume_cmd.go`: `BrowseResumeCandidates` remains unchanged and slash-owned; web no longer calls it from `handleSessions`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/web/web.go internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/web ./internal/cli ./internal/session ./internal/slash ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "handleSessions|webSessionSummary|webSessionSummaries|SessionStore|BrowseResumeCandidates|ResumeCandidate|sessionTitle|sessionMeta|openSession|in_current_work_dir|cost_usd|Store\\.List\\(" internal/web/web.go internal/cli/run.go internal/session internal/slash -g'*.go'` confirmed web browsing is session-store backed and slash resume candidates remain only in slash command code.
+
 ## 48. Web Runtime State Freezes Setup-Time Model And Provider
 
 Severity: medium
