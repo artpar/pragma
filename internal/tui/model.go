@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -35,7 +34,6 @@ type Config struct {
 	Provider       string
 	SlashCmds      *slash.Registry
 	SlashDeps      slash.Deps
-	HookMgr        *hook.Manager         // nil if no hooks configured
 	TokenMonitor   *observe.TokenMonitor // nil if no token monitoring
 	Metrics        *observe.Metrics      // always non-nil (created in deps.go)
 	Workspace      string                // full workspace directory path (run.go passes d.Cwd)
@@ -197,7 +195,6 @@ type Model struct {
 	costTracker    *model.CostTracker
 	slashCmds      *slash.Registry
 	slashDeps      slash.Deps
-	hookMgr        *hook.Manager
 	tokenMonitor   *observe.TokenMonitor
 	metrics        *observe.Metrics
 	version        string   // build version for welcome display
@@ -289,7 +286,6 @@ func New(cfg Config) Model {
 		costTracker:     cfg.CostTracker,
 		slashCmds:       cfg.SlashCmds,
 		slashDeps:       cfg.SlashDeps,
-		hookMgr:         cfg.HookMgr,
 		tokenMonitor:    cfg.TokenMonitor,
 		metrics:         cfg.Metrics,
 		version:         cfg.Version,

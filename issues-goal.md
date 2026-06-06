@@ -2000,6 +2000,25 @@ What not to do:
 
 Do not copy the interactive hook block into `RunNonInteractive`, `RunBackground`, and `RunPromptCommand` separately. That would preserve entrypoint-specific prompt gates and keep future prompt lifecycle changes duplicated across modes.
 
+Status:
+
+Resolved in current worktree. Prompt submission policy is now owned by a shared CLI runtime gate instead of the interactive adapter or TUI presentation. Interactive, slash-injected, orchestration, non-interactive, background child, and prompt-type slash subcommand prompts all pass through `acceptPromptSubmission` before session start or engine/orchestration execution.
+
+Source evidence:
+
+- `internal/cli/run.go`: added `acceptPromptSubmission`, the single runtime owner for `hook.UserPromptSubmit`; it executes the hook with `HookInput.PromptText`, returns a blocked error on `AggregatedResult.Blocked`, and returns hook context for accepted prompts.
+- `internal/cli/run.go`: `InteractiveRuntime.RunInput` now calls `acceptPromptSubmission` instead of owning `UserPromptSubmit` directly.
+- `internal/cli/run.go`: slash-injected prompts and `/orchestrate` task prompts are gated with `acceptPromptSubmission` before `runEngine` or `runOrchestration`.
+- `internal/cli/run.go`: `runNonInteractive` gates the final resolved prompt with `acceptPromptSubmission` before `startSessionForCurrentConversation` and appends accepted `UserPromptSubmit` context before `engine.Run`.
+- `internal/cli/subcommands.go`: prompt-type slash subcommands still feed their final `InjectPrompt` through `runNonInteractive`, so they inherit the shared prompt gate.
+- `internal/tui/handlers.go` and `internal/tui/model.go`: removed the TUI-local fallback hook check and hook-manager field, leaving presentation dependent on the runtime `RunInput` boundary.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/run.go internal/tui/handlers.go internal/tui/model.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/tui ./internal/web ./internal/interactive ./internal/hook ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "acceptPromptSubmission|promptBlockedError|UserPromptSubmit|HookMgr|hookMgr|AcceptedPromptEvent|AppendHookContext\\(string\\(hook\\.UserPromptSubmit\\)|appendHookContext\\(hook\\.UserPromptSubmit|RunPromptCommand|runNonInteractive|RunBackground|RunNonInteractive|HookInput\\{[^}]*PromptText|HookMgr.Execute\\(.*UserPromptSubmit" internal/cli internal/tui internal/web internal/interactive -g'*.go'` confirmed `UserPromptSubmit` execution is centralized in `acceptPromptSubmission`, with TUI/web only consuming runtime events.
+
 ## 42. Resumed Interactive Sessions Fire SessionStart Before Any Engine Turn Can Consume Hook Context
 
 Severity: medium

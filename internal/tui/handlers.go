@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -717,21 +716,6 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-
-	if m.hookMgr != nil && m.runInput == nil {
-		observe.GlobalTrace("if: m.hookMgr != nil")
-		hookResult := m.hookMgr.Execute(m.ctx, hook.UserPromptSubmit, hook.HookInput{
-			PromptText: text,
-		})
-		if hookResult.Blocked {
-			observe.GlobalTrace("if: hookResult.Blocked")
-			m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Blocked: "+hookResult.BlockMsg)+"\n")
-			m.viewport.SetContent(m.viewportContent())
-			m.viewport.GotoBottom()
-			observe.GlobalTrace("return: m, nil")
-			return m, nil
-		}
-	}
 
 	m.streaming = true
 	m.input.SetStreaming(true)

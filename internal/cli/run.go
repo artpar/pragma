@@ -230,15 +230,10 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 	ch := make(chan interactive.Event, 16)
 	go func() {
 		defer close(ch)
-		var promptHookResult hook.AggregatedResult
-		if rt.Deps.HookMgr != nil {
-			promptHookResult = rt.Deps.HookMgr.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{
-				PromptText: input,
-			})
-			if promptHookResult.Blocked {
-				ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", promptHookResult.BlockMsg)}}
-				return
-			}
+		promptHookResult, err := acceptPromptSubmission(ctx, rt.Deps, input)
+		if err != nil {
+			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+			return
 		}
 		if name, args, ok := slash.Parse(input); ok && rt.SlashCmds != nil {
 			ch <- interactive.AcceptedPromptEvent{Prompt: input}
@@ -293,12 +288,43 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput strin
 		return
 	}
 	if result.Orchestrate != nil {
-		rt.runOrchestration(ctx, *result.Orchestrate, submittedInput, promptHookResult, ch)
+		orchestrationHookResult, err := acceptPromptSubmission(ctx, rt.Deps, result.Orchestrate.Prompt)
+		if err != nil {
+			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+			return
+		}
+		rt.runOrchestration(ctx, *result.Orchestrate, submittedInput, orchestrationHookResult, ch)
 		return
 	}
 	if result.InjectPrompt != "" {
-		rt.runEngine(ctx, result.InjectPrompt, submittedInput, promptHookResult, ch)
+		injectedHookResult, err := acceptPromptSubmission(ctx, rt.Deps, result.InjectPrompt)
+		if err != nil {
+			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+			return
+		}
+		rt.runEngine(ctx, result.InjectPrompt, submittedInput, injectedHookResult, ch)
 	}
+}
+
+func acceptPromptSubmission(ctx context.Context, d *Deps, prompt string) (hook.AggregatedResult, error) {
+	if strings.TrimSpace(prompt) == "" || d == nil || d.HookMgr == nil {
+		return hook.AggregatedResult{}, nil
+	}
+	result := d.HookMgr.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{
+		PromptText: prompt,
+	})
+	if result.Blocked {
+		return result, promptBlockedError(result)
+	}
+	return result, nil
+}
+
+func promptBlockedError(result hook.AggregatedResult) error {
+	msg := strings.TrimSpace(result.BlockMsg)
+	if msg == "" {
+		msg = "prompt blocked by hook"
+	}
+	return fmt.Errorf("blocked by hook: %s", msg)
 }
 
 func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context) error {
@@ -750,7 +776,6 @@ func RunTUIInteractive(cmd *cobra.Command) error {
 		Provider:       rt.Deps.Cfg.Provider,
 		SlashCmds:      rt.SlashCmds,
 		SlashDeps:      rt.SlashDeps,
-		HookMgr:        rt.Deps.HookMgr,
 		TokenMonitor:   rt.Deps.TokenMonitor,
 		Metrics:        rt.Deps.Metrics,
 		Workspace:      rt.Deps.Cwd,
@@ -917,12 +942,19 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 	engine.SetSessionCheckpoint(sessionSaveFn)
 
 	ctx := cmd.Context()
+	promptHookResult, err := acceptPromptSubmission(ctx, d, prompt)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(prompt) != "" {
 		sessionHookResult, err := startSessionForCurrentConversation(ctx, d)
 		if err != nil {
 			return err
 		}
 		if err := engine.AppendHookContext(string(hook.SessionStart), hookContextStrings(sessionHookResult, true)); err != nil {
+			return err
+		}
+		if err := engine.AppendHookContext(string(hook.UserPromptSubmit), hookContextStrings(promptHookResult, false)); err != nil {
 			return err
 		}
 	}
