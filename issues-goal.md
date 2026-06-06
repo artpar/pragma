@@ -2764,6 +2764,24 @@ What not to do:
 
 Do not add more prompt wording that tells the model to call `PatchHandoffState` first. The runtime already depends on ordering for correctness, so the order must be enforced or executed by the runtime owner, not repaired by instructions.
 
+Status:
+
+Resolved in current worktree. State-handoff pseudo-tools are now sequenced by the query runtime in the same order as the model's tool-call batch. Real tools are still executed by the orchestrator, but the query loop flushes each pending real-tool segment before executing a following handoff pseudo-tool, so side effects no longer run ahead of their transcript order.
+
+Source evidence:
+
+- `internal/query/loop.go`: `executeToolBatch` now accumulates contiguous real-tool calls and flushes them through `executeRealToolBatch` before each `PatchHandoffState` or `CertifyFact` call.
+- `internal/query/loop.go`: `executeRealToolBatch` owns the orchestrator/progress-drain path previously embedded in `executeToolBatch`, preserving real-tool orchestration while removing the pseudo-tool pre-pass.
+- `internal/query/loop.go`: `emitProgressEvent` avoids blocking direct callers with nil progress channels while keeping runtime progress events unchanged.
+- `internal/query/loop.go`: `executeCertifyFact` passes already-executed current-batch results to `certifyFactWithResults`.
+- `internal/query/loop.go`: `certifyToolResultContains` now checks current-batch tool results before persisted conversation history, so a `CertifyFact` after a real tool in the same batch can validate that result according to runtime order.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/query/loop.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/query ./internal/tool ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "executeToolBatch|executeRealToolBatch|executeCertifyFact\\(|certifyFact\\(|certifyFactWithResults|certifyToolResultContains\\(|certifiedFactFromToolResults|toolResultsFromContent|PatchHandoffState|CertifyFact|Orchestrator\\.Execute|recordHandoffToolFailures|realIndexes|realCalls" internal/query internal/tool internal/model -g'*.go'` confirmed real execution remains in the orchestrator and handoff pseudo-tool sequencing is owned by the query runtime.
+
 ## 57. Tool Supplements Lose Their Tool-Call Association At The Batch Boundary
 
 Severity: medium

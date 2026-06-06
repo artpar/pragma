@@ -861,17 +861,34 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	defer observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "exit")
 	results := make([]model.ToolResultPart, len(calls))
 	fileEffects := make([][]tool.FileEffect, len(calls))
-	realCalls := make([]model.ToolCallPart, 0, len(calls))
-	realIndexes := make([]int, 0, len(calls))
+	var supplements []model.ContentPart
+	var pendingRealCalls []model.ToolCallPart
+	var pendingRealIndexes []int
+	flushRealCalls := func() {
+		if len(pendingRealCalls) == 0 {
+			return
+		}
+		execResult := e.executeRealToolBatch(ctx, pendingRealCalls, snap, ch)
+		for i, r := range execResult.Results {
+			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "range execResult.Results")
+			idx := pendingRealIndexes[i]
+			results[idx] = r
+			fileEffects[idx] = append([]tool.FileEffect(nil), execResult.FileEffects[i]...)
+		}
+		supplements = append(supplements, execResult.Supplements...)
+		pendingRealCalls = nil
+		pendingRealIndexes = nil
+	}
 
 	for i, call := range calls {
 		observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "range calls")
 		if call.Name != "PatchHandoffState" && call.Name != "CertifyFact" {
 			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "if: call.Name != \"PatchHandoffState\" && call.Name != \"CertifyFact\"")
-			realCalls = append(realCalls, call)
-			realIndexes = append(realIndexes, i)
+			pendingRealCalls = append(pendingRealCalls, call)
+			pendingRealIndexes = append(pendingRealIndexes, i)
 			continue
 		}
+		flushRealCalls()
 		if !e.isStateHandoffMode() {
 			results[i] = model.ToolResultPart{
 				ToolCallID: call.ID,
@@ -889,56 +906,14 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 			results[i] = result
 		} else {
 			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "else: call.Name == \"PatchHandoffState\"")
-			result, err := e.executeCertifyFact(call)
+			result, err := e.executeCertifyFact(call, results)
 			if err != nil {
 				return tool.ExecuteResult{}, err
 			}
 			results[i] = result
 		}
 	}
-
-	var supplements []model.ContentPart
-	if len(realCalls) > 0 {
-		observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "if: len(realCalls) > 0")
-		progressCh := make(chan tool.ProgressEvent, 16)
-		wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh, fileState: e.fileState}
-
-		type execDone struct {
-			result tool.ExecuteResult
-		}
-		doneCh := make(chan execDone, 1)
-		go func() {
-			doneCh <- execDone{result: e.orchestrator.Execute(ctx, realCalls, wrappedSnap)}
-		}()
-
-		var execResult tool.ExecuteResult
-	drainLoop:
-		for {
-			select {
-			case pe := <-progressCh:
-				ch <- progressToLoopEvent(pe)
-			case d := <-doneCh:
-				execResult = d.result
-
-				for {
-					select {
-					case pe := <-progressCh:
-						ch <- progressToLoopEvent(pe)
-					default:
-						break drainLoop
-					}
-				}
-			}
-		}
-
-		for i, r := range execResult.Results {
-			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "range execResult.Results")
-			idx := realIndexes[i]
-			results[idx] = r
-			fileEffects[idx] = append([]tool.FileEffect(nil), execResult.FileEffects[i]...)
-		}
-		supplements = execResult.Supplements
-	}
+	flushRealCalls()
 
 	e.recordHandoffToolFailures(calls, results)
 	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "return: tool.ExecuteResult{\n\tResults:\tresults,\n\tSupplements:\tsup...")
@@ -948,6 +923,49 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		Supplements: supplements,
 		FileEffects: fileEffects,
 	}, nil
+}
+
+func (e *Engine) executeRealToolBatch(ctx context.Context, calls []model.ToolCallPart, snap app.AppState, ch chan<- LoopEvent) tool.ExecuteResult {
+	observe.TraceCtx(ctx, "query", "Engine.executeRealToolBatch", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.executeRealToolBatch", "exit")
+	progressCh := make(chan tool.ProgressEvent, 16)
+	wrappedSnap := &progressSnapshot{StateSnapshot: snap, progressCh: progressCh, fileState: e.fileState}
+
+	type execDone struct {
+		result tool.ExecuteResult
+	}
+	doneCh := make(chan execDone, 1)
+	go func() {
+		doneCh <- execDone{result: e.orchestrator.Execute(ctx, calls, wrappedSnap)}
+	}()
+
+	var execResult tool.ExecuteResult
+drainLoop:
+	for {
+		select {
+		case pe := <-progressCh:
+			emitProgressEvent(ch, pe)
+		case d := <-doneCh:
+			execResult = d.result
+
+			for {
+				select {
+				case pe := <-progressCh:
+					emitProgressEvent(ch, pe)
+				default:
+					break drainLoop
+				}
+			}
+		}
+	}
+	return execResult
+}
+
+func emitProgressEvent(ch chan<- LoopEvent, pe tool.ProgressEvent) {
+	if ch == nil {
+		return
+	}
+	ch <- progressToLoopEvent(pe)
 }
 
 func (e *Engine) executeHandoffPatch(call model.ToolCallPart) (model.ToolResultPart, error) {
@@ -999,7 +1017,7 @@ type certifyFactSelector struct {
 	Equals string `json:"equals,omitempty"`
 }
 
-func (e *Engine) executeCertifyFact(call model.ToolCallPart) (model.ToolResultPart, error) {
+func (e *Engine) executeCertifyFact(call model.ToolCallPart, currentBatch []model.ToolResultPart) (model.ToolResultPart, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var in certifyFactInput
@@ -1013,7 +1031,7 @@ func (e *Engine) executeCertifyFact(call model.ToolCallPart) (model.ToolResultPa
 		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: id is requi...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: id is required", IsError: true}, nil
 	}
-	fact, err := e.certifyFact(in)
+	fact, err := e.certifyFactWithResults(in, currentBatch)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: \" + err.Err...")
@@ -1036,6 +1054,12 @@ func (e *Engine) executeCertifyFact(call model.ToolCallPart) (model.ToolResultPa
 func (e *Engine) certifyFact(in certifyFactInput) (model.CertifiedFact, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	return e.certifyFactWithResults(in, nil)
+}
+
+func (e *Engine) certifyFactWithResults(in certifyFactInput, currentBatch []model.ToolResultPart) (model.CertifiedFact, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch strings.ToLower(strings.TrimSpace(in.Kind)) {
 	case "file_contains":
 		observe.GlobalTrace("case: \"file_contains\"")
@@ -1045,7 +1069,7 @@ func (e *Engine) certifyFact(in certifyFactInput) (model.CertifiedFact, error) {
 		return e.certifyJSONShape(in)
 	case "tool_result_contains":
 		observe.GlobalTrace("case: \"tool_result_contains\"")
-		return e.certifyToolResultContains(in)
+		return e.certifyToolResultContains(in, currentBatch)
 	default:
 		observe.GlobalTrace("default")
 		return model.CertifiedFact{}, fmt.Errorf("unsupported kind %q; supported kinds: file_contains, json_shape, jsonl_shape, tool_result_contains", in.Kind)
@@ -1214,7 +1238,7 @@ func (e *Engine) certifyJSONShape(in certifyFactInput) (model.CertifiedFact, err
 	}, nil
 }
 
-func (e *Engine) certifyToolResultContains(in certifyFactInput) (model.CertifiedFact, error) {
+func (e *Engine) certifyToolResultContains(in certifyFactInput, currentBatch []model.ToolResultPart) (model.CertifiedFact, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(in.ToolCallID) == "" {
@@ -1227,36 +1251,59 @@ func (e *Engine) certifyToolResultContains(in certifyFactInput) (model.Certified
 		observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"contains is required\")")
 		return model.CertifiedFact{}, fmt.Errorf("contains is required")
 	}
+	if fact, ok, err := certifiedFactFromToolResults(in, currentBatch); ok || err != nil {
+		if err != nil {
+			return model.CertifiedFact{}, err
+		}
+		return fact, nil
+	}
 	snap := e.store.Snapshot()
 	for _, msg := range snap.Conversation.Messages {
 		observe.GlobalTrace("range snap.Conversation.Messages")
-		for _, part := range msg.Content {
-			observe.GlobalTrace("range msg.Content")
-			result, ok := part.(model.ToolResultPart)
-			if !ok || result.ToolCallID != in.ToolCallID {
-				observe.GlobalTrace("if: !ok || result.ToolCallID != in.ToolCallID")
-				continue
+		results := toolResultsFromContent(msg.Content)
+		if fact, ok, err := certifiedFactFromToolResults(in, results); ok || err != nil {
+			if err != nil {
+				return model.CertifiedFact{}, err
 			}
-			if !strings.Contains(result.Content, in.Contains) {
-				observe.GlobalTrace("if: !strings.Contains(result.Content, in.Contains)")
-				observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"tool result %s does not contain requested ...")
-				return model.CertifiedFact{}, fmt.Errorf("tool result %s does not contain requested text", in.ToolCallID)
-			}
-			observe.GlobalTrace("return: model.CertifiedFact{\n\tID:\t\tin.ID,\n\tKind:\t\t\"tool_result_contains\",\n\tSource:\t\t\"...")
-			return model.CertifiedFact{
-				ID:         in.ID,
-				Kind:       "tool_result_contains",
-				Source:     "tool_result:" + in.ToolCallID,
-				Claim:      in.Claim,
-				Evidence:   in.Contains,
-				ToolCallID: in.ToolCallID,
-				SampleHash: sha256Hex([]byte(result.Content)),
-				Verified:   true,
-			}, nil
+			return fact, nil
 		}
 	}
 	observe.GlobalTrace("return: model.CertifiedFact{}, fmt.Errorf(\"tool result %s not found\", in.ToolCallID)")
 	return model.CertifiedFact{}, fmt.Errorf("tool result %s not found", in.ToolCallID)
+}
+
+func toolResultsFromContent(parts []model.ContentPart) []model.ToolResultPart {
+	results := make([]model.ToolResultPart, 0, len(parts))
+	for _, part := range parts {
+		result, ok := part.(model.ToolResultPart)
+		if !ok {
+			continue
+		}
+		results = append(results, result)
+	}
+	return results
+}
+
+func certifiedFactFromToolResults(in certifyFactInput, results []model.ToolResultPart) (model.CertifiedFact, bool, error) {
+	for _, result := range results {
+		if result.ToolCallID != in.ToolCallID {
+			continue
+		}
+		if !strings.Contains(result.Content, in.Contains) {
+			return model.CertifiedFact{}, true, fmt.Errorf("tool result %s does not contain requested text", in.ToolCallID)
+		}
+		return model.CertifiedFact{
+			ID:         in.ID,
+			Kind:       "tool_result_contains",
+			Source:     "tool_result:" + in.ToolCallID,
+			Claim:      in.Claim,
+			Evidence:   in.Contains,
+			ToolCallID: in.ToolCallID,
+			SampleHash: sha256Hex([]byte(result.Content)),
+			Verified:   true,
+		}, true, nil
+	}
+	return model.CertifiedFact{}, false, nil
 }
 
 func resolveCertifyPath(cwd, path string) string {
