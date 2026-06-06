@@ -3187,6 +3187,10 @@ Do not patch this by hardcoding a safer allowlist inside `ExecShellInPrompt` or 
 
 Severity: high
 
+Status: fixed in this worktree. Scheduler fire handling now has a result contract: `Scheduler.Start`/`tick` accept a `cron.FireHandler` that returns an error, and failed launches emit a cron `ErrorOccurred` event without advancing `LastFired`, `NextFire`, or deleting one-shot jobs. `RunCronDaemon` now returns `launchCronPrompt` errors to the scheduler instead of only printing them.
+
+Verification: `gofmt -w internal/cron/scheduler.go internal/cli/cron.go`; `go build ./cmd/pragma`; `go vet ./internal/cron ./internal/cli ./cmd/pragma`; `git diff --check`; ownership scan for `FireHandler|Scheduler.Start|tick|launchCronPrompt|LastFired|NextFire|fire_failed`.
+
 Concrete files/functions involved:
 
 - `internal/cron/scheduler.go`: `Scheduler.Start`, `Scheduler.tick`

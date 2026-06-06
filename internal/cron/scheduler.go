@@ -40,6 +40,8 @@ type Scheduler struct {
 	stopCh   chan struct{}
 }
 
+type FireHandler func(job *Job) error
+
 // NewScheduler creates a new Scheduler. If store is non-nil, durable jobs
 // are loaded on creation and saved on mutation.
 func NewScheduler(bus *observe.EventBus, store *Store) *Scheduler {
@@ -214,9 +216,9 @@ func (s *Scheduler) List() []*Job {
 }
 
 // Start begins the tick loop. It checks every minute for jobs whose
-// NextFire <= now and calls handler for each. Non-recurring jobs are
+// NextFire <= now and calls handler for each. Successful non-recurring jobs are
 // removed after firing. Blocks until ctx is cancelled or Stop() is called.
-func (s *Scheduler) Start(ctx context.Context, handler func(job *Job)) {
+func (s *Scheduler) Start(ctx context.Context, handler FireHandler) {
 	observe.TraceCtx(ctx, "cron", "Scheduler.Start", "enter")
 	defer observe.TraceCtx(ctx, "cron", "Scheduler.Start", "exit")
 	ticker := time.NewTicker(time.Minute)
@@ -247,7 +249,7 @@ func (s *Scheduler) Start(ctx context.Context, handler func(job *Job)) {
 	}
 }
 
-func (s *Scheduler) tick(now time.Time, handler func(job *Job)) {
+func (s *Scheduler) tick(now time.Time, handler FireHandler) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	s.mu.Lock()
@@ -264,7 +266,18 @@ func (s *Scheduler) tick(now time.Time, handler func(job *Job)) {
 
 	for _, j := range toFire {
 		observe.GlobalTrace("range toFire")
-		handler(j)
+		if err := handler(j); err != nil {
+			if s.bus != nil {
+				s.bus.Emit(observe.ErrorOccurred{
+					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", observe.NewSpanID(), ""),
+					Severity:     "warn",
+					Component:    "cron",
+					ErrorType:    "fire_failed",
+					ErrorMessage: err.Error(),
+				})
+			}
+			continue
+		}
 
 		s.mu.Lock()
 		live, ok := s.jobs[j.ID]

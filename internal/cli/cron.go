@@ -37,10 +37,12 @@ func RunCronDaemon(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Fprintln(os.Stderr, "Cron scheduler running. Press Ctrl+C to stop.")
-	scheduler.Start(cmd.Context(), func(job *cron.Job) {
+	scheduler.Start(cmd.Context(), func(job *cron.Job) error {
 		if err := launchCronPrompt(cmd.Context(), cwd, job); err != nil {
 			fmt.Fprintf(os.Stderr, "cron job %s failed to launch: %v\n", job.ID, err)
+			return err
 		}
+		return nil
 	})
 	return nil
 }
