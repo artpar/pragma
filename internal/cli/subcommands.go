@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/mcp"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/session"
@@ -96,68 +100,14 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 }
 
 // RunLocalCommand runs a local-type slash command that needs no engine.
-// Tries full SetupDeps first; falls back to lightweight config-only deps
-// if provider/API key is unavailable (e.g., for 'doctor').
 func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	d, fullErr := SetupDeps(cmd)
-	if fullErr == nil {
-		observe.GlobalTrace("if: fullErr == nil")
-		if d.Cleanup != nil {
-			observe.GlobalTrace("if: d.Cleanup != nil")
-			defer d.Cleanup()
-		}
-		d.Bus.Subscribe(d.StderrLogger)
-		ss, _ := session.NewStore()
-		sl := skill.NewLoader(d.Cwd)
-		slashDeps := slash.Deps{
-			Store:        d.Store,
-			CostTracker:  d.CostTracker,
-			Bus:          d.Bus,
-			ModelName:    d.Cfg.Model,
-			Provider:     d.Cfg.Provider,
-			Cwd:          d.Cwd,
-			SessionStore: ss,
-			SkillLoader:  sl,
-			McpStatus:    func() []slash.McpServerStatus { return mcpStatusesForSlash(d.McpManager) },
-		}
-		result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
-		if err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: fmt.Errorf(\"command /%s: %w\", slashCmd.Name, err)")
-			return fmt.Errorf("command /%s: %w", slashCmd.Name, err)
-		}
-		if result.DisplayText != "" {
-			observe.GlobalTrace("if: result.DisplayText != \"\"")
-			fmt.Println(result.DisplayText)
-		}
-		observe.GlobalTrace("return: nil")
-		return nil
+	slashDeps, err := BuildLocalSlashDeps(cmd)
+	if err != nil {
+		return err
 	}
-
-	cwd, _ := os.Getwd()
-	cfg, _ := config.Load(cwd)
-	if m, _ := cmd.Flags().GetString("model"); m != "" {
-		observe.GlobalTrace("if: m != \"\"")
-		cfg.Model = m
-	}
-	if p, _ := cmd.Flags().GetString("provider"); p != "" {
-		observe.GlobalTrace("if: p != \"\"")
-		cfg.Provider = p
-	}
-
-	ss2, _ := session.NewStore()
-	sl2 := skill.NewLoader(cwd)
-	slashDeps := slash.Deps{
-		ModelName:    cfg.Model,
-		Provider:     cfg.Provider,
-		Cwd:          cwd,
-		SessionStore: ss2,
-		SkillLoader:  sl2,
-	}
-
 	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -170,6 +120,83 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 	}
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+// BuildLocalSlashDeps constructs dependencies for TypeLocal slash commands
+// without creating providers, runtime logs, MCP clients, task registries, or
+// other prompt-runtime infrastructure.
+func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return slash.Deps{}, fmt.Errorf("get working directory: %w", err)
+	}
+	cfg, _ := config.Load(cwd)
+	creds, _ := config.LoadCredentials()
+	ApplyFlagOverrides(cmd, &cfg)
+	if cfg.Provider == "" {
+		cfg.Provider = autoDetectProvider(creds)
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "lilac"
+	}
+	if cfg.Model == "" {
+		cfg.Model = DefaultModelFor(cfg.Provider)
+	}
+	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
+
+	ss, _ := session.NewStore()
+	sl := skill.NewLoader(cwd)
+	conv := model.NewConversation(model.SystemPrompt{}, cfg.Model, cfg.Provider, cwd)
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          cwd,
+		Model:        cfg.Model,
+		Provider:     cfg.Provider,
+		MaxTokens:    cfg.MaxTokens,
+		Temperature:  cfg.Temperature,
+	})
+
+	return slash.Deps{
+		Store:        store,
+		CostTracker:  model.NewCostTracker(0),
+		ModelName:    cfg.Model,
+		Provider:     cfg.Provider,
+		Cwd:          cwd,
+		SessionStore: ss,
+		SkillLoader:  sl,
+		McpStatus:    localMcpStatuses(cwd),
+	}, nil
+}
+
+func localMcpStatuses(cwd string) func() []slash.McpServerStatus {
+	return func() []slash.McpServerStatus {
+		bus := observe.NewEventBus(16)
+		servers, err := mcp.LoadConfig(cwd, bus)
+		if err != nil {
+			return nil
+		}
+		names := make([]string, 0, len(servers))
+		for name := range servers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		statuses := make([]slash.McpServerStatus, 0, len(names))
+		for _, name := range names {
+			cfg := servers[name]
+			transport := cfg.Type
+			if transport == "" {
+				transport = "stdio"
+			}
+			statuses = append(statuses, slash.McpServerStatus{
+				Name:      name,
+				Status:    "disconnected",
+				Transport: transport,
+			})
+		}
+		return statuses
+	}
 }
 
 // parseAllowedToolSpec parses a TS-style tool spec like "Bash(git add:*)"

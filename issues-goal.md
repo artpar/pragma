@@ -716,6 +716,22 @@ What not to do:
 
 Do not patch individual commands like `doctor` or `config` to undo setup side effects. The wrong owner is `RunLocalCommand`, not the command handlers.
 
+Status:
+
+Resolved in current worktree. Local slash subcommands now use a local-command dependency constructor directly; they no longer attempt full prompt-runtime dependency setup before running local logic.
+
+Source evidence:
+
+- `internal/cli/subcommands.go`: `RunLocalCommand` calls `BuildLocalSlashDeps` and no longer calls `SetupDeps`, defers runtime cleanup, subscribes runtime loggers, or reaches provider/MCP runtime construction.
+- `internal/cli/subcommands.go`: `BuildLocalSlashDeps` builds only local command dependencies: cwd/config flag state, a lightweight state store, zero cost tracker, session store, skill loader, and static MCP status capability.
+- `internal/cli/subcommands.go`: `localMcpStatuses` reads merged MCP config and reports configured servers without creating an MCP manager, connecting clients, or starting the watchdog.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/subcommands.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/slash ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "RunLocalCommand|BuildLocalSlashDeps|SetupDeps|Cleanup|McpManager|NewRecorder|NewMCPWatchdog|ConnectAllAndRegister|task\\.NewRegistry|CreateProvider" internal/cli/subcommands.go` showed only the local command entrypoint and local dependency constructor, with no runtime setup calls.
+
 ## 16. Background And Teammate Agents Are Cancelled By Task Records, Not By Runtime Lifecycle
 
 Severity: medium
