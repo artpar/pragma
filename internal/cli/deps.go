@@ -423,6 +423,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	registry := tool.NewRegistry(bus)
 
 	mcpManager := mcp.NewManager(bus, registry)
+	mcpManager.SetRegistryToolFilter(toolPolicy.Allows)
 	if activeToolset != nil {
 		observe.GlobalTrace("if: activeToolset != nil")
 		mcpManager.SetToolFilter(activeToolset.AllowMCPTool)

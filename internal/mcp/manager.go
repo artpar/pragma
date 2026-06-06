@@ -35,6 +35,9 @@ type ServerStatusInfo struct {
 // ToolFilter decides whether a remote MCP tool should be registered.
 type ToolFilter func(serverName, toolName string) bool
 
+// RegistryToolFilter decides whether a registry-facing tool name may be exposed.
+type RegistryToolFilter func(toolName string) bool
+
 // Manager handles multiple MCP server connections.
 type Manager struct {
 	clients         map[string]*Client
@@ -43,6 +46,7 @@ type Manager struct {
 	statuses        map[string]string
 	lastErrors      map[string]string
 	toolFilter      ToolFilter
+	registryFilter  RegistryToolFilter
 	mu              sync.RWMutex
 	bus             *observe.EventBus
 	registry        *tool.Registry
@@ -101,6 +105,15 @@ func (m *Manager) SetToolFilter(filter ToolFilter) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.toolFilter = filter
+}
+
+// SetRegistryToolFilter limits MCP tools by the registry-facing tool name.
+func (m *Manager) SetRegistryToolFilter(filter RegistryToolFilter) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.registryFilter = filter
 }
 
 // ConfigureServers records MCP servers and marks them pending without opening
@@ -357,6 +370,7 @@ func (m *Manager) registerClientTools(ctx context.Context, generation uint64, na
 	}
 	delete(m.registeredTools, name)
 	filter := m.toolFilter
+	registryFilter := m.registryFilter
 
 	var registered []string
 	var registerErrors []string
@@ -367,6 +381,10 @@ func (m *Manager) registerClientTools(ctx context.Context, generation uint64, na
 			continue
 		}
 		adapter := NewMCPToolAdapter(client, info)
+		if registryFilter != nil && !registryFilter(adapter.Name()) {
+			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: registry filter rejected tool")
+			continue
+		}
 		if err := m.registry.Register(adapter); err != nil {
 			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: err != nil")
 			registerErrors = append(registerErrors, fmt.Sprintf("failed to register mcp tool %q: %v", adapter.Name(), err))
@@ -691,9 +709,19 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 	}
 	var registered []string
 	var registerErrors []string
+	filter := m.toolFilter
+	registryFilter := m.registryFilter
 	for _, info := range tools {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "range tools")
+		if filter != nil && !filter(name, info.Name) {
+			observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: filter rejected tool")
+			continue
+		}
 		adapter := NewMCPToolAdapter(client, info)
+		if registryFilter != nil && !registryFilter(adapter.Name()) {
+			observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: registry filter rejected tool")
+			continue
+		}
 		if err := m.registry.Register(adapter); err != nil {
 			observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
 			registerErrors = append(registerErrors, fmt.Sprintf("failed to register mcp tool %q after reconnect: %v", adapter.Name(), err))

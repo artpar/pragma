@@ -2964,6 +2964,10 @@ Do not patch this by adding more `ToolCallEvent` scraping to web, SDK, replay, o
 
 Severity: high
 
+Status: fixed in this worktree. `SetupDeps` now installs the CLI `ToolExposurePolicy` into the MCP manager as a registration-time registry-name filter. The MCP manager applies that shared policy after constructing the adapter name for both initial `registerClientTools` and OAuth/reconnect `ReconnectServer`, while preserving the existing toolset-level MCP filter. Built-ins and child registries still use `shouldRegisterBuiltinTool`, and fallback synthetic tools continue to use the same `ToolPolicy.Allows` check.
+
+Verification: `gofmt -w internal/cli/deps.go internal/mcp/manager.go`; `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/mcp ./internal/tool ./cmd/pragma`; `git diff --check`; ownership scan for `SetRegistryToolFilter|RegistryToolFilter|registryFilter|SetToolFilter|AllowMCPTool|ToolPolicy|toolExposurePolicyFromFlags|shouldRegisterBuiltinTool|StructuredOutput`.
+
 Concrete files/functions involved:
 
 - `internal/cli/run.go`: `BuildInteractiveRuntime`, `runNonInteractive`, `applyToolFilters`, `waitForToolsetMCP`
