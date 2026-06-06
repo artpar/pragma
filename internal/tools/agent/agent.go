@@ -259,6 +259,7 @@ func (t *Tool) invoke(ctx context.Context, in AgentInput, state tool.StateSnapsh
 	}
 
 	engine, subStore := t.EngineFactory(forkedConv, scopedTools, in.Model)
+	actualModel := subStore.Snapshot().Model
 
 	if in.Teammate {
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.Teammate")
@@ -277,7 +278,7 @@ func (t *Tool) invoke(ctx context.Context, in AgentInput, state tool.StateSnapsh
 		EventHeader: observe.NewEventHeader("SubAgentSpawned", "", observe.NewSpanID(), ""),
 		SubAgentID:  tk.ID,
 		AgentName:   subject,
-		Model:       in.Model,
+		Model:       actualModel,
 	})
 
 	// Extract progress reporter for real-time agent visibility (ADR-043).

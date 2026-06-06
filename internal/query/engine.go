@@ -148,6 +148,14 @@ func (e *Engine) RebindProvider(prov provider.Provider, modelID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	e.provider = provider.WithAccounting(prov, e.costTracker, e.bus)
+	e.SetModel(modelID)
+}
+
+// SetModel updates the engine's fallback model for execution paths that do not
+// have an AppState model override.
+func (e *Engine) SetModel(modelID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if modelID != "" {
 		e.config.Model = modelID
 	}
@@ -336,9 +344,14 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	defer observe.TraceCtx(ctx, "query", "Engine.runGraph", "exit")
 
 	snap := e.store.Snapshot()
+	resolvedModel := e.config.Model
+	if snap.Model != "" {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: snap.Model != \"\"")
+		resolvedModel = snap.Model
+	}
 	runner := bridge.NewRunner(graph, bridge.NewRunnerConfig(
 		snap.Conversation.System,
-		e.config.Model,
+		resolvedModel,
 		e.config.MaxTokens,
 		e.registry.ToolDefs(),
 		e.bus,

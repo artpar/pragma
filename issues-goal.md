@@ -1248,6 +1248,25 @@ What not to do:
 
 Do not require every Agent call to pass a `model` argument or patch the Agent prompt text to mention the active model. The execution boundary should inherit the runtime's active model by default.
 
+Status:
+
+Resolved in current worktree. Model switching now keeps the runtime model copies used by execution in sync, and subagent/graph execution resolve the active model at run time. Agent child engines inherit the active model unless the Agent input explicitly supplies a model override; lifecycle graph execution now follows the same `AppState.Model` over engine-config fallback rule used by normal foreground turns.
+
+Source evidence:
+
+- `internal/cli/tools.go`: `switchActiveModel` now updates `Deps.Cfg.Model`, `Deps.EngineCfg.Model`, and the root `query.Engine` fallback model through `Engine.SetModel`.
+- `internal/cli/tools.go`: the Agent engine factory now derives `subModel` with `activeModelForDeps`, applies explicit Agent model overrides only after that, and writes the resolved model into the forked conversation, child `AppState.Model`, and child `EngineConfig.Model`.
+- `internal/cli/tools.go`: `activeModelForDeps` resolves the current store model first, then engine config, then config defaults.
+- `internal/query/engine.go`: `Engine.SetModel` owns fallback model rebinding for execution paths without an app-state override.
+- `internal/query/engine.go`: `Engine.runGraph` now resolves `snap.Model` before falling back to `e.config.Model`, matching foreground query and pragma-loop execution behavior.
+- `internal/tools/agent/agent.go`: `SubAgentSpawned` now reports the actual resolved child model from the child store instead of the explicit input field, which is empty for inherited-model runs.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/query/engine.go internal/cli/tools.go internal/tools/agent/agent.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/query ./internal/tools/agent ./cmd/pragma`.
+- Ownership scan: `rg -n "d\\.Cfg\\.Model|d\\.EngineCfg\\.Model|e\\.config\\.Model|SetModel|activeModelForDeps|subCfg\\.Model|forkedConv\\.Model|Model:\\s+in\\.Model|actualModel|runGraph" internal/cli/tools.go internal/query/engine.go internal/tools/agent/agent.go -g'*.go'` showed subagent defaults now use `activeModelForDeps`, graph execution resolves `snap.Model`, and no subagent spawn event reports `in.Model` directly.
+
 ## 27. Orchestration FSM Transitions Depend On Prompt-Directed Files And Parsed Text
 
 Severity: high

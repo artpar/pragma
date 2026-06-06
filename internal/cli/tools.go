@@ -65,10 +65,16 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	}
 
 	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
+		subModel := activeModelForDeps(d)
+		if modelOverride != "" {
+			subModel = modelOverride
+		}
+		forkedConv.Model = subModel
+		forkedConv.Provider = d.Cfg.Provider
 		subStore := app.NewStateStore(app.AppState{
 			Conversation: forkedConv,
 			CWD:          d.Cwd,
-			Model:        d.Cfg.Model,
+			Model:        subModel,
 			Provider:     d.Cfg.Provider,
 			MaxTokens:    d.Cfg.MaxTokens,
 			Temperature:  d.Cfg.Temperature,
@@ -87,9 +93,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		}
 		subOrch := tool.NewOrchestrator(subRegistry, d.Checker, prompter, d.Bus)
 		subCfg := d.EngineCfg
-		if modelOverride != "" {
-			subCfg.Model = modelOverride
-		}
+		subCfg.Model = subModel
 		return query.NewEngine(d.Prov, subRegistry, subOrch, subStore, d.CostTracker, d.Bus, subCfg), subStore
 	}
 
@@ -464,6 +468,10 @@ func switchActiveModel(d *Deps, modelID string) error {
 	}
 	if d != nil {
 		d.Cfg.Model = modelID
+		d.EngineCfg.Model = modelID
+		if d.Engine != nil {
+			d.Engine.SetModel(modelID)
+		}
 	}
 	if d != nil && d.Store != nil {
 		d.Store.Update(func(s *app.AppState) {
@@ -476,4 +484,20 @@ func switchActiveModel(d *Deps, modelID string) error {
 		}
 	}
 	return nil
+}
+
+func activeModelForDeps(d *Deps) string {
+	if d == nil {
+		return ""
+	}
+	if d.Store != nil {
+		snap := d.Store.Snapshot()
+		if snap.Model != "" {
+			return snap.Model
+		}
+	}
+	if d.EngineCfg.Model != "" {
+		return d.EngineCfg.Model
+	}
+	return d.Cfg.Model
 }
