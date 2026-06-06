@@ -59,7 +59,6 @@ type AppState struct {
 	Todos                  []TodoItem              `json:"todos,omitempty"`
 	PromptHistory          []string                `json:"prompt_history,omitempty"`
 	OrchestrationArtifacts []OrchestrationArtifact `json:"orchestration_artifacts,omitempty"`
-	AdvisorModel           string                  `json:"advisor_model,omitempty"`
 	TeamContext            *TeamContext            `json:"team_context,omitempty"`
 	Worktree               *WorktreeSession        `json:"worktree,omitempty"`
 	ArtifactSessionID      string                  `json:"artifact_session_id,omitempty"`

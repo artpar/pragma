@@ -68,13 +68,6 @@ func registerBuiltins(r *Registry) {
 		CLIUse:      "model [name]",
 	})
 	r.Register(Command{
-		Name:        "advisor",
-		Description: "Show or set the advisor model",
-		Handle:      handleAdvisor,
-		Type:        TypeLocal,
-		CLIUse:      "advisor [model]",
-	})
-	r.Register(Command{
 		Name:        "doctor",
 		Description: "Check environment and configuration health",
 		Handle:      handleDoctor,

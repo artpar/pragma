@@ -3039,6 +3039,10 @@ Do not patch this by making web or TUI subscribe directly to the observe bus. Ob
 
 Severity: low
 
+Status: fixed in this worktree. Removed the inert `/advisor` slash command, deleted its handler, and removed `AppState.AdvisorModel`. No persistence or runtime execution path was added because there is no advisor runtime owner yet.
+
+Verification: `gofmt -w internal/slash/commands.go internal/app/state.go`; `go build ./cmd/pragma`; `go vet ./internal/slash ./internal/app ./internal/cli ./internal/query ./internal/session ./cmd/pragma`; `git diff --check`; ownership scan for `advisor|AdvisorModel|handleAdvisor`.
+
 Concrete files/functions involved:
 
 - `internal/slash/commands.go`: `registerBuiltins` entry for `advisor`
