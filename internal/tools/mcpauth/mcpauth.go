@@ -57,11 +57,24 @@ func (t *Tool) Flags() tool.ToolFlags {
 	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
 }
 
-func (t *Tool) CheckPerm(_ context.Context, _ json.RawMessage, _ permission.Checker) permission.CheckResult {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: permission.CheckResult{Decision: permission.DecisionAllow}")
-	return permission.CheckResult{Decision: permission.DecisionAllow}
+func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
+	observe.TraceCtx(ctx, "mcpauth", "Tool.CheckPerm", "enter")
+	defer observe.TraceCtx(ctx, "mcpauth", "Tool.CheckPerm", "exit")
+	content := t.permissionSubject()
+	if checker == nil {
+		observe.TraceCtx(ctx, "mcpauth", "Tool.CheckPerm", "if: checker == nil")
+		return permission.CheckResult{
+			Decision: permission.DecisionDeny,
+			Reason:   "permission checker unavailable",
+			Content:  content,
+		}
+	}
+	observe.TraceCtx(ctx, "mcpauth", "Tool.CheckPerm", "return: checker.Check(ctx, t.Name(), content)")
+	return checker.Check(ctx, t.Name(), content)
+}
+
+func (t *Tool) permissionSubject() string {
+	return fmt.Sprintf("server:%s action:oauth_authenticate effects:credential_persistence,capability_change", t.ServerName)
 }
 
 func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {

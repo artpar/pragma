@@ -3845,6 +3845,10 @@ Do not patch this by appending the current `AGENT.md` or environment as another 
 
 Severity: high
 
+Status: fixed in this worktree. `mcpauth.Tool.CheckPerm` no longer unconditionally allows authentication. It now routes through the runtime checker using the normalized auth pseudo-tool name and a permission content subject that names the server plus OAuth credential persistence and capability-change effects. If no checker is available, the tool denies instead of starting the OAuth flow without a permission owner.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/tools/mcpauth ./internal/mcp ./internal/tool ./internal/permission ./cmd/pragma`; `git diff --check`; ownership scan for `DecisionAllow`, `StartOAuthFlow`, `permissionSubject`, and `CheckPerm` across `internal/tools/mcpauth` and `internal/mcp`.
+
 Concrete files/functions involved:
 
 - `internal/tools/mcpauth/mcpauth.go`: `Tool.Flags`, `Tool.CheckPerm`, `Tool.Invoke`
