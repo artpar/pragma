@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,8 +111,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var taskResults []TaskResultData
 	hasHeader := false
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 64<<20) // file_state entries can include cached file contents
+	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -178,6 +176,9 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 				taskResults = append(taskResults, data)
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Session{}, fmt.Errorf("scan session: %w", err)
 	}
 
 	if !hasHeader {
@@ -267,7 +268,7 @@ func (s *Store) List() ([]SessionSummary, error) {
 	return summaries, nil
 }
 
-// readJSONLSummary reads only the first line (header) of a JSONL session file.
+// readJSONLSummary projects a JSONL session file into list metadata.
 func (s *Store) readJSONLSummary(path string, info os.FileInfo) (SessionSummary, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -275,9 +276,11 @@ func (s *Store) readJSONLSummary(path string, info os.FileInfo) (SessionSummary,
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	scanner := newJSONLScanner(f)
 	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return SessionSummary{}, fmt.Errorf("scan session summary: %w", err)
+		}
 		return SessionSummary{}, errors.New("empty file")
 	}
 
@@ -307,6 +310,9 @@ func (s *Store) readJSONLSummary(path string, info os.FileInfo) (SessionSummary,
 		if e.Kind == EntryMetadata {
 			json.Unmarshal(e.Data, &meta) // last one wins
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return SessionSummary{}, fmt.Errorf("scan session summary: %w", err)
 	}
 
 	summary := meta.Summary

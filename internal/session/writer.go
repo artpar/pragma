@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -77,8 +76,7 @@ func scanMessageIDs(path string) (map[string]bool, error) {
 	defer f.Close()
 
 	ids := make(map[string]bool)
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB max line
+	scanner := newJSONLScanner(f)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -98,6 +96,9 @@ func scanMessageIDs(path string) (map[string]bool, error) {
 		if err := json.Unmarshal(entry.Data, &idOnly); err == nil && idOnly.ID != "" {
 			ids[idOnly.ID] = true
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 	return ids, nil
 }

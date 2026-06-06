@@ -3397,6 +3397,10 @@ Do not keep a second `permission.NewRuleChecker` in `cmd/pragma/lifecycle.go` an
 
 Severity: medium
 
+Status: fixed in this worktree. Session JSONL parsing now uses a shared store-owned scanner helper with the same 64MB line limit for full load, summary projection, and message-ID scanning. `readJSONLSummary` now uses that canonical scanner, checks `scanner.Err()` after both header and metadata scans, and no longer has a separate 1MB parser contract that can silently stop before the latest metadata.
+
+Verification: `gofmt -w internal/session/jsonl.go internal/session/store.go internal/session/writer.go`; `go build ./cmd/pragma`; `go vet ./internal/session ./internal/cli ./internal/web ./cmd/pragma`; `git diff --check`; parser ownership scan for `newJSONLScanner|jsonlMaxLineSize|scanner.Buffer|scanner.Err|readJSONLSummary|loadJSONL|scanMessageIDs`.
+
 Concrete files/functions involved:
 
 - `internal/session/store.go`: `Store.loadJSONL`, `Store.List`, `Store.readJSONLSummary`
