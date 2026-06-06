@@ -86,7 +86,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 			ArtifactSessionID: parentSessionID,
 		})
 		subRegistry := tool.NewRegistry(d.Bus)
-		for _, td := range baseTools(d, subStore) {
+		for _, td := range baseTools(d, subStore, subRegistry) {
 			if !shouldRegisterBuiltinTool(d, td.Name()) {
 				observe.GlobalTrace("if: !shouldRegisterBuiltinTool(d, td.Name())")
 				continue
@@ -97,6 +97,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		if scopedToolNames != nil {
 			subRegistry = subRegistry.Scoped(scopedToolNames)
 		}
+		bindToolSearchRegistry(subRegistry)
 		subOrch := tool.NewOrchestrator(subRegistry, d.Checker, prompter, d.Bus)
 		subCfg := d.EngineCfg
 		subCfg.Model = subModel
@@ -201,6 +202,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 			return nil, fmt.Errorf("register lifecycle tool: %w", err)
 		}
 	}
+	bindToolSearchRegistry(d.Registry)
 
 	engine := query.NewEngine(d.Prov, d.Registry, orchestrator, d.Store, d.CostTracker, d.Bus, d.EngineCfg)
 	d.Engine = engine
@@ -341,10 +343,10 @@ func mcpStatusesForQuery(mgr interface {
 // BaseTools returns all tool descriptors except Agent and AskUserQuestion
 // (which need the engine factory / asker).
 func BaseTools(d *Deps) []tool.Descriptor {
-	return baseTools(d, d.Store)
+	return baseTools(d, d.Store, d.Registry)
 }
 
-func baseTools(d *Deps, store *app.StateStore) []tool.Descriptor {
+func baseTools(d *Deps, store *app.StateStore, searchRegistry *tool.Registry) []tool.Descriptor {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: []tool.Descriptor{\n\t&toolglob.Tool{},\n\t&toolgrep.Tool{},\n\t&toolapplypatch.Tool{...")
@@ -367,7 +369,7 @@ func baseTools(d *Deps, store *app.StateStore) []tool.Descriptor {
 		&toolsleep.Tool{},
 		&tooltodo.Tool{Store: d.Store},
 		&tooltoolsearch.Tool{
-			Registry: d.Registry,
+			Registry: searchRegistry,
 			PendingMCPServers: func() []string {
 				if d.McpManager == nil {
 					return nil
@@ -434,6 +436,22 @@ func baseTools(d *Deps, store *app.StateStore) []tool.Descriptor {
 	observe.GlobalTrace("return: tools")
 
 	return tools
+}
+
+func bindToolSearchRegistry(registry *tool.Registry) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	desc, ok := registry.Get("ToolSearch")
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		return
+	}
+	searchTool, ok := desc.(*tooltoolsearch.Tool)
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		return
+	}
+	searchTool.Registry = registry
 }
 
 func validateLiveConfigValue(d *Deps) func(string, any) error {

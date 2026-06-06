@@ -1702,6 +1702,23 @@ What not to do:
 
 Do not add an "unknown tool" hint telling the model to try another search. The search result itself must be scoped to the execution registry, not patched after an invalid call.
 
+Status:
+
+Resolved in current worktree. ToolSearch is now bound to the same effective registry that supplies `ToolDefs` and backs orchestrator lookup for that engine. Root engines search the root registry, and subagent engines search the child registry after optional tool scoping has been applied.
+
+Source evidence:
+
+- `internal/cli/tools.go`: `baseTools` now receives an explicit `searchRegistry` instead of closing ToolSearch over `d.Registry`.
+- `internal/cli/tools.go`: `engineFactory` passes the newly created child registry into `baseTools`, then calls `bindToolSearchRegistry` after `Registry.Scoped(scopedToolNames)` so ToolSearch points at the final effective child registry.
+- `internal/cli/tools.go`: root registration calls `bindToolSearchRegistry(d.Registry)` after root-only tools are registered, keeping root ToolSearch aligned with the root execution registry.
+- `internal/query/loop.go`: unchanged runtime contract remains that model-visible tools come from `e.registry.ToolDefs()`, now matching ToolSearch discovery for child engines.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/tools.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/tools/toolsearch ./internal/tool ./internal/query ./internal/tools/agent ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "baseTools\\(|BaseTools\\(|bindToolSearchRegistry|ToolSearch|Registry: d\\.Registry|Registry: searchRegistry|Scoped\\(scopedToolNames\\)|ToolDefs\\(" internal/cli/tools.go internal/tools/toolsearch/toolsearch.go internal/tool/registry.go internal/query/loop.go internal/tools/agent/agent.go -g'*.go'` confirmed ToolSearch is bound through `searchRegistry` and rebound after scoping.
+
 ## 36. MCP Startup Goroutines Can Mutate The Registry After Runtime Cleanup Continues
 
 Severity: medium
