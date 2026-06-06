@@ -64,12 +64,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	}
 
 	defer func() {
-		if e.hookMgr != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.hookMgr != nil")
-			hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer hookCancel()
-			e.hookMgr.Execute(hookCtx, hook.Stop, hook.HookInput{})
-		}
+		e.runStopHook(ch)
 	}()
 
 	maxTurns := e.config.MaxTurns
@@ -397,6 +392,18 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	}
 
 	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
+}
+
+func (e *Engine) runStopHook(ch chan<- LoopEvent) {
+	if e.hookMgr == nil {
+		return
+	}
+	hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer hookCancel()
+	result := e.hookMgr.Execute(hookCtx, hook.Stop, hook.HookInput{})
+	if result.Blocked {
+		ch <- ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", result.BlockMsg)}
+	}
 }
 
 func (e *Engine) applyToolResultBudget(messages []model.Message) ([]model.Message, error) {

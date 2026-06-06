@@ -1902,6 +1902,24 @@ What not to do:
 
 Do not add a second JSON parse in `Orchestrator.executeSingle`, `InteractiveRuntime.RunInput`, or the query loop. That would duplicate hook semantics across runtime paths and leave the manager as a passive transport for decisions it is supposed to own.
 
+Status:
+
+Resolved in current worktree. Hook JSON control fields are now translated once in `Manager.Execute` into the aggregate result that runtime callers already consume. Tool, prompt, and session callers still enforce `AggregatedResult.Blocked`; they do not parse hook JSON themselves. Stop-hook aggregate blocks are also consumed by the query loop through a shared stop-hook helper.
+
+Source evidence:
+
+- `internal/hook/manager.go`: added `applyJSONControl`, `eventSupportsDecisionBlock`, and `hookBlockMessage`; `decision:"block"` for blocking-capable events and `continue:false` now set `AggregatedResult.Blocked` and `BlockMsg`.
+- `internal/hook/manager.go`: JSON-driven blocks emit `HookBlocked` through the same observe path as exit-code blocks.
+- `internal/tool/orchestrator.go`: unchanged caller continues to block PreToolUse through `hookResult.Blocked`.
+- `internal/cli/run.go`: unchanged prompt and session lifecycle callers continue to block UserPromptSubmit and SessionStart through `hookResult.Blocked`.
+- `internal/query/loop.go` and `internal/query/miniswe_loop.go`: Stop hooks now route through `Engine.runStopHook`, which emits an `ErrorEvent` when the manager returns a blocked aggregate.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/hook/manager.go internal/query/loop.go internal/query/miniswe_loop.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/hook ./internal/query ./internal/cli ./internal/tool ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "applyJSONControl|eventSupportsDecisionBlock|hookBlockMessage|emitHookBlocked|JSON\\.Decision|JSON\\.Continue|JSON\\.StopReason|result\\.Blocked|runStopHook|hook\\.Stop|HookMgr.Execute|json\\.Unmarshal" internal/hook internal/query internal/cli/run.go internal/tool/orchestrator.go -g'*.go'` confirmed JSON parsing remains in hook/executor and JSON control interpretation remains in hook/manager.
+
 ## 40. Interactive UIs Render Prompt Submission Before Runtime Acceptance
 
 Severity: medium

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/shellrun"
@@ -93,11 +92,7 @@ func (e *Engine) RunPragmaLoopWithSystem(ctx context.Context, system model.Syste
 
 func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, ch chan<- LoopEvent) {
 	defer func() {
-		if e.hookMgr != nil {
-			hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer hookCancel()
-			e.hookMgr.Execute(hookCtx, hook.Stop, hook.HookInput{})
-		}
+		e.runStopHook(ch)
 	}()
 
 	maxTurns := e.config.MaxTurns

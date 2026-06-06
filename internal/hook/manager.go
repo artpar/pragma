@@ -3,6 +3,7 @@ package hook
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 
 	"github.com/artpar/pragma/internal/observe"
@@ -126,14 +127,16 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 		case OutcomeBlock:
 			observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: OutcomeBlock")
 			agg.Blocked = true
-			agg.BlockMsg = result.Stderr
-			if agg.BlockMsg == "" {
-				agg.BlockMsg = "hook blocked execution (exit code 2)"
-			}
+			agg.BlockMsg = hookBlockMessage(result, "hook blocked execution (exit code 2)")
 			return agg
 
 		case OutcomeOK:
 			observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: OutcomeOK")
+			if applyJSONControl(event, result, &agg) {
+				observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: applyJSONControl")
+				m.emitHookBlocked(event, cmd.Command, agg.BlockMsg)
+				return agg
+			}
 			if result.Stdout != "" {
 				agg.Stdout += result.Stdout
 			}
@@ -143,6 +146,11 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 
 		case OutcomeError:
 			observe.TraceCtx(ctx, "hook", "Manager.Execute", "case: OutcomeError")
+			if applyJSONControl(event, result, &agg) {
+				observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: applyJSONControl")
+				m.emitHookBlocked(event, cmd.Command, agg.BlockMsg)
+				return agg
+			}
 
 			if result.JSON != nil && result.JSON.AdditionalContext != "" {
 				agg.Feedback = append(agg.Feedback, result.JSON.AdditionalContext)
@@ -156,6 +164,47 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 	observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: agg")
 
 	return agg
+}
+
+func applyJSONControl(event Event, result Result, agg *AggregatedResult) bool {
+	if result.JSON == nil || agg == nil {
+		return false
+	}
+	if eventSupportsDecisionBlock(event) && strings.EqualFold(strings.TrimSpace(result.JSON.Decision), "block") {
+		agg.Blocked = true
+		agg.BlockMsg = hookBlockMessage(result, "hook blocked execution")
+		return true
+	}
+	if result.JSON.Continue != nil && !*result.JSON.Continue {
+		agg.Blocked = true
+		agg.BlockMsg = hookBlockMessage(result, "hook requested stop")
+		return true
+	}
+	return false
+}
+
+func eventSupportsDecisionBlock(event Event) bool {
+	switch event {
+	case PreToolUse, UserPromptSubmit, SessionStart:
+		return true
+	default:
+		return false
+	}
+}
+
+func hookBlockMessage(result Result, fallback string) string {
+	if result.JSON != nil {
+		if msg := strings.TrimSpace(result.JSON.Reason); msg != "" {
+			return msg
+		}
+		if msg := strings.TrimSpace(result.JSON.StopReason); msg != "" {
+			return msg
+		}
+	}
+	if msg := strings.TrimSpace(result.Stderr); msg != "" {
+		return msg
+	}
+	return fallback
 }
 
 func (m *Manager) emitHookEvent(event Event, command string, result Result) {
@@ -177,11 +226,18 @@ func (m *Manager) emitHookEvent(event Event, command string, result Result) {
 
 	if outcome == OutcomeBlock {
 		observe.GlobalTrace("if: outcome == OutcomeBlock")
-		m.bus.Emit(observe.HookBlocked{
-			EventHeader: observe.NewEventHeader("HookBlocked", "", observe.NewSpanID(), ""),
-			HookEvent:   string(event),
-			Command:     command,
-			Message:     result.Stderr,
-		})
+		m.emitHookBlocked(event, command, result.Stderr)
 	}
+}
+
+func (m *Manager) emitHookBlocked(event Event, command string, message string) {
+	if m.bus == nil {
+		return
+	}
+	m.bus.Emit(observe.HookBlocked{
+		EventHeader: observe.NewEventHeader("HookBlocked", "", observe.NewSpanID(), ""),
+		HookEvent:   string(event),
+		Command:     command,
+		Message:     message,
+	})
 }
