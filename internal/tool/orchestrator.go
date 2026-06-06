@@ -333,10 +333,10 @@ func (o *Orchestrator) executeSingle(
 	var hookSupplements []model.ContentPart
 	if o.hookMgr != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.hookMgr != nil")
-		hookResult := o.hookMgr.Execute(ctx, hook.PreToolUse, hook.HookInput{
+		hookResult := o.hookMgr.ExecuteInWorkDir(ctx, hook.PreToolUse, hook.HookInput{
 			ToolName:  call.Name,
 			ToolInput: call.Input,
-		})
+		}, stateWorkDir(state))
 		if hookResult.Blocked {
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: hookResult.Blocked")
 			observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")
@@ -552,11 +552,11 @@ func (o *Orchestrator) executeSingle(
 
 	if o.hookMgr != nil {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: o.hookMgr != nil")
-		postHookResult := o.hookMgr.Execute(ctx, hook.PostToolUse, hook.HookInput{
+		postHookResult := o.hookMgr.ExecuteInWorkDir(ctx, hook.PostToolUse, hook.HookInput{
 			ToolName:  call.Name,
 			ToolInput: call.Input,
 			Response:  invokeResult.Content,
-		})
+		}, stateWorkDir(state))
 		hookSupplements = append(hookSupplements, hookFeedbackSupplements(hook.PostToolUse, postHookResult)...)
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart: model.ToolResultPart{\n\t\tToolCallID:\tcall.ID,\n\t\tContent:\t...")

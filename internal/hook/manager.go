@@ -64,16 +64,30 @@ func (m *Manager) HasHooks(event Event) bool {
 // For PreToolUse/PostToolUse, input.ToolName is used to filter by matcher.
 // Hooks run sequentially — simpler than parallel, avoids race conditions.
 func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) AggregatedResult {
+	return m.ExecuteInWorkDir(ctx, event, input, "")
+}
+
+func (m *Manager) ExecuteInWorkDir(ctx context.Context, event Event, input HookInput, eventWorkDir string) AggregatedResult {
 	observe.TraceCtx(ctx, "hook", "Manager.Execute", "enter")
 	defer observe.TraceCtx(ctx, "hook", "Manager.Execute", "exit")
 	m.mu.RLock()
+	defaultWorkDir := m.workDir
+	workDir := strings.TrimSpace(eventWorkDir)
+	if workDir == "" {
+		workDir = defaultWorkDir
+	}
 	input.Event = event
-	input.CWD = m.workDir
+	input.CWD = workDir
 	input.SessionID = m.sessionID
 	sessionID := m.sessionID
-	workDir := m.workDir
-	entries := m.hooks[event]
+	var entries []Entry
+	if workDir == defaultWorkDir {
+		entries = m.hooks[event]
+	}
 	m.mu.RUnlock()
+	if workDir != defaultWorkDir {
+		entries = LoadHooks(workDir)[event]
+	}
 	if len(entries) == 0 {
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: len(entries) == 0")
 		observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: AggregatedResult{}")
@@ -117,7 +131,7 @@ func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) Agg
 			continue
 		}
 
-		result := ExecCommand(ctx, cmd, inputJSON, m.workDir, envVars)
+		result := ExecCommand(ctx, cmd, inputJSON, workDir, envVars)
 
 		m.emitHookEvent(event, cmd.Command, result)
 

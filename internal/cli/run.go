@@ -343,9 +343,9 @@ func acceptPromptSubmission(ctx context.Context, d *Deps, prompt string) (hook.A
 	if strings.TrimSpace(prompt) == "" || d == nil || d.HookMgr == nil {
 		return hook.AggregatedResult{}, nil
 	}
-	result := d.HookMgr.Execute(ctx, hook.UserPromptSubmit, hook.HookInput{
+	result := d.HookMgr.ExecuteInWorkDir(ctx, hook.UserPromptSubmit, hook.HookInput{
 		PromptText: prompt,
-	})
+	}, activeHookWorkDir(d))
 	if result.Blocked {
 		return result, promptBlockedError(result)
 	}
@@ -1454,7 +1454,7 @@ func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) (ho
 	var hookResult hook.AggregatedResult
 	if d.HookMgr != nil {
 		observe.GlobalTrace("if: d.HookMgr != nil")
-		hookResult = d.HookMgr.Execute(ctx, hook.SessionStart, hook.HookInput{})
+		hookResult = d.HookMgr.ExecuteInWorkDir(ctx, hook.SessionStart, hook.HookInput{}, activeHookWorkDir(d))
 		if hookResult.Blocked {
 			observe.GlobalTrace("if: hookResult.Blocked")
 			closeUnstartedSessionWriter(d)
@@ -1544,9 +1544,21 @@ func endSessionLifecycle(_ context.Context, d *Deps) {
 		observe.GlobalTrace("if: d.HookMgr != nil")
 		ctx, cancel := context.WithTimeout(context.Background(), sessionEndHookTimeout)
 		defer cancel()
-		d.HookMgr.Execute(ctx, hook.SessionEnd, hook.HookInput{})
+		d.HookMgr.ExecuteInWorkDir(ctx, hook.SessionEnd, hook.HookInput{}, activeHookWorkDir(d))
 	}
 	d.SessionStarted = false
+}
+
+func activeHookWorkDir(d *Deps) string {
+	if d == nil {
+		return ""
+	}
+	if d.Store != nil {
+		if cwd := d.Store.Snapshot().CWD; cwd != "" {
+			return cwd
+		}
+	}
+	return d.Cwd
 }
 
 func latestAssistantText(store *app.StateStore) string {

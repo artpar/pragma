@@ -3692,6 +3692,10 @@ Do not patch this by adding `.` to `isFilePath` or by making every file tool str
 
 Severity: high
 
+Status: fixed in this worktree. Hook execution now has an explicit event workdir contract. `hook.Manager.ExecuteInWorkDir` resolves hook policy from the supplied runtime workdir, populates `HookInput.CWD` and `PRAGMA_CWD` from that workdir, and runs hook commands with that same command cwd. Tool pre/post hooks use the invocation `StateSnapshot.WorkDir()`, prompt and session lifecycle hooks use the active `AppState.CWD`, and the engine stop hook uses the engine store snapshot.
+
+Verification: `gofmt -w internal/hook/manager.go internal/tool/orchestrator.go internal/cli/run.go internal/query/loop.go`; `go build ./cmd/pragma`; `go vet ./internal/hook ./internal/tool ./internal/cli ./internal/query ./cmd/pragma`; `git diff --check`; ownership scan for `HookMgr.Execute|hookMgr.Execute|ExecuteInWorkDir|LoadHooks|PRAGMA_CWD|ExecCommand|m.workDir|activeHookWorkDir|HookInput{}`.
+
 Concrete files/functions involved:
 
 - `internal/hook/manager.go`: `NewManager`, `Reload`, `Execute`

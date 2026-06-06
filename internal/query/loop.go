@@ -461,7 +461,7 @@ func (e *Engine) runStopHook(ch chan<- LoopEvent) {
 	}
 	hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer hookCancel()
-	result := e.hookMgr.Execute(hookCtx, hook.Stop, hook.HookInput{})
+	result := e.hookMgr.ExecuteInWorkDir(hookCtx, hook.Stop, hook.HookInput{}, e.store.Snapshot().CWD)
 	if result.Blocked {
 		ch <- ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", result.BlockMsg)}
 	}
