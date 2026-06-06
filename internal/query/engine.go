@@ -337,36 +337,21 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	defer observe.TraceCtx(ctx, "query", "Engine.runGraph", "exit")
 
 	snap := e.store.Snapshot()
-	runner := bridge.NewRunner(graph, bridge.RunnerConfig{
-		System:    snap.Conversation.System,
-		ModelID:   e.config.Model,
-		MaxTokens: e.config.MaxTokens,
-		Tools:     e.registry.ToolDefs(),
-		Bus:       e.bus,
-	})
+	runner := bridge.NewRunner(graph, bridge.NewRunnerConfig(
+		snap.Conversation.System,
+		e.config.Model,
+		e.config.MaxTokens,
+		e.registry.ToolDefs(),
+		e.bus,
+	))
 
 	var result bridge.RunResult
 	for runEv := range runner.Stream(ctx, prompt) {
 		observe.TraceCtx(ctx, "query", "Engine.runGraph", "range events")
-		ev := runEv.Event
-		if ev.Err != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ev.Err != nil")
-			errStr := ev.Err.Error()
-			ch <- LifecycleProgressEvent{
-				Step: ev.Step, Node: ev.Node, Nodes: ev.Nodes,
-				Status: ev.Type, Duration: ev.Duration, Error: errStr,
-				FromNode: ev.FromNode, ToNode: ev.ToNode, RouteKey: ev.RouteKey,
-			}
-		} else {
-			observe.TraceCtx(ctx, "query", "Engine.runGraph", "else: ev.Err != nil")
-			ch <- LifecycleProgressEvent{
-				Step: ev.Step, Node: ev.Node, Nodes: ev.Nodes,
-				Status: ev.Type, Duration: ev.Duration,
-				FromNode: ev.FromNode, ToNode: ev.ToNode, RouteKey: ev.RouteKey,
-			}
-		}
-		if ev.Type == "completed" {
-			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: ev.Type == \"completed\"")
+		progress := runEv.Progress
+		ch <- lifecycleProgressEvent(progress)
+		if progress.Status == "completed" {
+			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: progress.Status == \"completed\"")
 			result = runEv.Result
 		}
 	}
@@ -387,6 +372,20 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		ch <- TextEvent{Text: result.AssistantText}
 	}
 	ch <- TurnCompleteEvent{Response: result.Response, StopReason: result.StopReason}
+}
+
+func lifecycleProgressEvent(progress bridge.ProgressEvent) LifecycleProgressEvent {
+	return LifecycleProgressEvent{
+		Step:     progress.Step,
+		Node:     progress.Node,
+		Nodes:    progress.Nodes,
+		Status:   progress.Status,
+		Duration: progress.Duration,
+		Error:    progress.Error,
+		FromNode: progress.FromNode,
+		ToNode:   progress.ToNode,
+		RouteKey: progress.RouteKey,
+	}
 }
 
 func (e *Engine) appendLifecycleMessages(state lifecycle.State) error {

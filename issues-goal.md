@@ -475,6 +475,24 @@ What not to do:
 
 Do not copy missing fields or extra print branches between the three entrypoints.
 
+Status:
+
+Resolved in current worktree for the duplicated runner context and progress/result projection boundary. The lifecycle bridge runner now owns runner config construction, initial state setup, progress projection, and final result projection. CLI, query, and the LifecycleRun tool supply their runtime dependencies and adapt the typed bridge projection to their transport surfaces instead of each rebuilding executor context and progress records independently.
+
+Source evidence:
+
+- `internal/lifecycle/bridge/runner.go`: `NewRunnerConfig` is the single constructor for lifecycle runner context, `RunnerConfig` fields are private to the bridge package, `Runner.InitialState` owns state construction, `RunEvent` includes `Progress bridge.ProgressEvent`, and `ProjectProgress` is the single projection from `lifecycle.ExecutionEvent` to transport-neutral lifecycle progress.
+- `internal/query/engine.go`: `runGraph` converts `runEv.Progress` to `query.LifecycleProgressEvent` through a small query adapter instead of reading executor event fields.
+- `internal/tools/lifecycle/lifecycle.go`: `LifecycleRun` converts `runEv.Progress` to `tool.ProgressEvent` through a tool adapter instead of rebuilding progress from executor events.
+- `cmd/pragma/lifecycle.go`: the standalone CLI prints from `runEv.Progress` and uses `runEv.Result` for completion result/error handling.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/lifecycle/bridge/runner.go internal/query/engine.go internal/tools/lifecycle/lifecycle.go cmd/pragma/lifecycle.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/lifecycle/bridge ./internal/query ./internal/tools/lifecycle ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "runEv\\.Event|ev := runEv\\.Event|ev\\.Err|ev\\.Step|ev\\.Node|ev\\.Nodes|ev\\.Type|ev\\.Duration|ev\\.FromNode|ev\\.ToNode|ev\\.RouteKey" cmd/pragma/lifecycle.go internal/query/engine.go internal/tools/lifecycle/lifecycle.go` returned no matches.
+- Contract scan: `rg -n "bridge\\.RunnerConfig\\{|RunnerConfig\\{" cmd internal -g'*.go'` returned no external runner config literals.
+
 ## 11. Generated Lifecycle Graphs Get Runtime Reducer Defaults That YAML Graphs Do Not
 
 Severity: medium

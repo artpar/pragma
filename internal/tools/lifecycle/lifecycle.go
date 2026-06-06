@@ -157,45 +157,45 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: in.System != \"\"")
 		sys = model.SystemPrompt{Blocks: []model.SystemBlock{{Text: in.System, Cacheable: true}}}
 	}
-	runner := bridge.NewRunner(graph, bridge.RunnerConfig{
-		System:    sys,
-		ModelID:   snap.Model,
-		MaxTokens: snap.MaxTokens,
-		Tools:     t.workflowToolDefs(),
-		Bus:       t.Bus,
-	})
+	runner := bridge.NewRunner(graph, bridge.NewRunnerConfig(
+		sys,
+		snap.Model,
+		snap.MaxTokens,
+		t.workflowToolDefs(),
+		t.Bus,
+	))
 
 	var result bridge.RunResult
 	for runEv := range runner.Stream(ctx, in.Prompt) {
 		observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "range events")
-		ev := runEv.Event
+		progress := runEv.Progress
 
 		if progressCh != nil {
 			observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: progressCh != nil")
-			pe := tool.ProgressEvent{
-				Step:     ev.Step,
-				Node:     ev.Node,
-				Nodes:    ev.Nodes,
-				Status:   ev.Type,
-				Duration: ev.Duration,
-				FromNode: ev.FromNode,
-				ToNode:   ev.ToNode,
-				RouteKey: ev.RouteKey,
-			}
-			if ev.Err != nil {
-				observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: ev.Err != nil")
-				pe.Error = ev.Err.Error()
-			}
-			progressCh <- pe
+			progressCh <- toolProgressEvent(progress)
 		}
-		if ev.Type == "completed" {
-			observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: ev.Type == \"completed\"")
+		if progress.Status == "completed" {
+			observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "if: progress.Status == \"completed\"")
 			result = runEv.Result
 		}
 	}
 
 	observe.TraceCtx(ctx, "lifecycletool", "Tool.Invoke", "return: t.buildResult(result)")
 	return t.buildResult(result)
+}
+
+func toolProgressEvent(progress bridge.ProgressEvent) tool.ProgressEvent {
+	return tool.ProgressEvent{
+		Step:     progress.Step,
+		Node:     progress.Node,
+		Nodes:    progress.Nodes,
+		Status:   progress.Status,
+		Duration: progress.Duration,
+		Error:    progress.Error,
+		FromNode: progress.FromNode,
+		ToNode:   progress.ToNode,
+		RouteKey: progress.RouteKey,
+	}
 }
 
 func (t *Tool) resolveGraph(ctx context.Context, in lifecycleInput, infra bridge.Infra) (*lifecycle.Graph, error) {

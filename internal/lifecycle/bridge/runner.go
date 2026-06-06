@@ -12,17 +12,43 @@ import (
 
 // RunnerConfig is the runtime context all bridge nodes expect in lifecycle state.
 type RunnerConfig struct {
-	System    model.SystemPrompt
-	ModelID   string
-	MaxTokens int
-	Tools     []model.ToolDef
-	Bus       *observe.EventBus
+	system    model.SystemPrompt
+	modelID   string
+	maxTokens int
+	tools     []model.ToolDef
+	bus       *observe.EventBus
+}
+
+func NewRunnerConfig(system model.SystemPrompt, modelID string, maxTokens int, tools []model.ToolDef, bus *observe.EventBus) RunnerConfig {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	return RunnerConfig{
+		system:    system,
+		modelID:   modelID,
+		maxTokens: maxTokens,
+		tools:     append([]model.ToolDef(nil), tools...),
+		bus:       bus,
+	}
 }
 
 // RunEvent wraps executor progress and attaches a projected result to completion.
 type RunEvent struct {
-	Event  lifecycle.ExecutionEvent
-	Result RunResult
+	Event    lifecycle.ExecutionEvent
+	Progress ProgressEvent
+	Result   RunResult
+}
+
+type ProgressEvent struct {
+	Step     int
+	Node     string
+	Nodes    []string
+	Status   string
+	Duration time.Duration
+	Err      error
+	Error    string
+	FromNode string
+	ToNode   string
+	RouteKey string
 }
 
 // RunResult is the caller-facing projection of a completed lifecycle graph.
@@ -58,10 +84,10 @@ func (r *Runner) InitialState(prompt string) lifecycle.State {
 	}
 	return lifecycle.State{
 		KeyMessages:  []model.Message{userMsg},
-		KeySystem:    r.config.System,
-		KeyModelID:   r.config.ModelID,
-		KeyMaxTokens: r.config.MaxTokens,
-		KeyTools:     append([]model.ToolDef(nil), r.config.Tools...),
+		KeySystem:    r.config.system,
+		KeyModelID:   r.config.modelID,
+		KeyMaxTokens: r.config.maxTokens,
+		KeyTools:     append([]model.ToolDef(nil), r.config.tools...),
 	}
 }
 
@@ -71,9 +97,9 @@ func (r *Runner) Stream(ctx context.Context, prompt string) <-chan RunEvent {
 	ch := make(chan RunEvent, 16)
 	go func() {
 		defer close(ch)
-		executor := lifecycle.NewExecutor(r.graph, lifecycle.WithEventBus(r.config.Bus))
+		executor := lifecycle.NewExecutor(r.graph, lifecycle.WithEventBus(r.config.bus))
 		for ev := range executor.Stream(ctx, r.InitialState(prompt)) {
-			runEv := RunEvent{Event: ev}
+			runEv := RunEvent{Event: ev, Progress: ProjectProgress(ev)}
 			if ev.Type == "completed" {
 				runEv.Result = ProjectResult(ev.State, ev.Err)
 			}
@@ -81,6 +107,26 @@ func (r *Runner) Stream(ctx context.Context, prompt string) <-chan RunEvent {
 		}
 	}()
 	return ch
+}
+
+func ProjectProgress(ev lifecycle.ExecutionEvent) ProgressEvent {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	progress := ProgressEvent{
+		Step:     ev.Step,
+		Node:     ev.Node,
+		Nodes:    append([]string(nil), ev.Nodes...),
+		Status:   ev.Type,
+		Duration: ev.Duration,
+		FromNode: ev.FromNode,
+		ToNode:   ev.ToNode,
+		RouteKey: ev.RouteKey,
+	}
+	if ev.Err != nil {
+		progress.Err = ev.Err
+		progress.Error = ev.Err.Error()
+	}
+	return progress
 }
 
 func ProjectResult(finalState lifecycle.State, runErr error) RunResult {

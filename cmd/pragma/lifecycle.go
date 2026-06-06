@@ -140,42 +140,42 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 	snap := d.Store.Snapshot()
-	runner := bridge.NewRunner(graph, bridge.RunnerConfig{
-		System:    snap.Conversation.System,
-		ModelID:   d.EngineCfg.Model,
-		MaxTokens: d.EngineCfg.MaxTokens,
-		Tools:     d.Registry.ToolDefs(),
-		Bus:       d.Bus,
-	})
+	runner := bridge.NewRunner(graph, bridge.NewRunnerConfig(
+		snap.Conversation.System,
+		d.EngineCfg.Model,
+		d.EngineCfg.MaxTokens,
+		d.Registry.ToolDefs(),
+		d.Bus,
+	))
 
 	for runEv := range runner.Stream(ctx, prompt) {
-		ev := runEv.Event
-		switch ev.Type {
+		progress := runEv.Progress
+		switch progress.Status {
 		case "step_started":
-			if len(ev.Nodes) > 0 {
-				fmt.Fprintf(os.Stderr, "⎿ Step %d: %s\n", ev.Step, strings.Join(ev.Nodes, ", "))
+			if len(progress.Nodes) > 0 {
+				fmt.Fprintf(os.Stderr, "⎿ Step %d: %s\n", progress.Step, strings.Join(progress.Nodes, ", "))
 			} else {
-				fmt.Fprintf(os.Stderr, "⎿ Step %d\n", ev.Step)
+				fmt.Fprintf(os.Stderr, "⎿ Step %d\n", progress.Step)
 			}
 		case "node_completed":
-			if ev.Err != nil {
-				fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", ev.Node, ev.Err)
-				return fmt.Errorf("lifecycle node %q failed at step %d: %w", ev.Node, ev.Step, ev.Err)
+			if progress.Err != nil {
+				fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", progress.Node, progress.Err)
+				return fmt.Errorf("lifecycle node %q failed at step %d: %w", progress.Node, progress.Step, progress.Err)
 			}
-			if ev.Duration > 0 {
-				fmt.Fprintf(os.Stderr, "  ✓ %s (%s)\n", ev.Node, ev.Duration.Round(100*time.Millisecond))
+			if progress.Duration > 0 {
+				fmt.Fprintf(os.Stderr, "  ✓ %s (%s)\n", progress.Node, progress.Duration.Round(100*time.Millisecond))
 			} else {
-				fmt.Fprintf(os.Stderr, "  ✓ %s\n", ev.Node)
+				fmt.Fprintf(os.Stderr, "  ✓ %s\n", progress.Node)
 			}
 		case "transition":
-			if ev.RouteKey != "" {
-				fmt.Fprintf(os.Stderr, "  → %s (route: %s)\n", ev.ToNode, ev.RouteKey)
+			if progress.RouteKey != "" {
+				fmt.Fprintf(os.Stderr, "  → %s (route: %s)\n", progress.ToNode, progress.RouteKey)
 			}
 		case "completed":
-			if ev.Err != nil {
-				return fmt.Errorf("lifecycle execution failed: %w", ev.Err)
+			if runEv.Result.Err != nil {
+				return fmt.Errorf("lifecycle execution failed: %w", runEv.Result.Err)
 			}
-			fmt.Fprintf(os.Stderr, "✓ Completed in %d steps\n", ev.Step)
+			fmt.Fprintf(os.Stderr, "✓ Completed in %d steps\n", progress.Step)
 
 			// Print final assistant message to stdout.
 			if runEv.Result.AssistantText != "" {
