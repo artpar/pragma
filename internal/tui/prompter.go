@@ -44,7 +44,7 @@ func (p *InteractivePrompter) SetProgram(prog *tea.Program) {
 
 // Prompt asks the user for a permission decision. It blocks the calling
 // goroutine until the user responds or the context is cancelled.
-func (p *InteractivePrompter) Prompt(ctx context.Context, toolName string, toolInput json.RawMessage, content, reason string) (permission.Decision, bool) {
+func (p *InteractivePrompter) Prompt(ctx context.Context, toolName string, toolInput json.RawMessage, content, reason string) (permission.Decision, permission.RememberScope) {
 	observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "enter")
 	defer observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "exit")
 	p.mu.Lock()
@@ -52,8 +52,8 @@ func (p *InteractivePrompter) Prompt(ctx context.Context, toolName string, toolI
 
 	if p.program == nil {
 		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "if: p.program == nil")
-		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "return: permission.DecisionDeny, false")
-		return permission.DecisionDeny, false
+		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "return: permission.DecisionDeny, permission.RememberNone")
+		return permission.DecisionDeny, permission.RememberNone
 	}
 
 	respCh := make(chan PermResponseMsg, 1)
@@ -68,9 +68,9 @@ func (p *InteractivePrompter) Prompt(ctx context.Context, toolName string, toolI
 	select {
 	case resp := <-respCh:
 		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "select: resp := <-respCh")
-		return resp.Decision, resp.Remember
+		return resp.Decision, resp.Scope
 	case <-ctx.Done():
 		observe.TraceCtx(ctx, "tui", "InteractivePrompter.Prompt", "select: <-ctx.Done()")
-		return permission.DecisionDeny, false
+		return permission.DecisionDeny, permission.RememberNone
 	}
 }

@@ -98,7 +98,7 @@ func (d *permissionDialog) confirm() tea.Cmd {
 	d.request = nil
 
 	var decision permission.Decision
-	var remember bool
+	scope := permission.RememberNone
 
 	switch d.selected {
 	case permOptAllow:
@@ -110,10 +110,10 @@ func (d *permissionDialog) confirm() tea.Cmd {
 	case permOptAlwaysAllow:
 		observe.GlobalTrace("case: permOptAlwaysAllow")
 		decision = permission.DecisionAllow
-		remember = true
+		scope = permission.RememberSession
 	}
 
-	resp := PermResponseMsg{Decision: decision, Remember: remember}
+	resp := PermResponseMsg{Decision: decision, Scope: scope}
 	observe.GlobalTrace("return: func() tea.Msg {\n\treq.Response <- resp\n\treturn resp\n}")
 	return func() tea.Msg {
 		req.Response <- resp

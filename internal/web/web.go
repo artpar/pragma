@@ -477,10 +477,10 @@ func (b *Bridge) attach(h *hub) {
 
 type permissionResponse struct {
 	Decision permission.Decision
-	Remember bool
+	Scope    permission.RememberScope
 }
 
-func (b *Bridge) Prompt(ctx context.Context, toolName string, toolInput json.RawMessage, content string, reason string) (permission.Decision, bool) {
+func (b *Bridge) Prompt(ctx context.Context, toolName string, toolInput json.RawMessage, content string, reason string) (permission.Decision, permission.RememberScope) {
 	id := newID()
 	respCh := make(chan permissionResponse, 1)
 	b.mu.Lock()
@@ -495,10 +495,10 @@ func (b *Bridge) Prompt(ctx context.Context, toolName string, toolInput json.Raw
 	}
 	select {
 	case resp := <-respCh:
-		return resp.Decision, resp.Remember
+		return resp.Decision, resp.Scope
 	case <-ctx.Done():
 		b.dropPermission(id)
-		return permission.DecisionDeny, false
+		return permission.DecisionDeny, permission.RememberNone
 	}
 }
 
@@ -1140,9 +1140,25 @@ func (s *server) handlePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decision is required", http.StatusBadRequest)
 		return
 	}
-	var remember bool
+	scope := permission.RememberNone
+	if rawScope, ok := raw["scope"]; ok {
+		var scopeValue string
+		if err := json.Unmarshal(rawScope, &scopeValue); err != nil {
+			http.Error(w, "scope must be a string", http.StatusBadRequest)
+			return
+		}
+		scope = permission.RememberScope(scopeValue)
+		if scope != permission.RememberNone && scope != permission.RememberSession && scope != permission.RememberPersistent {
+			http.Error(w, "scope must be none, session, or persistent", http.StatusBadRequest)
+			return
+		}
+	}
 	if rawRemember, ok := raw["remember"]; ok {
+		var remember bool
 		_ = json.Unmarshal(rawRemember, &remember)
+		if remember {
+			scope = permission.RememberSession
+		}
 	}
 	decision := permission.Decision(decisionValue)
 	if decision != permission.DecisionAllow && decision != permission.DecisionDeny {
@@ -1150,7 +1166,7 @@ func (s *server) handlePermission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	submitted := map[string]interface{}{"id": id, "body": raw}
-	if !s.cfg.Bridge.resolvePermission(id, permissionResponse{Decision: decision, Remember: remember}) {
+	if !s.cfg.Bridge.resolvePermission(id, permissionResponse{Decision: decision, Scope: scope}) {
 		http.NotFound(w, r)
 		return
 	}
@@ -2626,7 +2642,7 @@ function showPermission(envelope){
 
 async function replyPerm(id, decision){
   const remember = Boolean(document.getElementById('remember') && document.getElementById('remember').checked);
-  const response = {decision, remember};
+  const response = {decision, scope: remember ? 'session' : 'none'};
   appendEnvelope({sequence:'local', received_at:new Date().toISOString(), type:'permission_response_submitted', data_type:'browser.permissionResponse', data:response});
   await fetch('/api/permission/' + id, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(response)});
   modal.innerHTML = '';

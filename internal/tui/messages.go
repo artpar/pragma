@@ -29,7 +29,7 @@ type PermRequestMsg struct {
 // orchestrator goroutine via the PermRequestMsg.Response channel.
 type PermResponseMsg struct {
 	Decision permission.Decision
-	Remember bool
+	Scope    permission.RememberScope
 }
 
 // InputSubmittedMsg carries a user message from the input component.

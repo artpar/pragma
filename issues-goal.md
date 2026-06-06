@@ -325,6 +325,24 @@ What not to do:
 
 Do not fix this by changing only the UI text to "remember". The runtime still lacks an explicit scope contract.
 
+Status:
+
+Resolved in current worktree. The invariant owner is now the permission prompt/checker contract: UI adapters return an explicit `permission.RememberScope`, and the orchestrator maps scope to the correct permission rule owner. Session scope calls `AddSessionRule`; only persistent scope calls `AddPersistentRule`.
+
+Source evidence:
+
+- `internal/permission/permission.go`: declares `RememberScope` values for none, session, and persistent remember decisions.
+- `internal/permission/prompter.go`: `Prompter.Prompt` returns `(Decision, RememberScope)`, so remember intent is no longer a boolean with implicit persistence semantics.
+- `internal/tool/orchestrator.go`: maps `RememberSession` to `Checker.AddSessionRule` and reserves `Checker.AddPersistentRule` for `RememberPersistent`.
+- `internal/tui/permission.go`: the TUI option labeled "Yes, for this session" returns `RememberSession`.
+- `internal/web/web.go`: the browser permission response sends and parses explicit `scope` values; the legacy `remember` boolean is only a compatibility alias for `RememberSession`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/permission/permission.go internal/permission/prompter.go internal/tool/orchestrator.go internal/tui/messages.go internal/tui/permission.go internal/tui/prompter.go internal/tui/permission_test.go internal/tui/prompter_test.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/permission ./internal/tool ./internal/tui ./internal/web ./internal/cli`; `git diff --check`.
+- Contract scan: `rg -n "Remember bool|resp\\.Remember|Prompt\\(ctx context.Context.*bool|\\(permission\\.Decision, bool\\)|remember for session.*AddPersistentRule|Remember:" internal -g'*.go'` returned no matches.
+
 ## 9. TUI Teams Dialog Directly Controls Task Lifecycle
 
 Severity: medium

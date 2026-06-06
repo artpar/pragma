@@ -77,8 +77,8 @@ func TestPermissionDialogAllow(t *testing.T) {
 	if resp.Decision != permission.DecisionAllow {
 		t.Errorf("expected Allow, got %s", resp.Decision)
 	}
-	if resp.Remember {
-		t.Error("Allow (once) should not request remember")
+	if resp.Scope != permission.RememberNone {
+		t.Errorf("Allow (once) should not request remember, got %s", resp.Scope)
 	}
 }
 
@@ -104,8 +104,8 @@ func TestPermissionDialogAlwaysAllow(t *testing.T) {
 	if resp.Decision != permission.DecisionAllow {
 		t.Errorf("expected Allow, got %s", resp.Decision)
 	}
-	if !resp.Remember {
-		t.Fatal("Always Allow should request remember")
+	if resp.Scope != permission.RememberSession {
+		t.Fatalf("Always Allow should request session remember, got %s", resp.Scope)
 	}
 }
 

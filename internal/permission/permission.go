@@ -13,6 +13,14 @@ const (
 	DecisionAsk   Decision = "ask"
 )
 
+type RememberScope string
+
+const (
+	RememberNone       RememberScope = "none"
+	RememberSession    RememberScope = "session"
+	RememberPersistent RememberScope = "persistent"
+)
+
 // PermissionMode controls the default behavior for unmatched tools.
 type PermissionMode string
 
