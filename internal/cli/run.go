@@ -1055,6 +1055,8 @@ func printStandaloneOrchestrationLoopEvent(ev query.LoopEvent, stdout, stderr io
 	case query.ToolResultEvent:
 		fmt.Fprintf(stderr, "[result: %s]\n", e.Result.ToolCallID)
 		flushWriter(stderr)
+	case query.UserMessageEvent:
+		printUserMessageEvent(stdout, e)
 	case query.RetryEvent:
 		fmt.Fprintf(stderr, "[retry: %s in %s]\n", e.Kind, e.Delay)
 		flushWriter(stderr)
@@ -1282,6 +1284,13 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
 				flushWriter(os.Stderr)
+			}
+		case query.UserMessageEvent:
+			observe.GlobalTrace("typecase: query.UserMessageEvent")
+			if hasStructuredOutput {
+				printUserMessageEvent(os.Stderr, e)
+			} else {
+				printUserMessageEvent(out, e)
 			}
 		case query.StructuredOutputEvent:
 			observe.GlobalTrace("typecase: query.StructuredOutputEvent")
@@ -1981,6 +1990,17 @@ func parseToolList(s string) []string {
 	}
 	observe.GlobalTrace("return: result")
 	return result
+}
+
+func printUserMessageEvent(w io.Writer, e query.UserMessageEvent) {
+	if strings.TrimSpace(e.Message) == "" {
+		return
+	}
+	fmt.Fprintln(w, e.Message)
+	for _, attachment := range e.Attachments {
+		fmt.Fprintf(w, "[attachment: %s]\n", attachment.Path)
+	}
+	flushWriter(w)
 }
 
 // loadOutputSchema reads a JSON schema from a flag value — inline JSON or file path.

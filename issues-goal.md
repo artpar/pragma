@@ -3000,6 +3000,10 @@ Do not call `applyToolFilters` again after `waitForToolsetMCP` or after OAuth re
 
 Severity: medium
 
+Status: fixed in this worktree. `SendUserMessage` now returns a typed `tool.UserMessage` on `tool.InvokeResult`; `tool.ExecuteResult` preserves user-visible messages per result; the query loop persists each delivered message as an assistant conversation message and emits a typed `query.UserMessageEvent`; and CLI, web, and TUI consume that runtime event directly. The existing `observe.BriefMessageSent` remains observability, not the delivery contract.
+
+Verification: `gofmt -w internal/tool/tool.go internal/tools/brief/brief.go internal/tool/orchestrator.go internal/query/event.go internal/query/loop.go internal/web/web.go internal/cli/run.go internal/tui/handlers.go`; `go build ./cmd/pragma`; `go vet ./internal/tools/brief ./internal/tool ./internal/query ./internal/web ./internal/cli ./internal/tui ./cmd/pragma`; `git diff --check`; ownership scan for `UserMessage|UserMessageEvent|BriefMessageSent|SendUserMessage|UserMessages|printUserMessageEvent|web.user_message`.
+
 Concrete files/functions involved:
 
 - `internal/tools/brief/brief.go`: `Tool.Invoke`

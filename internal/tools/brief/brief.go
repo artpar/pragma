@@ -128,21 +128,28 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		attachments = append(attachments, info)
 	}
 
+	briefAttachments := make([]observe.BriefAttachment, 0, len(attachments))
+	userAttachments := make([]tool.UserMessageAttachment, 0, len(attachments))
+	for _, a := range attachments {
+		observe.TraceCtx(ctx, "brief", "Tool.Invoke", "range attachments")
+		if a.Error != "" {
+			observe.TraceCtx(ctx, "brief", "Tool.Invoke", "if: a.Error != \"\"")
+			continue
+		}
+		briefAttachments = append(briefAttachments, observe.BriefAttachment{
+			Path:    a.Path,
+			Size:    a.Size,
+			IsImage: a.IsImage,
+		})
+		userAttachments = append(userAttachments, tool.UserMessageAttachment{
+			Path:    a.Path,
+			Size:    a.Size,
+			IsImage: a.IsImage,
+		})
+	}
+
 	if t.Bus != nil {
 		observe.TraceCtx(ctx, "brief", "Tool.Invoke", "if: t.Bus != nil")
-		briefAttachments := make([]observe.BriefAttachment, 0, len(attachments))
-		for _, a := range attachments {
-			observe.TraceCtx(ctx, "brief", "Tool.Invoke", "range attachments")
-			if a.Error != "" {
-				observe.TraceCtx(ctx, "brief", "Tool.Invoke", "if: a.Error != \"\"")
-				continue
-			}
-			briefAttachments = append(briefAttachments, observe.BriefAttachment{
-				Path:    a.Path,
-				Size:    a.Size,
-				IsImage: a.IsImage,
-			})
-		}
 		t.Bus.Emit(observe.BriefMessageSent{
 			EventHeader: observe.NewEventHeader("BriefMessageSent", "", observe.NewSpanID(), ""),
 			Message:     in.Message,
@@ -172,7 +179,14 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 	observe.TraceCtx(ctx, "brief", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 
-	return tool.InvokeResult{Content: content}, nil
+	return tool.InvokeResult{
+		Content: content,
+		UserMessages: []tool.UserMessage{{
+			Message:     in.Message,
+			Status:      in.Status,
+			Attachments: userAttachments,
+		}},
+	}, nil
 }
 
 // attachmentInfo holds resolved metadata about a file attachment.

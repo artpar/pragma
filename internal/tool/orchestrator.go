@@ -67,6 +67,7 @@ type ExecuteResult struct {
 	SupplementsByResult [][]model.ContentPart // per-result supplemental content, same index as Results
 	FileEffects         [][]FileEffect        // per-result file mutation receipts, same index as Results
 	StructuredOutputs   []json.RawMessage     // per-result validated structured outputs, same index as Results
+	UserMessages        [][]UserMessage       // per-result user-visible messages, same index as Results
 }
 
 func (r ExecuteResult) ContentParts() []model.ContentPart {
@@ -89,6 +90,7 @@ type singleResult struct {
 	supplements      []model.ContentPart
 	fileEffects      []FileEffect
 	structuredOutput json.RawMessage
+	userMessages     []UserMessage
 }
 
 // Execute runs a batch of tool calls, partitioning into concurrent and serial groups.
@@ -257,6 +259,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		SupplementsByResult: make([][]model.ContentPart, len(singles)),
 		FileEffects:         make([][]FileEffect, len(singles)),
 		StructuredOutputs:   make([]json.RawMessage, len(singles)),
+		UserMessages:        make([][]UserMessage, len(singles)),
 	}
 	for i, s := range singles {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range singles")
@@ -264,6 +267,7 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		out.SupplementsByResult[i] = append([]model.ContentPart(nil), s.supplements...)
 		out.FileEffects[i] = append([]FileEffect(nil), s.fileEffects...)
 		out.StructuredOutputs[i] = append(json.RawMessage(nil), s.structuredOutput...)
+		out.UserMessages[i] = copyUserMessages(s.userMessages)
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
@@ -576,7 +580,20 @@ func (o *Orchestrator) executeSingle(
 		supplements:      supplements,
 		fileEffects:      fileEffects,
 		structuredOutput: append(json.RawMessage(nil), invokeResult.StructuredOutput...),
+		userMessages:     copyUserMessages(invokeResult.UserMessages),
 	}
+}
+
+func copyUserMessages(in []UserMessage) []UserMessage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]UserMessage, len(in))
+	for i, msg := range in {
+		out[i] = msg
+		out[i].Attachments = append([]UserMessageAttachment(nil), msg.Attachments...)
+	}
+	return out
 }
 
 func hookFeedbackSupplements(event hook.Event, result hook.AggregatedResult) []model.ContentPart {

@@ -363,6 +363,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			if emitToolResultEvents(ch, execResult) {
 				structuredOutputSeen = true
 			}
+			if err := e.emitUserMessageEvents(execResult, ch); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 			if e.config.StopAfterToolExec {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.config.StopAfterToolExec")
 				emitTurnComplete(ch, response, response.StopReason, e.config.RequireStructuredOutput, structuredOutputSeen)
@@ -858,6 +862,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	fileEffects := make([][]tool.FileEffect, len(calls))
 	supplementsByResult := make([][]model.ContentPart, len(calls))
 	structuredOutputs := make([]json.RawMessage, len(calls))
+	userMessages := make([][]tool.UserMessage, len(calls))
 	var supplements []model.ContentPart
 	var pendingRealCalls []model.ToolCallPart
 	var pendingRealIndexes []int
@@ -876,6 +881,9 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 			}
 			if i < len(execResult.StructuredOutputs) {
 				structuredOutputs[idx] = append(json.RawMessage(nil), execResult.StructuredOutputs[i]...)
+			}
+			if i < len(execResult.UserMessages) {
+				userMessages[idx] = copyToolUserMessages(execResult.UserMessages[i])
 			}
 		}
 		supplements = append(supplements, execResult.Supplements...)
@@ -927,6 +935,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		SupplementsByResult: supplementsByResult,
 		FileEffects:         fileEffects,
 		StructuredOutputs:   structuredOutputs,
+		UserMessages:        userMessages,
 	}, nil
 }
 
@@ -1410,12 +1419,57 @@ func emitToolResultEvents(ch chan<- LoopEvent, execResult tool.ExecuteResult) bo
 	return emittedStructuredOutput
 }
 
+func (e *Engine) emitUserMessageEvents(execResult tool.ExecuteResult, ch chan<- LoopEvent) error {
+	for i, messages := range execResult.UserMessages {
+		if len(messages) == 0 {
+			continue
+		}
+		toolCallID := ""
+		if i < len(execResult.Results) {
+			toolCallID = execResult.Results[i].ToolCallID
+		}
+		for _, msg := range messages {
+			if strings.TrimSpace(msg.Message) == "" {
+				continue
+			}
+			event := UserMessageEvent{
+				ToolCallID:  toolCallID,
+				Message:     msg.Message,
+				Status:      msg.Status,
+				Attachments: append([]tool.UserMessageAttachment(nil), msg.Attachments...),
+			}
+			if err := e.appendConversationMessage(model.Message{
+				ID:        model.NewUUID(),
+				Role:      model.RoleAssistant,
+				Content:   []model.ContentPart{model.TextPart{Text: msg.Message}},
+				Timestamp: time.Now(),
+			}, nil); err != nil {
+				return err
+			}
+			ch <- event
+		}
+	}
+	return nil
+}
+
 func emitTurnComplete(ch chan<- LoopEvent, response model.Response, stopReason model.StopReason, requireStructuredOutput bool, structuredOutputSeen bool) {
 	if requireStructuredOutput && !structuredOutputSeen {
 		ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
 		return
 	}
 	ch <- TurnCompleteEvent{Response: response, StopReason: stopReason}
+}
+
+func copyToolUserMessages(in []tool.UserMessage) []tool.UserMessage {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]tool.UserMessage, len(in))
+	for i, msg := range in {
+		out[i] = msg
+		out[i].Attachments = append([]tool.UserMessageAttachment(nil), msg.Attachments...)
+	}
+	return out
 }
 
 func certifiedJSONEvidence(matching int, fields, paths []string) string {

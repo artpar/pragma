@@ -69,6 +69,19 @@ type InvokeResult struct {
 	Content          string
 	Supplements      []model.ContentPart
 	StructuredOutput json.RawMessage
+	UserMessages     []UserMessage
+}
+
+type UserMessageAttachment struct {
+	Path    string
+	Size    int64
+	IsImage bool
+}
+
+type UserMessage struct {
+	Message     string
+	Status      string
+	Attachments []UserMessageAttachment
 }
 
 // Descriptor defines a tool that can be invoked by the LLM.

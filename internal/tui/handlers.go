@@ -369,6 +369,20 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
+	case query.UserMessageEvent:
+		observe.GlobalTrace("typecase: query.UserMessageEvent")
+		m.closeActiveGroup()
+		m.outputSegs = m.flushStreamBuf()
+		if strings.TrimSpace(e.Message) != "" {
+			m.outputSegs = appendText(m.outputSegs, m.mdRenderer.Render(e.Message)+"\n")
+		}
+		for _, attachment := range e.Attachments {
+			m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("[attachment: %s]\n", attachment.Path))
+		}
+		m.toolbar.SetStatus("streaming...")
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+
 	case query.TurnCompleteEvent:
 		observe.GlobalTrace("typecase: query.TurnCompleteEvent")
 		m.closeActiveGroup()

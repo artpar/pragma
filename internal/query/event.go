@@ -68,6 +68,16 @@ type StructuredOutputEvent struct {
 
 func (StructuredOutputEvent) loopEventSealed() {}
 
+// UserMessageEvent carries a tool-requested user-visible message.
+type UserMessageEvent struct {
+	ToolCallID  string
+	Message     string
+	Status      string
+	Attachments []tool.UserMessageAttachment
+}
+
+func (UserMessageEvent) loopEventSealed() {}
+
 // TurnCompleteEvent signals the agentic loop has finished.
 type TurnCompleteEvent struct {
 	Response   model.Response

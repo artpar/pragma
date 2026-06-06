@@ -235,6 +235,19 @@ type webStructuredOutputEvent struct {
 	JSON       json.RawMessage `json:"json"`
 }
 
+type webUserMessageAttachment struct {
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	IsImage bool   `json:"is_image"`
+}
+
+type webUserMessageEvent struct {
+	ToolCallID  string                     `json:"tool_call_id,omitempty"`
+	Message     string                     `json:"message"`
+	Status      string                     `json:"status,omitempty"`
+	Attachments []webUserMessageAttachment `json:"attachments,omitempty"`
+}
+
 type webTurnCompleteEvent struct {
 	StopReason string `json:"stop_reason"`
 }
@@ -352,6 +365,21 @@ func normalizeLoopEvent(data interface{}) (string, string, interface{}) {
 		}
 	case query.StructuredOutputEvent:
 		return "structured_output", "web.structured_output", webStructuredOutputEvent{ToolCallID: ev.ToolCallID, JSON: ev.JSON}
+	case query.UserMessageEvent:
+		attachments := make([]webUserMessageAttachment, 0, len(ev.Attachments))
+		for _, attachment := range ev.Attachments {
+			attachments = append(attachments, webUserMessageAttachment{
+				Path:    attachment.Path,
+				Size:    attachment.Size,
+				IsImage: attachment.IsImage,
+			})
+		}
+		return "user_message", "web.user_message", webUserMessageEvent{
+			ToolCallID:  ev.ToolCallID,
+			Message:     ev.Message,
+			Status:      ev.Status,
+			Attachments: attachments,
+		}
 	case query.TurnCompleteEvent:
 		return "turn_complete", "web.turn_complete", webTurnCompleteEvent{StopReason: string(ev.StopReason)}
 	case query.CompactionStartedEvent:
