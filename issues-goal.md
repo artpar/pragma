@@ -4061,6 +4061,10 @@ Do not patch this by logging ignored `git worktree remove` errors while still de
 
 Severity: medium
 
+Status: fixed in this worktree. `RemoteTrigger` now advertises `body` as a provider-defined JSON object with `additionalProperties: true`, matching the arbitrary trigger payload that the remote service passes to provider adapters. `remote.Validate` now also enforces that `create` and `update` bodies are JSON objects before provider-specific request construction, and the permission subject includes the body bytes when present so schema, validation, permission, and adapter payloads describe the same contract.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/tools/remote ./internal/remote ./internal/provider/anthropic ./internal/tool ./cmd/pragma`; `git diff --check`; ownership scan for `RemoteTrigger`, `inputSchema`, `additionalProperties`, `validateBodyObject`, `Body`, `Validate`, `requestParts`, and `Orchestrator.executeSingle`.
+
 Concrete files/functions involved:
 
 - `internal/tools/remote/remote.go`: `inputSchema`, `remoteInput`, `Tool.InputSchema`, `Tool.Invoke`

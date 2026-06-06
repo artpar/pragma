@@ -85,7 +85,7 @@ func Validate(req Request) error {
 			observe.GlobalTrace("if: len(req.Body) == 0")
 			return fmt.Errorf("body required for create")
 		}
-		return nil
+		return validateBodyObject(req.Action, req.Body)
 	case ActionUpdate:
 		observe.GlobalTrace("case: ActionUpdate")
 		if req.TriggerID == "" {
@@ -96,7 +96,7 @@ func Validate(req Request) error {
 			observe.GlobalTrace("if: len(req.Body) == 0")
 			return fmt.Errorf("body required for update")
 		}
-		return nil
+		return validateBodyObject(req.Action, req.Body)
 	case ActionRun:
 		observe.GlobalTrace("case: ActionRun")
 		if req.TriggerID == "" {
@@ -108,4 +108,15 @@ func Validate(req Request) error {
 		observe.GlobalTrace("default")
 		return fmt.Errorf("unknown action: %s", req.Action)
 	}
+}
+
+func validateBodyObject(action Action, body json.RawMessage) error {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return fmt.Errorf("body for %s must be a JSON object: %w", action, err)
+	}
+	if obj == nil {
+		return fmt.Errorf("body for %s must be a JSON object", action)
+	}
+	return nil
 }

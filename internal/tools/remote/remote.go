@@ -33,8 +33,8 @@ var inputSchema = json.RawMessage(`{
 		},
 		"body": {
 			"type": "object",
-	"additionalProperties": false,
-			"description": "JSON body for create and update actions"
+			"additionalProperties": true,
+			"description": "Provider-defined JSON object body for create and update actions"
 		}
 	}
 }`)
@@ -88,6 +88,9 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 	if in.TriggerID != "" {
 		observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "if: in.TriggerID != \"\"")
 		content += " " + in.TriggerID
+	}
+	if len(in.Body) > 0 {
+		content += " " + string(in.Body)
 	}
 	observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", content)")
 	return checker.Check(ctx, "RemoteTrigger", content)
