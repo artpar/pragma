@@ -3917,6 +3917,10 @@ Do not patch `ServerStatuses` to infer more from `client.Connected()` while leav
 
 Severity: high
 
+Status: fixed in this worktree. Background process records now carry an owner token and child-owned heartbeat timestamp. The parent passes the token through `PRAGMA_BG_SESSION_TOKEN`, the child status subscriber and heartbeat loop refresh the record only when that token matches, and `ListProcesses` is now a read projection over records with fresh child heartbeats rather than a PID-existence cleanup path. `Kill` on Unix and Windows validates the fresh heartbeat before signaling; stale or dead records are removed without sending a signal.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/background ./internal/cli ./cmd/pragma`; `git diff --check`; ownership scan for `NewStatusSubscriber`, `UpdateStatus`, `UpdateSessionID`, `UpdateHeartbeat`, `HasFreshHeartbeat`, `OwnerToken`, `HeartbeatAt`, `isProcessAlive`, `validateControlRecord`, and `PRAGMA_BG_SESSION_TOKEN`.
+
 Concrete files/functions involved:
 
 - `internal/background/registry.go`: `Registry.Register`, `List`, `Get`, `UpdateStatus`

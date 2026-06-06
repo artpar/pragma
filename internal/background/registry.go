@@ -89,41 +89,62 @@ func (r *Registry) Unregister(pid int) error {
 	return nil
 }
 
-// UpdateStatus updates the process status and timestamp in a PID file.
-func (r *Registry) UpdateStatus(pid int, status Status) {
+// UpdateStatus updates the process status and heartbeat in a PID file.
+func (r *Registry) UpdateStatus(pid int, ownerToken string, status Status) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	info, err := r.Get(pid)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		return
-	}
-	info.Status = status
-	info.UpdatedAt = time.Now()
-	_ = r.Register(info)
+	r.updateOwned(pid, ownerToken, func(info *ProcessInfo, now time.Time) {
+		info.Status = status
+		info.UpdatedAt = now
+		info.HeartbeatAt = now
+	})
 }
 
 // UpdateSessionID attaches the real session identity after the child runtime
 // starts a domain session.
-func (r *Registry) UpdateSessionID(pid int, sessionID string) {
+func (r *Registry) UpdateSessionID(pid int, ownerToken string, sessionID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if sessionID == "" {
 		observe.GlobalTrace("if: sessionID == \"\"")
 		return
 	}
+	r.updateOwned(pid, ownerToken, func(info *ProcessInfo, now time.Time) {
+		info.SessionID = sessionID
+		info.UpdatedAt = now
+		info.HeartbeatAt = now
+	})
+}
+
+// UpdateHeartbeat records child-owned liveness without changing presentation status.
+func (r *Registry) UpdateHeartbeat(pid int, ownerToken string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	r.updateOwned(pid, ownerToken, func(info *ProcessInfo, now time.Time) {
+		info.UpdatedAt = now
+		info.HeartbeatAt = now
+	})
+}
+
+func (r *Registry) updateOwned(pid int, ownerToken string, mutate func(*ProcessInfo, time.Time)) {
 	info, err := r.Get(pid)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		return
 	}
-	info.SessionID = sessionID
-	info.UpdatedAt = time.Now()
+	if ownerToken == "" || (info.OwnerToken != "" && info.OwnerToken != ownerToken) {
+		observe.GlobalTrace("if: owner token mismatch")
+		return
+	}
+	if info.OwnerToken == "" {
+		info.OwnerToken = ownerToken
+	}
+	mutate(&info, time.Now())
 	_ = r.Register(info)
 }
 
 // ListProcesses returns all active background process records.
-// Validates each PID is alive, removes stale entries, sorts by StartedAt descending.
+// Validates each record has a fresh child-owned heartbeat, sorts by StartedAt descending.
 func (r *Registry) ListProcesses() ([]ProcessInfo, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -159,10 +180,8 @@ func (r *Registry) ListProcesses() ([]ProcessInfo, error) {
 			continue
 		}
 
-		if !isProcessAlive(info.PID) {
-			observe.GlobalTrace("if: !isProcessAlive(info.PID)")
-
-			os.Remove(filepath.Join(r.dir, entry.Name()))
+		if !r.recordActive(info, time.Now()) {
+			observe.GlobalTrace("if: !r.recordActive(info, time.Now())")
 			continue
 		}
 
@@ -175,6 +194,25 @@ func (r *Registry) ListProcesses() ([]ProcessInfo, error) {
 	observe.GlobalTrace("return: active, nil")
 
 	return active, nil
+}
+
+func (r *Registry) recordActive(info ProcessInfo, now time.Time) bool {
+	return info.PID > 0 && info.HasFreshHeartbeat(now) && isProcessAlive(info.PID)
+}
+
+func (r *Registry) validateControlRecord(info ProcessInfo, now time.Time) error {
+	if info.PID <= 0 {
+		return fmt.Errorf("background record has invalid PID %d", info.PID)
+	}
+	if !info.HasFreshHeartbeat(now) {
+		_ = r.Unregister(info.PID)
+		return fmt.Errorf("background record for PID %d is stale; removed without killing", info.PID)
+	}
+	if !isProcessAlive(info.PID) {
+		_ = r.Unregister(info.PID)
+		return fmt.Errorf("background process %d is not running; removed stale record", info.PID)
+	}
+	return nil
 }
 
 // ListSessions returns active background processes that have attached to a

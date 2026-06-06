@@ -22,6 +22,10 @@ func (r *Registry) Kill(pid int) error {
 		observe.GlobalTrace("return: err")
 		return err
 	}
+	if err := r.validateControlRecord(info, time.Now()); err != nil {
+		observe.GlobalTrace("if: r.validateControlRecord != nil")
+		return err
+	}
 
 	pgid := info.PGID
 	if pgid == 0 {

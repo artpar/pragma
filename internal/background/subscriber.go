@@ -13,6 +13,7 @@ import (
 type StatusSubscriber struct {
 	registry         *Registry
 	pid              int
+	ownerToken       string
 	mu               sync.Mutex
 	activeAPI        int
 	activeToolBatch  int
@@ -21,11 +22,11 @@ type StatusSubscriber struct {
 }
 
 // NewStatusSubscriber creates a subscriber for the current process.
-func NewStatusSubscriber(registry *Registry) *StatusSubscriber {
+func NewStatusSubscriber(registry *Registry, ownerToken string) *StatusSubscriber {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &StatusSubscriber{registry: registry, pid: os.Getpid()}")
-	return &StatusSubscriber{registry: registry, pid: os.Getpid()}
+	return &StatusSubscriber{registry: registry, pid: os.Getpid(), ownerToken: ownerToken}
 }
 
 func (s *StatusSubscriber) HandleEvent(event observe.Event) {
@@ -117,17 +118,17 @@ func (s *StatusSubscriber) HandleEvent(event observe.Event) {
 		s.mu.Unlock()
 	case observe.SessionStarted:
 		observe.GlobalTrace("typecase: observe.SessionStarted")
-		s.registry.UpdateSessionID(s.pid, e.SessionID)
+		s.registry.UpdateSessionID(s.pid, s.ownerToken, e.SessionID)
 	}
 }
 
 func (s *StatusSubscriber) updateStatusLocked() {
 	switch {
 	case s.waiting:
-		s.registry.UpdateStatus(s.pid, StatusWaiting)
+		s.registry.UpdateStatus(s.pid, s.ownerToken, StatusWaiting)
 	case s.activeAPI > 0 || s.activeToolBatch > 0 || s.pendingToolBatch:
-		s.registry.UpdateStatus(s.pid, StatusBusy)
+		s.registry.UpdateStatus(s.pid, s.ownerToken, StatusBusy)
 	default:
-		s.registry.UpdateStatus(s.pid, StatusIdle)
+		s.registry.UpdateStatus(s.pid, s.ownerToken, StatusIdle)
 	}
 }

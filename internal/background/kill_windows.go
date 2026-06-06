@@ -4,6 +4,7 @@ package background
 
 import (
 	"os"
+	"time"
 
 	"github.com/artpar/pragma/internal/observe"
 )
@@ -13,6 +14,15 @@ import (
 func (r *Registry) Kill(pid int) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	info, err := r.Get(pid)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return err
+	}
+	if err := r.validateControlRecord(info, time.Now()); err != nil {
+		observe.GlobalTrace("if: r.validateControlRecord != nil")
+		return err
+	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")

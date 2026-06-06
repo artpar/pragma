@@ -104,6 +104,11 @@ func RunBackground(cmd *cobra.Command) error {
 		observe.GlobalTrace("return: fmt.Errorf(\"create log file: %w\", err)")
 		return fmt.Errorf("create log file: %w", err)
 	}
+	ownerToken, err := background.NewOwnerToken()
+	if err != nil {
+		logFile.Close()
+		return fmt.Errorf("create background owner token: %w", err)
+	}
 
 	childArgs := []string{os.Args[0]}
 	addStringFlag := func(name string) {
@@ -151,6 +156,7 @@ func RunBackground(cmd *cobra.Command) error {
 	env := append(os.Environ(),
 		"PRAGMA_BG_SESSION=1",
 		"PRAGMA_BG_SESSION_LOG="+logPath,
+		"PRAGMA_BG_SESSION_TOKEN="+ownerToken,
 	)
 
 	devNull, err := os.Open(os.DevNull)
@@ -193,16 +199,17 @@ func RunBackground(cmd *cobra.Command) error {
 		providerName, _ := cmd.Flags().GetString("provider")
 
 		_ = reg.Register(background.ProcessInfo{
-			PID:       childPid,
-			PGID:      childPid,
-			SessionID: "",
-			CWD:       cwd,
-			StartedAt: time.Now(),
-			Status:    background.StatusStarting,
-			LogPath:   logPath,
-			Model:     modelName,
-			Provider:  providerName,
-			Prompt:    promptDisplay,
+			PID:        childPid,
+			PGID:       childPid,
+			SessionID:  "",
+			OwnerToken: ownerToken,
+			CWD:        cwd,
+			StartedAt:  time.Now(),
+			Status:     background.StatusStarting,
+			LogPath:    logPath,
+			Model:      modelName,
+			Provider:   providerName,
+			Prompt:     promptDisplay,
 		})
 	}
 
@@ -1125,8 +1132,11 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_BG_SESSION\") == \"1\"")
 		if reg, regErr := background.NewRegistry(); regErr == nil {
 			observe.GlobalTrace("if: regErr == nil")
+			ownerToken := os.Getenv("PRAGMA_BG_SESSION_TOKEN")
+			cancelHeartbeat := background.StartHeartbeat(cmd.Context(), reg, os.Getpid(), ownerToken)
+			defer cancelHeartbeat()
 			defer reg.Unregister(os.Getpid())
-			sub := background.NewStatusSubscriber(reg)
+			sub := background.NewStatusSubscriber(reg, ownerToken)
 			d.Bus.Subscribe(sub)
 		}
 	}
