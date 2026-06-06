@@ -1113,7 +1113,7 @@ func (m *Model) refreshTeammates() {
 		observe.GlobalTrace("if: m.taskReg == nil")
 		return
 	}
-	tasks := m.taskReg.ListRunningTeammates()
+	tasks := m.taskReg.ListTeammates(false)
 	m.teammateEntries = buildTeammateEntries(tasks)
 	m.toolbar.teammateCount = len(m.teammateEntries)
 }

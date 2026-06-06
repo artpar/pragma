@@ -135,7 +135,7 @@ func (t *Tool) activeTeammateNames() []string {
 	if t.Tasks == nil {
 		return nil
 	}
-	teammates := t.Tasks.ListRunningTeammates()
+	teammates := t.Tasks.ListTeammates(false)
 	names := make([]string, 0, len(teammates))
 	for _, tk := range teammates {
 		names = append(names, tk.AgentName)

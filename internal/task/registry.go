@@ -36,6 +36,19 @@ type MessageDeliveryResult struct {
 	Task   Task
 }
 
+type LifecycleCommand string
+
+const (
+	LifecycleCommandShutdown LifecycleCommand = "shutdown"
+	LifecycleCommandKill     LifecycleCommand = "kill"
+)
+
+type LifecycleCommandResult struct {
+	Command LifecycleCommand
+	Task    Task
+	Message string
+}
+
 // NewRegistry creates a task Registry.
 func NewRegistry(bus *observe.EventBus) *Registry {
 	observe.GlobalTrace("enter")
@@ -151,28 +164,9 @@ func (r *Registry) GetByName(name string) (Task, bool) {
 func (r *Registry) Cancel(id string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	t, ok := r.tasks[id]
-	if !ok {
-		observe.GlobalTrace("if: !ok")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
-		return fmt.Errorf("task %q not found", id)
-	}
-	if t.Status != TaskRunning && t.Status != TaskPending {
-		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot cancel\", id, t.Status)")
-		return fmt.Errorf("task %q is %s, cannot cancel", id, t.Status)
-	}
-	if t.Cancel != nil {
-		observe.GlobalTrace("if: t.Cancel != nil")
-		t.Cancel()
-	}
-	t.Status = TaskCancelled
-	t.UpdatedAt = time.Now()
+	_, err := r.ApplyLifecycleCommand(id, LifecycleCommandKill)
 	observe.GlobalTrace("return: nil")
-	return nil
+	return err
 }
 
 // ListRunningTeammates returns snapshots of running tasks that have an AgentName,
@@ -180,19 +174,7 @@ func (r *Registry) Cancel(id string) error {
 func (r *Registry) ListRunningTeammates() []Task {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	var result []Task
-	for _, t := range r.tasks {
-		observe.GlobalTrace("range r.tasks")
-		if t.Status == TaskRunning && t.AgentName != "" {
-			observe.GlobalTrace("if: t.Status == TaskRunning && t.AgentName != \"\"")
-			result = append(result, t.snapshot())
-		}
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].AgentName < result[j].AgentName
-	})
+	result := r.ListTeammates(false)
 	observe.GlobalTrace("return: result")
 	return result
 }
@@ -203,12 +185,22 @@ func (r *Registry) ListRunningTeammates() []Task {
 func (r *Registry) ListAllTeammates() []Task {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	result := r.ListTeammates(true)
+	observe.GlobalTrace("return: result")
+	return result
+}
+
+// ListTeammates returns teammate task snapshots through the registry-owned
+// teammate visibility boundary.
+func (r *Registry) ListTeammates(includeInactive bool) []Task {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var result []Task
 	for _, t := range r.tasks {
 		observe.GlobalTrace("range r.tasks")
-		if t.AgentName != "" {
+		if t.AgentName != "" && (includeInactive || t.Status == TaskRunning) {
 			observe.GlobalTrace("if: t.AgentName != \"\"")
 			result = append(result, t.snapshot())
 		}
@@ -240,6 +232,26 @@ func statusRank(s TaskStatus) int {
 	default:
 		observe.GlobalTrace("default")
 		return 3
+	}
+}
+
+func lifecycleCommandMessage(t *Task, cmd LifecycleCommand) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	name := t.ID
+	if t.AgentName != "" {
+		name = t.AgentName
+	}
+	switch cmd {
+	case LifecycleCommandShutdown:
+		return fmt.Sprintf("Shutdown requested for %s", name)
+	case LifecycleCommandKill:
+		if t.AgentName == "" {
+			return fmt.Sprintf("Task %s cancelled", t.ID)
+		}
+		return fmt.Sprintf("Killed %s", name)
+	default:
+		return fmt.Sprintf("Applied %s to %s", cmd, name)
 	}
 }
 
@@ -305,6 +317,15 @@ func (r *Registry) DeliverMessage(to, message string) MessageDeliveryResult {
 func (r *Registry) RequestShutdown(id string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	_, err := r.ApplyLifecycleCommand(id, LifecycleCommandShutdown)
+	observe.GlobalTrace("return: err")
+	return err
+}
+
+// ApplyLifecycleCommand is the registry-owned task lifecycle command boundary.
+func (r *Registry) ApplyLifecycleCommand(id string, cmd LifecycleCommand) (LifecycleCommandResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -312,19 +333,41 @@ func (r *Registry) RequestShutdown(id string) error {
 	if !ok {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
-		return fmt.Errorf("task %q not found", id)
+		return LifecycleCommandResult{}, fmt.Errorf("task %q not found", id)
+	}
+	if cmd != LifecycleCommandShutdown && cmd != LifecycleCommandKill {
+		return LifecycleCommandResult{}, fmt.Errorf("unknown lifecycle command %q", cmd)
 	}
 	if t.Status != TaskRunning && t.Status != TaskPending {
 		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
-		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot shutdown\", id, t.Status)")
-		return fmt.Errorf("task %q is %s, cannot shutdown", id, t.Status)
+		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot apply lifecycle command\", id, t.Status)")
+		return LifecycleCommandResult{}, fmt.Errorf("task %q is %s, cannot %s", id, t.Status, cmd)
 	}
-	t.ShutdownRequested = true
-	t.UpdatedAt = time.Now()
 
-	r.notifyTaskLocked(t)
-	observe.GlobalTrace("return: nil")
-	return nil
+	notify := false
+	switch cmd {
+	case LifecycleCommandShutdown:
+		t.ShutdownRequested = true
+		notify = true
+	case LifecycleCommandKill:
+		if t.Cancel != nil {
+			observe.GlobalTrace("if: t.Cancel != nil")
+			t.Cancel()
+		}
+		t.Status = TaskCancelled
+	}
+	t.UpdatedAt = time.Now()
+	if notify {
+		r.notifyTaskLocked(t)
+	}
+
+	result := LifecycleCommandResult{
+		Command: cmd,
+		Task:    t.snapshot(),
+		Message: lifecycleCommandMessage(t, cmd),
+	}
+	observe.GlobalTrace("return: result, nil")
+	return result, nil
 }
 
 // DrainPendingMessages atomically reads and clears PendingMessages for a task.

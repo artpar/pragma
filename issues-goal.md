@@ -426,6 +426,24 @@ What not to do:
 
 Do not copy `RequestShutdown`/`Cancel` calls into more UI surfaces.
 
+Status:
+
+Resolved in current worktree. The invariant owner is now the task registry lifecycle command boundary. TUI and tools request typed lifecycle commands and render the returned result; they no longer choose shutdown/kill implementation details directly.
+
+Source evidence:
+
+- `internal/task/registry.go`: adds `LifecycleCommand`, `LifecycleCommandResult`, and `Registry.ApplyLifecycleCommand`, which owns shutdown and kill transitions. Legacy `Cancel` and `RequestShutdown` delegate to this command boundary.
+- `internal/tui/teams.go`: the teams dialog uses `ApplyLifecycleCommand` for shutdown and kill actions, and `ListTeammates` for teammate visibility.
+- `internal/tui/model.go`: teammate toolbar refresh uses `ListTeammates`.
+- `internal/tools/taskstop/taskstop.go`: `TaskStop` uses `ApplyLifecycleCommand(..., LifecycleCommandKill)` instead of directly cancelling the registry.
+- `internal/tools/teamdelete/teamdelete.go`: active teammate lookup uses `ListTeammates`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/task/registry.go internal/tui/teams.go internal/tui/model.go internal/tools/taskstop/taskstop.go internal/tools/teamdelete/teamdelete.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/task ./internal/tui ./internal/tools/taskstop ./internal/tools/teamdelete ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "d\\.taskReg\\.(RequestShutdown|Cancel|ListAllTeammates|ListRunningTeammates)|t\\.Tasks\\.Cancel\\(|t\\.Tasks\\.ListRunningTeammates\\(|m\\.taskReg\\.ListRunningTeammates\\(" internal/tui internal/tools -g'*.go'` returned no matches.
+
 ## 10. Lifecycle Graph Entrypoints Each Build Runner Context And Project Results
 
 Severity: medium

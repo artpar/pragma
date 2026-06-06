@@ -79,11 +79,12 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		return tool.InvokeResult{}, fmt.Errorf("id is required")
 	}
 
-	if err := t.Tasks.Cancel(in.ID); err != nil {
+	result, err := t.Tasks.ApplyLifecycleCommand(in.ID, task.LifecycleCommandKill)
+	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: err.Error()}, nil")
 		return tool.InvokeResult{Content: err.Error()}, nil
 	}
-	observe.GlobalTrace("return: tool.InvokeResult{Content: fmt.Sprintf(\"Task %s cancelled\", in.ID)}, nil")
-	return tool.InvokeResult{Content: fmt.Sprintf("Task %s cancelled", in.ID)}, nil
+	observe.GlobalTrace("return: tool.InvokeResult{Content: result.Message}, nil")
+	return tool.InvokeResult{Content: result.Message}, nil
 }

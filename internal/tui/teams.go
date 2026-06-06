@@ -71,7 +71,7 @@ func (d *teamsDialog) Refresh() {
 		observe.GlobalTrace("if: d.taskReg == nil")
 		return
 	}
-	teammates := d.taskReg.ListAllTeammates()
+	teammates := d.taskReg.ListTeammates(true)
 	d.entries = buildTeammateEntries(teammates)
 	if d.selected >= len(d.entries) {
 		observe.GlobalTrace("if: d.selected >= len(d.entries)")
@@ -141,12 +141,13 @@ func (d *teamsDialog) shutdownSelected() {
 		return
 	}
 	e := d.entries[d.selected]
-	if err := d.taskReg.RequestShutdown(e.TaskID); err != nil {
+	result, err := d.taskReg.ApplyLifecycleCommand(e.TaskID, task.LifecycleCommandShutdown)
+	if err != nil {
 		d.feedback = fmt.Sprintf("Shutdown failed for %s: %v", e.Name, err)
 		d.Refresh()
 		return
 	}
-	d.feedback = fmt.Sprintf("Shutdown requested for %s", e.Name)
+	d.feedback = result.Message
 	d.Refresh()
 }
 
@@ -159,12 +160,13 @@ func (d *teamsDialog) killSelected() {
 		return
 	}
 	e := d.entries[d.selected]
-	if err := d.taskReg.Cancel(e.TaskID); err != nil {
+	result, err := d.taskReg.ApplyLifecycleCommand(e.TaskID, task.LifecycleCommandKill)
+	if err != nil {
 		d.feedback = fmt.Sprintf("Kill failed for %s: %v", e.Name, err)
 		d.Refresh()
 		return
 	}
-	d.feedback = fmt.Sprintf("Killed %s", e.Name)
+	d.feedback = result.Message
 	d.Refresh()
 }
 
