@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/artpar/pragma/internal/observe"
@@ -31,9 +30,8 @@ var (
 )
 
 // ToolRenderer renders a tool result given context.
-// display carries optional TUI-only content from InvokeResult.Display (e.g., unified diff).
 // verbose controls expanded (full output) vs compact (truncated summary) rendering.
-type ToolRenderer func(input json.RawMessage, content string, isError bool, width int, display string, verbose bool) string
+type ToolRenderer func(input json.RawMessage, content string, isError bool, width int, verbose bool) string
 
 // toolRenderers maps tool names to their specific renderer.
 var toolRenderers = map[string]ToolRenderer{
@@ -50,7 +48,7 @@ var toolRenderers = map[string]ToolRenderer{
 }
 
 // RenderToolOutput dispatches to a tool-specific renderer or generic fallback.
-func RenderToolOutput(name string, input json.RawMessage, content string, isError bool, width int, display string, verbose bool) string {
+func RenderToolOutput(name string, input json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isPersistedOutput(content) {
@@ -60,8 +58,8 @@ func RenderToolOutput(name string, input json.RawMessage, content string, isErro
 	}
 	if renderer, ok := toolRenderers[name]; ok {
 		observe.GlobalTrace("if: ok")
-		observe.GlobalTrace("return: renderer(input, content, isError, width, display, verbose)")
-		return renderer(input, content, isError, width, display, verbose)
+		observe.GlobalTrace("return: renderer(input, content, isError, width, verbose)")
+		return renderer(input, content, isError, width, verbose)
 	}
 	if isIDEMCPTool(name) {
 		observe.GlobalTrace("if: isIDEMCPTool(name)")
@@ -257,9 +255,9 @@ func appendExpandHint(b *strings.Builder) {
 
 // renderBash renders Bash tool output.
 // Shows last 5 lines (matching TS non-verbose ShellProgressMessage), with styled
-// exit code/timeout when present in the Display field.
+// exit code/timeout when present in the tool result content.
 // The command itself is already shown in the tool call line (⏺ Bash(cmd)).
-func renderBash(_ json.RawMessage, content string, isError bool, width int, display string, verbose bool) string {
+func renderBash(_ json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
@@ -322,7 +320,7 @@ func renderBash(_ json.RawMessage, content string, isError bool, width int, disp
 
 	if statusLine != "" {
 		observe.GlobalTrace("if: statusLine != \"\"")
-		exitCode := parseBashExitCode(display)
+		exitCode := parseBashStatusExitCode(statusLine)
 		b.WriteString(ContentIndent)
 		if exitCode == 2 && strings.Contains(content, "blocked") {
 			observe.GlobalTrace("if: exitCode == 2 && strings.Contains(content, \"blocked\")")
@@ -345,19 +343,14 @@ func renderBash(_ json.RawMessage, content string, isError bool, width int, disp
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// parseBashExitCode extracts exit code from display metadata.
-// Display format: "exit_code:N" or "timeout:N".
-func parseBashExitCode(display string) int {
+func parseBashStatusExitCode(statusLine string) int {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if strings.HasPrefix(display, "exit_code:") {
-		observe.GlobalTrace("if: strings.HasPrefix(display, \"exit_code:\")")
-		code, err := strconv.Atoi(display[len("exit_code:"):])
-		if err == nil {
-			observe.GlobalTrace("if: err == nil")
-			observe.GlobalTrace("return: code")
-			return code
-		}
+	var code int
+	if _, err := fmt.Sscanf(strings.TrimSpace(statusLine), "Exit code %d", &code); err == nil {
+		observe.GlobalTrace("if: err == nil")
+		observe.GlobalTrace("return: code")
+		return code
 	}
 	observe.GlobalTrace("return: -1")
 	return -1
@@ -365,7 +358,7 @@ func parseBashExitCode(display string) int {
 
 // renderRead renders FileRead tool output as a compact "Read N lines" summary.
 // The file path is already shown in the tool call line (⏺ Read(path)).
-func renderRead(input json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
+func renderRead(input json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -439,10 +432,8 @@ func renderRead(input json.RawMessage, content string, isError bool, width int, 
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// renderEdit renders FileEdit tool output as a unified diff.
-// When display contains a unified diff (from InvokeResult.Display), renders it with
-// line numbers, context, and color. Falls back to simple -/+ from input params.
-func renderEdit(input json.RawMessage, content string, isError bool, width int, display string, _ bool) string {
+// renderEdit renders FileEdit tool output from stable edit input and result content.
+func renderEdit(input json.RawMessage, content string, isError bool, width int, _ bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -465,14 +456,6 @@ func renderEdit(input json.RawMessage, content string, isError bool, width int, 
 		b.WriteString(bracketDim.Render(BracketPrefix))
 		b.WriteString(fileHeader.Render(params.FilePath))
 		b.WriteString("\n")
-	}
-
-	if display != "" {
-		observe.GlobalTrace("if: display != \"\"")
-		b.WriteString(renderUnifiedDiff(display, width))
-		b.WriteString("\n")
-		observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
-		return strings.TrimRight(b.String(), "\n")
 	}
 
 	if params.OldString != "" || params.NewString != "" {
@@ -589,10 +572,8 @@ func renderUnifiedDiff(diff string, width int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// renderWrite renders FileWrite tool output.
-// When display contains a unified diff (from InvokeResult.Display), renders it with
-// line numbers, context, and color. Falls back to line count summary.
-func renderWrite(input json.RawMessage, content string, isError bool, width int, display string, _ bool) string {
+// renderWrite renders FileWrite tool output from stable input and result content.
+func renderWrite(input json.RawMessage, content string, isError bool, width int, _ bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -614,31 +595,6 @@ func renderWrite(input json.RawMessage, content string, isError bool, width int,
 		b.WriteString(bracketDim.Render(BracketPrefix))
 		b.WriteString(fileHeader.Render(params.FilePath))
 		b.WriteString("\n")
-	}
-
-	if display != "" {
-		observe.GlobalTrace("if: display != \"\"")
-		isCreate := strings.Contains(content, "created")
-		if isCreate {
-			observe.GlobalTrace("if: isCreate")
-
-			numLines := countContentLines(params.Content)
-			b.WriteString(bracketDim.Render(BracketPrefix))
-			b.WriteString(dimText.Render(fmt.Sprintf("Wrote %d lines", numLines)))
-			b.WriteString("\n")
-		} else {
-			observe.GlobalTrace("else: isCreate")
-
-			added, removed := countDiffLines(display)
-			b.WriteString(bracketDim.Render(BracketPrefix))
-			b.WriteString(dimText.Render(formatChangeSummary(added, removed)))
-			b.WriteString("\n")
-		}
-		b.WriteString(renderUnifiedDiff(display, width))
-		b.WriteString("\n")
-		observe.GlobalTrace("return: rendered display diff")
-		observe.GlobalTrace("return: strings.TrimRight(b.String(), \"\\n\")")
-		return strings.TrimRight(b.String(), "\n")
 	}
 
 	numLines := countContentLines(params.Content)
@@ -724,7 +680,7 @@ func formatChangeSummary(added, removed int) string {
 
 // renderGrep renders Grep tool search results.
 // Shows summary + file list.
-func renderGrep(_ json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
+func renderGrep(_ json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -794,7 +750,7 @@ func renderGrep(_ json.RawMessage, content string, isError bool, width int, _ st
 }
 
 // renderGlob renders Glob tool file listing results.
-func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
+func renderGlob(_ json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -863,7 +819,7 @@ func renderGlob(_ json.RawMessage, content string, isError bool, width int, _ st
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func renderToolResultRead(_ json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
+func renderToolResultRead(_ json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {
@@ -909,7 +865,7 @@ func renderToolResultRead(_ json.RawMessage, content string, isError bool, width
 }
 
 // renderAgent renders Agent tool results with diamond glyphs.
-func renderAgent(input json.RawMessage, content string, isError bool, width int, _ string, verbose bool) string {
+func renderAgent(input json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var b strings.Builder
@@ -974,7 +930,7 @@ func renderAgent(input json.RawMessage, content string, isError bool, width int,
 
 // renderAskResult renders AskUserQuestion tool result.
 // Shows the user's answers in "Q"="A" format, matching TS AskUserQuestionResultMessage.
-func renderAskResult(_ json.RawMessage, content string, isError bool, width int, _ string, _ bool) string {
+func renderAskResult(_ json.RawMessage, content string, isError bool, width int, _ bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {

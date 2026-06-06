@@ -12,7 +12,6 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
-	"github.com/artpar/pragma/internal/util"
 )
 
 type Input struct {
@@ -622,15 +621,6 @@ func writeVerified(ctx context.Context, changes []verifiedChange, state tool.Sta
 func renderResult(changes []verifiedChange) tool.InvokeResult {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	var display strings.Builder
-	for _, change := range changes {
-		observe.GlobalTrace("range changes")
-		if display.Len() > 0 {
-			observe.GlobalTrace("if: display.Len() > 0")
-			display.WriteString("\n")
-		}
-		display.WriteString(util.GenerateEditDiff(change.oldContent, change.oldContent, change.newContent, change.op.Path, false, 3))
-	}
 	paths := make([]string, 0, len(changes))
 	for _, change := range changes {
 		observe.GlobalTrace("range changes")
@@ -639,7 +629,6 @@ func renderResult(changes []verifiedChange) tool.InvokeResult {
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"Applied patch successfully. Changed...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("Applied patch successfully. Changed files: %s", strings.Join(paths, ", ")),
-		Display: display.String(),
 	}
 }
 

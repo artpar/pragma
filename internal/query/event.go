@@ -52,10 +52,8 @@ type ToolCallEvent struct {
 func (ToolCallEvent) loopEventSealed() {}
 
 // ToolResultEvent carries the result of a tool execution.
-// Display carries optional presentation-only rendering content from the tool's InvokeResult.
 type ToolResultEvent struct {
 	Result      model.ToolResultPart
-	Display     string
 	FileEffects []tool.FileEffect
 }
 

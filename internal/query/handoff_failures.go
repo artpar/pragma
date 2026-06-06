@@ -10,7 +10,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-func (e *Engine) recordHandoffToolFailures(calls []model.ToolCallPart, results []model.ToolResultPart, displays []string) {
+func (e *Engine) recordHandoffToolFailures(calls []model.ToolCallPart, results []model.ToolResultPart) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !e.isStateHandoffMode() {
@@ -24,12 +24,7 @@ func (e *Engine) recordHandoffToolFailures(calls []model.ToolCallPart, results [
 			observe.GlobalTrace("if: i >= len(results)")
 			continue
 		}
-		display := ""
-		if i < len(displays) {
-			observe.GlobalTrace("if: i < len(displays)")
-			display = displays[i]
-		}
-		failure, ok := handoffFailureFromToolResult(call, results[i], display)
+		failure, ok := handoffFailureFromToolResult(call, results[i])
 		if ok {
 			observe.GlobalTrace("if: ok")
 			failures = append(failures, failure)
@@ -64,10 +59,10 @@ func (e *Engine) recordHandoffToolFailures(calls []model.ToolCallPart, results [
 	})
 }
 
-func handoffFailureFromToolResult(call model.ToolCallPart, result model.ToolResultPart, display string) (model.HandoffVerifiedFailure, bool) {
+func handoffFailureFromToolResult(call model.ToolCallPart, result model.ToolResultPart) (model.HandoffVerifiedFailure, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	errorType, failed := toolFailureType(result, display)
+	errorType, failed := toolFailureType(result)
 	if !failed {
 		observe.GlobalTrace("if: !failed")
 		observe.GlobalTrace("return: model.HandoffVerifiedFailure{}, false")
@@ -93,26 +88,41 @@ func handoffFailureFromToolResult(call model.ToolCallPart, result model.ToolResu
 	return failure, true
 }
 
-func toolFailureType(result model.ToolResultPart, display string) (string, bool) {
+func toolFailureType(result model.ToolResultPart) (string, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	display = strings.TrimSpace(display)
 	if result.IsError {
 		observe.GlobalTrace("if: result.IsError")
 		observe.GlobalTrace("return: \"tool_result_error\", true")
 		return "tool_result_error", true
 	}
-	switch {
-	case strings.HasPrefix(display, "exit_code:"):
-		observe.GlobalTrace("case: strings.HasPrefix(display, \"exit_code:\")")
-		return display, true
-	case strings.HasPrefix(display, "timeout:"):
-		observe.GlobalTrace("case: strings.HasPrefix(display, \"timeout:\")")
-		return display, true
-	default:
-		observe.GlobalTrace("default")
-		return "", false
+	if exitCode, ok := shellExitCodeFromContent(result.Content); ok {
+		observe.GlobalTrace("if: exitCode, ok := shellExitCodeFromContent(result.Content); ok")
+		return fmt.Sprintf("exit_code:%d", exitCode), true
 	}
+	if strings.Contains(result.Content, "Command timed out after ") {
+		observe.GlobalTrace("if: strings.Contains(result.Content, \"Command timed out after \")")
+		return "timeout", true
+	}
+	observe.GlobalTrace("return: \"\", false")
+	return "", false
+}
+
+func shellExitCodeFromContent(content string) (int, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	if len(lines) == 0 {
+		observe.GlobalTrace("if: len(lines) == 0")
+		return 0, false
+	}
+	var code int
+	if _, err := fmt.Sscanf(strings.TrimSpace(lines[len(lines)-1]), "Exit code %d", &code); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return 0, false
+	}
+	observe.GlobalTrace("return: code, true")
+	return code, true
 }
 
 func toolCommandSummary(call model.ToolCallPart) string {

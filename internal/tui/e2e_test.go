@@ -312,7 +312,6 @@ func TestVerboseToggleBash(t *testing.T) {
 		Input:   json.RawMessage(`{"command":"ls -la"}`),
 		Content: output,
 		IsError: false,
-		Display: "exit_code:0",
 	})
 
 	// Non-verbose: last 5 lines only
@@ -378,7 +377,7 @@ func TestGroupCollapsingConsecutiveReads(t *testing.T) {
 		m.fillGroupResult(call, model.ToolResultPart{
 			ToolCallID: call.ID,
 			Content:    "file content of " + path,
-		}, "")
+		})
 	}
 
 	// Should have exactly 1 group segment
@@ -417,12 +416,12 @@ func TestGroupCollapsingMixedSearchAndRead(t *testing.T) {
 	// 1 Grep + 2 Reads should all collapse into same group
 	grepCall := model.ToolCallPart{ID: "tc-grep", Name: "Grep", Input: json.RawMessage(`{"pattern":"func main"}`)}
 	m.addToGroup(render.RenderToolCall(grepCall, 80)+"\n", grepCall, "search")
-	m.fillGroupResult(grepCall, model.ToolResultPart{ToolCallID: "tc-grep", Content: "main.go:5"}, "")
+	m.fillGroupResult(grepCall, model.ToolResultPart{ToolCallID: "tc-grep", Content: "main.go:5"})
 
 	for i, path := range []string{"main.go", "util.go"} {
 		call := model.ToolCallPart{ID: fmt.Sprintf("tc-r%d", i), Name: "Read", Input: json.RawMessage(fmt.Sprintf(`{"file_path":"%s"}`, path))}
 		m.addToGroup(render.RenderToolCall(call, 80)+"\n", call, "read")
-		m.fillGroupResult(call, model.ToolResultPart{ToolCallID: call.ID, Content: "content"}, "")
+		m.fillGroupResult(call, model.ToolResultPart{ToolCallID: call.ID, Content: "content"})
 	}
 
 	// Verify single group with correct counts
@@ -450,7 +449,7 @@ func TestGroupBreaksOnNonCollapsibleTool(t *testing.T) {
 	// Read → group starts
 	readCall := model.ToolCallPart{ID: "tc-1", Name: "Read", Input: json.RawMessage(`{"file_path":"a.go"}`)}
 	m.addToGroup(render.RenderToolCall(readCall, 80)+"\n", readCall, "read")
-	m.fillGroupResult(readCall, model.ToolResultPart{ToolCallID: "tc-1", Content: "x"}, "")
+	m.fillGroupResult(readCall, model.ToolResultPart{ToolCallID: "tc-1", Content: "x"})
 
 	// Bash → group should close
 	m.closeActiveGroup()
@@ -458,7 +457,7 @@ func TestGroupBreaksOnNonCollapsibleTool(t *testing.T) {
 	// Another Read → new group starts
 	read2 := model.ToolCallPart{ID: "tc-3", Name: "Read", Input: json.RawMessage(`{"file_path":"b.go"}`)}
 	m.addToGroup(render.RenderToolCall(read2, 80)+"\n", read2, "read")
-	m.fillGroupResult(read2, model.ToolResultPart{ToolCallID: "tc-3", Content: "y"}, "")
+	m.fillGroupResult(read2, model.ToolResultPart{ToolCallID: "tc-3", Content: "y"})
 
 	// Should have 2 group segments
 	groupCount := 0
@@ -479,7 +478,7 @@ func TestGroupLatestHint(t *testing.T) {
 	// Grep with pattern — LatestHint should be the pattern
 	call := model.ToolCallPart{ID: "tc-1", Name: "Grep", Input: json.RawMessage(`{"pattern":"autoDetect"}`)}
 	m.addToGroup(render.RenderToolCall(call, 80)+"\n", call, "search")
-	m.fillGroupResult(call, model.ToolResultPart{ToolCallID: "tc-1", Content: "found"}, "")
+	m.fillGroupResult(call, model.ToolResultPart{ToolCallID: "tc-1", Content: "found"})
 
 	var g *groupSegData
 	for _, seg := range m.outputSegs {
@@ -675,30 +674,26 @@ func TestEmptyViewportOnStart(t *testing.T) {
 	}
 }
 
-func TestToolSegDataPreservesDisplay(t *testing.T) {
+func TestToolSegDataRendersEditInput(t *testing.T) {
 	m := newTestModel()
 	m.width = 80
 
-	// Edit tool with Display (unified diff)
 	m.outputSegs = appendTool(m.outputSegs, toolSegData{
 		Name:    "Edit",
 		Input:   json.RawMessage(`{"file_path":"a.go","old_string":"old","new_string":"new"}`),
 		Content: "Applied edit to a.go",
 		IsError: false,
-		Display: "--- a.go\n+++ a.go\n@@ -1 +1 @@\n-old\n+new\n",
 	})
 
-	// Display should be used in both verbose and non-verbose
 	m.verbose = false
 	content := m.viewportContent()
-	// Edit always shows full diff (per ADR-038)
 	if !strings.Contains(content, "old") || !strings.Contains(content, "new") {
-		t.Error("Edit should show diff content")
+		t.Error("Edit should show input-derived content")
 	}
 
 	m.verbose = true
 	content = m.viewportContent()
 	if !strings.Contains(content, "old") || !strings.Contains(content, "new") {
-		t.Error("verbose Edit should show diff content")
+		t.Error("verbose Edit should show input-derived content")
 	}
 }

@@ -380,7 +380,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				return
 			}
 			for i, r := range execResult.Results {
-				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i], FileEffects: execResult.FileEffects[i]}
+				ch <- ToolResultEvent{Result: r, FileEffects: execResult.FileEffects[i]}
 			}
 			if e.config.StopAfterToolExec {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.config.StopAfterToolExec")
@@ -850,7 +850,6 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "exit")
 	results := make([]model.ToolResultPart, len(calls))
-	displays := make([]string, len(calls))
 	fileEffects := make([][]tool.FileEffect, len(calls))
 	realCalls := make([]model.ToolCallPart, 0, len(calls))
 	realIndexes := make([]int, 0, len(calls))
@@ -926,18 +925,16 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "range execResult.Results")
 			idx := realIndexes[i]
 			results[idx] = r
-			displays[idx] = execResult.Displays[i]
 			fileEffects[idx] = append([]tool.FileEffect(nil), execResult.FileEffects[i]...)
 		}
 		supplements = execResult.Supplements
 	}
 
-	e.recordHandoffToolFailures(calls, results, displays)
-	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "return: tool.ExecuteResult{\n\tResults:\tresults,\n\tDisplays:\tdisplays,\n\tSupplements:\tsup...")
+	e.recordHandoffToolFailures(calls, results)
+	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "return: tool.ExecuteResult{\n\tResults:\tresults,\n\tSupplements:\tsup...")
 
 	return tool.ExecuteResult{
 		Results:     results,
-		Displays:    displays,
 		Supplements: supplements,
 		FileEffects: fileEffects,
 	}, nil

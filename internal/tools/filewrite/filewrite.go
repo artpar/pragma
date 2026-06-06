@@ -160,21 +160,15 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		tool.RecordFileWriteState(state, filePath, strings.ReplaceAll(in.Content, "\r\n", "\n"), timestamp, nil, nil, false)
 	}
 
-	// Generate display diff for TUI (never sent to LLM)
-	var display string
 	if isCreate {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: isCreate")
-		display = util.GenerateEditDiff("", "", in.Content, in.FilePath, false, 3)
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"File created successfully at: %s\", ...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("File created successfully at: %s", in.FilePath),
-			Display: display,
 		}, nil
 	}
-	display = util.GenerateEditDiff(oldContent, oldContent, in.Content, in.FilePath, false, 3)
 	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
-		Display: display,
 	}, nil
 }

@@ -339,7 +339,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 			if isCollapsible(call.Name) != "" {
 				observe.GlobalTrace("if: isCollapsible(call.Name) != \"\"")
 
-				m.fillGroupResult(call, e.Result, e.Display)
+				m.fillGroupResult(call, e.Result)
 			} else if hasProgressSegment(m.outputSegs, call.Name) {
 				observe.GlobalTrace("else-if: hasProgressSegment — skip segTool")
 			} else {
@@ -349,7 +349,6 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 					Input:   call.Input,
 					Content: e.Result.Content,
 					IsError: e.Result.IsError,
-					Display: e.Display,
 				})
 				m.outputSegs = appendText(m.outputSegs, "\n")
 			}

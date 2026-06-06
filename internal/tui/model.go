@@ -66,7 +66,6 @@ type toolSegData struct {
 	Input   json.RawMessage
 	Content string
 	IsError bool
-	Display string
 }
 
 // lifecycleNodeResult holds the outcome of a single node execution.
@@ -490,7 +489,7 @@ func (m Model) viewportContent() string {
 			observe.GlobalTrace("case: segTool")
 			b.WriteString(render.RenderToolOutput(
 				seg.tool.Name, seg.tool.Input, seg.tool.Content,
-				seg.tool.IsError, m.width, seg.tool.Display, m.verbose,
+				seg.tool.IsError, m.width, m.verbose,
 			))
 			b.WriteString("\n")
 		case segLifecycle:
@@ -795,7 +794,7 @@ func (m *Model) addToGroup(callHeader string, call model.ToolCallPart, category 
 }
 
 // fillGroupResult fills the result data into the matching entry of the active group by call ID.
-func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResultPart, display string) {
+func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResultPart) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	for i := len(m.outputSegs) - 1; i >= 0; i-- {
@@ -810,7 +809,6 @@ func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResult
 					observe.GlobalTrace("if: g.Entries[j].CallID == call.ID")
 					g.Entries[j].Tool.Content = result.Content
 					g.Entries[j].Tool.IsError = result.IsError
-					g.Entries[j].Tool.Display = display
 					g.Entries[j].HasResult = true
 					updateGroupCounts(g, &g.Entries[j], call.Input)
 					return
@@ -863,7 +861,6 @@ func convertGroupData(g *groupSegData) render.GroupData {
 			Input:      e.Tool.Input,
 			Content:    e.Tool.Content,
 			IsError:    e.Tool.IsError,
-			Display:    e.Tool.Display,
 			HasResult:  e.HasResult,
 		}
 	}
@@ -884,7 +881,7 @@ func segByteSize(seg segment) int {
 	switch {
 	case seg.kind == segTool && seg.tool != nil:
 		observe.GlobalTrace("case: seg.kind == segTool && seg.tool != nil")
-		return len(seg.tool.Content) + len(seg.tool.Input) + len(seg.tool.Display)
+		return len(seg.tool.Content) + len(seg.tool.Input)
 	case seg.kind == segLifecycle && seg.lifecycle != nil:
 		observe.GlobalTrace("case: seg.kind == segLifecycle && seg.lifecycle != nil")
 		return len(seg.lifecycle.Steps) * 50
@@ -1024,7 +1021,6 @@ func loadMessageSegments(segs []segment, msg model.Message, md *render.MarkdownR
 					Input:   lastCall.Input,
 					Content: p.Content,
 					IsError: p.IsError,
-					Display: "",
 				})
 				lastCall = nil
 			} else {

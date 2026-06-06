@@ -151,7 +151,7 @@ func TestRenderThinkingRedacted(t *testing.T) {
 
 func TestRenderToolOutputBash(t *testing.T) {
 	input := json.RawMessage(`{"command":"echo hello"}`)
-	result := RenderToolOutput("Bash", input, "hello\n", false, 80, "", false)
+	result := RenderToolOutput("Bash", input, "hello\n", false, 80, false)
 	// Command is shown in tool call line, not repeated in result
 	if !strings.Contains(result, "hello") {
 		t.Errorf("expected output in %q", result)
@@ -160,7 +160,7 @@ func TestRenderToolOutputBash(t *testing.T) {
 
 func TestRenderToolOutputBashNoOutput(t *testing.T) {
 	input := json.RawMessage(`{"command":"true"}`)
-	result := RenderToolOutput("Bash", input, "", false, 80, "", false)
+	result := RenderToolOutput("Bash", input, "", false, 80, false)
 	if !strings.Contains(result, "no output") {
 		t.Errorf("expected no output indicator in %q", result)
 	}
@@ -168,7 +168,7 @@ func TestRenderToolOutputBashNoOutput(t *testing.T) {
 
 func TestRenderToolOutputEdit(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"test.go","old_string":"foo","new_string":"bar"}`)
-	result := RenderToolOutput("Edit", input, "ok", false, 80, "", false)
+	result := RenderToolOutput("Edit", input, "ok", false, 80, false)
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("expected file path in %q", result)
 	}
@@ -180,27 +180,10 @@ func TestRenderToolOutputEdit(t *testing.T) {
 	}
 }
 
-func TestRenderToolOutputEditWithUnifiedDiff(t *testing.T) {
-	input := json.RawMessage(`{"file_path":"test.go","old_string":"foo","new_string":"bar"}`)
-	display := "@@ -2,5 +2,5 @@\n ctx1\n ctx2\n ctx3\n-foo\n+bar\n ctx4\n ctx5"
-	result := RenderToolOutput("Edit", input, "ok", false, 80, display, false)
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("expected file path in %q", result)
-	}
-	// Should have line numbers in gutter
-	if !strings.Contains(result, "4") {
-		t.Errorf("expected line numbers in %q", result)
-	}
-	// Should not have old-style "- foo" (unified diff uses different format)
-	if strings.Contains(result, "- foo") {
-		t.Errorf("should use unified diff format, not old-style, in %q", result)
-	}
-}
-
 func TestRenderToolOutputGrep(t *testing.T) {
 	input := json.RawMessage(`{"pattern":"TODO"}`)
 	content := "file1.go\nfile2.go\nfile3.go\n"
-	result := RenderToolOutput("Grep", input, content, false, 80, "", false)
+	result := RenderToolOutput("Grep", input, content, false, 80, false)
 	if !strings.Contains(result, "3 files") {
 		t.Errorf("expected file count in %q", result)
 	}
@@ -209,7 +192,7 @@ func TestRenderToolOutputGrep(t *testing.T) {
 func TestRenderToolOutputGlob(t *testing.T) {
 	input := json.RawMessage(`{"pattern":"*.go"}`)
 	content := "a.go\nb.go\n"
-	result := RenderToolOutput("Glob", input, content, false, 80, "", false)
+	result := RenderToolOutput("Glob", input, content, false, 80, false)
 	if !strings.Contains(result, "2 files") {
 		t.Errorf("expected file count in %q", result)
 	}
@@ -217,7 +200,7 @@ func TestRenderToolOutputGlob(t *testing.T) {
 
 func TestRenderToolOutputUnknownTool(t *testing.T) {
 	input := json.RawMessage(`{"key":"value"}`)
-	result := RenderToolOutput("UnknownTool", input, "some output", false, 80, "", false)
+	result := RenderToolOutput("UnknownTool", input, "some output", false, 80, false)
 	if !strings.Contains(result, Bracket) {
 		t.Errorf("expected bracket wrapper for unknown tool in %q", result)
 	}
@@ -229,7 +212,7 @@ func TestRenderToolOutputUnknownTool(t *testing.T) {
 func TestRenderToolOutputIDEMCPSummarizesEnvelope(t *testing.T) {
 	input := json.RawMessage(`{"filePath":"/tmp/test.go"}`)
 	content := `{"source":"Agent IDE File object creation through the editor","result":{"ok":true,"code":"ok","summary":"Opened /tmp/test.go.","data":{"large":"payload"}}}`
-	result := RenderToolOutput("ide.file.open", input, content, false, 80, "", false)
+	result := RenderToolOutput("ide.file.open", input, content, false, 80, false)
 	plain := stripANSI(result)
 	if !strings.Contains(plain, "Opened /tmp/test.go.") {
 		t.Fatalf("expected summary, got %q", plain)
@@ -247,7 +230,7 @@ Preview (first 2KB):
 abc
 ...
 </persisted-output>`
-	result := RenderToolOutput("ide.object.call", nil, content, false, 80, "", false)
+	result := RenderToolOutput("ide.object.call", nil, content, false, 80, false)
 	plain := stripANSI(result)
 	if !strings.Contains(plain, "Large tool output saved") {
 		t.Fatalf("expected persisted-output summary, got %q", plain)
@@ -262,7 +245,7 @@ abc
 
 func TestRenderToolOutputToolResultRead(t *testing.T) {
 	content := `{"tool_call_id":"call_123","content":"abcdef","offset_bytes":0,"limit_bytes":6,"next_offset_bytes":6,"has_more":true,"total_bytes":20,"source_path":"/tmp/out.txt"}`
-	result := RenderToolOutput("tool_result.read", nil, content, false, 80, "", false)
+	result := RenderToolOutput("tool_result.read", nil, content, false, 80, false)
 	plain := stripANSI(result)
 	if !strings.Contains(plain, "Read persisted output bytes 0-6 of 20") {
 		t.Fatalf("expected pagination summary, got %q", plain)
@@ -275,7 +258,7 @@ func TestRenderToolOutputToolResultRead(t *testing.T) {
 func TestRenderToolOutputRead(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/test.go","offset":0,"limit":5}`)
 	content := "line1\nline2\nline3\nline4\nline5"
-	result := RenderToolOutput("Read", input, content, false, 80, "", false)
+	result := RenderToolOutput("Read", input, content, false, 80, false)
 	// Compact summary: "Read N lines" — path is shown in the tool call line
 	if !strings.Contains(result, "Read 5 lines") {
 		t.Errorf("expected compact summary in %q", result)
@@ -284,7 +267,7 @@ func TestRenderToolOutputRead(t *testing.T) {
 
 func TestRenderToolOutputReadError(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/missing.go"}`)
-	result := RenderToolOutput("Read", input, "file not found", true, 80, "", false)
+	result := RenderToolOutput("Read", input, "file not found", true, 80, false)
 	if !strings.Contains(result, "file not found") {
 		t.Errorf("expected error content in %q", result)
 	}
@@ -292,7 +275,7 @@ func TestRenderToolOutputReadError(t *testing.T) {
 
 func TestRenderToolOutputWrite(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/out.go"}`)
-	result := RenderToolOutput("Write", input, "package main", false, 80, "", false)
+	result := RenderToolOutput("Write", input, "package main", false, 80, false)
 	if !strings.Contains(result, "/tmp/out.go") {
 		t.Errorf("expected file path in %q", result)
 	}
@@ -304,7 +287,7 @@ func TestRenderToolOutputWrite(t *testing.T) {
 func TestRenderToolOutputAgent(t *testing.T) {
 	input := json.RawMessage(`{"prompt":"search for patterns in the codebase"}`)
 	content := "Found 3 patterns\nin file1.go\nin file2.go"
-	result := RenderToolOutput("Agent", input, content, false, 80, "", false)
+	result := RenderToolOutput("Agent", input, content, false, 80, false)
 	if !strings.Contains(result, DiamondFilled) {
 		t.Errorf("expected filled diamond for completed agent in %q", result)
 	}
@@ -315,7 +298,7 @@ func TestRenderToolOutputAgent(t *testing.T) {
 
 func TestRenderToolOutputAgentError(t *testing.T) {
 	input := json.RawMessage(`{"prompt":"do something"}`)
-	result := RenderToolOutput("Agent", input, "timeout", true, 80, "", false)
+	result := RenderToolOutput("Agent", input, "timeout", true, 80, false)
 	if !strings.Contains(result, DiamondOpen) {
 		t.Errorf("expected open diamond for error agent in %q", result)
 	}
@@ -325,8 +308,8 @@ func TestRenderToolOutputBashVerbose(t *testing.T) {
 	input := json.RawMessage(`{"command":"seq 10"}`)
 	// 10 lines: verbose should show all, non-verbose only last 5
 	content := "1\n2\n3\n4\n5\n6\n7\n8\n9\n10"
-	nonVerbose := RenderToolOutput("Bash", input, content, false, 80, "", false)
-	verbose := RenderToolOutput("Bash", input, content, false, 80, "", true)
+	nonVerbose := RenderToolOutput("Bash", input, content, false, 80, false)
+	verbose := RenderToolOutput("Bash", input, content, false, 80, true)
 
 	// Non-verbose: should hide first 5 lines and show hint
 	if !strings.Contains(nonVerbose, "5 lines hidden") {
@@ -353,8 +336,8 @@ func TestRenderToolOutputReadVerbose(t *testing.T) {
 	input := json.RawMessage(`{"file_path":"/tmp/test.go","offset":0,"limit":100}`)
 	// Content matches readTextFile format: "N→line\n" (line numbers already embedded)
 	content := "1→line1\n2→line2\n3→line3"
-	nonVerbose := RenderToolOutput("Read", input, content, false, 80, "", false)
-	verbose := RenderToolOutput("Read", input, content, false, 80, "", true)
+	nonVerbose := RenderToolOutput("Read", input, content, false, 80, false)
+	verbose := RenderToolOutput("Read", input, content, false, 80, true)
 
 	// Non-verbose: summary only + hint
 	plain := stripANSI(nonVerbose)
@@ -387,8 +370,8 @@ func TestRenderToolOutputGrepVerbose(t *testing.T) {
 	}
 	content := strings.Join(files, "\n")
 
-	nonVerbose := RenderToolOutput("Grep", input, content, false, 80, "", false)
-	verbose := RenderToolOutput("Grep", input, content, false, 80, "", true)
+	nonVerbose := RenderToolOutput("Grep", input, content, false, 80, false)
+	verbose := RenderToolOutput("Grep", input, content, false, 80, true)
 
 	// Non-verbose: should truncate + hint
 	plain := stripANSI(nonVerbose)
@@ -413,8 +396,8 @@ func TestRenderToolOutputAgentVerbose(t *testing.T) {
 	input := json.RawMessage(`{"prompt":"search patterns"}`)
 	content := "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8"
 
-	nonVerbose := RenderToolOutput("Agent", input, content, false, 80, "", false)
-	verbose := RenderToolOutput("Agent", input, content, false, 80, "", true)
+	nonVerbose := RenderToolOutput("Agent", input, content, false, 80, false)
+	verbose := RenderToolOutput("Agent", input, content, false, 80, true)
 
 	// Non-verbose: truncated to 5 lines + hint
 	plain := stripANSI(nonVerbose)

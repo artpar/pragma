@@ -280,6 +280,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 
 	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+	cancelOnReturn := true
+	defer func() {
+		if cancelOnReturn {
+			cancel()
+		}
+	}()
 
 	command := commandForShellRun(in.Command)
 	cmd := exec.CommandContext(cmdCtx, "bash", "-c", command)
@@ -318,7 +324,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	case <-time.After(foregroundWait):
 		output := tailLines(readCommandOutput(files), runningOutputLines)
 		content := runningCommandContent("Command is still running after "+foregroundWait.String()+".", pid, files, output)
-		return tool.InvokeResult{Content: content, Display: "background"}, nil
+		cancelOnReturn = false
+		return tool.InvokeResult{Content: content}, nil
 	case <-cmdCtx.Done():
 		err = <-done
 	}
@@ -337,9 +344,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			}
 			output += fmt.Sprintf("Command timed out after %dms", timeoutMs)
 			output = appendLogPaths(output, files)
-			display := fmt.Sprintf("timeout:%d", timeoutMs)
-			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output, Display: display}, nil")
-			return tool.InvokeResult{Content: output, Display: display}, nil
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
+			return tool.InvokeResult{Content: output}, nil
 		}
 
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -350,10 +356,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				output += "\n"
 			}
 			output += fmt.Sprintf("Exit code %d", exitCode)
-			display := fmt.Sprintf("exit_code:%d", exitCode)
-			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output, Display: display}, nil")
+			observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 
-			return tool.InvokeResult{Content: output, Display: display}, nil
+			return tool.InvokeResult{Content: output}, nil
 		}
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"execute command: %w\", err)")
 
@@ -423,7 +428,7 @@ func (t *Tool) invokeBackground(command string, timeout time.Duration, workDir s
 	}()
 
 	content := runningCommandContent("Started background command.", pid, files, "")
-	return tool.InvokeResult{Content: content, Display: "background"}, nil
+	return tool.InvokeResult{Content: content}, nil
 }
 
 func writeCommandStatus(files commandFiles, pid int, timeout time.Duration, cmdCtx context.Context, err error) {

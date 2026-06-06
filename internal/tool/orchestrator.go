@@ -63,7 +63,6 @@ func (o *Orchestrator) emitPermissionDecision(traceID, spanID, parentSpan, toolC
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
 	Results     []model.ToolResultPart
-	Displays    []string            // per-result presentation display text, same index as Results
 	Supplements []model.ContentPart // additional content parts (e.g., DocumentPart for PDFs)
 	FileEffects [][]FileEffect      // per-result file mutation receipts, same index as Results
 }
@@ -71,7 +70,6 @@ type ExecuteResult struct {
 // singleResult holds the output of one tool invocation.
 type singleResult struct {
 	part        model.ToolResultPart
-	display     string
 	supplements []model.ContentPart
 	fileEffects []FileEffect
 }
@@ -239,13 +237,11 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 
 	out := ExecuteResult{
 		Results:     make([]model.ToolResultPart, len(singles)),
-		Displays:    make([]string, len(singles)),
 		FileEffects: make([][]FileEffect, len(singles)),
 	}
 	for i, s := range singles {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range singles")
 		out.Results[i] = s.part
-		out.Displays[i] = s.display
 		out.FileEffects[i] = append([]FileEffect(nil), s.fileEffects...)
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
@@ -536,7 +532,7 @@ func (o *Orchestrator) executeSingle(
 		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: processErr == nil")
 		part = processed
 	}
-	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart:\t\tpart,\n\tdisplay:\tinvokeResult.Display,\n\tsupplements:\tinv...")
+	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart:\t\tpart,\n\tsupplements:\tinv...")
 
 	supplements := make([]model.ContentPart, 0, len(hookSupplements)+len(invokeResult.Supplements))
 	supplements = append(supplements, hookSupplements...)
@@ -544,7 +540,6 @@ func (o *Orchestrator) executeSingle(
 
 	return singleResult{
 		part:        part,
-		display:     invokeResult.Display,
 		supplements: supplements,
 		fileEffects: fileEffects,
 	}

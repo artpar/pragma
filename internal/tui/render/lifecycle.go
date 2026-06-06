@@ -200,7 +200,7 @@ func renderLifecycleVerbose(steps []LifecycleStep, completed bool, errMsg string
 
 // renderLifecycleRun renders the LifecycleRun tool result for historical sessions.
 // Parses the JSON result and shows a summary.
-func renderLifecycleRun(_ json.RawMessage, content string, isError bool, width int, display string, verbose bool) string {
+func renderLifecycleRun(_ json.RawMessage, content string, isError bool, width int, verbose bool) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if isError {

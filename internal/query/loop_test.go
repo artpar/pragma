@@ -917,7 +917,6 @@ func TestRecordHandoffToolFailuresPromotesVerifiedFeedback(t *testing.T) {
 				IsError:    true,
 			},
 		},
-		[]string{"exit_code:1", ""},
 	)
 
 	state := engine.store.Snapshot().HandoffState
@@ -967,7 +966,6 @@ func TestRecordHandoffToolFailuresUsesEditRetryCandidate(t *testing.T) {
 				IsError:    true,
 			},
 		},
-		[]string{""},
 	)
 
 	state := engine.store.Snapshot().HandoffState

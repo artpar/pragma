@@ -186,6 +186,25 @@ What not to do:
 
 Do not add more renderer conditionals to `ToolResultEvent` or teach every consumer how to interpret display strings.
 
+Status:
+
+Resolved in current worktree. The query/runtime contract no longer has a display side channel. Tool invocation returns model-visible content plus supplements only, the orchestrator result API carries result parts, supplements, and file-effect receipts, and `ToolResultEvent` exposes only stable runtime data. TUI and web render from tool name, input, result content, and file effects after the query event boundary.
+
+Source evidence:
+
+- `internal/tool/tool.go`: `InvokeResult` no longer has a presentation `Display` field.
+- `internal/tool/orchestrator.go`: `ExecuteResult` no longer carries per-result `Displays`, and `singleResult` no longer stores display payloads.
+- `internal/query/event.go` and `internal/query/loop.go`: `ToolResultEvent` no longer includes or emits display data.
+- `internal/web/web.go`: normalized web `tool_result` events no longer include `display`.
+- `internal/tui/model.go`, `internal/tui/handlers.go`, and `internal/tui/render/*`: TUI segment/render data no longer accepts display payloads; renderers project from stable tool input/content.
+- `internal/query/handoff_failures.go`: handoff failure classification derives shell status from model-visible result content instead of display metadata.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/tool/tool.go internal/tool/orchestrator.go internal/query/event.go internal/query/loop.go internal/query/handoff_failures.go internal/query/loop_test.go internal/web/web.go internal/tui/model.go internal/tui/handlers.go internal/tui/render/grouprender.go internal/tui/render/toolrender.go internal/tui/render/lifecycle.go internal/tui/render/render_test.go internal/tui/e2e_test.go internal/tools/bash/bash.go internal/tools/filewrite/filewrite.go internal/tools/fileedit/fileedit.go internal/tools/applypatch/applypatch.go internal/tools/fileread/fileread.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/tool ./internal/tools/bash ./internal/tools/filewrite ./internal/tools/fileedit ./internal/tools/applypatch ./internal/tools/fileread ./internal/query ./internal/web ./internal/tui ./internal/tui/render ./internal/orchestration ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "InvokeResult\\{[^\\n}]*Display|ExecuteResult\\{[^\\n}]*Displays|\\.Displays|ToolResultEvent\\{[^\\n}]*Display|\\.Display\\b|Display\\s+string|Display:" internal/tool internal/tools internal/query internal/web internal/tui/render internal/tui/model.go internal/tui/handlers.go -g'*.go'` returned no matches.
+
 ## 5. Web Reconstructs Orchestration Workflow State From Event Fragments
 
 Severity: medium

@@ -266,7 +266,6 @@ type webFileEffect struct {
 type webToolResultEvent struct {
 	ID          string          `json:"id"`
 	Content     string          `json:"content"`
-	Display     string          `json:"display,omitempty"`
 	IsError     bool            `json:"is_error,omitempty"`
 	FileEffects []webFileEffect `json:"file_effects,omitempty"`
 }
@@ -383,7 +382,6 @@ func normalizeLoopEvent(data interface{}) (string, string, interface{}) {
 		return "tool_result", "web.tool_result", webToolResultEvent{
 			ID:          ev.Result.ToolCallID,
 			Content:     ev.Result.Content,
-			Display:     ev.Display,
 			IsError:     ev.Result.IsError,
 			FileEffects: effects,
 		}

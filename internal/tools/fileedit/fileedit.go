@@ -193,13 +193,12 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 				observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 				return tool.InvokeResult{}, err
 			}
-			display := util.GenerateEditDiff("", in.OldString, in.NewString, in.FilePath, false, 3)
 			if timestamp, statErr := tool.FileTimestamp(filePath); statErr == nil {
 				observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: statErr == nil")
 				tool.RecordFileWriteState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
 			}
-			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: result, Display: display}, nil")
-			return tool.InvokeResult{Content: result, Display: display}, nil
+			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{Content: result}, nil")
+			return tool.InvokeResult{Content: result}, nil
 		}
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"read file: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("read file: %w", err)
@@ -247,11 +246,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: statErr == nil")
 			tool.RecordFileWriteState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
 		}
-		display := util.GenerateEditDiff(content, in.OldString, in.NewString, in.FilePath, false, 3)
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
-			Display: display,
 		}, nil
 	}
 
@@ -291,8 +288,6 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{}, fmt.Errorf("no changes to make: old_string and new_string produce identical file content")
 	}
 
-	display := util.GenerateEditDiff(content, match.OldString, match.NewString, in.FilePath, in.ReplaceAll, 3)
-
 	timestamp, err := tool.FileTimestamp(filePath)
 	if err != nil {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: err != nil")
@@ -321,13 +316,11 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated. All %...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count),
-			Display: display,
 		}, nil
 	}
 	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
-		Display: display,
 	}, nil
 }
 

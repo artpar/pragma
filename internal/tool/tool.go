@@ -42,14 +42,11 @@ func SessionIDFrom(state StateSnapshot) (string, bool) {
 
 // InvokeResult holds the output from a tool invocation.
 // Content is the text result sent to the LLM as the tool_result content.
-// Display is optional presentation-only rendering content (e.g., unified diff
-// with context); it is never sent to the LLM.
 // Supplements are optional additional content parts (e.g., DocumentPart for PDFs,
 // ImagePart for extracted pages) that are included alongside the tool result
 // in the conversation message sent to the LLM.
 type InvokeResult struct {
 	Content     string
-	Display     string
 	Supplements []model.ContentPart
 }
 

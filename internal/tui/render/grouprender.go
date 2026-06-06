@@ -14,8 +14,7 @@ type GroupEntry struct {
 	Input      json.RawMessage // raw tool input
 	Content    string          // tool result content
 	IsError    bool
-	Display    string // TUI-only display data (e.g., unified diff)
-	HasResult  bool   // false while waiting for result
+	HasResult  bool // false while waiting for result
 }
 
 // GroupData holds the render-ready data for a collapsed read/search group.
@@ -51,7 +50,7 @@ func renderGroupVerbose(g GroupData, width int) string {
 		b.WriteString(e.CallHeader)
 		if e.HasResult {
 			observe.GlobalTrace("if: e.HasResult")
-			b.WriteString(RenderToolOutput(e.Name, e.Input, e.Content, e.IsError, width, e.Display, true))
+			b.WriteString(RenderToolOutput(e.Name, e.Input, e.Content, e.IsError, width, true))
 			b.WriteString("\n")
 		}
 	}
