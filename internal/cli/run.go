@@ -1118,25 +1118,49 @@ func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) (ho
 	if d == nil || d.SessionStarted {
 		return hook.AggregatedResult{}, nil
 	}
-	if err := startSessionRecording(d); err != nil {
-		return hook.AggregatedResult{}, err
-	}
 	sessionID := d.Store.Snapshot().Conversation.ID
 	if d.HookMgr != nil {
 		d.HookMgr.SetSessionID(sessionID)
+	}
+	var hookResult hook.AggregatedResult
+	if d.HookMgr != nil {
+		observe.GlobalTrace("if: d.HookMgr != nil")
+		hookResult = d.HookMgr.Execute(ctx, hook.SessionStart, hook.HookInput{})
+		if hookResult.Blocked {
+			observe.GlobalTrace("if: hookResult.Blocked")
+			closeUnstartedSessionWriter(d)
+			return hookResult, blockedSessionStartError(hookResult)
+		}
+	}
+	if err := startSessionRecording(d); err != nil {
+		return hook.AggregatedResult{}, err
 	}
 	d.Bus.Emit(observe.SessionStarted{
 		EventHeader: observe.NewEventHeader("SessionStarted", "", sessionID, ""),
 		SessionID:   sessionID,
 		ResumedFrom: resumedFrom,
 	})
-	var hookResult hook.AggregatedResult
-	if d.HookMgr != nil {
-		observe.GlobalTrace("if: d.HookMgr != nil")
-		hookResult = d.HookMgr.Execute(ctx, hook.SessionStart, hook.HookInput{})
-	}
 	d.SessionStarted = true
 	return hookResult, nil
+}
+
+func blockedSessionStartError(result hook.AggregatedResult) error {
+	msg := strings.TrimSpace(result.BlockMsg)
+	if msg == "" {
+		msg = "session start blocked by hook"
+	}
+	return fmt.Errorf("blocked by hook: %s", msg)
+}
+
+func closeUnstartedSessionWriter(d *Deps) {
+	if d == nil || d.SessionWriter == nil {
+		return
+	}
+	_ = d.SessionWriter.Close()
+	d.SessionWriter = nil
+	d.SessionHeader = session.HeaderData{}
+	d.SessionLastIdx = 0
+	d.SessionStarted = false
 }
 
 func startSessionRecording(d *Deps) error {

@@ -1850,6 +1850,22 @@ What not to do:
 
 Do not solve this by adding a warning to the model context, web UI, or TUI output. A blocked `SessionStart` must prevent runtime execution at the lifecycle boundary, and the fix must cover interactive engine runs, orchestration runs, and non-interactive prompts together.
 
+Status:
+
+Resolved in current worktree. `SessionStart` is now enforced inside the session lifecycle boundary before recording, `SessionStarted`, or `SessionStarted=true` are committed. A blocked start returns an error from `beginSessionLifecycle`, so interactive engine runs, orchestration runs, resume startup, and non-interactive prompts stop before engine execution or hook context injection.
+
+Source evidence:
+
+- `internal/cli/run.go`: `beginSessionLifecycle` now executes `hook.SessionStart` before `startSessionRecording`, `observe.SessionStarted`, and `d.SessionStarted = true`.
+- `internal/cli/run.go`: blocked `SessionStart` results call `closeUnstartedSessionWriter` and return `blockedSessionStartError`, preventing callers from appending hook output as model context.
+- `internal/cli/run.go`: `runEngine`, `runOrchestration`, `runNonInteractive`, `BuildInteractiveRuntime`, and `Resume` already stop on errors from `startSessionForCurrentConversation` or `beginSessionLifecycle`, so the enforcement point covers all listed runtime paths.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/hook ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "beginSessionLifecycle|startSessionForCurrentConversation|blockedSessionStartError|closeUnstartedSessionWriter|SessionStart|SessionStarted|appendHookContext\\(hook\\.SessionStart|AppendHookContext\\(string\\(hook\\.SessionStart\\)|hookResult\\.Blocked|SessionWriter = nil" internal/cli/run.go -g'*.go'` confirmed the hook block is enforced before committed session start and all callers stop before context injection.
+
 ## 39. Hook JSON Decisions Are Parsed But Enforcement Is Owned By Exit Codes
 
 Severity: high
