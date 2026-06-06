@@ -2509,6 +2509,24 @@ What not to do:
 
 Do not copy `ensureToolResultPairing` into other providers to make behavior consistent. That would spread semantic repair into every adapter. Also do not just log when Anthropic injects a synthetic result; the invariant still belongs to the runtime conversation owner.
 
+Status:
+
+Resolved in current worktree. Production Anthropic normalization no longer calls the semantic repair path. The query runtime now validates tool-call/tool-result pairing when building provider request messages, and both standard and MiniSWE query loops surface invalid pairing as runtime `ErrorEvent`s before provider translation.
+
+Source evidence:
+
+- `internal/provider/anthropic/normalize.go`: `normalizeMessages` now filters and merges only; it no longer calls `ensureToolResultPairing`, so the provider adapter does not invent interruption results or drop orphaned tool results on the production request path.
+- `internal/query/tool_pairing.go`: added runtime-owned validation for assistant tool calls followed by matching user tool results, including orphaned and missing-result errors.
+- `internal/query/loop.go`: kept message selection in `messagesForRequest` and added `messagesForRequestChecked` as the provider request boundary that validates the selected runtime conversation view.
+- `internal/query/loop.go`: `runLoop` now emits `ErrorEvent` and stops before provider submission when the runtime conversation violates tool-result pairing.
+- `internal/query/miniswe_loop.go`: MiniSWE provider requests use the same checked runtime boundary.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/query/tool_pairing.go internal/query/loop.go internal/query/miniswe_loop.go internal/provider/anthropic/normalize.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/query ./internal/provider/anthropic ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "normalizeMessages|ensureToolResultPairing|Tool execution was interrupted|validateToolResultPairing|messagesForRequestChecked|messagesForRequest\\(|messageHasToolCall|messageHasToolResult|ToolResultPart|orphaned result|no matching tool result" internal/provider/anthropic internal/query internal/model -g'*.go'` confirmed `normalizeMessages` remains the only production Anthropic normalization entry point and no longer calls provider-local pairing repair; runtime loops call `messagesForRequestChecked`.
+
 ## 52. Lifecycle Tool Nodes Track File State In A Private Cache Outside Session Persistence
 
 Severity: medium

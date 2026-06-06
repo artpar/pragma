@@ -5,16 +5,14 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-// normalizeMessages prepares a message sequence for the Anthropic API:
+// normalizeMessages prepares a runtime-validated message sequence for the Anthropic API:
 //  1. Filters out messages with no content parts
 //  2. Merges consecutive same-role messages
-//  3. Ensures every tool_use has a matching tool_result (and vice versa)
 func normalizeMessages(msgs []model.Message) []model.Message {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	msgs = filterEmpty(msgs)
 	msgs = mergeConsecutiveSameRole(msgs)
-	msgs = ensureToolResultPairing(msgs)
 	observe.GlobalTrace("return: msgs")
 	return msgs
 }

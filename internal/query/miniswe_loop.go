@@ -126,7 +126,11 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			resolvedModel = snap.Model
 		}
 
-		messagesForQuery := e.messagesForRequest(snap.Conversation)
+		messagesForQuery, err := e.messagesForRequestChecked(snap.Conversation)
+		if err != nil {
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 		params := provider.RequestParams{
 			Model:          resolvedModel,
 			MaxTokens:      e.config.MaxTokens,

@@ -123,7 +123,11 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			tools = append([]model.ToolDef{handoffPatchToolDef(), certifyFactToolDef()}, tools...)
 		}
 
-		messagesForQuery := e.messagesForRequest(snap.Conversation)
+		messagesForQuery, err := e.messagesForRequestChecked(snap.Conversation)
+		if err != nil {
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 		if budgetedMessages, budgetErr := e.applyToolResultBudget(messagesForQuery); budgetErr == nil {
 			messagesForQuery = budgetedMessages
 		} else {
@@ -651,6 +655,18 @@ func (e *Engine) messagesForRequest(conv model.Conversation) []model.Message {
 	}
 	observe.GlobalTrace("return: api")
 	return api
+}
+
+func (e *Engine) messagesForRequestChecked(conv model.Conversation) ([]model.Message, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	messages := e.messagesForRequest(conv)
+	if err := validateToolResultPairing(messages); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return nil, err
+	}
+	observe.GlobalTrace("return: messages, nil")
+	return messages, nil
 }
 
 func latestToolExchange(api []model.Message) ([]model.Message, bool) {
