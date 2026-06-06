@@ -3539,6 +3539,10 @@ Do not patch this by telling the model to pass `isolation:"worktree"` whenever t
 
 Severity: medium
 
+Status: fixed in this worktree. `Config.Invoke` now resolves the active project scope from the invocation `tool.StateSnapshot` via `state.WorkDir()` and passes that workdir into both `handleGet` and `handleSet`; setup-time `Tool.WorkDir` remains only a fallback when invocation state has no workdir. Global settings still use `GlobalSettingsPath`, while project-scoped reads and writes now call `ProjectSettingsPath(activeWorkDir)`.
+
+Verification: `gofmt -w internal/tools/config/config.go`; `go build ./cmd/pragma`; `go vet ./internal/tools/config ./internal/cli ./internal/tool ./cmd/pragma`; `git diff --check`; ownership scan for `activeWorkDir|state\\.WorkDir\\(\\)|handleGet|handleSet|ProjectSettingsPath|WorkDir:|toolconfig\\.Tool|readSettingFromFile|updateSettingsFile`.
+
 Concrete files/functions involved:
 
 - `internal/tools/config/config.go`: `Tool.Invoke`, `Tool.handleGet`, `Tool.handleSet`, `readSettingFromFile`, `updateSettingsFile`

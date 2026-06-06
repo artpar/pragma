@@ -96,17 +96,17 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	}
 
 	if in.Value == nil {
-		return t.handleGet(ctx, def)
+		return t.handleGet(ctx, def, activeWorkDir(state, t.WorkDir))
 	}
-	return t.handleSet(ctx, def, *in.Value)
+	return t.handleSet(ctx, def, *in.Value, activeWorkDir(state, t.WorkDir))
 }
 
 // handleGet reads a setting value from the merged config.
-func (t *Tool) handleGet(ctx context.Context, def *goconfig.SettingDef) (tool.InvokeResult, error) {
+func (t *Tool) handleGet(ctx context.Context, def *goconfig.SettingDef, workDir string) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "config", "Tool.handleGet", "enter")
 	defer observe.TraceCtx(ctx, "config", "Tool.handleGet", "exit")
 
-	raw, err := readSettingFromFile(def, t.WorkDir)
+	raw, err := readSettingFromFile(def, workDir)
 	if err != nil {
 		return tool.InvokeResult{Content: fmt.Sprintf("Error reading %s: %v", def.Name, err)}, nil
 	}
@@ -116,7 +116,7 @@ func (t *Tool) handleGet(ctx context.Context, def *goconfig.SettingDef) (tool.In
 }
 
 // handleSet validates and writes a setting value.
-func (t *Tool) handleSet(ctx context.Context, def *goconfig.SettingDef, value any) (tool.InvokeResult, error) {
+func (t *Tool) handleSet(ctx context.Context, def *goconfig.SettingDef, value any, workDir string) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "config", "Tool.handleSet", "enter")
 	defer observe.TraceCtx(ctx, "config", "Tool.handleSet", "exit")
 
@@ -161,7 +161,7 @@ func (t *Tool) handleSet(ctx context.Context, def *goconfig.SettingDef, value an
 		}
 		targetPath = p
 	} else {
-		targetPath = goconfig.ProjectSettingsPath(t.WorkDir)
+		targetPath = goconfig.ProjectSettingsPath(workDir)
 	}
 
 	// Atomic read-modify-write
@@ -197,6 +197,15 @@ func (t *Tool) applyLiveValue(def *goconfig.SettingDef, value any) {
 
 func (t *Tool) syncToAppState(def *goconfig.SettingDef, value any) {
 	t.applyLiveValue(def, value)
+}
+
+func activeWorkDir(state tool.StateSnapshot, fallback string) string {
+	if state != nil {
+		if workDir := strings.TrimSpace(state.WorkDir()); workDir != "" {
+			return workDir
+		}
+	}
+	return fallback
 }
 
 // coerceBool converts string "true"/"false" to bool. Returns value unchanged if not coercible.
