@@ -176,6 +176,47 @@ type OrchestrationCompletedEvent struct {
 
 func (OrchestrationCompletedEvent) loopEventSealed() {}
 
+// OrchestrationSnapshotEvent carries the orchestration-owned workflow projection.
+type OrchestrationSnapshotEvent struct {
+	Snapshot OrchestrationSnapshot
+}
+
+func (OrchestrationSnapshotEvent) loopEventSealed() {}
+
+type OrchestrationSnapshot struct {
+	Name        string                                 `json:"name,omitempty"`
+	Initial     string                                 `json:"initial,omitempty"`
+	Current     string                                 `json:"current,omitempty"`
+	Completed   bool                                   `json:"completed,omitempty"`
+	States      map[string]*OrchestrationStateSnapshot `json:"states"`
+	Transitions []OrchestrationTransitionSnapshot      `json:"transitions"`
+	Handoffs    []OrchestrationHandoffSnapshot         `json:"handoffs"`
+}
+
+type OrchestrationStateSnapshot struct {
+	ID        string    `json:"id"`
+	Persona   string    `json:"persona,omitempty"`
+	Control   string    `json:"control,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	LastEvent string    `json:"last_event,omitempty"`
+	Started   time.Time `json:"started,omitempty"`
+	Completed time.Time `json:"completed,omitempty"`
+	Duration  string    `json:"duration,omitempty"`
+}
+
+type OrchestrationTransitionSnapshot struct {
+	From  string `json:"from"`
+	Event string `json:"event"`
+	To    string `json:"to"`
+}
+
+type OrchestrationHandoffSnapshot struct {
+	StateID   string `json:"state_id"`
+	Event     string `json:"event"`
+	Path      string `json:"path"`
+	Direction string `json:"direction"`
+}
+
 // AgentProgressEvent carries intermediate agent execution progress.
 // Emitted during Agent tool execution so the TUI can show per-agent
 // tool count, token count, and current activity instead of a static spinner.

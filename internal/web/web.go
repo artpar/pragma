@@ -107,14 +107,12 @@ func Run(ctx context.Context, cfg Config) error {
 }
 
 type server struct {
-	cfg        Config
-	hub        *hub
-	mu         sync.Mutex
-	running    bool
-	cancel     context.CancelFunc
-	artifacts  map[string]struct{}
-	workflow   workflowSnapshot
-	workflowOn bool
+	cfg       Config
+	hub       *hub
+	mu        sync.Mutex
+	running   bool
+	cancel    context.CancelFunc
+	artifacts map[string]struct{}
 }
 
 func newServer(cfg Config) *server {
@@ -123,44 +121,6 @@ func newServer(cfg Config) *server {
 		hub:       newHub(),
 		artifacts: make(map[string]struct{}),
 	}
-}
-
-type workflowSnapshot struct {
-	Name        string                    `json:"name,omitempty"`
-	Initial     string                    `json:"initial,omitempty"`
-	Current     string                    `json:"current,omitempty"`
-	Completed   bool                      `json:"completed,omitempty"`
-	States      map[string]*workflowState `json:"states"`
-	Transitions []workflowTransition      `json:"transitions"`
-	Handoffs    []workflowHandoff         `json:"handoffs"`
-}
-
-type workflowState struct {
-	ID        string    `json:"id"`
-	Persona   string    `json:"persona,omitempty"`
-	Control   string    `json:"control,omitempty"`
-	Status    string    `json:"status,omitempty"`
-	LastEvent string    `json:"last_event,omitempty"`
-	Started   time.Time `json:"started,omitempty"`
-	Completed time.Time `json:"completed,omitempty"`
-	Duration  string    `json:"duration,omitempty"`
-}
-
-type workflowTransition struct {
-	From  string `json:"from"`
-	Event string `json:"event"`
-	To    string `json:"to"`
-}
-
-type workflowHandoff struct {
-	StateID   string `json:"state_id"`
-	Event     string `json:"event"`
-	Path      string `json:"path"`
-	Direction string `json:"direction"`
-}
-
-func newWorkflowSnapshot() workflowSnapshot {
-	return workflowSnapshot{States: make(map[string]*workflowState)}
 }
 
 type eventEnvelope struct {
@@ -415,6 +375,8 @@ func normalizeLoopEvent(data interface{}) (string, string, interface{}) {
 		return "orchestration_handoff", "web.orchestration_handoff", webOrchestrationHandoffEvent{StateID: ev.StateID, Event: ev.Event, Path: ev.Path, Direction: ev.Direction}
 	case query.OrchestrationCompletedEvent:
 		return "orchestration_completed", "web.orchestration_completed", webOrchestrationCompletedEvent{Name: ev.Name}
+	case query.OrchestrationSnapshotEvent:
+		return "workflow_snapshot", "web.workflow_snapshot", ev.Snapshot
 	case query.AgentProgressEvent:
 		return "agent_progress", "web.agent_progress", webAgentProgressEvent{
 			AgentID: ev.AgentID, Description: ev.Description, ToolCount: ev.ToolCount,
@@ -694,9 +656,6 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 				if handoff, ok := e.Event.(query.OrchestrationHandoffEvent); ok {
 					s.rememberArtifact(handoff.Path)
 				}
-				if snapshot, ok := s.updateWorkflow(e.Event); ok {
-					s.hub.publish("workflow_snapshot", snapshot)
-				}
 				s.hub.publish("loop_event", e.Event)
 			default:
 				s.hub.publish("interactive_event", e)
@@ -704,101 +663,6 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 		}
 	}()
 	return true
-}
-
-func (s *server) updateWorkflow(ev query.LoopEvent) (workflowSnapshot, bool) {
-	now := time.Now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	switch e := ev.(type) {
-	case query.OrchestrationStartedEvent:
-		s.workflow = newWorkflowSnapshot()
-		s.workflow.Name = e.Name
-		s.workflow.Initial = e.Initial
-		s.workflow.Current = e.Initial
-		s.workflowOn = true
-	case query.OrchestrationStateStartedEvent:
-		s.ensureWorkflow()
-		row := s.workflowState(e.StateID)
-		row.Persona = firstNonEmpty(row.Persona, e.PersonaID)
-		row.Control = firstNonEmpty(row.Control, e.Control)
-		row.Status = "running"
-		row.Started = now
-		s.workflow.Current = e.StateID
-	case query.OrchestrationStateCompletedEvent:
-		s.ensureWorkflow()
-		row := s.workflowState(e.StateID)
-		row.Status = "completed"
-		row.Completed = now
-		row.Duration = e.Duration.Round(time.Second).String()
-	case query.OrchestrationControlEvent:
-		s.ensureWorkflow()
-		row := s.workflowState(e.StateID)
-		row.Control = firstNonEmpty(row.Control, e.Control)
-		row.LastEvent = firstNonEmpty(e.Event, row.LastEvent)
-	case query.OrchestrationTransitionEvent:
-		s.ensureWorkflow()
-		s.workflow.Transitions = append(s.workflow.Transitions, workflowTransition{From: e.From, Event: e.Event, To: e.To})
-		if e.To != "" {
-			s.workflow.Current = e.To
-		}
-	case query.OrchestrationHandoffEvent:
-		s.ensureWorkflow()
-		s.workflow.Handoffs = append(s.workflow.Handoffs, workflowHandoff{
-			StateID: e.StateID, Event: e.Event, Path: e.Path, Direction: e.Direction,
-		})
-	case query.OrchestrationCompletedEvent:
-		s.ensureWorkflow()
-		s.workflow.Name = firstNonEmpty(s.workflow.Name, e.Name)
-		s.workflow.Completed = true
-		s.workflow.Current = "completed"
-	default:
-		return workflowSnapshot{}, false
-	}
-	return cloneWorkflowSnapshot(s.workflow), true
-}
-
-func (s *server) ensureWorkflow() {
-	if !s.workflowOn || s.workflow.States == nil {
-		s.workflow = newWorkflowSnapshot()
-		s.workflowOn = true
-	}
-}
-
-func (s *server) workflowState(id string) *workflowState {
-	if id == "" {
-		id = "unknown"
-	}
-	if s.workflow.States == nil {
-		s.workflow.States = make(map[string]*workflowState)
-	}
-	row := s.workflow.States[id]
-	if row == nil {
-		row = &workflowState{ID: id}
-		s.workflow.States[id] = row
-	}
-	return row
-}
-
-func cloneWorkflowSnapshot(in workflowSnapshot) workflowSnapshot {
-	out := in
-	out.States = make(map[string]*workflowState, len(in.States))
-	for id, row := range in.States {
-		cp := *row
-		out.States[id] = &cp
-	}
-	out.Transitions = append([]workflowTransition(nil), in.Transitions...)
-	out.Handoffs = append([]workflowHandoff(nil), in.Handoffs...)
-	return out
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func (s *server) rememberArtifact(path string) {

@@ -76,7 +76,8 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	}
 	artifactRoot := opts.artifactRoot()
 	bus := eventBus(engine)
-	emitQueryObserve(ch, bus, query.OrchestrationStartedEvent{Name: def.Name, Initial: def.Initial})
+	projection := NewProjection()
+	emitOrchestration(ch, bus, projection, query.OrchestrationStartedEvent{Name: def.Name, Initial: def.Initial})
 	if err := EnsureRunDirs(def, artifactRoot); err != nil {
 		ch <- query.ErrorEvent{Err: err}
 		return
@@ -86,7 +87,7 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
-		event, err := RunNodeEvents(ctx, ch, engine, opts.PersonaDir, def, state, opts.TaskPrompt, handoffPrompt, artifactRoot)
+		event, err := RunNodeEvents(ctx, ch, engine, projection, opts.PersonaDir, def, state, opts.TaskPrompt, handoffPrompt, artifactRoot)
 		if err != nil {
 			ch <- query.ErrorEvent{Err: err}
 			return
@@ -97,7 +98,7 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 			return
 		}
 		if nextHandoff != "" {
-			emitQueryObserve(ch, bus, query.OrchestrationHandoffEvent{
+			emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
 				StateID: state.ID, Event: event, Path: handoffPromptPath(artifactRoot, state.ID, event), Direction: "read",
 			})
 			handoffPrompt = nextHandoff
@@ -108,10 +109,10 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 			ch <- query.ErrorEvent{Err: fmt.Errorf("transition %q from %q: %w", event, stateID, err)}
 			return
 		}
-		emitQueryObserve(ch, bus, query.OrchestrationTransitionEvent{From: stateID, Event: event, To: runtime.FSM.Current()})
+		emitOrchestration(ch, bus, projection, query.OrchestrationTransitionEvent{From: stateID, Event: event, To: runtime.FSM.Current()})
 	}
 
-	emitQueryObserve(ch, bus, query.OrchestrationCompletedEvent{Name: def.Name})
+	emitOrchestration(ch, bus, projection, query.OrchestrationCompletedEvent{Name: def.Name})
 	ch <- query.TurnCompleteEvent{
 		Response:   model.Response{StopReason: model.StopEndTurn},
 		StopReason: model.StopEndTurn,
@@ -148,7 +149,7 @@ func EnsureRunDirs(def Definition, artifactRoots ...string) error {
 	return nil
 }
 
-func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, error) {
+func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, error) {
 	artifactRoot := DefaultArtifactRoot
 	if len(artifactRoots) > 0 {
 		artifactRoot = artifactRoots[0]
@@ -156,13 +157,13 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 	bus := eventBus(engine)
 	if !state.Control.IsZero() {
 		control := ControlName(state)
-		emitQueryObserve(ch, bus, query.OrchestrationStateStartedEvent{StateID: state.ID, Control: control})
-		emitQueryObserve(ch, bus, query.OrchestrationControlEvent{StateID: state.ID, Control: control})
+		emitOrchestration(ch, bus, projection, query.OrchestrationStateStartedEvent{StateID: state.ID, Control: control})
+		emitOrchestration(ch, bus, projection, query.OrchestrationControlEvent{StateID: state.ID, Control: control})
 		event, err := ExecuteControl(state)
 		if err != nil {
 			return "", fmt.Errorf("control state %q failed: %w", state.ID, err)
 		}
-		emitQueryObserve(ch, bus, query.OrchestrationControlEvent{StateID: state.ID, Control: control, Event: event})
+		emitOrchestration(ch, bus, projection, query.OrchestrationControlEvent{StateID: state.ID, Control: control, Event: event})
 		return event, nil
 	}
 
@@ -170,14 +171,14 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 	if err != nil {
 		return "", err
 	}
-	emitQueryObserve(ch, bus, query.OrchestrationStateStartedEvent{StateID: state.ID, PersonaID: personaDef.ID})
+	emitOrchestration(ch, bus, projection, query.OrchestrationStateStartedEvent{StateID: state.ID, PersonaID: personaDef.ID})
 	for _, tr := range outgoingTransitions(def, state.ID) {
-		emitQueryObserve(ch, bus, query.OrchestrationHandoffEvent{
+		emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
 			StateID: state.ID, Event: tr.Event, Path: handoffPromptPath(artifactRoot, state.ID, tr.Event), Direction: "write_target",
 		})
 	}
 
-	if _, err := RunStateEvents(ctx, ch, engine, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot); err != nil {
+	if _, err := RunStateEvents(ctx, ch, engine, projection, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot); err != nil {
 		return "", fmt.Errorf("state %q failed: %w", state.ID, err)
 	}
 
@@ -284,7 +285,7 @@ func lastDecisionValue(content string) (string, bool) {
 	return decision, decision != ""
 }
 
-func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, error) {
+func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, error) {
 	artifactRoot := DefaultArtifactRoot
 	if len(artifactRoots) > 0 {
 		artifactRoot = artifactRoots[0]
@@ -309,7 +310,7 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 		case query.ErrorEvent:
 			return text.String(), e.Err
 		case query.TurnCompleteEvent:
-			emitQueryObserve(ch, eventBus(engine), query.OrchestrationStateCompletedEvent{StateID: state.ID, Duration: time.Since(start)})
+			emitOrchestration(ch, eventBus(engine), projection, query.OrchestrationStateCompletedEvent{StateID: state.ID, Duration: time.Since(start)})
 		default:
 			ch <- ev
 		}
@@ -500,6 +501,13 @@ func emitQueryObserve(ch chan<- query.LoopEvent, bus *observe.EventBus, ev query
 			EventHeader: observe.NewEventHeader("OrchestrationCompleted", "", "", ""),
 			Name:        e.Name,
 		})
+	}
+}
+
+func emitOrchestration(ch chan<- query.LoopEvent, bus *observe.EventBus, projection *Projection, ev query.LoopEvent) {
+	emitQueryObserve(ch, bus, ev)
+	if snapshot, ok := projection.Apply(ev, time.Now()); ok {
+		ch <- query.OrchestrationSnapshotEvent{Snapshot: snapshot}
 	}
 }
 

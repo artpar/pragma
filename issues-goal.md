@@ -235,6 +235,23 @@ What not to do:
 
 Do not add more field aliases or event-order heuristics to `server.updateWorkflow`.
 
+Status:
+
+Resolved in current worktree. The orchestration runtime now owns the workflow projection. It emits a typed `query.OrchestrationSnapshotEvent` after orchestration state changes, and web only normalizes that event into the existing `workflow_snapshot` frontend contract.
+
+Source evidence:
+
+- `internal/query/event.go`: adds `OrchestrationSnapshotEvent` and typed snapshot records as sealed loop-event data.
+- `internal/orchestration/projection.go`: owns snapshot mutation from orchestration events and returns cloned projections.
+- `internal/orchestration/runner.go`: creates one projection per orchestration run and routes orchestration events through `emitOrchestration`, which emits both the raw event and the snapshot event.
+- `internal/web/web.go`: no longer stores or reconstructs workflow state with `updateWorkflow`; it normalizes `OrchestrationSnapshotEvent` to `workflow_snapshot`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/query/event.go internal/orchestration/projection.go internal/orchestration/runner.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/query ./internal/orchestration ./internal/web ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "updateWorkflow|func \\(s \\*server\\).*Workflow|type workflow|workflowOn|firstNonEmpty|newWorkflowSnapshot|cloneWorkflowSnapshot|ensureWorkflow\\(" internal/web/web.go` returns no backend reconstruction matches.
+
 ## 6. Slash Command Completion Logic Is Duplicated Across Web And TUI
 
 Severity: medium
