@@ -600,7 +600,6 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 		}
 		return nil, err
 	}
-	applyToolFilters(cmd, d.Registry)
 	waitForToolsetMCP(cmd.Context(), d)
 	if d.SessionWriter != nil {
 		if _, err := beginSessionLifecycle(cmd.Context(), d, ""); err != nil {
@@ -869,6 +868,9 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 			observe.GlobalTrace("if: d.Toolset != nil && !d.Toolset.AllowBuiltinTool(synTool.Name())")
 			return fmt.Errorf("toolset %q does not expose %s; enable includeBuiltinTools and include %s in the toolset tools list", d.Toolset.Name, synTool.Name(), synTool.Name())
 		}
+		if !d.ToolPolicy.Allows(synTool.Name()) {
+			return fmt.Errorf("tool exposure policy does not expose %s", synTool.Name())
+		}
 		if err := d.Registry.Register(synTool); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: fmt.Errorf(\"register StructuredOutput tool: %w\", err)")
@@ -876,7 +878,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		}
 	}
 
-	applyToolFilters(cmd, d.Registry)
 	waitForToolsetMCP(cmd.Context(), d)
 
 	compDeps, _ := BuildCompactionDeps(d)

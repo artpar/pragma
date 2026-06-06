@@ -1396,6 +1396,23 @@ What not to do:
 
 Do not special-case Agent prompts or add deny checks only inside the Agent tool. The tool-exposure policy must live at the registry construction boundary shared by all engines.
 
+Status:
+
+Resolved in current worktree. CLI `--allowed-tools` and `--disallowed-tools` filtering is now enforced through `Deps.ToolPolicy` at shared registry construction instead of by mutating only the root registry after construction. Root registry construction and Agent child registry construction both call `shouldRegisterBuiltinTool`, so subagents inherit the same effective CLI exposure policy before any narrower Agent/skill scope is applied.
+
+Source evidence:
+
+- `internal/cli/tools.go`: root and child registries both register descriptors through `shouldRegisterBuiltinTool`, which checks `Deps.ToolPolicy.Allows`.
+- `internal/cli/tools.go`: child registries still apply `Registry.Scoped(scopedToolNames)` after shared policy filtering, so explicit Agent/skill scopes can only narrow the already-filtered set.
+- `internal/cli/run.go`: `BuildInteractiveRuntime` and non-interactive setup no longer call `applyToolFilters` after `RegisterTools`; the active runtime path uses registration-time policy instead of root-only registry mutation.
+- `internal/cli/run.go`: late synthetic `StructuredOutput` registration is now gated by `d.ToolPolicy.Allows` so it cannot bypass the shared exposure policy.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/tools/agent ./internal/slash ./cmd/pragma`.
+- Ownership scan: `rg -n "applyToolFilters\\(|shouldRegisterBuiltinTool\\(|ToolPolicy\\.Allows|ModelSwitcher|RegisterTools|baseTools\\(|Scoped\\(" internal/cli internal/tools/agent internal/slash -g'*.go'` showed no active runtime calls to `applyToolFilters`; root and child registry construction share `shouldRegisterBuiltinTool`, with child scoping applied afterward.
+
 ## 30. Subagent File Mutations Are Tracked In Child Engine Caches Only
 
 Severity: high
