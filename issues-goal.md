@@ -2100,6 +2100,24 @@ What not to do:
 
 Do not just disable the session buttons in JavaScript. Direct `/api/resume` calls and stale browser state would still mutate the runtime while a turn is active. The server/runtime transition must enforce the lifecycle rule.
 
+Status:
+
+Resolved in current worktree. Web resume now uses the same server-owned runtime transition gate as prompt execution. The server marks the runtime busy before calling `InteractiveRuntime.Resume`, rejects direct `/api/resume` calls with HTTP 409 while a prompt/resume transition is active, and releases the gate with the same `run_idle` event used by prompt runs.
+
+Source evidence:
+
+- `internal/web/web.go`: added `beginRuntimeTransition`, the single server-side gate for web runtime transitions that mutate shared runtime/session state.
+- `internal/web/web.go`: `server.start` now uses `beginRuntimeTransition(cancel)` instead of owning its own `s.running`/`s.cancel` mutation path.
+- `internal/web/web.go`: `server.resume` now uses `beginRuntimeTransition(nil)` before publishing `resume_requested` or calling `s.cfg.Resume(sessionID)`, so resume cannot overlap an active prompt run.
+- `internal/web/web.go`: `handleResume` maps `errRuntimeBusy` to HTTP 409, enforcing the rule for direct API callers.
+- `internal/web/web.go`: browser `openSession` has a convenience `state.running` guard, but server-side `beginRuntimeTransition` is the authoritative enforcement.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/web ./internal/cli ./internal/query ./internal/app ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "errRuntimeBusy|beginRuntimeTransition|handleResume|resume\\(|start\\(|handlePrompt|handleCancel|cancelRun|s\\.running|s\\.cancel|run_idle|resume_requested|session_resumed|openSession|state\\.running|Resume\\(" internal/web/web.go internal/cli/run.go -g'*.go'` confirmed prompt and resume share the server runtime gate, with resume rejected before `InteractiveRuntime.Resume` while busy.
+
 ## 44. AskUserQuestion Waiting State Lives Only In UI Bridges
 
 Severity: medium

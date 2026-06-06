@@ -114,6 +114,8 @@ type server struct {
 	artifacts map[string]struct{}
 }
 
+var errRuntimeBusy = errors.New("interactive run already in progress")
+
 func newServer(cfg Config) *server {
 	return &server{
 		cfg:       cfg,
@@ -623,24 +625,15 @@ func (s *server) cancelRun() bool {
 }
 
 func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool {
-	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
+	ctx, cancel := context.WithCancel(s.cfg.ParentCtx)
+	endTransition, err := s.beginRuntimeTransition(cancel)
+	if err != nil {
+		cancel()
 		return false
 	}
-	ctx, cancel := context.WithCancel(s.cfg.ParentCtx)
-	s.running = true
-	s.cancel = cancel
-	s.mu.Unlock()
 
 	go func() {
-		defer func() {
-			s.mu.Lock()
-			s.running = false
-			s.cancel = nil
-			s.mu.Unlock()
-			s.hub.publish("run_idle", nil)
-		}()
+		defer endTransition()
 		events := s.cfg.RunInput(ctx, input)
 		for ev := range events {
 			switch e := ev.(type) {
@@ -843,24 +836,52 @@ func (s *server) handleResume(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session_id is required", http.StatusBadRequest)
 		return
 	}
-	s.hub.publish("resume_requested", raw)
-	if err := s.resume(sessionID); err != nil {
+	if err := s.resume(sessionID, raw); err != nil {
+		if errors.Is(err, errRuntimeBusy) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
-func (s *server) resume(sessionID string) error {
+func (s *server) resume(sessionID string, raw map[string]json.RawMessage) error {
 	if s.cfg.Resume == nil {
 		return errors.New("session resume is not available")
 	}
+	endTransition, err := s.beginRuntimeTransition(nil)
+	if err != nil {
+		return err
+	}
+	defer endTransition()
+
+	s.hub.publish("resume_requested", raw)
 	if err := s.cfg.Resume(sessionID); err != nil {
 		return err
 	}
 	sess := s.cfg.Store.Snapshot().Conversation
 	s.hub.publish("session_resumed", sess)
 	return nil
+}
+
+func (s *server) beginRuntimeTransition(cancel context.CancelFunc) (func(), error) {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return nil, errRuntimeBusy
+	}
+	s.running = true
+	s.cancel = cancel
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		s.running = false
+		s.cancel = nil
+		s.mu.Unlock()
+		s.hub.publish("run_idle", nil)
+	}, nil
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
@@ -1910,6 +1931,7 @@ async function refreshState(){
 
 async function openSession(session, button){
   if(!session || !session.id) return;
+  if(state.running) return;
   const previousText = button ? button.textContent : '';
   if(button){
     button.disabled = true;
