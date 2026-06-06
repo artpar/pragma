@@ -68,6 +68,18 @@ type Checker interface {
 	AddPersistentRule(rule Rule) error
 }
 
+type WorkDirScopedChecker interface {
+	Checker
+	WithWorkDir(workDir string) Checker
+}
+
+func CheckerForWorkDir(checker Checker, workDir string) Checker {
+	if scoped, ok := checker.(WorkDirScopedChecker); ok {
+		return scoped.WithWorkDir(workDir)
+	}
+	return checker
+}
+
 type SessionRuleResetter interface {
 	ClearSessionRules()
 }

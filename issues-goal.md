@@ -3614,6 +3614,10 @@ Do not patch this by rebuilding only the `/skills` output or only the `Skill` to
 
 Severity: high
 
+Status: fixed in this worktree. Permission evaluation now has an explicit runtime workdir scope: the orchestrator wraps the production checker with `permission.CheckerForWorkDir(o.checker, state.WorkDir())` before calling `Descriptor.CheckPerm`. `RuleChecker` owns loaded rules and session rules, while scoped checkers resolve rule matching, dangerous-path checks, accept-edits decisions, and persistent-rule writes against the active invocation workdir. Remembered session and persistent decisions now go through the same scoped checker used for the permission decision.
+
+Verification: `gofmt -w internal/permission/permission.go internal/permission/rulechecker.go internal/tool/orchestrator.go`; `go build ./cmd/pragma`; `go vet ./internal/permission ./internal/tool ./internal/cli ./cmd/pragma`; `git diff --check`; ownership scan for `desc.CheckPerm|AddPersistentRule|AddSessionRule|CheckerForWorkDir|WithWorkDir|resolvePathsForCheck|MatchContent|IsDangerousPath|acceptEditsDecision`.
+
 Concrete files/functions involved:
 
 - `internal/tool/tool.go`: `Descriptor.CheckPerm`, `Descriptor.Invoke`, `StateSnapshot`

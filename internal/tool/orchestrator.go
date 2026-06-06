@@ -351,7 +351,8 @@ func (o *Orchestrator) executeSingle(
 		hookSupplements = append(hookSupplements, hookFeedbackSupplements(hook.PreToolUse, hookResult)...)
 	}
 
-	permResult := desc.CheckPerm(ctx, call.Input, o.checker)
+	checker := permission.CheckerForWorkDir(o.checker, stateWorkDir(state))
+	permResult := desc.CheckPerm(ctx, call.Input, checker)
 
 	rulePattern := ""
 	ruleSource := ""
@@ -413,9 +414,9 @@ func (o *Orchestrator) executeSingle(
 			rule := permission.SessionRuleForPrompt(call.Name, permResult, decision)
 			switch rememberScope {
 			case permission.RememberSession:
-				o.checker.AddSessionRule(rule)
+				checker.AddSessionRule(rule)
 			case permission.RememberPersistent:
-				if err := o.checker.AddPersistentRule(rule); err != nil {
+				if err := checker.AddPersistentRule(rule); err != nil {
 					o.bus.Emit(observe.ErrorOccurred{
 						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
 						Severity:     "warn",
@@ -423,7 +424,7 @@ func (o *Orchestrator) executeSingle(
 						ErrorType:    "persist_rule_failed",
 						ErrorMessage: fmt.Sprintf("persist permission rule for %s: %v", call.Name, err),
 					})
-					o.checker.AddSessionRule(rule)
+					checker.AddSessionRule(rule)
 				} else {
 					o.bus.Emit(observe.PermissionPersisted{
 						EventHeader: observe.NewEventHeader("PermissionPersisted", traceID, spanID, parentSpan),
@@ -440,7 +441,7 @@ func (o *Orchestrator) executeSingle(
 					ErrorType:    "unknown_remember_scope",
 					ErrorMessage: fmt.Sprintf("unknown remember scope %q for %s", rememberScope, call.Name),
 				})
-				o.checker.AddSessionRule(rule)
+				checker.AddSessionRule(rule)
 			}
 		}
 
@@ -594,6 +595,13 @@ func copyUserMessages(in []UserMessage) []UserMessage {
 		out[i].Attachments = append([]UserMessageAttachment(nil), msg.Attachments...)
 	}
 	return out
+}
+
+func stateWorkDir(state StateSnapshot) string {
+	if state == nil {
+		return ""
+	}
+	return state.WorkDir()
 }
 
 func hookFeedbackSupplements(event hook.Event, result hook.AggregatedResult) []model.ContentPart {

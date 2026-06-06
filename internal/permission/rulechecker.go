@@ -20,6 +20,11 @@ type RuleChecker struct {
 	bus     *observe.EventBus
 }
 
+type scopedRuleChecker struct {
+	base    *RuleChecker
+	workDir string
+}
+
 // NewRuleChecker creates a RuleChecker with the given rules and mode.
 // Rules must be pre-sorted by source priority (policy first).
 func NewRuleChecker(rules []Rule, mode PermissionMode, workDir string, bus *observe.EventBus) *RuleChecker {
@@ -37,6 +42,29 @@ func NewRuleChecker(rules []Rule, mode PermissionMode, workDir string, bus *obse
 // Check evaluates permission for a tool invocation.
 // content is the tool-specific extracted string (command for Bash, path for file tools, domain:X for WebFetch).
 func (rc *RuleChecker) Check(ctx context.Context, toolName string, content string) CheckResult {
+	return rc.check(ctx, toolName, content, rc.workDir)
+}
+
+func (rc *RuleChecker) WithWorkDir(workDir string) Checker {
+	if strings.TrimSpace(workDir) == "" || workDir == rc.workDir {
+		return rc
+	}
+	return &scopedRuleChecker{base: rc, workDir: workDir}
+}
+
+func (sc *scopedRuleChecker) Check(ctx context.Context, toolName string, content string) CheckResult {
+	return sc.base.check(ctx, toolName, content, sc.workDir)
+}
+
+func (sc *scopedRuleChecker) AddSessionRule(rule Rule) {
+	sc.base.AddSessionRule(rule)
+}
+
+func (sc *scopedRuleChecker) AddPersistentRule(rule Rule) error {
+	return sc.base.addPersistentRule(sc.workDir, rule)
+}
+
+func (rc *RuleChecker) check(ctx context.Context, toolName string, content string, workDir string) CheckResult {
 	observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "enter")
 	defer observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "exit")
 	rc.mu.RLock()
@@ -61,7 +89,7 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 			}
 		}
 
-		if content != "" && MatchContent(rule.Content, content, rc.workDir) {
+		if content != "" && MatchContent(rule.Content, content, workDir) {
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: content != \"\" && MatchContent(rule.Content, content, rc.workDir)")
 			rc.emitRuleMatched(toolName, rule.Content, string(rule.Source), string(rule.Decision))
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\trule.Decision,\n\tRule:\t\trule,\n\tContent:\tcontent,\n}")
@@ -75,9 +103,9 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 
 	if rc.mode != ModeBypassPermissions && content != "" && isFilePath(content) {
 		observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: rc.mode != ModeBypassPermissions && content != \"\" && isFilePath(content)")
-		for _, absPath := range resolvePathsForCheck(content, rc.workDir) {
+		for _, absPath := range resolvePathsForCheck(content, workDir) {
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "range resolvePathsForCheck(content, rc.workDir)")
-			if IsDangerousPath(absPath, rc.workDir) {
+			if IsDangerousPath(absPath, workDir) {
 				observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: IsDangerousPath(absPath, rc.workDir)")
 				rc.emitRuleMatched(toolName, "", "dangerous_path", string(DecisionAsk))
 				observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tDecisionAsk,\n\tReason:\t\t\"dangerous path: \" + filepath....")
@@ -92,7 +120,7 @@ func (rc *RuleChecker) Check(ctx context.Context, toolName string, content strin
 
 	if rc.mode == ModeAcceptEdits {
 		observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: rc.mode == ModeAcceptEdits")
-		if decision, ok := rc.acceptEditsDecision(toolName, content); ok {
+		if decision, ok := rc.acceptEditsDecision(toolName, content, workDir); ok {
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: ok")
 			rc.emitRuleMatched(toolName, "", "mode_accept_edits", string(decision))
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\tdecision,\n\tReason:\t\t\"acceptEdits mode: auto-allow rea...")
@@ -142,9 +170,13 @@ func (rc *RuleChecker) ClearSessionRules() {
 }
 
 func (rc *RuleChecker) AddPersistentRule(rule Rule) error {
+	return rc.addPersistentRule(rc.workDir, rule)
+}
+
+func (rc *RuleChecker) addPersistentRule(workDir string, rule Rule) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if err := PersistRule(rc.workDir, rule); err != nil {
+	if err := PersistRule(workDir, rule); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
 		return err
@@ -187,7 +219,7 @@ var acceptEditsTools = map[string]bool{
 
 // acceptEditsDecision checks if acceptEdits mode should auto-allow this tool.
 // Returns (decision, true) if a decision was made, or (_, false) to fall through.
-func (rc *RuleChecker) acceptEditsDecision(toolName, content string) (Decision, bool) {
+func (rc *RuleChecker) acceptEditsDecision(toolName, content string, activeWorkDir string) (Decision, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !acceptEditsTools[toolName] {
@@ -202,8 +234,8 @@ func (rc *RuleChecker) acceptEditsDecision(toolName, content string) (Decision, 
 		return DecisionAllow, true
 	}
 
-	workDir := filepath.Clean(rc.workDir)
-	for _, absPath := range resolvePathsForCheck(content, rc.workDir) {
+	workDir := filepath.Clean(activeWorkDir)
+	for _, absPath := range resolvePathsForCheck(content, activeWorkDir) {
 		observe.GlobalTrace("range resolvePathsForCheck(content, rc.workDir)")
 		if !strings.HasPrefix(absPath, workDir+string(filepath.Separator)) && absPath != workDir {
 			observe.GlobalTrace("if: !strings.HasPrefix(absPath, workDir+string(filepath.Separator)) && absPath !=...")
