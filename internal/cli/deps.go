@@ -261,11 +261,13 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	var resumedContentReplacements []model.ContentReplacementRecord
 	var resumedFileStateRecords []tool.FileStateRecord
 	var resumedTodos []app.TodoItem
+	var resumedWorktree *app.WorktreeSession
 	var sessionWriter *session.Writer
 	var resumedTurnCount int
 	var sessionStart time.Time
 	var sessionHeader session.HeaderData
 	var sessionLastIdx int
+	runtimeCWD := cwd
 	resumeID, _ := cmd.Flags().GetString("resume")
 
 	continueFlag, _ := cmd.Flags().GetBool("continue")
@@ -317,10 +319,13 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 			observe.GlobalTrace("return: nil, fmt.Errorf(\"resume session: %w\", loadErr)")
 			return nil, fmt.Errorf("resume session: %w", loadErr)
 		}
-		if err := validateResumeWorkDir(cwd, sess.Conversation.WorkDir); err != nil {
+		if err := validateResumeWorkDir(cwd, sess); err != nil {
 			return nil, err
 		}
 		conv = sess.Conversation
+		if conv.WorkDir != "" {
+			runtimeCWD = conv.WorkDir
+		}
 		if sess.SystemOverride != "" {
 			observe.GlobalTrace("if: sess.SystemOverride != \"\"")
 			conv.System = model.SystemPrompt{
@@ -336,6 +341,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		resumedContentReplacements = sess.ContentReplacements
 		resumedFileStateRecords = sess.FileStateRecords
 		resumedTodos = sess.Todos
+		resumedWorktree = copyWorktreeSession(sess.Worktree)
 		resumedTurnCount = sess.TurnCount
 		sessionStart = sess.Conversation.CreatedAt
 		if cfg.Verbose {
@@ -367,12 +373,13 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	store := app.NewStateStore(app.AppState{
 		Conversation: conv,
 		HandoffState: resumedHandoffState,
-		CWD:          cwd,
+		CWD:          runtimeCWD,
 		Model:        cfg.Model,
 		Provider:     cfg.Provider,
 		MaxTokens:    cfg.MaxTokens,
 		Temperature:  cfg.Temperature,
 		Todos:        resumedTodos,
+		Worktree:     resumedWorktree,
 	})
 
 	hookMgr.SetSessionID(conv.ID)
@@ -401,12 +408,8 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		ContentReplacementRecords: resumedContentReplacements,
 		FileStateRecords:          resumedFileStateRecords,
 	}
-	engineCfg.RecordContentReplacements = func(records []model.ContentReplacementRecord) error {
-		if sessionWriter != nil {
-			return sessionWriter.WriteContentReplacement(records)
-		}
-		return nil
-	}
+	var deps *Deps
+	engineCfg.RecordContentReplacements = contentReplacementRecorder(func() *Deps { return deps })
 	if cfg.Thinking != nil && cfg.Thinking.Enabled {
 		observe.GlobalTrace("if: cfg.Thinking != nil && cfg.Thinking.Enabled")
 		engineCfg.Thinking = &provider.ThinkingConfig{
@@ -475,7 +478,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t\tprov,\n\tChecker:...")
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tCreds:\t\tcreds,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t...")
 
-	return &Deps{
+	deps = &Deps{
 		Cfg:            cfg,
 		Creds:          creds,
 		Bus:            bus,
@@ -504,7 +507,21 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		SessionLastIdx: sessionLastIdx,
 		SessionStarted: false,
 		Cleanup:        compositeCleanup,
-	}, nil
+	}
+	return deps, nil
+}
+
+func contentReplacementRecorder(deps func() *Deps) func([]model.ContentReplacementRecord) error {
+	return func(records []model.ContentReplacementRecord) error {
+		if len(records) == 0 || deps == nil {
+			return nil
+		}
+		d := deps()
+		if d == nil || d.SessionWriter == nil {
+			return nil
+		}
+		return d.SessionWriter.WriteContentReplacement(records)
+	}
 }
 
 func applySystemPromptToolFilters(cmd *cobra.Command, prompt model.SystemPrompt) model.SystemPrompt {

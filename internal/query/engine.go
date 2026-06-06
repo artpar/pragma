@@ -39,6 +39,7 @@ type EngineConfig struct {
 	ContentReplacementRecords []model.ContentReplacementRecord
 	FileStateRecords          []tool.FileStateRecord
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
+	SessionCheckpoint         func() error
 	MCPServerStatuses         func() []MCPServerStatus
 }
 
@@ -163,6 +164,12 @@ func (e *Engine) SetCompaction(deps CompactionDeps) {
 	e.windowConfig = deps.WindowConfig
 }
 
+func (e *Engine) SetSessionCheckpoint(checkpoint func() error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	e.config.SessionCheckpoint = checkpoint
+}
+
 // ResetContentReplacementState rebuilds read-time replacement tracking after
 // the active conversation changes, such as an in-TUI session resume.
 func (e *Engine) ResetContentReplacementState(records []model.ContentReplacementRecord) {
@@ -214,7 +221,7 @@ func (e *Engine) EventBus() *observe.EventBus {
 	return e.bus
 }
 
-func (e *Engine) appendConversationMessage(msg model.Message, mutate func(*app.AppState)) {
+func (e *Engine) appendConversationMessage(msg model.Message, mutate func(*app.AppState)) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	e.store.Update(func(s *app.AppState) {
@@ -225,19 +232,27 @@ func (e *Engine) appendConversationMessage(msg model.Message, mutate func(*app.A
 		}
 	})
 	e.emitMessageAppended(msg)
+	return e.checkpointSession()
+}
+
+func (e *Engine) checkpointSession() error {
+	if e.config.SessionCheckpoint == nil {
+		return nil
+	}
+	return e.config.SessionCheckpoint()
 }
 
 // AppendHookContext appends hook-produced context as an internal user message
 // so the next provider request can see it without exposing it as assistant text.
-func (e *Engine) AppendHookContext(source string, contexts []string) {
+func (e *Engine) AppendHookContext(source string, contexts []string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	text := formatHookContext(source, contexts)
 	if text == "" {
 		observe.GlobalTrace("if: text == \"\"")
-		return
+		return nil
 	}
-	e.appendConversationMessage(model.Message{
+	return e.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
 		Content:   []model.ContentPart{model.TextPart{Text: text}},
@@ -356,7 +371,10 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		}
 	}
 
-	e.appendLifecycleMessages(result.State)
+	if err := e.appendLifecycleMessages(result.State); err != nil {
+		ch <- ErrorEvent{Err: err}
+		return
+	}
 
 	if result.Err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: result.Err != nil")
@@ -371,11 +389,14 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	ch <- TurnCompleteEvent{Response: result.Response, StopReason: result.StopReason}
 }
 
-func (e *Engine) appendLifecycleMessages(state lifecycle.State) {
+func (e *Engine) appendLifecycleMessages(state lifecycle.State) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	for _, msg := range bridge.Messages(state) {
 		observe.GlobalTrace("range bridge.Messages(state)")
-		e.appendConversationMessage(msg, nil)
+		if err := e.appendConversationMessage(msg, nil); err != nil {
+			return err
+		}
 	}
+	return nil
 }

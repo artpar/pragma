@@ -151,7 +151,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		System:    header.System,
 		Model:     firstNonEmpty(meta.Model, header.Model),
 		Provider:  firstNonEmpty(meta.Provider, header.Provider),
-		WorkDir:   header.WorkDir,
+		WorkDir:   firstNonEmpty(meta.WorkDir, header.WorkDir),
 		CreatedAt: header.CreatedAt,
 		UpdatedAt: meta.UpdatedAt,
 	}
@@ -170,6 +170,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		PromptHistory:       promptHistory,
 		FileStateRecords:    fileStateRecords,
 		Todos:               todos,
+		Worktree:            copyWorktreeSession(meta.Worktree),
 	}, nil
 }
 
@@ -277,7 +278,7 @@ func (s *Store) readJSONLSummary(path string, info os.FileInfo) (SessionSummary,
 		Summary:   summary,
 		Model:     firstNonEmpty(meta.Model, header.Model),
 		Provider:  firstNonEmpty(meta.Provider, header.Provider),
-		WorkDir:   header.WorkDir,
+		WorkDir:   firstNonEmpty(meta.WorkDir, header.WorkDir),
 		TurnCount: meta.TurnCount,
 		CostUSD:   meta.CostUSD,
 		CreatedAt: header.CreatedAt,
@@ -292,6 +293,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func copyWorktreeSession(wt *app.WorktreeSession) *app.WorktreeSession {
+	if wt == nil {
+		return nil
+	}
+	cp := *wt
+	return &cp
 }
 
 // Delete removes a session JSONL file.

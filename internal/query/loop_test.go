@@ -710,7 +710,10 @@ func TestExecuteToolBatchRejectsHandoffToolsOutsideStateHandoff(t *testing.T) {
 		{ID: "certify-call", Name: "CertifyFact", Input: json.RawMessage(`{"id":"x","kind":"tool_result_contains"}`)},
 	}
 
-	result := engine.executeToolBatch(context.Background(), calls, engine.store.Snapshot(), nil)
+	result, err := engine.executeToolBatch(context.Background(), calls, engine.store.Snapshot(), nil)
+	if err != nil {
+		t.Fatalf("executeToolBatch: %v", err)
+	}
 	if len(result.Results) != 2 {
 		t.Fatalf("results = %d, want 2", len(result.Results))
 	}

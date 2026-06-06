@@ -22,6 +22,7 @@ type Session struct {
 	PromptHistory       []PromptHistoryData              `json:"prompt_history,omitempty"`
 	FileStateRecords    []tool.FileStateRecord           `json:"file_state_records,omitempty"`
 	Todos               []app.TodoItem                   `json:"todos,omitempty"`
+	Worktree            *app.WorktreeSession             `json:"worktree,omitempty"`
 }
 
 // SessionSummary is a lightweight view for listing sessions.

@@ -172,7 +172,10 @@ func TestHandleHelp(t *testing.T) {
 func TestHandleExit(t *testing.T) {
 	saved := false
 	deps := Deps{
-		SessionSave: func() { saved = true },
+		SessionSave: func() error {
+			saved = true
+			return nil
+		},
 	}
 
 	result, err := handleExit(context.Background(), "", deps)

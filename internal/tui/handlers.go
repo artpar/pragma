@@ -869,7 +869,11 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 	m.cancel()
 	if m.closeSession != nil {
 		observe.GlobalTrace("if: m.closeSession != nil")
-		m.closeSession()
+		if err := m.closeSession(); err != nil {
+			m.outputSegs = appendText(m.outputSegs, "\n"+errorStyle.Render("Error: "+err.Error())+"\n\n")
+			m.viewport.SetContent(m.viewportContent())
+			return m, nil
+		}
 	}
 
 	m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render(m.toolbar.CostSummary())+"\n")

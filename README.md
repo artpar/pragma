@@ -129,6 +129,12 @@ internal/
 
 Every package follows a strict dependency DAG. Only provider adapters know wire formats. Everything else uses `internal/model/` types exclusively.
 
+Clean architecture claims must be enforced by source-level ownership, not by
+package names or naming intent. See
+[docs/clean-architecture-enforcement-doctrine.md](docs/clean-architecture-enforcement-doctrine.md).
+For issue-by-issue stabilization work, use
+[docs/issues-clean-code-stabilization-goal-prompt.md](docs/issues-clean-code-stabilization-goal-prompt.md).
+
 ## Key Design Decisions
 
 - **Sealed interfaces** (ADR-001): Unexported marker methods create closed type sets

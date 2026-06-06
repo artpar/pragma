@@ -276,7 +276,11 @@ func TestWriter_Rewrite(t *testing.T) {
 
 	// Rewrite with only the first message (simulating compaction)
 	newMeta := MetadataData{TurnCount: 1, Summary: "compacted", UpdatedAt: time.Now()}
-	if err := w.Rewrite(header, msgs[:1], newMeta); err != nil {
+	if err := w.Rewrite(RewriteData{
+		Header:   header,
+		Messages: msgs[:1],
+		Metadata: newMeta,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	w.Close()

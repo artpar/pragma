@@ -339,7 +339,9 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 			return Result{DisplayText: b.String()}, nil
 		}
 		if deps.SessionSave != nil {
-			deps.SessionSave()
+			if err := deps.SessionSave(); err != nil {
+				return Result{}, err
+			}
 		}
 		msg := fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)
 		if deps.ContextWindowFunc != nil {
@@ -380,7 +382,9 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		deps.OnModelChanged(args)
 	}
 	if deps.SessionSave != nil {
-		deps.SessionSave()
+		if err := deps.SessionSave(); err != nil {
+			return Result{}, err
+		}
 	}
 
 	msg := fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)
@@ -450,7 +454,9 @@ func handleExit(_ context.Context, _ string, deps Deps) (Result, error) {
 	defer observe.GlobalTrace("exit")
 	if deps.SessionSave != nil {
 		observe.GlobalTrace("if: deps.SessionSave != nil")
-		deps.SessionSave()
+		if err := deps.SessionSave(); err != nil {
+			return Result{}, err
+		}
 	}
 	observe.GlobalTrace("return: Result{Quit: true}, nil")
 	return Result{Quit: true}, nil

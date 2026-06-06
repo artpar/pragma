@@ -36,7 +36,7 @@ type Config struct {
 	ParentCtx      context.Context
 	RunInput       func(context.Context, string) <-chan interactive.Event
 	Resume         func(sessionID string) error
-	CloseSession   func()
+	CloseSession   func() error
 	Store          *app.StateStore
 	CostTracker    *model.CostTracker
 	ModelName      string
@@ -91,7 +91,10 @@ func Run(ctx context.Context, cfg Config) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if cfg.CloseSession != nil {
-			cfg.CloseSession()
+			if err := cfg.CloseSession(); err != nil {
+				_ = httpSrv.Shutdown(shutdownCtx)
+				return err
+			}
 		}
 		_ = httpSrv.Shutdown(shutdownCtx)
 		return ctx.Err()

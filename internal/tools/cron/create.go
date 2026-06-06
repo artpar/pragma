@@ -15,7 +15,7 @@ type createInput struct {
 	Cron      string `json:"cron" desc:"5-field cron expression (minute hour dom month dow)"`
 	Prompt    string `json:"prompt" desc:"The prompt to execute on schedule"`
 	Recurring *bool  `json:"recurring" desc:"Whether the job repeats (default true)"`
-	Durable   *bool  `json:"durable" desc:"Whether the job persists across restarts (default false)"`
+	Durable   *bool  `json:"durable" desc:"Whether the job persists for the cron daemon (must be true; default true)"`
 }
 
 var createSchema = json.RawMessage(`{
@@ -37,7 +37,7 @@ var createSchema = json.RawMessage(`{
 		},
 		"durable": {
 			"type": "boolean",
-			"description": "Whether the job persists across session restarts (default false)"
+			"description": "Whether the job persists for the cron daemon. CronCreate is daemon-backed, so false is not supported."
 		}
 	}
 }`)
@@ -67,7 +67,7 @@ const createDescription = `Schedule a prompt to run automatically on a cron sche
 - cron: A standard 5-field cron expression (minute hour day-of-month month day-of-week). Examples: "*/5 * * * *" (every 5 min), "0 9 * * 1-5" (9 AM weekdays), "0 */2 * * *" (every 2 hours)
 - prompt: The prompt to execute when the schedule fires
 - recurring: Whether the job repeats after firing (default true). Set to false for one-shot schedules.
-- durable: Whether the job persists across session restarts (default false)
+- durable: Whether the job persists for the cron daemon (default true). Non-durable schedules are not supported by this tool.
 
 ## When to Use
 
@@ -128,10 +128,13 @@ func (t *CreateTool) Invoke(_ context.Context, input json.RawMessage, _ tool.Sta
 		observe.GlobalTrace("if: in.Recurring != nil")
 		recurring = *in.Recurring
 	}
-	durable := false
+	durable := true
 	if in.Durable != nil {
 		observe.GlobalTrace("if: in.Durable != nil")
 		durable = *in.Durable
+	}
+	if !durable {
+		return tool.InvokeResult{}, fmt.Errorf("non-durable cron jobs require a live in-process scheduler and are not supported by CronCreate; run the cron daemon and create a durable job")
 	}
 
 	job, err := t.Scheduler.Create(in.Cron, in.Prompt, recurring, durable)

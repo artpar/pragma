@@ -44,13 +44,15 @@ type HeaderData struct {
 // MetadataData carries mutable session counters, appended after each turn.
 // On load, the last MetadataData entry wins.
 type MetadataData struct {
-	CostUSD    float64          `json:"cost_usd"`
-	TurnCount  int              `json:"turn_count"`
-	TokenUsage model.TokenUsage `json:"token_usage"`
-	UpdatedAt  time.Time        `json:"updated_at"`
-	Summary    string           `json:"summary,omitempty"`
-	Model      string           `json:"model,omitempty"`
-	Provider   string           `json:"provider,omitempty"`
+	CostUSD    float64              `json:"cost_usd"`
+	TurnCount  int                  `json:"turn_count"`
+	TokenUsage model.TokenUsage     `json:"token_usage"`
+	UpdatedAt  time.Time            `json:"updated_at"`
+	Summary    string               `json:"summary,omitempty"`
+	Model      string               `json:"model,omitempty"`
+	Provider   string               `json:"provider,omitempty"`
+	WorkDir    string               `json:"work_dir,omitempty"`
+	Worktree   *app.WorktreeSession `json:"worktree,omitempty"`
 }
 
 type ContentReplacementData struct {

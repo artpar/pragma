@@ -54,32 +54,52 @@ func NewScheduler(bus *observe.EventBus, store *Store) *Scheduler {
 
 	if store != nil {
 		observe.GlobalTrace("if: store != nil")
-		saved, err := store.Load()
-		if err == nil {
-			observe.GlobalTrace("if: err == nil")
-			now := time.Now()
-			for i := range saved {
-				observe.GlobalTrace("range saved")
-				j := saved[i]
-
-				expr, parseErr := Parse(j.Cron)
-				if parseErr != nil {
-					observe.GlobalTrace("if: parseErr != nil")
-					continue
-				}
-				j.NextFire = expr.NextAfter(now)
-				s.jobs[j.ID] = &j
-
-				if n := extractSeq(j.ID); n > s.seq.Load() {
-					observe.GlobalTrace("if: n > s.seq.Load()")
-					s.seq.Store(n)
-				}
-			}
-		}
+		_ = s.ReloadDurable(time.Now())
 	}
 	observe.GlobalTrace("return: s")
 
 	return s
+}
+
+func (s *Scheduler) ReloadDurable(now time.Time) error {
+	if s.store == nil {
+		return nil
+	}
+	saved, err := s.store.Load()
+	if err != nil {
+		return err
+	}
+
+	durable := make(map[string]*Job, len(saved))
+	for i := range saved {
+		j := saved[i]
+		expr, parseErr := Parse(j.Cron)
+		if parseErr != nil {
+			continue
+		}
+		if j.NextFire.IsZero() {
+			j.NextFire = expr.NextAfter(now)
+		}
+		durable[j.ID] = &j
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, live := range s.jobs {
+		if live.Durable {
+			if _, ok := durable[id]; !ok {
+				delete(s.jobs, id)
+			}
+		}
+	}
+	for id, j := range durable {
+		copy := *j
+		s.jobs[id] = &copy
+		if n := extractSeq(id); n > s.seq.Load() {
+			s.seq.Store(n)
+		}
+	}
+	return nil
 }
 
 // extractSeq parses "cron-NNN" and returns NNN.
@@ -213,6 +233,15 @@ func (s *Scheduler) Start(ctx context.Context, handler func(job *Job)) {
 			return
 		case now := <-ticker.C:
 			observe.TraceCtx(ctx, "cron", "Scheduler.Start", "select: now := <-ticker.C")
+			if err := s.ReloadDurable(now); err != nil && s.bus != nil {
+				s.bus.Emit(observe.ErrorOccurred{
+					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+					Severity:     "warn",
+					Component:    "cron",
+					ErrorType:    "reload_durable_jobs",
+					ErrorMessage: err.Error(),
+				})
+			}
 			s.tick(now, handler)
 		}
 	}

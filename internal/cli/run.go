@@ -221,8 +221,8 @@ type InteractiveRuntime struct {
 	SlashCmds     *slash.Registry
 	SlashDeps     slash.Deps
 	PromptHistory []string
-	sessionSave   func()
-	sessionClose  func()
+	sessionSave   func() error
+	sessionClose  func() error
 	Cleanup       func(context.Context)
 }
 
@@ -262,7 +262,10 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput strin
 		return
 	}
 	if result.ClearConversation {
-		rt.closeCurrentSessionAfterClear(ctx)
+		if err := rt.closeCurrentSessionAfterClear(ctx); err != nil {
+			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+			return
+		}
 	}
 	if result.RewriteSession {
 		if err := rewriteCurrentSession(rt.Deps); err != nil {
@@ -288,16 +291,20 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput strin
 	}
 }
 
-func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context) {
+func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context) error {
 	endSessionLifecycle(ctx, rt.Deps)
 	if rt.sessionClose != nil {
-		rt.sessionClose()
+		if err := rt.sessionClose(); err != nil {
+			return err
+		}
 	}
 	rt.Deps.SessionWriter = nil
 	rt.Deps.SessionHeader = session.HeaderData{}
 	rt.Deps.SessionLastIdx = 0
 	rt.Deps.SessionStarted = false
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
+	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
+	return nil
 }
 
 func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
@@ -306,20 +313,28 @@ func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, submi
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
-	rt.appendHookContext(hook.SessionStart, sessionHookResult, true)
-	rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false)
-	rt.writePromptHistory(submittedInput)
+	if err := rt.appendHookContext(hook.SessionStart, sessionHookResult, true); err != nil {
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+		return
+	}
+	if err := rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false); err != nil {
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+		return
+	}
+	if err := rt.writePromptHistory(submittedInput); err != nil {
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+		return
+	}
 	for ev := range rt.Engine.Run(ctx, input) {
 		ch <- interactive.LoopEvent{Event: ev}
-		persistSessionAfterLoopEvent(ev, rt.sessionSave)
 	}
 }
 
-func (rt *InteractiveRuntime) writePromptHistory(input string) {
+func (rt *InteractiveRuntime) writePromptHistory(input string) error {
 	if rt.Deps.SessionWriter == nil {
-		return
+		return nil
 	}
-	_ = rt.Deps.SessionWriter.WritePromptHistory(input)
+	return rt.Deps.SessionWriter.WritePromptHistory(input)
 }
 
 func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
@@ -328,27 +343,35 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
-	rt.appendHookContext(hook.SessionStart, sessionHookResult, true)
-	rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false)
-	rt.writePromptHistory(submittedInput)
+	if err := rt.appendHookContext(hook.SessionStart, sessionHookResult, true); err != nil {
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+		return
+	}
+	if err := rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false); err != nil {
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+		return
+	}
+	if err := rt.writePromptHistory(submittedInput); err != nil {
+		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+		return
+	}
 	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
 		PersonaDir:   req.PersonaDir,
 		TaskPrompt:   req.Prompt,
 		ArtifactRoot: interactiveOrchestrationArtifactRoot(rt.Deps),
 	}) {
 		ch <- interactive.LoopEvent{Event: ev}
-		persistSessionAfterLoopEvent(ev, rt.sessionSave)
 	}
 }
 
-func (rt *InteractiveRuntime) appendHookContext(event hook.Event, result hook.AggregatedResult, includeStdout bool) {
+func (rt *InteractiveRuntime) appendHookContext(event hook.Event, result hook.AggregatedResult, includeStdout bool) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if rt == nil || rt.Engine == nil {
 		observe.GlobalTrace("if: rt == nil || rt.Engine == nil")
-		return
+		return nil
 	}
-	rt.Engine.AppendHookContext(string(event), hookContextStrings(result, includeStdout))
+	return rt.Engine.AppendHookContext(string(event), hookContextStrings(result, includeStdout))
 }
 
 func interactiveOrchestrationArtifactRoot(d *Deps) string {
@@ -375,7 +398,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateResumeWorkDir(rt.Deps.Store.Snapshot().CWD, sess.Conversation.WorkDir); err != nil {
+	if err := validateResumeWorkDir(rt.Deps.Store.Snapshot().CWD, sess); err != nil {
 		return err
 	}
 	if resetter, ok := rt.Deps.Checker.(permission.SessionRuleResetter); ok {
@@ -393,7 +416,10 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	}
 	if rt.sessionClose != nil {
 		endSessionLifecycle(context.Background(), rt.Deps)
-		rt.sessionClose()
+		if err := rt.sessionClose(); err != nil {
+			w.Close()
+			return err
+		}
 	}
 	rt.Deps.SessionWriter = w
 	rt.Deps.SessionLastIdx = len(sess.Conversation.Messages)
@@ -403,18 +429,22 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.Conversation = sess.Conversation
 		st.Model = providerBinding.modelID
 		st.Provider = providerBinding.providerName
+		st.CWD = sess.Conversation.WorkDir
 		st.HandoffState = sess.HandoffState
 		st.Todos = sess.Todos
+		st.Worktree = copyWorktreeSession(sess.Worktree)
 	})
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
 	rt.Engine.ResetFileState(sess.FileStateRecords)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
+	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
 	_ = beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
 	return nil
 }
 
-func validateResumeWorkDir(activeWorkDir, sessionWorkDir string) error {
+func validateResumeWorkDir(activeWorkDir string, sess session.Session) error {
+	sessionWorkDir := sess.Conversation.WorkDir
 	if activeWorkDir == "" || sessionWorkDir == "" {
 		return nil
 	}
@@ -423,7 +453,35 @@ func validateResumeWorkDir(activeWorkDir, sessionWorkDir string) error {
 	if activeClean == sessionClean {
 		return nil
 	}
+	if sess.Worktree != nil {
+		originalClean := filepath.Clean(sess.Worktree.OriginalCWD)
+		if activeClean == originalClean {
+			return validateResumableWorktree(sess.Worktree)
+		}
+	}
 	return fmt.Errorf("cannot resume session from %s while runtime working directory is %s", sessionClean, activeClean)
+}
+
+func validateResumableWorktree(wt *app.WorktreeSession) error {
+	if wt == nil || wt.WorktreePath == "" {
+		return nil
+	}
+	info, err := os.Stat(wt.WorktreePath)
+	if err != nil {
+		return fmt.Errorf("cannot resume worktree session at %s: %w", wt.WorktreePath, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("cannot resume worktree session at %s: not a directory", wt.WorktreePath)
+	}
+	return nil
+}
+
+func copyWorktreeSession(wt *app.WorktreeSession) *app.WorktreeSession {
+	if wt == nil {
+		return nil
+	}
+	cp := *wt
+	return &cp
 }
 
 type resumeProviderBinding struct {
@@ -490,10 +548,11 @@ func (rt *InteractiveRuntime) applyResumeProvider(binding resumeProviderBinding)
 	}
 }
 
-func (rt *InteractiveRuntime) CloseSession() {
+func (rt *InteractiveRuntime) CloseSession() error {
 	if rt.sessionClose != nil {
-		rt.sessionClose()
+		return rt.sessionClose()
 	}
+	return nil
 }
 
 // BuildInteractiveRuntime wires the shared dependencies for an interactive UI.
@@ -526,6 +585,7 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 	engine.SetCompaction(compDeps)
 
 	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
+	engine.SetSessionCheckpoint(sessionSaveFn)
 
 	slashCmds := slash.NewRegistry()
 
@@ -813,6 +873,7 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 	}
 
 	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
+	engine.SetSessionCheckpoint(sessionSaveFn)
 
 	ctx := cmd.Context()
 	if strings.TrimSpace(prompt) != "" {
@@ -820,7 +881,9 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		if err != nil {
 			return err
 		}
-		engine.AppendHookContext(string(hook.SessionStart), hookContextStrings(sessionHookResult, true))
+		if err := engine.AppendHookContext(string(hook.SessionStart), hookContextStrings(sessionHookResult, true)); err != nil {
+			return err
+		}
 	}
 	events := engine.Run(ctx, prompt)
 
@@ -908,11 +971,11 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 				fmt.Fprintf(os.Stderr, "Hint: %s\n", e.Guidance)
 				flushWriter(os.Stderr)
 			}
-			persistSessionAfterLoopEvent(ev, sessionSaveFn)
-			sessionCloseFn()
+			if err := sessionCloseFn(); err != nil {
+				return err
+			}
 			return e.Err
 		}
-		persistSessionAfterLoopEvent(ev, sessionSaveFn)
 	}
 
 	if fallbackStructuredOutput && structuredJSON != nil {
@@ -927,7 +990,9 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
 	}
 
-	sessionCloseFn()
+	if err := sessionCloseFn(); err != nil {
+		return err
+	}
 
 	if opts.PrintCost {
 		fmt.Fprintf(os.Stderr, "\ntotal cost: $%.6f\n", d.CostTracker.TotalUSD())
@@ -939,24 +1004,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 func flushWriter(w io.Writer) {
 	if f, ok := w.(*os.File); ok {
 		_ = f.Sync()
-	}
-}
-
-func persistSessionAfterLoopEvent(ev query.LoopEvent, saveFn func()) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if saveFn == nil {
-		observe.GlobalTrace("if: saveFn == nil")
-		return
-	}
-	if query.ShouldPersistSessionEvent(ev) {
-		observe.GlobalTrace("if: query.ShouldPersistSessionEvent(ev)")
-		saveFn()
-		return
-	}
-	if _, ok := ev.(query.ErrorEvent); ok {
-		observe.GlobalTrace("if: _, ok := ev.(query.ErrorEvent); ok")
-		saveFn()
 	}
 }
 
@@ -1155,34 +1202,34 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 
 // makeSessionSaveClose creates sessionSaveFn and sessionCloseFn from Deps.
 // On resumed sessions, lastIdx starts at len(messages) so existing messages aren't re-written.
-func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
+func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	closed := false
-	saveFn = func() {
+	saveFn = func() error {
 		if d.SessionWriter == nil || closed {
-			return
+			return nil
 		}
 		snap := d.Store.Snapshot()
 		for i := d.SessionLastIdx; i < len(snap.Conversation.Messages); i++ {
 			if err := d.SessionWriter.WriteMessage(snap.Conversation.Messages[i]); err != nil {
-				return
+				return err
 			}
 		}
 		if err := d.SessionWriter.WriteHandoffState(snap.HandoffState); err != nil {
-			return
+			return err
 		}
 		if d.Engine != nil {
 			if err := d.SessionWriter.WriteFileState(d.Engine.FileStateRecords()); err != nil {
-				return
+				return err
 			}
 		}
 		if err := d.SessionWriter.WriteTodos(snap.Todos); err != nil {
-			return
+			return err
 		}
 		d.SessionLastIdx = len(snap.Conversation.Messages)
 		if err := d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap)); err != nil {
-			return
+			return err
 		}
 		fileSize, _ := d.SessionWriter.Size()
 		if d.Bus != nil {
@@ -1193,8 +1240,9 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 				FileSizeBytes: fileSize,
 			})
 		}
+		return nil
 	}
-	closeFn = func() {
+	closeFn = func() error {
 		if d.SessionWriter != nil && !closed {
 			snap := d.Store.Snapshot()
 			sessionID := snap.Conversation.ID
@@ -1205,7 +1253,7 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 				totalCost = d.CostTracker.TotalUSD()
 			}
 			if err := d.SessionWriter.Close(); err != nil {
-				return
+				return err
 			}
 			closed = true
 			if d.Bus != nil {
@@ -1218,6 +1266,7 @@ func makeSessionSaveClose(d *Deps) (saveFn func(), closeFn func()) {
 				})
 			}
 		}
+		return nil
 	}
 	return
 }
@@ -1232,11 +1281,38 @@ func rewriteCurrentSession(d *Deps) error {
 		header = sessionHeaderForCurrentConversation(d)
 		d.SessionHeader = header
 	}
-	if err := d.SessionWriter.Rewrite(header, snap.Conversation.Messages, sessionMetadataForSnapshot(d, snap)); err != nil {
+	existing, err := loadCurrentSessionForRewrite(header.SessionID)
+	if err != nil {
+		return err
+	}
+	var fileStateRecords []tool.FileStateRecord
+	if d.Engine != nil {
+		fileStateRecords = d.Engine.FileStateRecords()
+	} else {
+		fileStateRecords = existing.FileStateRecords
+	}
+	if err := d.SessionWriter.Rewrite(session.RewriteData{
+		Header:              header,
+		Messages:            snap.Conversation.Messages,
+		Metadata:            sessionMetadataForSnapshot(d, snap),
+		HandoffState:        snap.HandoffState,
+		ContentReplacements: existing.ContentReplacements,
+		PromptHistory:       existing.PromptHistory,
+		FileStateRecords:    fileStateRecords,
+		Todos:               snap.Todos,
+	}); err != nil {
 		return err
 	}
 	d.SessionLastIdx = len(snap.Conversation.Messages)
 	return nil
+}
+
+func loadCurrentSessionForRewrite(sessionID string) (session.Session, error) {
+	store, err := session.NewStore()
+	if err != nil {
+		return session.Session{}, err
+	}
+	return store.Load(sessionID)
 }
 
 func sessionMetadataForSnapshot(d *Deps, snap app.AppState) session.MetadataData {
@@ -1257,6 +1333,8 @@ func sessionMetadataForSnapshot(d *Deps, snap app.AppState) session.MetadataData
 		Summary:    extractSummary(snap.Conversation.Messages),
 		Model:      modelID,
 		Provider:   providerName,
+		WorkDir:    snap.CWD,
+		Worktree:   copyWorktreeSession(snap.Worktree),
 	}
 }
 

@@ -28,7 +28,7 @@ type Config struct {
 	ParentCtx      context.Context // parent context for cancellation propagation (e.g., cmd.Context())
 	RunInput       func(context.Context, string) <-chan interactive.Event
 	Resume         func(sessionID string) error
-	CloseSession   func()
+	CloseSession   func() error
 	Store          *app.StateStore
 	CostTracker    *model.CostTracker
 	ModelName      string
@@ -193,7 +193,7 @@ type Model struct {
 	// Dependencies
 	runInput       func(context.Context, string) <-chan interactive.Event
 	resume         func(sessionID string) error
-	closeSession   func()
+	closeSession   func() error
 	store          *app.StateStore
 	costTracker    *model.CostTracker
 	slashCmds      *slash.Registry

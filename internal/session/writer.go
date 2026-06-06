@@ -23,6 +23,17 @@ type Writer struct {
 	closed  bool
 }
 
+type RewriteData struct {
+	Header              HeaderData
+	Messages            []model.Message
+	Metadata            MetadataData
+	HandoffState        model.HandoffState
+	ContentReplacements []model.ContentReplacementRecord
+	PromptHistory       []PromptHistoryData
+	FileStateRecords    []tool.FileStateRecord
+	Todos               []app.TodoItem
+}
+
 // NewWriter creates a new session JSONL file at path.
 func NewWriter(path string) (*Writer, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
@@ -164,9 +175,10 @@ func (w *Writer) writeEntry(kind EntryKind, data any) error {
 	return w.file.Sync()
 }
 
-// Rewrite truncates the file and writes a fresh header + messages + metadata.
-// Used after compaction to replace the full session content.
-func (w *Writer) Rewrite(header HeaderData, msgs []model.Message, meta MetadataData) error {
+// Rewrite truncates the file and writes a complete durable session snapshot.
+// Used after compaction to replace conversation content without dropping other
+// session entry categories that Store.Load owns.
+func (w *Writer) Rewrite(data RewriteData) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
@@ -185,10 +197,10 @@ func (w *Writer) Rewrite(header HeaderData, msgs []model.Message, meta MetadataD
 	w.encoder = json.NewEncoder(w.file)
 
 	// Reset dedup map
-	w.written = make(map[string]bool, len(msgs))
+	w.written = make(map[string]bool, len(data.Messages))
 
 	// Write header
-	headerEntry, err := MarshalEntry(EntryHeader, header)
+	headerEntry, err := MarshalEntry(EntryHeader, data.Header)
 	if err != nil {
 		return fmt.Errorf("marshal header for rewrite: %w", err)
 	}
@@ -197,7 +209,7 @@ func (w *Writer) Rewrite(header HeaderData, msgs []model.Message, meta MetadataD
 	}
 
 	// Write messages
-	for _, msg := range msgs {
+	for _, msg := range data.Messages {
 		msgEntry, err := MarshalEntry(EntryMessage, msg)
 		if err != nil {
 			return fmt.Errorf("marshal message for rewrite: %w", err)
@@ -208,8 +220,34 @@ func (w *Writer) Rewrite(header HeaderData, msgs []model.Message, meta MetadataD
 		w.written[msg.ID] = true
 	}
 
+	if !data.HandoffState.IsZero() {
+		if err := w.encodeRewriteEntry(EntryHandoffState, HandoffStateData{State: data.HandoffState}); err != nil {
+			return err
+		}
+	}
+	if len(data.ContentReplacements) > 0 {
+		if err := w.encodeRewriteEntry(EntryContentReplacement, ContentReplacementData{Records: data.ContentReplacements}); err != nil {
+			return err
+		}
+	}
+	for _, prompt := range data.PromptHistory {
+		if err := w.encodeRewriteEntry(EntryPromptHistory, prompt); err != nil {
+			return err
+		}
+	}
+	if len(data.FileStateRecords) > 0 {
+		if err := w.encodeRewriteEntry(EntryFileState, FileStateData{Records: data.FileStateRecords}); err != nil {
+			return err
+		}
+	}
+	if len(data.Todos) > 0 {
+		if err := w.encodeRewriteEntry(EntryTodos, TodosData{Items: data.Todos}); err != nil {
+			return err
+		}
+	}
+
 	// Write metadata
-	metaEntry, err := MarshalEntry(EntryMetadata, meta)
+	metaEntry, err := MarshalEntry(EntryMetadata, data.Metadata)
 	if err != nil {
 		return fmt.Errorf("marshal metadata for rewrite: %w", err)
 	}
@@ -218,6 +256,17 @@ func (w *Writer) Rewrite(header HeaderData, msgs []model.Message, meta MetadataD
 	}
 
 	return w.file.Sync()
+}
+
+func (w *Writer) encodeRewriteEntry(kind EntryKind, data any) error {
+	entry, err := MarshalEntry(kind, data)
+	if err != nil {
+		return fmt.Errorf("marshal %s for rewrite: %w", kind, err)
+	}
+	if err := w.encoder.Encode(entry); err != nil {
+		return fmt.Errorf("encode %s for rewrite: %w", kind, err)
+	}
+	return nil
 }
 
 func (w *Writer) Size() (int64, error) {

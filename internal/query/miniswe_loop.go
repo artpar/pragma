@@ -115,9 +115,12 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
 		Timestamp: time.Now(),
 	}
-	e.appendConversationMessage(userMsg, func(s *app.AppState) {
+	if err := e.appendConversationMessage(userMsg, func(s *app.AppState) {
 		s.Conversation.System = system
-	})
+	}); err != nil {
+		ch <- ErrorEvent{Err: err}
+		return
+	}
 
 	for turn := 0; turn < maxTurns; turn++ {
 		if err := ctx.Err(); err != nil {
@@ -156,7 +159,10 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			Content:   pragmaLoopReplayContent(response.Content),
 			Timestamp: time.Now(),
 		}
-		e.appendConversationMessage(assistantMsg, nil)
+		if err := e.appendConversationMessage(assistantMsg, nil); err != nil {
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 
 		if e.autoTracker != nil {
 			e.autoTracker.IncrementTurn()
@@ -165,21 +171,33 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 		assistantText := responseText(response)
 		command, actionCount := extractPragmaLoopCommand(assistantText)
 		if actionCount != 1 {
-			e.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, actionCount))
+			if err := e.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, actionCount)); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 			continue
 		}
 
 		result, timedOut := runPragmaLoopBash(ctx, snap.CWD, command)
 		if timedOut {
-			e.appendPragmaLoopUserMessage(formatPragmaLoopTimeout(command, result.Output))
+			if err := e.appendPragmaLoopUserMessage(formatPragmaLoopTimeout(command, result.Output)); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 			continue
 		}
 		if submitted, message := pragmaLoopSubmitted(result); submitted {
-			e.appendPragmaLoopUserMessage(message)
+			if err := e.appendPragmaLoopUserMessage(message); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
 			return
 		}
-		e.appendPragmaLoopUserMessage(formatPragmaLoopObservation(result))
+		if err := e.appendPragmaLoopUserMessage(formatPragmaLoopObservation(result)); err != nil {
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 	}
 
 	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
@@ -235,14 +253,14 @@ func (e *Engine) completePragmaLoopResponse(ctx context.Context, params provider
 	return model.Response{}, errors.New("model request failed")
 }
 
-func (e *Engine) appendPragmaLoopUserMessage(text string) {
+func (e *Engine) appendPragmaLoopUserMessage(text string) error {
 	msg := model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
 		Content:   []model.ContentPart{model.TextPart{Text: text}},
 		Timestamp: time.Now(),
 	}
-	e.appendConversationMessage(msg, nil)
+	return e.appendConversationMessage(msg, nil)
 }
 
 func pragmaLoopInstancePrompt(task, cwd string) string {
@@ -312,6 +330,7 @@ type pragmaLoopBashResult struct {
 
 func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool) {
 	cmdCtx, cancel := context.WithTimeout(ctx, pragmaLoopCommandTimeout)
+	defer cancel()
 	shellCommand := commandForPragmaLoopShellRun(command)
 	cmd := exec.CommandContext(cmdCtx, "bash", "-o", "pipefail", "-c", shellCommand)
 	cmd.Dir = workDir

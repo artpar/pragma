@@ -51,7 +51,7 @@ type Deps struct {
 	CostTracker *model.CostTracker
 	Compactor   *compact.Service
 	Bus         *observe.EventBus
-	SessionSave func()
+	SessionSave func() error
 	ModelName   string
 	Provider    string
 	Cwd         string // working directory for shell execution

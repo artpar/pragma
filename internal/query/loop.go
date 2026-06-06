@@ -84,11 +84,14 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
 		Timestamp: time.Now(),
 	}
-	e.appendConversationMessage(userMsg, func(s *app.AppState) {
+	if err := e.appendConversationMessage(userMsg, func(s *app.AppState) {
 		if e.isStateHandoffMode() && s.HandoffState.IsZero() {
 			s.HandoffState = model.NewHandoffState(userMessage)
 		}
-	})
+	}); err != nil {
+		ch <- ErrorEvent{Err: err}
+		return
+	}
 
 	malformedRetries := 0
 	const maxMalformedRetries = 3
@@ -117,7 +120,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 					Content:   []model.ContentPart{model.TextPart{Text: "Messages from teammates:\n" + strings.Join(msgs, "\n")}},
 					Timestamp: time.Now(),
 				}
-				e.appendConversationMessage(injectedMsg, nil)
+				if err := e.appendConversationMessage(injectedMsg, nil); err != nil {
+					ch <- ErrorEvent{Err: err}
+					return
+				}
 			}
 		}
 
@@ -258,7 +264,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 			Timestamp: time.Now(),
 		}
 		debug.Log("Assistant response: StopReason=%s, ContentParts=%d", response.StopReason, len(response.Content))
-		e.appendConversationMessage(assistantMsg, nil)
+		if err := e.appendConversationMessage(assistantMsg, nil); err != nil {
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 
 		if e.autoTracker != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.autoTracker != nil")
@@ -305,7 +314,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Content:   []model.ContentPart{model.TextPart{Text: fmt.Sprintf("Your previous tool call had malformed arguments and was discarded. Please retry with valid JSON arguments. (attempt %d/%d)", malformedRetries, maxMalformedRetries)}},
 				Timestamp: time.Now(),
 			}
-			e.appendConversationMessage(correctionMsg, nil)
+			if err := e.appendConversationMessage(correctionMsg, nil); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 			turnCount++
 			continue
 
@@ -331,7 +343,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Content:   []model.ContentPart{model.TextPart{Text: continuationPrompt}},
 				Timestamp: time.Now(),
 			}
-			e.appendConversationMessage(contMsg, nil)
+			if err := e.appendConversationMessage(contMsg, nil); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 
 			continue
 
@@ -342,7 +357,11 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ch <- ToolCallEvent{Call: tc}
 			}
 
-			execResult := e.executeToolBatch(ctx, toolCalls, snap, ch)
+			execResult, err := e.executeToolBatch(ctx, toolCalls, snap, ch)
+			if err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 
 			resultParts := make([]model.ContentPart, 0, len(execResult.Results)+len(execResult.Supplements))
 			for _, r := range execResult.Results {
@@ -356,7 +375,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				Content:   resultParts,
 				Timestamp: time.Now(),
 			}
-			e.appendConversationMessage(resultMsg, nil)
+			if err := e.appendConversationMessage(resultMsg, nil); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 			for i, r := range execResult.Results {
 				ch <- ToolResultEvent{Result: r, Display: execResult.Displays[i], FileEffects: execResult.FileEffects[i]}
 			}
@@ -468,6 +490,10 @@ func (e *Engine) autoCompactBeforeRequest(
 
 	e.autoTracker.RecordSuccess()
 	compact.ApplyResult(e.store, compResult)
+	if err := e.checkpointSession(); err != nil {
+		ch <- ErrorEvent{Err: err}
+		return false, nil
+	}
 	ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
 	observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: true, compResult.ReplacementMessages")
 	return true, compResult.ReplacementMessages
@@ -820,7 +846,7 @@ func certifyFactToolDef() model.ToolDef {
 	}
 }
 
-func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPart, snap app.AppState, ch chan<- LoopEvent) tool.ExecuteResult {
+func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPart, snap app.AppState, ch chan<- LoopEvent) (tool.ExecuteResult, error) {
 	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "exit")
 	results := make([]model.ToolResultPart, len(calls))
@@ -847,10 +873,18 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		}
 		if call.Name == "PatchHandoffState" {
 			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "if: call.Name == \"PatchHandoffState\"")
-			results[i] = e.executeHandoffPatch(call)
+			result, err := e.executeHandoffPatch(call)
+			if err != nil {
+				return tool.ExecuteResult{}, err
+			}
+			results[i] = result
 		} else {
 			observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "else: call.Name == \"PatchHandoffState\"")
-			results[i] = e.executeCertifyFact(call)
+			result, err := e.executeCertifyFact(call)
+			if err != nil {
+				return tool.ExecuteResult{}, err
+			}
+			results[i] = result
 		}
 	}
 
@@ -906,10 +940,10 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		Displays:    displays,
 		Supplements: supplements,
 		FileEffects: fileEffects,
-	}
+	}, nil
 }
 
-func (e *Engine) executeHandoffPatch(call model.ToolCallPart) model.ToolResultPart {
+func (e *Engine) executeHandoffPatch(call model.ToolCallPart) (model.ToolResultPart, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	snap := e.store.Snapshot()
@@ -926,16 +960,19 @@ func (e *Engine) executeHandoffPatch(call model.ToolCallPart) model.ToolResultPa
 			ToolCallID: call.ID,
 			Content:    err.Error(),
 			IsError:    true,
-		}
+		}, nil
 	}
 	e.store.Update(func(s *app.AppState) {
 		s.HandoffState = next
 	})
+	if err := e.checkpointSession(); err != nil {
+		return model.ToolResultPart{}, err
+	}
 	observe.GlobalTrace("return: model.ToolResultPart{\n\tToolCallID:\tcall.ID,\n\tContent:\t\"handoff state patched\",\n}")
 	return model.ToolResultPart{
 		ToolCallID: call.ID,
 		Content:    "handoff state patched",
-	}
+	}, nil
 }
 
 type certifyFactInput struct {
@@ -955,25 +992,25 @@ type certifyFactSelector struct {
 	Equals string `json:"equals,omitempty"`
 }
 
-func (e *Engine) executeCertifyFact(call model.ToolCallPart) model.ToolResultPart {
+func (e *Engine) executeCertifyFact(call model.ToolCallPart) (model.ToolResultPart, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var in certifyFactInput
 	if err := json.Unmarshal(call.Input, &in); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: invalid inp...")
-		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: invalid input: " + err.Error(), IsError: true}
+		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: invalid input: " + err.Error(), IsError: true}, nil
 	}
 	if strings.TrimSpace(in.ID) == "" {
 		observe.GlobalTrace("if: strings.TrimSpace(in.ID) == \"\"")
 		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: id is requi...")
-		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: id is required", IsError: true}
+		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: id is required", IsError: true}, nil
 	}
 	fact, err := e.certifyFact(in)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: \"certify fact: \" + err.Err...")
-		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: " + err.Error(), IsError: true}
+		return model.ToolResultPart{ToolCallID: call.ID, Content: "certify fact: " + err.Error(), IsError: true}, nil
 	}
 	e.store.Update(func(s *app.AppState) {
 		if s.HandoffState.IsZero() {
@@ -981,9 +1018,12 @@ func (e *Engine) executeCertifyFact(call model.ToolCallPart) model.ToolResultPar
 		}
 		s.HandoffState.AddCertifiedFact(fact)
 	})
+	if err := e.checkpointSession(); err != nil {
+		return model.ToolResultPart{}, err
+	}
 	data, _ := json.Marshal(fact)
 	observe.GlobalTrace("return: model.ToolResultPart{ToolCallID: call.ID, Content: string(data)}")
-	return model.ToolResultPart{ToolCallID: call.ID, Content: string(data)}
+	return model.ToolResultPart{ToolCallID: call.ID, Content: string(data)}, nil
 }
 
 func (e *Engine) certifyFact(in certifyFactInput) (model.CertifiedFact, error) {
