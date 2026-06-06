@@ -439,6 +439,10 @@ func applyLiveConfigValue(d *Deps) func(string, any) {
 			if !ok {
 				return
 			}
+			if d.ModelSwitcher != nil {
+				_ = d.ModelSwitcher(modelID)
+				return
+			}
 			_ = switchActiveModel(d, modelID)
 		}
 	}
@@ -457,6 +461,9 @@ func validateActiveModel(d *Deps, modelID string) error {
 func switchActiveModel(d *Deps, modelID string) error {
 	if err := validateActiveModel(d, modelID); err != nil {
 		return err
+	}
+	if d != nil {
+		d.Cfg.Model = modelID
 	}
 	if d != nil && d.Store != nil {
 		d.Store.Update(func(s *app.AppState) {

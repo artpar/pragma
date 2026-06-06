@@ -536,9 +536,26 @@ func (rt *InteractiveRuntime) applyResumeProvider(binding resumeProviderBinding)
 	rt.SlashDeps.ModelName = binding.modelID
 	rt.SlashDeps.Provider = binding.providerName
 	rt.SlashDeps.ContextWindowFunc = accountedProvider.ContextWindow
+	rt.rebindCompaction()
 	if cw, ok := accountedProvider.ContextWindow(binding.modelID); ok {
 		rt.Deps.TokenMonitor.SetBudget(cw)
 	}
+}
+
+func (rt *InteractiveRuntime) switchActiveModel(modelID string) error {
+	if err := switchActiveModel(rt.Deps, modelID); err != nil {
+		return err
+	}
+	rt.SlashDeps.ModelName = modelID
+	rt.rebindCompaction()
+	return nil
+}
+
+func (rt *InteractiveRuntime) rebindCompaction() {
+	compDeps, compactor := BuildCompactionDeps(rt.Deps)
+	rt.Engine.SetCompaction(compDeps)
+	rt.SlashDeps.Compactor = compactor
+	rt.SlashDeps.ContextWindowFunc = rt.Deps.Prov.ContextWindow
 }
 
 func (rt *InteractiveRuntime) CloseSession() error {
@@ -633,9 +650,7 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 			return nil
 		},
 		ContextWindowFunc: d.Prov.ContextWindow,
-		ModelSwitcher: func(modelID string) error {
-			return switchActiveModel(d, modelID)
-		},
+		ModelSwitcher:     nil,
 		OnModelChanged: func(modelID string) {
 			if cw, ok := d.Prov.ContextWindow(modelID); ok {
 				d.TokenMonitor.SetBudget(cw)
@@ -655,6 +670,8 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 		sessionSave:   sessionSaveFn,
 		sessionClose:  sessionCloseFn,
 	}
+	rt.SlashDeps.ModelSwitcher = rt.switchActiveModel
+	d.ModelSwitcher = rt.switchActiveModel
 	rt.Cleanup = func(ctx context.Context) {
 		_ = rt.closeCurrentSession(ctx)
 		if d.Cleanup != nil {

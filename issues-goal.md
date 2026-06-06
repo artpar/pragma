@@ -1195,6 +1195,25 @@ What not to do:
 
 Do not patch only the toolbar/token monitor or recompute thresholds inside `handleModel`. The stale state is in the runtime compaction owner, not the presentation text around model switching.
 
+Status:
+
+Resolved in current worktree. Interactive model changes and resume provider changes now rebind compaction through `InteractiveRuntime`, the same owner that rebinds the active provider/model runtime. `/model` and the Config tool both route live interactive model switches through the runtime callback, which updates the active model state and reinstalls compaction dependencies into both the query engine and slash command deps. Resume provider changes rebuild compaction after provider/model rebinding as well.
+
+Source evidence:
+
+- `internal/cli/run.go`: `InteractiveRuntime.switchActiveModel` wraps `switchActiveModel`, updates slash model state, and calls `rebindCompaction`.
+- `internal/cli/run.go`: `InteractiveRuntime.rebindCompaction` rebuilds `BuildCompactionDeps`, calls `Engine.SetCompaction`, updates `SlashDeps.Compactor`, and refreshes `SlashDeps.ContextWindowFunc`.
+- `internal/cli/run.go`: `InteractiveRuntime.applyResumeProvider` now calls `rebindCompaction` after provider/model rebind and provider-backed tool rebind.
+- `internal/cli/run.go`: `BuildInteractiveRuntime` installs `rt.switchActiveModel` as both `SlashDeps.ModelSwitcher` and `Deps.ModelSwitcher`, so slash `/model` and runtime-owned tool callbacks share the same rebind path.
+- `internal/cli/tools.go`: the Config tool live `model` setting delegates to `Deps.ModelSwitcher` when interactive runtime installs one; the fallback helper still supports non-interactive setup.
+- `internal/cli/tools.go`: `switchActiveModel` updates `Deps.Cfg.Model`, so rebuilt compaction uses the current model when deriving the context window.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/deps.go internal/cli/tools.go internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/query ./internal/slash ./cmd/pragma`.
+- Ownership scan: `rg -n "ModelSwitcher|switchActiveModel|rebindCompaction|BuildCompactionDeps|SetCompaction|SlashDeps\\.Compactor|ApplyLiveValue|applyLiveConfigValue|applyResumeProvider" internal/cli internal/slash internal/query -g'*.go'` showed interactive `/model`, Config live model changes, and resume provider rebind now converge on `InteractiveRuntime.rebindCompaction`; initial setup and non-interactive command setup remain separate setup-time paths.
+
 ## 26. Subagent And Graph Execution Use Setup-Time Model State After `/model`
 
 Severity: high

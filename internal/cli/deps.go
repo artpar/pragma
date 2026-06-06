@@ -67,6 +67,7 @@ type Deps struct {
 	SessionWriter  *session.Writer
 	SessionLastIdx int
 	SessionStarted bool
+	ModelSwitcher  func(string) error
 	Cleanup        func()
 	recorder       *observe.Recorder
 }
