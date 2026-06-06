@@ -401,6 +401,22 @@ func persistAndBuildReplacement(content, toolUseID, sessionID string) (string, e
 func persistToolResult(content, toolUseID, sessionID string) (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	return persistToolResultBytes([]byte(content), toolUseID, sessionID, ".txt")
+}
+
+// PersistBinaryOutput persists binary tool output under the session tool-result artifact tree.
+func PersistBinaryOutput(content []byte, artifactID, sessionID, ext string) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if ext == "" || !strings.HasPrefix(ext, ".") {
+		ext = ".bin"
+	}
+	return persistToolResultBytes(content, artifactID, sessionID, ext)
+}
+
+func persistToolResultBytes(content []byte, toolUseID, sessionID, ext string) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if sessionID == "" {
 		observe.GlobalTrace("if: sessionID == \"\"")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"session id is required\")")
@@ -418,7 +434,7 @@ func persistToolResult(content, toolUseID, sessionID string) (string, error) {
 		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
-	path := filepath.Join(dir, safeToolUseID(toolUseID)+".txt")
+	path := filepath.Join(dir, safeToolUseID(toolUseID)+ext)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -431,7 +447,7 @@ func persistToolResult(content, toolUseID, sessionID string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
-	if _, err := f.WriteString(content); err != nil {
+	if _, err := f.Write(content); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", err")
 		return "", err

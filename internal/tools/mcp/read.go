@@ -2,20 +2,16 @@ package toolmcp
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
+	"github.com/artpar/pragma/internal/toolresult"
 )
 
 type readInput struct {
@@ -41,8 +37,7 @@ var readInputSchema = json.RawMessage(`{
 
 // ReadTool reads a specific MCP resource by URI.
 type ReadTool struct {
-	Manager  *mcp.Manager
-	CacheDir string // directory for persisting binary content (default: .pragma/cache)
+	Manager *mcp.Manager
 }
 
 func (t *ReadTool) Name() string {
@@ -143,10 +138,12 @@ func (t *ReadTool) Invoke(ctx context.Context, input json.RawMessage, snap tool.
 	}
 
 	type contentEntry struct {
-		URI         string `json:"uri"`
-		MimeType    string `json:"mime_type,omitempty"`
-		Text        string `json:"text,omitempty"`
-		BlobSavedTo string `json:"blob_saved_to,omitempty"`
+		URI              string `json:"uri"`
+		MimeType         string `json:"mime_type,omitempty"`
+		Text             string `json:"text,omitempty"`
+		BlobArtifactPath string `json:"blob_artifact_path,omitempty"`
+		BlobBase64       string `json:"blob_base64,omitempty"`
+		BlobBytes        int    `json:"blob_bytes,omitempty"`
 	}
 
 	result := struct {
@@ -169,13 +166,15 @@ func (t *ReadTool) Invoke(ctx context.Context, input json.RawMessage, snap tool.
 				entry.Text = fmt.Sprintf("Error decoding binary content: %v", decErr)
 			} else {
 				observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "else: decErr != nil")
-				path, writeErr := t.persistBinary(snap, decoded, c.MimeType, i)
+				entry.BlobBytes = len(decoded)
+				path, writeErr := t.persistBinaryArtifact(snap, in.Server, c.URI, decoded, c.MimeType, i)
 				if writeErr != nil {
 					observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "if: writeErr != nil")
-					entry.Text = fmt.Sprintf("Error saving binary content: %v", writeErr)
+					entry.BlobBase64 = c.Blob
+					entry.Text = fmt.Sprintf("Binary content returned inline because no session artifact could be created: %v", writeErr)
 				} else {
 					observe.TraceCtx(ctx, "toolmcp", "ReadTool.Invoke", "else: writeErr != nil")
-					entry.BlobSavedTo = path
+					entry.BlobArtifactPath = path
 				}
 			}
 		} else {
@@ -191,35 +190,16 @@ func (t *ReadTool) Invoke(ctx context.Context, input json.RawMessage, snap tool.
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
-func (t *ReadTool) persistBinary(snap tool.StateSnapshot, data []byte, mimeType string, index int) (string, error) {
+func (t *ReadTool) persistBinaryArtifact(snap tool.StateSnapshot, server string, uri string, data []byte, mimeType string, index int) (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	cacheDir := t.CacheDir
-	if cacheDir == "" {
-		observe.GlobalTrace("if: cacheDir == \"\"")
-		cacheDir = filepath.Join(snap.WorkDir(), ".pragma", "cache")
+	sessionID, ok := tool.SessionIDFrom(snap)
+	if !ok {
+		return "", fmt.Errorf("session id is required")
 	}
-
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: \"\", fmt.Errorf(\"create cache dir: %w\", err)")
-		return "", fmt.Errorf("create cache dir: %w", err)
-	}
-
 	ext := extensionForMIME(mimeType)
-	randBytes := make([]byte, 4)
-	_, _ = rand.Read(randBytes)
-	filename := fmt.Sprintf("mcp-resource-%d-%d-%s%s", time.Now().UnixMilli(), index, hex.EncodeToString(randBytes), ext)
-	path := filepath.Join(cacheDir, filename)
-
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: \"\", fmt.Errorf(\"write file: %w\", err)")
-		return "", fmt.Errorf("write file: %w", err)
-	}
-	observe.GlobalTrace("return: path, nil")
-
-	return path, nil
+	artifactID := fmt.Sprintf("mcp-resource-%s-%s-%d", server, uri, index)
+	return toolresult.PersistBinaryOutput(data, artifactID, sessionID, ext)
 }
 
 func extensionForMIME(mimeType string) string {

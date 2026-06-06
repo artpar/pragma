@@ -1347,6 +1347,23 @@ What not to do:
 
 Do not rename `.pragma/cache` or add periodic cleanup inside `ReadTool`. The boundary leak is that a read-only tool owns durable artifact creation.
 
+Status:
+
+Resolved in current worktree. Binary MCP resource content is no longer written by the read-only MCP tool into the workspace `.pragma/cache`. The MCP read tool now asks the session tool-result artifact owner to persist decoded binary bytes under the session `tool-results` tree and returns a structured `blob_artifact_path`. If no session ID is available, the tool returns a structured inline base64 payload instead of creating workspace files.
+
+Source evidence:
+
+- `internal/tools/mcp/read.go`: `ReadTool` no longer has `CacheDir` and no longer imports or calls `os.WriteFile`, `os.MkdirAll`, random filename generation, or workspace `.pragma/cache` paths.
+- `internal/tools/mcp/read.go`: binary entries now report `blob_artifact_path`, `blob_bytes`, and optional `blob_base64` fallback instead of `blob_saved_to`.
+- `internal/tools/mcp/read.go`: `persistBinaryArtifact` gets the session ID from `tool.SessionIDFrom` and delegates persistence to `toolresult.PersistBinaryOutput`.
+- `internal/toolresult/storage.go`: `PersistBinaryOutput` and the shared byte persistence helper write binary artifacts under the existing session `tool-results` directory.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/tools/mcp/read.go internal/toolresult/storage.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/tools/mcp ./internal/toolresult ./cmd/pragma`.
+- Ownership scan: `rg -n "persistBinary|CacheDir|\\.pragma.*cache|MkdirAll|WriteFile|PersistBinaryOutput|blob_saved_to|blob_artifact_path|BlobBase64|SessionIDFrom" internal/tools/mcp/read.go internal/toolresult/storage.go -g'*.go'` showed MCP no longer owns workspace cache writes; the remaining write directory creation is in `internal/toolresult/storage.go`.
+
 ## 29. CLI Tool Filters Do Not Apply To Subagent Registries
 
 Severity: high
