@@ -2458,6 +2458,25 @@ What not to do:
 
 Do not add ad hoc cleanup to `tool_result.read`, replay export, or the delete caller. That would keep sidecar artifact ownership scattered. The session store should own the lifecycle of all durable files that make up a session.
 
+Status:
+
+Resolved in current worktree. Session sidecar artifact paths now have a shared session path helper, `session.Store` exposes the session artifact root and tool-result directory, `Store.Delete` removes the session artifact tree along with the JSONL file, tool-result persistence uses the shared session path convention, and replay export includes tool-result sidecar files as portable base64 checkpoint artifacts.
+
+Source evidence:
+
+- `internal/sessionpath/path.go`: added the shared session artifact path convention for `<session-id>/tool-results`, without importing session or tool packages.
+- `internal/session/store.go`: added `ArtifactDir` and `ToolResultsDir`, making the session store expose the artifact root for a session.
+- `internal/session/store.go`: `Store.Delete` now removes the session artifact directory with `os.RemoveAll` after removing `<session-id>.jsonl`, so session deletion owns sidecar cleanup.
+- `internal/toolresult/storage.go`: `persistToolResultBytes` and `PersistedOutputPath` now use `sessionpath.ToolResultsDir` instead of open-coded `"tool-results"` path construction.
+- `cmd/pragma/replay_export.go`: checkpoint exports now include `tool_result_artifacts` entries loaded from the session tool-result directory, with relative path, byte count, and base64 content.
+- `cmd/pragma/replay_export.go`: loading by session ID uses `Store.ToolResultsDir`; loading by explicit JSONL path uses the same `sessionpath` convention beside that JSONL file.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w cmd/pragma/replay_export.go internal/session/store.go internal/toolresult/storage.go internal/sessionpath/path.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/session ./internal/sessionpath ./internal/toolresult ./internal/tools/toolresultread ./internal/query ./internal/tool ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "ToolResultsDir|ToolResultsDirName|ArtifactDir|Store\\) Delete|RemoveAll|tool-results|PersistedOutputPath|persistToolResultBytes|SessionsDir\\(\\)|sessionpath|tool_result_artifacts|loadExportToolResultArtifacts|ContentBase64" internal/session internal/sessionpath internal/toolresult internal/tools/toolresultread internal/query internal/tool cmd/pragma/replay_export.go -g'*.go'` confirmed session store owns delete/export boundaries and tool-result helpers share the session path convention.
+
 ## 51. Anthropic Provider Repairs Tool-Result Pairing Instead Of Runtime Owning The Invariant
 
 Severity: medium

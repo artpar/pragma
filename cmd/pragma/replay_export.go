@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,21 +15,23 @@ import (
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/session"
+	"github.com/artpar/pragma/internal/sessionpath"
 )
 
 type checkpointExport struct {
-	CheckpointID       string             `json:"checkpoint_id"`
-	SourceSessionID    string             `json:"source_session_id"`
-	Kind               string             `json:"kind"`
-	Model              string             `json:"model"`
-	Provider           string             `json:"provider"`
-	WorkDir            string             `json:"work_dir"`
-	System             model.SystemPrompt `json:"system"`
-	Messages           []model.Message    `json:"messages"`
-	AgentPrompt        *exportAgentPrompt `json:"agent_prompt,omitempty"`
-	Reconstructed      bool               `json:"reconstructed"`
-	MissingExactFields []string           `json:"missing_exact_fields,omitempty"`
-	CreatedAt          time.Time          `json:"created_at,omitempty"`
+	CheckpointID        string                     `json:"checkpoint_id"`
+	SourceSessionID     string                     `json:"source_session_id"`
+	Kind                string                     `json:"kind"`
+	Model               string                     `json:"model"`
+	Provider            string                     `json:"provider"`
+	WorkDir             string                     `json:"work_dir"`
+	System              model.SystemPrompt         `json:"system"`
+	Messages            []model.Message            `json:"messages"`
+	ToolResultArtifacts []exportToolResultArtifact `json:"tool_result_artifacts,omitempty"`
+	AgentPrompt         *exportAgentPrompt         `json:"agent_prompt,omitempty"`
+	Reconstructed       bool                       `json:"reconstructed"`
+	MissingExactFields  []string                   `json:"missing_exact_fields,omitempty"`
+	CreatedAt           time.Time                  `json:"created_at,omitempty"`
 }
 
 type exportAgentPrompt struct {
@@ -37,14 +40,21 @@ type exportAgentPrompt struct {
 	Model       string `json:"model,omitempty"`
 }
 
+type exportToolResultArtifact struct {
+	Path          string `json:"path"`
+	Bytes         int64  `json:"bytes"`
+	ContentBase64 string `json:"content_base64"`
+}
+
 type exportConversation struct {
-	id        string
-	model     string
-	provider  string
-	workDir   string
-	system    model.SystemPrompt
-	createdAt time.Time
-	messages  []model.Message
+	id                  string
+	model               string
+	provider            string
+	workDir             string
+	system              model.SystemPrompt
+	createdAt           time.Time
+	messages            []model.Message
+	toolResultArtifacts []exportToolResultArtifact
 }
 
 func replayExportCmd() *cobra.Command {
@@ -109,15 +119,17 @@ func loadExportConversation(source string) (exportConversation, error) {
 	if err != nil {
 		return exportConversation{}, err
 	}
+	toolResultsDir, _ := store.ToolResultsDir(source)
 	conv := sess.Conversation
 	return exportConversation{
-		id:        conv.ID,
-		model:     conv.Model,
-		provider:  conv.Provider,
-		workDir:   conv.WorkDir,
-		system:    conv.System,
-		createdAt: conv.CreatedAt,
-		messages:  conv.Messages,
+		id:                  conv.ID,
+		model:               conv.Model,
+		provider:            conv.Provider,
+		workDir:             conv.WorkDir,
+		system:              conv.System,
+		createdAt:           conv.CreatedAt,
+		messages:            conv.Messages,
+		toolResultArtifacts: loadExportToolResultArtifacts(toolResultsDir),
 	}, nil
 }
 
@@ -172,14 +184,39 @@ func loadExportConversationFile(path string) (exportConversation, error) {
 		return exportConversation{}, fmt.Errorf("session file has no header: %s", path)
 	}
 	return exportConversation{
-		id:        header.SessionID,
-		model:     header.Model,
-		provider:  header.Provider,
-		workDir:   header.WorkDir,
-		system:    header.System,
-		createdAt: header.CreatedAt,
-		messages:  messages,
+		id:                  header.SessionID,
+		model:               header.Model,
+		provider:            header.Provider,
+		workDir:             header.WorkDir,
+		system:              header.System,
+		createdAt:           header.CreatedAt,
+		messages:            messages,
+		toolResultArtifacts: loadExportToolResultArtifacts(sessionpath.ToolResultsDir(filepath.Dir(path), header.SessionID)),
 	}, nil
+}
+
+func loadExportToolResultArtifacts(dir string) []exportToolResultArtifact {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	artifacts := make([]exportToolResultArtifact, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		artifacts = append(artifacts, exportToolResultArtifact{
+			Path:          filepath.Join(sessionpath.ToolResultsDirName, entry.Name()),
+			Bytes:         int64(len(data)),
+			ContentBase64: base64.StdEncoding.EncodeToString(data),
+		})
+	}
+	return artifacts
 }
 
 func buildBugHuntCheckpoints(conv exportConversation) []checkpointExport {
@@ -209,14 +246,15 @@ func buildBugHuntCheckpoints(conv exportConversation) []checkpointExport {
 				Timestamp: msg.Timestamp,
 			})
 			checkpoints = append(checkpoints, checkpointExport{
-				CheckpointID:    fmt.Sprintf("%s-agent-%d", conv.id, len(checkpoints)+1),
-				SourceSessionID: conv.id,
-				Kind:            "agent_prompt",
-				Model:           firstNonEmpty(in.Model, conv.model),
-				Provider:        conv.provider,
-				WorkDir:         conv.workDir,
-				System:          conv.system,
-				Messages:        messages,
+				CheckpointID:        fmt.Sprintf("%s-agent-%d", conv.id, len(checkpoints)+1),
+				SourceSessionID:     conv.id,
+				Kind:                "agent_prompt",
+				Model:               firstNonEmpty(in.Model, conv.model),
+				Provider:            conv.provider,
+				WorkDir:             conv.workDir,
+				System:              conv.system,
+				Messages:            messages,
+				ToolResultArtifacts: conv.toolResultArtifacts,
 				AgentPrompt: &exportAgentPrompt{
 					Description: in.Description,
 					Prompt:      in.Prompt,
@@ -235,15 +273,16 @@ func buildBugHuntCheckpoints(conv exportConversation) []checkpointExport {
 
 	if idx := finalBugReportIndex(conv.messages); idx >= 0 {
 		checkpoints = append(checkpoints, checkpointExport{
-			CheckpointID:    fmt.Sprintf("%s-parent-synthesis", conv.id),
-			SourceSessionID: conv.id,
-			Kind:            "parent_synthesis",
-			Model:           conv.model,
-			Provider:        conv.provider,
-			WorkDir:         conv.workDir,
-			System:          conv.system,
-			Messages:        append([]model.Message(nil), conv.messages[:idx]...),
-			Reconstructed:   true,
+			CheckpointID:        fmt.Sprintf("%s-parent-synthesis", conv.id),
+			SourceSessionID:     conv.id,
+			Kind:                "parent_synthesis",
+			Model:               conv.model,
+			Provider:            conv.provider,
+			WorkDir:             conv.workDir,
+			System:              conv.system,
+			Messages:            append([]model.Message(nil), conv.messages[:idx]...),
+			ToolResultArtifacts: conv.toolResultArtifacts,
+			Reconstructed:       true,
 			MissingExactFields: []string{
 				"provider-specific wire payload",
 				"tool schemas as sent to provider",

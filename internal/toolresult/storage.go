@@ -9,6 +9,7 @@ import (
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/sessionpath"
 )
 
 const (
@@ -428,7 +429,7 @@ func persistToolResultBytes(content []byte, toolUseID, sessionID, ext string) (s
 		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
-	dir := filepath.Join(sessionsDir, sessionID, "tool-results")
+	dir := sessionpath.ToolResultsDir(sessionsDir, sessionID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", err")
@@ -471,8 +472,9 @@ func PersistedOutputPath(sessionID, toolUseID string) (string, error) {
 		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
-	observe.GlobalTrace("return: filepath.Join(sessionsDir, sessionID, \"tool-results\", safeToolUseID(toolUseID...")
-	return filepath.Join(sessionsDir, sessionID, "tool-results", safeToolUseID(toolUseID)+".txt"), nil
+	dir := sessionpath.ToolResultsDir(sessionsDir, sessionID)
+	observe.GlobalTrace("return: filepath.Join(dir, safeToolUseID(toolUseID)+\".txt\"), nil")
+	return filepath.Join(dir, safeToolUseID(toolUseID)+".txt"), nil
 }
 
 func generatePreview(content string, maxBytes int) (string, bool) {

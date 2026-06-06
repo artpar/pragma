@@ -13,6 +13,7 @@ import (
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/sessionpath"
 	"github.com/artpar/pragma/internal/tool"
 )
 
@@ -59,6 +60,21 @@ func (s *Store) Open(id string) (*Writer, error) {
 	}
 	path := filepath.Join(s.dir, id+".jsonl")
 	return OpenWriter(path)
+}
+
+func (s *Store) ArtifactDir(id string) (string, error) {
+	if !IsValidSessionID(id) {
+		return "", fmt.Errorf("invalid session ID %q", id)
+	}
+	return sessionpath.ArtifactDir(s.dir, id), nil
+}
+
+func (s *Store) ToolResultsDir(id string) (string, error) {
+	artifactDir, err := s.ArtifactDir(id)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(artifactDir, sessionpath.ToolResultsDirName), nil
 }
 
 // Load reads a session by conversation ID from its JSONL file.
@@ -326,6 +342,13 @@ func (s *Store) Delete(id string) error {
 	err := os.Remove(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("delete session %q: %w", id, err)
+	}
+	artifactDir, err := s.ArtifactDir(id)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(artifactDir); err != nil {
+		return fmt.Errorf("delete session artifacts %q: %w", id, err)
 	}
 	return nil
 }
