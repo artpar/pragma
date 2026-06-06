@@ -81,15 +81,7 @@ func ToolNodeWithFileState(orch *tool.Orchestrator, cwd string, fileState *tool.
 			return nil, fmt.Errorf("tools node requires assistant tool calls")
 		}
 
-		resultParts, supplements := executeAllowedToolCalls(ctx, orch, cwd, fileState, toolCalls, allowedTools)
-
-		var content []model.ContentPart
-		for _, r := range resultParts {
-			content = append(content, r)
-		}
-		for _, s := range supplements {
-			content = append(content, s)
-		}
+		content := executeAllowedToolCalls(ctx, orch, cwd, fileState, toolCalls, allowedTools)
 
 		resultMsg := model.Message{
 			ID:        model.NewUUID(),
@@ -104,13 +96,14 @@ func ToolNodeWithFileState(orch *tool.Orchestrator, cwd string, fileState *tool.
 	}
 }
 
-func executeAllowedToolCalls(ctx context.Context, orch *tool.Orchestrator, cwd string, fileState *tool.FileStateCache, toolCalls []model.ToolCallPart, allowedTools map[string]struct{}) ([]model.ToolResultPart, []model.ContentPart) {
+func executeAllowedToolCalls(ctx context.Context, orch *tool.Orchestrator, cwd string, fileState *tool.FileStateCache, toolCalls []model.ToolCallPart, allowedTools map[string]struct{}) []model.ContentPart {
 	if len(allowedTools) == 0 {
 		result := orch.Execute(ctx, toolCalls, simpleSnapshot{cwd: cwd, fileState: fileState})
-		return result.Results, result.Supplements
+		return result.ContentParts()
 	}
 
 	results := make([]model.ToolResultPart, len(toolCalls))
+	supplementsByResult := make([][]model.ContentPart, len(toolCalls))
 	allowedCalls := make([]model.ToolCallPart, 0, len(toolCalls))
 	allowedIndexes := make([]int, 0, len(toolCalls))
 	for i, call := range toolCalls {
@@ -126,12 +119,16 @@ func executeAllowedToolCalls(ctx context.Context, orch *tool.Orchestrator, cwd s
 		allowedIndexes = append(allowedIndexes, i)
 	}
 	if len(allowedCalls) == 0 {
-		return results, nil
+		return tool.ExecuteResult{Results: results, SupplementsByResult: supplementsByResult}.ContentParts()
 	}
 
 	result := orch.Execute(ctx, allowedCalls, simpleSnapshot{cwd: cwd, fileState: fileState})
 	for i, part := range result.Results {
-		results[allowedIndexes[i]] = part
+		idx := allowedIndexes[i]
+		results[idx] = part
+		if i < len(result.SupplementsByResult) {
+			supplementsByResult[idx] = append([]model.ContentPart(nil), result.SupplementsByResult[i]...)
+		}
 	}
-	return results, result.Supplements
+	return tool.ExecuteResult{Results: results, SupplementsByResult: supplementsByResult, Supplements: result.Supplements}.ContentParts()
 }

@@ -2815,6 +2815,25 @@ What not to do:
 
 Do not rely on appending explanatory text to the tool result or sorting supplements after the batch. That keeps the association implicit and still forces the query/provider layer to infer which tool produced which non-text evidence.
 
+Status:
+
+Resolved in current worktree. Tool supplements now remain associated with the tool result that produced them. The orchestrator exposes per-result supplements alongside the existing flat compatibility list, and result-message assembly uses the explicit per-result contract.
+
+Source evidence:
+
+- `internal/tool/orchestrator.go`: `ExecuteResult` now includes `SupplementsByResult`, indexed the same way as `Results` and `FileEffects`.
+- `internal/tool/orchestrator.go`: `Orchestrator.Execute` copies each `singleResult.supplements` into `SupplementsByResult[i]` while still maintaining the existing flat `Supplements` compatibility view.
+- `internal/tool/orchestrator.go`: `ExecuteResult.ContentParts` centralizes provider-visible content assembly as each `ToolResultPart` followed by that result's supplements.
+- `internal/query/loop.go`: `runLoop` now builds tool-result messages with `execResult.ContentParts()` instead of appending all supplements after the whole batch.
+- `internal/query/loop.go`: `executeToolBatch` preserves `SupplementsByResult` while mapping ordered real-tool sub-batches back to the original model call indexes.
+- `internal/lifecycle/bridge/tool_node.go`: lifecycle tool nodes now use `ExecuteResult.ContentParts`, including allowed-tool filtering paths, so bridge-generated result messages preserve the same association.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/tool/orchestrator.go internal/query/loop.go internal/lifecycle/bridge/tool_node.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/tool ./internal/query ./internal/lifecycle/bridge ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "SupplementsByResult|ContentParts\\(|\\.Supplements|Supplements:|ExecuteResult\\{|singleResult|executeToolBatch|executeAllowedToolCalls|readImage|readPDF|ImagePart|DocumentPart" internal/tool internal/query internal/lifecycle/bridge internal/tools/fileread internal/tools/repl internal/model -g'*.go'` confirmed per-result association is explicit at the orchestrator contract and query/lifecycle assembly sites no longer sort supplements after the batch.
+
 ## 58. Fallback Context-Window Decisions Count A Different Request Than Provider Token Counters
 
 Severity: medium

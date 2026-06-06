@@ -349,16 +349,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				return
 			}
 
-			resultParts := make([]model.ContentPart, 0, len(execResult.Results)+len(execResult.Supplements))
-			for _, r := range execResult.Results {
-				resultParts = append(resultParts, r)
-			}
-			resultParts = append(resultParts, execResult.Supplements...)
-
 			resultMsg := model.Message{
 				ID:        model.NewUUID(),
 				Role:      model.RoleUser,
-				Content:   resultParts,
+				Content:   execResult.ContentParts(),
 				Timestamp: time.Now(),
 			}
 			if err := e.appendConversationMessage(resultMsg, nil); err != nil {
@@ -861,6 +855,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	defer observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "exit")
 	results := make([]model.ToolResultPart, len(calls))
 	fileEffects := make([][]tool.FileEffect, len(calls))
+	supplementsByResult := make([][]model.ContentPart, len(calls))
 	var supplements []model.ContentPart
 	var pendingRealCalls []model.ToolCallPart
 	var pendingRealIndexes []int
@@ -874,6 +869,9 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 			idx := pendingRealIndexes[i]
 			results[idx] = r
 			fileEffects[idx] = append([]tool.FileEffect(nil), execResult.FileEffects[i]...)
+			if i < len(execResult.SupplementsByResult) {
+				supplementsByResult[idx] = append([]model.ContentPart(nil), execResult.SupplementsByResult[i]...)
+			}
 		}
 		supplements = append(supplements, execResult.Supplements...)
 		pendingRealCalls = nil
@@ -919,9 +917,10 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	observe.TraceCtx(ctx, "query", "Engine.executeToolBatch", "return: tool.ExecuteResult{\n\tResults:\tresults,\n\tSupplements:\tsup...")
 
 	return tool.ExecuteResult{
-		Results:     results,
-		Supplements: supplements,
-		FileEffects: fileEffects,
+		Results:             results,
+		Supplements:         supplements,
+		SupplementsByResult: supplementsByResult,
+		FileEffects:         fileEffects,
 	}, nil
 }
 

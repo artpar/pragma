@@ -62,9 +62,24 @@ func (o *Orchestrator) emitPermissionDecision(traceID, spanID, parentSpan, toolC
 
 // ExecuteResult holds the results of a tool batch execution.
 type ExecuteResult struct {
-	Results     []model.ToolResultPart
-	Supplements []model.ContentPart // additional content parts (e.g., DocumentPart for PDFs)
-	FileEffects [][]FileEffect      // per-result file mutation receipts, same index as Results
+	Results             []model.ToolResultPart
+	Supplements         []model.ContentPart   // compatibility view of all supplemental content
+	SupplementsByResult [][]model.ContentPart // per-result supplemental content, same index as Results
+	FileEffects         [][]FileEffect        // per-result file mutation receipts, same index as Results
+}
+
+func (r ExecuteResult) ContentParts() []model.ContentPart {
+	content := make([]model.ContentPart, 0, len(r.Results)+len(r.Supplements))
+	for i, result := range r.Results {
+		content = append(content, result)
+		if i < len(r.SupplementsByResult) {
+			content = append(content, r.SupplementsByResult[i]...)
+		}
+	}
+	if len(r.SupplementsByResult) == 0 {
+		content = append(content, r.Supplements...)
+	}
+	return content
 }
 
 // singleResult holds the output of one tool invocation.
@@ -236,12 +251,14 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 	})
 
 	out := ExecuteResult{
-		Results:     make([]model.ToolResultPart, len(singles)),
-		FileEffects: make([][]FileEffect, len(singles)),
+		Results:             make([]model.ToolResultPart, len(singles)),
+		SupplementsByResult: make([][]model.ContentPart, len(singles)),
+		FileEffects:         make([][]FileEffect, len(singles)),
 	}
 	for i, s := range singles {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range singles")
 		out.Results[i] = s.part
+		out.SupplementsByResult[i] = append([]model.ContentPart(nil), s.supplements...)
 		out.FileEffects[i] = append([]FileEffect(nil), s.fileEffects...)
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
