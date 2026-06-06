@@ -92,6 +92,7 @@ type Tool struct {
 	EngineFactory  EngineFactory
 	Store          *app.StateStore // parent store — for forking the conversation
 	Tasks          *task.Registry
+	TaskContext    context.Context
 	Bus            *observe.EventBus
 	Provider       provider.Provider // for lifecycle graph generation
 	SecondaryModel string            // cheaper model for graph compilation
@@ -484,7 +485,7 @@ func (t *Tool) runBackground(
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	childCtx, cancelFn := context.WithCancel(context.Background())
+	childCtx, cancelFn := context.WithCancel(t.runtimeTaskContext())
 	t.updateTask(taskID, func(tt *task.Task) {
 		tt.Cancel = cancelFn
 	})
@@ -534,7 +535,7 @@ func (t *Tool) runTeammate(
 ) (tool.InvokeResult, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	childCtx, cancelFn := context.WithCancel(context.Background())
+	childCtx, cancelFn := context.WithCancel(t.runtimeTaskContext())
 	t.updateTask(taskID, func(tt *task.Task) {
 		tt.Cancel = cancelFn
 		tt.AgentName = subject
@@ -615,6 +616,13 @@ func (t *Tool) runTeammate(
 	data, _ := json.Marshal(ar)
 	observe.GlobalTrace("return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
+}
+
+func (t *Tool) runtimeTaskContext() context.Context {
+	if t.TaskContext != nil {
+		return t.TaskContext
+	}
+	return context.Background()
 }
 
 // drainTeammateEvents processes all events from a single engine run, updating usage and tool counts.

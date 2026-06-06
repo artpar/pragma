@@ -50,6 +50,7 @@ type Deps struct {
 	CostTracker    *model.CostTracker
 	EngineCfg      query.EngineConfig
 	TaskReg        *task.Registry
+	TaskContext    context.Context
 	Toolset        *toolset.Compiled
 	ToolPolicy     ToolExposurePolicy
 	McpManager     *mcp.Manager
@@ -374,6 +375,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	hookMgr.SetSessionID(conv.ID)
 
+	taskCtx, taskCancel := context.WithCancel(cmd.Context())
 	taskReg := task.NewRegistry(bus)
 
 	var cronSched *cron.Scheduler
@@ -447,6 +449,10 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	go watchdog.Start(cmd.Context())
 
 	compositeCleanup := func() {
+		if taskReg != nil {
+			taskReg.ShutdownActive(500 * time.Millisecond)
+		}
+		taskCancel()
 		if mcpCancel != nil {
 			mcpCancel()
 			done := make(chan struct{})
@@ -485,6 +491,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		CostTracker:    costTracker,
 		EngineCfg:      engineCfg,
 		TaskReg:        taskReg,
+		TaskContext:    taskCtx,
 		Toolset:        activeToolset,
 		ToolPolicy:     toolPolicy,
 		McpManager:     mcpManager,

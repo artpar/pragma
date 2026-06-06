@@ -763,6 +763,23 @@ What not to do:
 
 Do not make every background agent use the foreground request context directly; background work can outlive one tool call. The missing owner is the runtime/session supervisor, not the individual request context.
 
+Status:
+
+Resolved in current worktree. Runtime dependencies now own a root task context and cleanup drains active tasks before shared MCP/event-bus infrastructure is torn down. Background and teammate agents still outlive a single foreground tool call, but their child contexts are rooted in the runtime lifecycle instead of `context.Background()`.
+
+Source evidence:
+
+- `internal/cli/deps.go`: `SetupDeps` creates `TaskContext` with a runtime-owned cancel function and `Deps.Cleanup` calls `TaskReg.ShutdownActive(500 * time.Millisecond)` before MCP disconnect and event-bus drain.
+- `internal/cli/tools.go`: the Agent tool receives `d.TaskContext` when registered.
+- `internal/tools/agent/agent.go`: `runBackground` and `runTeammate` derive child contexts from `t.runtimeTaskContext()` instead of `context.Background()`.
+- `internal/task/registry.go`: `ShutdownActive` requests graceful shutdown for all pending/running tasks, waits up to the cleanup deadline, then force-cancels remaining active tasks through the existing registry lifecycle command boundary.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/task/registry.go internal/cli/deps.go internal/cli/tools.go internal/tools/agent/agent.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/task ./internal/cli ./internal/tools/agent ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "context\\.WithCancel\\(context\\.Background\\(\\)\\)|TaskContext|ShutdownActive\\(" internal/tools/agent internal/task internal/cli -g'*.go'` showed production agent child contexts derive from `TaskContext`; the remaining direct background contexts are task unit-test setup only.
+
 ## 17. Request-Time Tool Result Replacement Captures A Stale Session Writer
 
 Severity: high

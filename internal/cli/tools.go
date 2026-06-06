@@ -111,6 +111,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		EngineFactory:  engineFactory,
 		Store:          d.Store,
 		Tasks:          d.TaskReg,
+		TaskContext:    d.TaskContext,
 		Bus:            d.Bus,
 		Provider:       d.Prov,
 		SecondaryModel: SecondaryModelFor(d.Cfg.Provider),

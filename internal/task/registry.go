@@ -426,6 +426,82 @@ func (r *Registry) Shutdown(id string, timeout time.Duration) error {
 	}
 }
 
+// ShutdownActive requests graceful shutdown for all active tasks, waits up to
+// timeout for completion, then force-cancels anything still running.
+func (r *Registry) ShutdownActive(timeout time.Duration) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	ids := r.activeTaskIDs()
+	if len(ids) == 0 {
+		observe.GlobalTrace("if: len(ids) == 0")
+		return
+	}
+	for _, id := range ids {
+		observe.GlobalTrace("range ids request shutdown")
+		_ = r.RequestShutdown(id)
+	}
+
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if r.activeTaskCount(ids) == 0 {
+			observe.GlobalTrace("if: r.activeTaskCount(ids) == 0")
+			return
+		}
+		select {
+		case <-deadline:
+			observe.GlobalTrace("select: <-deadline")
+			for _, id := range ids {
+				observe.GlobalTrace("range ids cancel")
+				_ = r.Cancel(id)
+			}
+			return
+		case <-ticker.C:
+			observe.GlobalTrace("select: <-ticker.C")
+		}
+	}
+}
+
+func (r *Registry) activeTaskIDs() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ids := make([]string, 0, len(r.tasks))
+	for id, t := range r.tasks {
+		observe.GlobalTrace("range r.tasks")
+		if isActiveTaskStatus(t.Status) {
+			observe.GlobalTrace("if: isActiveTaskStatus(t.Status)")
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	observe.GlobalTrace("return: ids")
+	return ids
+}
+
+func (r *Registry) activeTaskCount(ids []string) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, id := range ids {
+		observe.GlobalTrace("range ids")
+		if t, ok := r.tasks[id]; ok && isActiveTaskStatus(t.Status) {
+			observe.GlobalTrace("if: ok && isActiveTaskStatus(t.Status)")
+			count++
+		}
+	}
+	observe.GlobalTrace("return: count")
+	return count
+}
+
+func isActiveTaskStatus(status TaskStatus) bool {
+	return status == TaskPending || status == TaskRunning
+}
+
 // GetNotifyChannel returns the Notify channel for a task, or nil if not found.
 // Used by teammate loop to select on message arrival.
 func (r *Registry) GetNotifyChannel(id string) <-chan struct{} {
