@@ -3991,6 +3991,10 @@ Do not patch this by shortening the TTL or relying on provider-side expiry. That
 
 Severity: medium
 
+Status: fixed in this worktree. Durable team creation is now owned by `team.CreateWorkspace`, which chooses the final team slug, writes the team config, creates the task workspace, and rolls back the staged team/tasks directories if a later durable step fails. `TeamCreate.Invoke` now validates the active-runtime precondition, delegates the durable transaction to the team package, and only updates `AppState.TeamContext` and emits `TeamCreated` after the durable workspace is complete.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/team ./internal/tools/teamcreate ./internal/tools/teamdelete ./internal/app ./cmd/pragma`; `git diff --check`; ownership scan for `CreateWorkspace`, `rollbackCreateWorkspace`, `WriteTeamFile`, `MkdirAll(team.TasksDir`, `TasksDir`, `TeamContext`, `TeamCreated`, and `TeamExists`.
+
 Concrete files/functions involved:
 
 - `internal/tools/teamcreate/teamcreate.go`: `Tool.Invoke`

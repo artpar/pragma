@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"time"
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/observe"
@@ -139,53 +137,23 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 			snap.TeamContext.TeamName)
 	}
 
-	sanitized := team.SanitizeName(in.TeamName)
-	finalName := sanitized
-	if team.TeamExists(finalName) {
-		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: team.TeamExists(finalName)")
-		finalName = team.GenerateWordSlug()
-		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke",
-			fmt.Sprintf("name conflict, generated slug: %s", finalName))
-	}
-
-	leadAgentID := team.FormatAgentID(team.TeamLeadName, finalName)
-	now := time.Now().UnixMilli()
-
-	tf := team.TeamFile{
-		Name:        finalName,
+	created, err := team.CreateWorkspace(team.CreateWorkspaceInput{
+		TeamName:    in.TeamName,
 		Description: in.Description,
-		CreatedAt:   now,
-		LeadAgentID: leadAgentID,
-		Members: []team.TeamMember{{
-			AgentID:       leadAgentID,
-			Name:          team.TeamLeadName,
-			AgentType:     in.AgentType,
-			Model:         snap.Model,
-			JoinedAt:      now,
-			CWD:           snap.CWD,
-			Subscriptions: []string{},
-		}},
-	}
-
-	if err := team.WriteTeamFile(finalName, &tf); err != nil {
+		AgentType:   in.AgentType,
+		Model:       snap.Model,
+		CWD:         snap.CWD,
+	})
+	if err != nil {
 		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"write team file: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("write team file: %w", err)
+		return tool.InvokeResult{}, err
 	}
 
-	tasksDir := team.TasksDir(finalName)
-	if err := os.MkdirAll(tasksDir, 0755); err != nil {
-		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"create tasks dir: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("create tasks dir: %w", err)
-	}
-
-	teamFilePath := team.TeamFilePath(finalName)
 	t.Store.Update(func(s *app.AppState) {
 		s.TeamContext = &app.TeamContext{
-			TeamName:     finalName,
-			TeamFilePath: teamFilePath,
-			LeadAgentID:  leadAgentID,
+			TeamName:     created.TeamName,
+			TeamFilePath: created.TeamFilePath,
+			LeadAgentID:  created.LeadAgentID,
 		}
 	})
 
@@ -193,16 +161,16 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "if: t.Bus != nil")
 		t.Bus.Emit(observe.TeamCreated{
 			EventHeader: observe.NewEventHeader("TeamCreated", "", "", ""),
-			TeamName:    finalName,
-			LeadAgentID: leadAgentID,
+			TeamName:    created.TeamName,
+			LeadAgentID: created.LeadAgentID,
 			MemberCount: 1,
 		})
 	}
 
 	out := teamCreateOutput{
-		TeamName:     finalName,
-		TeamFilePath: teamFilePath,
-		LeadAgentID:  leadAgentID,
+		TeamName:     created.TeamName,
+		TeamFilePath: created.TeamFilePath,
+		LeadAgentID:  created.LeadAgentID,
 	}
 	data, _ := json.Marshal(out)
 	observe.TraceCtx(ctx, "teamcreate", "Tool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
