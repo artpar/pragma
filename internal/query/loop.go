@@ -190,26 +190,33 @@ func (e *Engine) runLegacyToolLoop(ctx context.Context, initialUserMessage *stri
 			ch <- ErrorEvent{Err: err}
 			return
 		}
+
+		systemForQuery := e.systemWithMCPStatus(snap.Conversation.System)
+		systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
+		systemForQuery = e.systemWithPatchGuidance(systemForQuery, tools)
+
+		if compacted := e.autoCompactBeforeRequest(ctx, ch, resolvedModel, messagesForQuery, snap.Conversation.APIMessages(), systemForQuery, tools); compacted {
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compacted")
+			debug.Log("autoCompactBeforeRequest returned true for model %s", resolvedModel)
+			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compacted")
+			snap = e.store.Snapshot()
+			messagesForQuery, err = e.messagesForRequestChecked(snap.Conversation)
+			if err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+			systemForQuery = e.systemWithMCPStatus(snap.Conversation.System)
+			systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
+			systemForQuery = e.systemWithPatchGuidance(systemForQuery, tools)
+		}
+
 		if budgetedMessages, budgetErr := e.applyToolResultBudget(messagesForQuery); budgetErr == nil {
 			messagesForQuery = budgetedMessages
 		} else {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "tool result budget failed, continuing with original messages")
 		}
 
-		systemForQuery := e.systemWithMCPStatus(snap.Conversation.System)
-		systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
-		systemForQuery = e.systemWithPatchGuidance(systemForQuery, tools)
-
-		if compacted, ok := e.autoCompactBeforeRequest(ctx, ch, resolvedModel, messagesForQuery, systemForQuery, tools); compacted {
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compacted")
-			debug.Log("autoCompactBeforeRequest returned true for model %s", resolvedModel)
-			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: compacted")
-			messagesForQuery = ok
-			snap = e.store.Snapshot()
-			systemForQuery = e.systemWithMCPStatus(snap.Conversation.System)
-			systemForQuery = e.systemWithHandoffState(systemForQuery, snap.HandoffState)
-			systemForQuery = e.systemWithPatchGuidance(systemForQuery, tools)
-		} else if e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools) {
+		if e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools) {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "else-if: e.isAtBlockingLimit(ctx, resolvedModel, messagesForQuery, systemForQuery, tools)")
 			ch <- ErrorEvent{
 				Err:      provider.ErrContextOverflow,
@@ -498,32 +505,33 @@ func (e *Engine) autoCompactBeforeRequest(
 	ctx context.Context,
 	ch chan<- LoopEvent,
 	resolvedModel string,
-	messages []model.Message,
+	requestMessages []model.Message,
+	compactionMessages []model.Message,
 	system model.SystemPrompt,
 	tools []model.ToolDef,
-) (bool, []model.Message) {
+) bool {
 	observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "exit")
 	if e.compactor == nil || e.autoTracker == nil {
 		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: e.compactor == nil || e.autoTracker == nil")
 		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
-		return false, nil
+		return false
 	}
-	tokenCount := e.requestTokenCount(ctx, resolvedModel, messages, system, tools)
+	tokenCount := e.requestTokenCount(ctx, resolvedModel, requestMessages, system, tools)
 	if !e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig) {
 		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: !e.autoTracker.ShouldAutoCompact(tokenCount, e.windowConfig)")
 		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
-		return false, nil
+		return false
 	}
 
 	ch <- CompactionStartedEvent{}
-	compResult, compErr := e.compactor.Compact(ctx, messages, system, "")
+	compResult, compErr := e.compactor.Compact(ctx, compactionMessages, system, "")
 	if compErr != nil {
 		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: compErr != nil")
 		if ctx.Err() != nil {
 			observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "if: ctx.Err() != nil")
 			observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
-			return false, nil
+			return false
 		}
 		tripped := e.autoTracker.RecordFailure()
 		ch <- CompactionFailedEvent{
@@ -543,18 +551,18 @@ func (e *Engine) autoCompactBeforeRequest(
 			ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
 		}
 		observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: false, nil")
-		return false, nil
+		return false
 	}
 
 	e.autoTracker.RecordSuccess()
 	compact.ApplyResult(e.store, compResult)
 	if err := e.checkpointSession(); err != nil {
 		ch <- ErrorEvent{Err: err}
-		return false, nil
+		return false
 	}
 	ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
-	observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: true, compResult.ReplacementMessages")
-	return true, compResult.ReplacementMessages
+	observe.TraceCtx(ctx, "query", "Engine.autoCompactBeforeRequest", "return: true")
+	return true
 }
 
 func (e *Engine) isAtBlockingLimit(ctx context.Context, resolvedModel string, messages []model.Message, system model.SystemPrompt, tools []model.ToolDef) bool {

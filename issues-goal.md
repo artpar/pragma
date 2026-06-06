@@ -4097,6 +4097,10 @@ Do not patch this by bypassing schema validation for RemoteTrigger or by telling
 
 Severity: high
 
+Status: fixed in this worktree. Auto-compaction now runs before request-only tool-result budgeting. The compaction trigger still measures the current request shape, but the summary source passed to `compact.Service.Compact` is `snap.Conversation.APIMessages()` from the durable conversation, not the budgeted provider projection. After a successful compaction commit/checkpoint, the request messages are rebuilt from the updated conversation and only then passed through `applyToolResultBudget` for the provider request.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/query ./internal/toolresult ./internal/compact ./internal/session ./cmd/pragma`; `git diff --check`; ownership scan for `autoCompactBeforeRequest`, `applyToolResultBudget`, `messagesForQuery`, `APIMessages`, `ApplyToolResultBudget`, `persisted-output`, `Compact`, `ApplyResult`, `CompactionEvent`, and `RecordContentReplacements`.
+
 Concrete files/functions involved:
 
 - `internal/query/loop.go`: `Engine.runLoop`, `applyToolResultBudget`, `autoCompactBeforeRequest`
