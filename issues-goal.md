@@ -1552,6 +1552,25 @@ What not to do:
 
 Do not serialize the entire in-memory task registry as a shutdown cleanup step. That would preserve the wrong owner and still miss crashes, resumed sessions, and child artifact/session relationships.
 
+Status:
+
+Resolved in current worktree. Background Agent terminal outcomes now append a session-owned `task_result` entry when the background goroutine completes or fails. The task registry remains the live coordination owner for running tasks, but completed async results, errors, token counts, run counters, and timestamps are committed through the session writer instead of living only in memory.
+
+Source evidence:
+
+- `internal/session/entry.go`: added `EntryTaskResult` and `TaskResultData` for durable background task outcomes.
+- `internal/session/writer.go`: added `WriteTaskResult`; session rewrite preserves existing `TaskResults`.
+- `internal/session/store.go` and `internal/session/session.go`: session load now reads `task_result` entries into `Session.TaskResults`.
+- `internal/cli/run.go`: session rewrite carries `existing.TaskResults` forward.
+- `internal/cli/tools.go`: the Agent tool receives a narrow `TaskResultWriter` callback that appends to the current session writer when available.
+- `internal/tools/agent/agent.go`: `runBackground` calls `writeBackgroundTaskResult` after terminal registry update; foreground Agent and graph runs do not serialize the registry.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/session/entry.go internal/session/session.go internal/session/writer.go internal/session/store.go internal/cli/run.go internal/cli/tools.go internal/tools/agent/agent.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/session ./internal/task ./internal/tools/agent ./internal/tools/taskoutput ./internal/tools/taskget ./internal/tools/tasklist ./internal/cli ./cmd/pragma`.
+- Ownership scan: `rg -n "EntryTaskResult|TaskResultData|WriteTaskResult|TaskResults|TaskResultWriter|writeBackgroundTaskResult|completeAgentTask|failAgentTask|runBackground|task.NewRegistry|Registry\\.List|Registry\\.Get" internal/session internal/cli internal/tools/agent internal/task -g'*.go'` showed durable writes flow through `WriteTaskResult` from the background Agent completion path, not from registry shutdown serialization.
+
 ## 33. TaskUpdate Bypasses The Task State Machine And Accepts Invalid Statuses
 
 Severity: medium

@@ -86,6 +86,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var promptHistory []PromptHistoryData
 	var fileStateRecords []tool.FileStateRecord
 	var todos []app.TodoItem
+	var taskResults []TaskResultData
 	hasHeader := false
 
 	scanner := bufio.NewScanner(f)
@@ -138,6 +139,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				todos = data.Items
 			}
+		case EntryTaskResult:
+			var data TaskResultData
+			if err := json.Unmarshal(entry.Data, &data); err == nil && data.TaskID != "" {
+				taskResults = append(taskResults, data)
+			}
 		}
 	}
 
@@ -170,6 +176,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		PromptHistory:       promptHistory,
 		FileStateRecords:    fileStateRecords,
 		Todos:               todos,
+		TaskResults:         taskResults,
 		Worktree:            copyWorktreeSession(meta.Worktree),
 	}, nil
 }

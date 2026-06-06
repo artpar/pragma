@@ -16,6 +16,7 @@ import (
 	"github.com/artpar/pragma/internal/provider/anthropic"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/remote"
+	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/tool"
 	toolagent "github.com/artpar/pragma/internal/tools/agent"
@@ -128,6 +129,12 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		Bus:            d.Bus,
 		Provider:       d.Prov,
 		SecondaryModel: SecondaryModelFor(d.Cfg.Provider),
+		TaskResultWriter: func(result session.TaskResultData) error {
+			if d.SessionWriter == nil {
+				return nil
+			}
+			return d.SessionWriter.WriteTaskResult(result)
+		},
 	}
 	if shouldRegisterBuiltinTool(d, agentTool.Name()) {
 		observe.GlobalTrace("if: shouldRegisterBuiltinTool(d, agentTool.Name())")

@@ -21,6 +21,7 @@ const (
 	EntryPromptHistory      EntryKind = "prompt_history"
 	EntryFileState          EntryKind = "file_state"
 	EntryTodos              EntryKind = "todos"
+	EntryTaskResult         EntryKind = "task_result"
 )
 
 // Entry is a single JSONL line in a session file. Discriminated by Kind.
@@ -70,6 +71,20 @@ type FileStateData struct {
 
 type TodosData struct {
 	Items []app.TodoItem `json:"items"`
+}
+
+type TaskResultData struct {
+	TaskID     string    `json:"task_id"`
+	Subject    string    `json:"subject,omitempty"`
+	AgentName  string    `json:"agent_name,omitempty"`
+	Status     string    `json:"status"`
+	Result     string    `json:"result,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	TokensUsed int       `json:"tokens_used,omitempty"`
+	DurationMs int64     `json:"duration_ms,omitempty"`
+	TurnCount  int       `json:"turn_count,omitempty"`
+	CreatedAt  time.Time `json:"created_at,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 }
 
 type HandoffStateData struct {

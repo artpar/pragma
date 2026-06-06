@@ -32,6 +32,7 @@ type RewriteData struct {
 	PromptHistory       []PromptHistoryData
 	FileStateRecords    []tool.FileStateRecord
 	Todos               []app.TodoItem
+	TaskResults         []TaskResultData
 }
 
 // NewWriter creates a new session JSONL file at path.
@@ -159,6 +160,13 @@ func (w *Writer) WriteTodos(items []app.TodoItem) error {
 	return w.writeEntry(EntryTodos, TodosData{Items: items})
 }
 
+func (w *Writer) WriteTaskResult(result TaskResultData) error {
+	if result.TaskID == "" {
+		return nil
+	}
+	return w.writeEntry(EntryTaskResult, result)
+}
+
 func (w *Writer) writeEntry(kind EntryKind, data any) error {
 	entry, err := MarshalEntry(kind, data)
 	if err != nil {
@@ -242,6 +250,14 @@ func (w *Writer) Rewrite(data RewriteData) error {
 	}
 	if len(data.Todos) > 0 {
 		if err := w.encodeRewriteEntry(EntryTodos, TodosData{Items: data.Todos}); err != nil {
+			return err
+		}
+	}
+	for _, result := range data.TaskResults {
+		if result.TaskID == "" {
+			continue
+		}
+		if err := w.encodeRewriteEntry(EntryTaskResult, result); err != nil {
 			return err
 		}
 	}

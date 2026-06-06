@@ -1376,6 +1376,7 @@ func rewriteCurrentSession(d *Deps) error {
 		PromptHistory:       existing.PromptHistory,
 		FileStateRecords:    fileStateRecords,
 		Todos:               snap.Todos,
+		TaskResults:         existing.TaskResults,
 	}); err != nil {
 		return err
 	}

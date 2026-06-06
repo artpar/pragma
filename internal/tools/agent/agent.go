@@ -18,6 +18,7 @@ import (
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/query"
+	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tool"
 	"github.com/artpar/pragma/internal/tools/worktree"
@@ -89,13 +90,14 @@ type EngineFactory func(forkedConv model.Conversation, scopedToolNames []string,
 
 // Tool implements the Agent tool for spawning sub-agents.
 type Tool struct {
-	EngineFactory  EngineFactory
-	Store          *app.StateStore // parent store — for forking the conversation
-	Tasks          *task.Registry
-	TaskContext    context.Context
-	Bus            *observe.EventBus
-	Provider       provider.Provider // for lifecycle graph generation
-	SecondaryModel string            // cheaper model for graph compilation
+	EngineFactory    EngineFactory
+	Store            *app.StateStore // parent store — for forking the conversation
+	Tasks            *task.Registry
+	TaskContext      context.Context
+	Bus              *observe.EventBus
+	Provider         provider.Provider // for lifecycle graph generation
+	SecondaryModel   string            // cheaper model for graph compilation
+	TaskResultWriter func(session.TaskResultData) error
 }
 
 func (t *Tool) Name() string {
@@ -503,6 +505,7 @@ func (t *Tool) runBackground(
 		} else {
 			t.completeAgentTask(taskID, drain.Result, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
 		}
+		t.writeBackgroundTaskResult(taskID, time.Since(startTime), drain.TurnCount)
 	}()
 
 	ar := agentResult{
@@ -624,6 +627,42 @@ func (t *Tool) runtimeTaskContext() context.Context {
 		return t.TaskContext
 	}
 	return context.Background()
+}
+
+func (t *Tool) writeBackgroundTaskResult(taskID string, duration time.Duration, turnCount int) {
+	if t.TaskResultWriter == nil || t.Tasks == nil {
+		return
+	}
+	tk, ok := t.Tasks.Get(taskID)
+	if !ok {
+		return
+	}
+	switch tk.Status {
+	case task.TaskCompleted, task.TaskFailed, task.TaskCancelled:
+	default:
+		return
+	}
+	if err := t.TaskResultWriter(session.TaskResultData{
+		TaskID:     tk.ID,
+		Subject:    tk.Subject,
+		AgentName:  tk.AgentName,
+		Status:     string(tk.Status),
+		Result:     tk.Result,
+		Error:      tk.Error,
+		TokensUsed: tk.TokensUsed,
+		DurationMs: duration.Milliseconds(),
+		TurnCount:  turnCount,
+		CreatedAt:  tk.CreatedAt,
+		UpdatedAt:  tk.UpdatedAt,
+	}); err != nil {
+		t.Bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+			Severity:     "warn",
+			Component:    "agent",
+			ErrorType:    "task_result_persist_failed",
+			ErrorMessage: fmt.Sprintf("persist task %s result: %v", taskID, err),
+		})
+	}
 }
 
 // drainTeammateEvents processes all events from a single engine run, updating usage and tool counts.
