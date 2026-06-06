@@ -10,7 +10,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-// Kill terminates a background session and its entire process group.
+// Kill terminates a background process and its entire process group.
 // Sends SIGTERM to the process group, waits up to 5 seconds, then SIGKILL.
 // Addresses orphan process accumulation (GitHub #32964, #15945, #26658).
 func (r *Registry) Kill(pid int) error {

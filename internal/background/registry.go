@@ -18,8 +18,8 @@ import (
 // Strict regex prevents accidental data loss (TS bug #34210).
 var pidFilePattern = regexp.MustCompile(`^\d+\.json$`)
 
-// Registry manages PID files for active background sessions.
-// Each running background session writes a {pid}.json file.
+// Registry manages PID files for active background processes.
+// Each running background process writes a {pid}.json file.
 type Registry struct {
 	dir string
 }
@@ -89,8 +89,7 @@ func (r *Registry) Unregister(pid int) error {
 	return nil
 }
 
-// UpdateStatus updates the status and timestamp in a PID file.
-// Fire-and-forget: errors are silently ignored (TS pattern).
+// UpdateStatus updates the process status and timestamp in a PID file.
 func (r *Registry) UpdateStatus(pid int, status Status) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -123,9 +122,9 @@ func (r *Registry) UpdateSessionID(pid int, sessionID string) {
 	_ = r.Register(info)
 }
 
-// List returns all active background sessions.
+// ListProcesses returns all active background process records.
 // Validates each PID is alive, removes stale entries, sorts by StartedAt descending.
-func (r *Registry) List() ([]ProcessInfo, error) {
+func (r *Registry) ListProcesses() ([]ProcessInfo, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	entries, err := os.ReadDir(r.dir)
@@ -176,6 +175,28 @@ func (r *Registry) List() ([]ProcessInfo, error) {
 	observe.GlobalTrace("return: active, nil")
 
 	return active, nil
+}
+
+// ListSessions returns active background processes that have attached to a
+// domain session. Startup records without SessionID remain process records.
+func (r *Registry) ListSessions() ([]ProcessInfo, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	processes, err := r.ListProcesses()
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		return nil, err
+	}
+	sessions := make([]ProcessInfo, 0, len(processes))
+	for _, info := range processes {
+		observe.GlobalTrace("range processes")
+		if info.HasSession() {
+			observe.GlobalTrace("if: info.HasSession()")
+			sessions = append(sessions, info)
+		}
+	}
+	observe.GlobalTrace("return: sessions, nil")
+	return sessions, nil
 }
 
 // Get reads a single PID file.

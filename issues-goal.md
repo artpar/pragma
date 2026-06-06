@@ -572,6 +572,24 @@ What not to do:
 
 Do not fake a session ID from the prompt, PID, or log file, and do not just add a "starting" label while still treating the record as a session. The ownership boundary is whether the record represents a process or a domain session.
 
+Status:
+
+Resolved in current worktree. The parent still records the launched child as a process-owned PID record, but the background registry now exposes domain-session listing separately from process listing. `pragma sessions list` uses only records that have attached a real runtime `SessionID`, while PID-scoped operations such as logs and kill remain process operations.
+
+Source evidence:
+
+- `internal/background/info.go`: `ProcessInfo` is documented as background process metadata, with `SessionID` attached only after the child runtime starts a domain session; `HasSession` makes that distinction explicit.
+- `internal/background/registry.go`: `ListProcesses` owns PID/process records and stale-process cleanup; `ListSessions` filters to process records with a real session ID.
+- `cmd/pragma/sessions.go`: `sessionsListRun` calls `ListSessions`, so startup-only records are not presented as active background sessions; `kill` and `logs` are labeled as PID process operations.
+- `internal/cli/run.go`: background launch output now reports a background process and says `pragma sessions` is useful after the runtime session starts.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/background/info.go internal/background/registry.go internal/background/kill_unix.go internal/background/kill_windows.go cmd/pragma/sessions.go internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/background ./internal/cli ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "reg\\.List\\(|List\\(" cmd/pragma/sessions.go internal/background -g'*.go'` returned no stale background registry `List` callers.
+- Contract scan: `rg -n "background session started|Killed background session|Show logs for a background session|Status represents.*session|running background session" internal/background cmd/pragma/sessions.go internal/cli/run.go -g'*.go'` returned no stale process-as-session wording.
+
 ## 13. Session Save And Close Swallow Persistence Errors Behind Void Callbacks
 
 Severity: high

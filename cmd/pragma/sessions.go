@@ -16,7 +16,7 @@ import (
 func sessionsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "sessions",
-		Short:   "Manage background sessions",
+		Short:   "Manage active background sessions",
 		Aliases: []string{"ps"},
 		RunE:    sessionsListRun, // default: list
 	}
@@ -39,7 +39,7 @@ func sessionsListRun(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	sessions, err := reg.List()
+	sessions, err := reg.ListSessions()
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func sessionsListRun(_ *cobra.Command, _ []string) error {
 func sessionsKillCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "kill <pid>",
-		Short: "Kill a background session",
+		Short: "Kill a background process by PID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			pid, err := strconv.Atoi(args[0])
@@ -82,7 +82,7 @@ func sessionsKillCommand() *cobra.Command {
 			if err := reg.Kill(pid); err != nil {
 				return err
 			}
-			fmt.Printf("Killed background session (PID %d)\n", pid)
+			fmt.Printf("Killed background process (PID %d)\n", pid)
 			return nil
 		},
 	}
@@ -91,7 +91,7 @@ func sessionsKillCommand() *cobra.Command {
 func sessionsLogsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs <pid>",
-		Short: "Show logs for a background session",
+		Short: "Show logs for a background process",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pid, err := strconv.Atoi(args[0])

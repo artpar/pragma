@@ -206,9 +206,9 @@ func RunBackground(cmd *cobra.Command) error {
 		})
 	}
 
-	fmt.Printf("Background session started (PID %d)\n", childPid)
+	fmt.Printf("Background process started (PID %d)\n", childPid)
 	fmt.Printf("  Logs: %s\n", logPath)
-	fmt.Printf("  Use 'pragma sessions' to manage.\n")
+	fmt.Printf("  Use 'pragma sessions' after the runtime session starts.\n")
 	observe.GlobalTrace("return: nil")
 	return nil
 }

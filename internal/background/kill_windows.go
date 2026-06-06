@@ -8,7 +8,7 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-// Kill terminates a background session on Windows.
+// Kill terminates a background process on Windows.
 // Windows has no process groups or SIGTERM; we find the process and kill it directly.
 func (r *Registry) Kill(pid int) error {
 	observe.GlobalTrace("enter")
