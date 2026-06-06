@@ -27,18 +27,19 @@ type WorktreeSession struct {
 // AppState is the full application state.
 // Satisfies tool.StateSnapshot via WorkDir() method.
 type AppState struct {
-	Conversation model.Conversation `json:"conversation"`
-	HandoffState model.HandoffState `json:"handoff_state,omitempty"`
-	CWD          string             `json:"cwd"`
-	Model        string             `json:"model"`
-	Provider     string             `json:"provider"`
-	MaxTokens    int                `json:"max_tokens"`
-	Temperature  *float64           `json:"temperature,omitempty"`
-	Thinking     *bool              `json:"thinking,omitempty"`
-	Todos        []TodoItem         `json:"todos,omitempty"`
-	AdvisorModel string             `json:"advisor_model,omitempty"`
-	TeamContext  *TeamContext       `json:"team_context,omitempty"`
-	Worktree     *WorktreeSession   `json:"worktree,omitempty"`
+	Conversation      model.Conversation `json:"conversation"`
+	HandoffState      model.HandoffState `json:"handoff_state,omitempty"`
+	CWD               string             `json:"cwd"`
+	Model             string             `json:"model"`
+	Provider          string             `json:"provider"`
+	MaxTokens         int                `json:"max_tokens"`
+	Temperature       *float64           `json:"temperature,omitempty"`
+	Thinking          *bool              `json:"thinking,omitempty"`
+	Todos             []TodoItem         `json:"todos,omitempty"`
+	AdvisorModel      string             `json:"advisor_model,omitempty"`
+	TeamContext       *TeamContext       `json:"team_context,omitempty"`
+	Worktree          *WorktreeSession   `json:"worktree,omitempty"`
+	ArtifactSessionID string             `json:"artifact_session_id,omitempty"`
 }
 
 // WorkDir returns the current working directory.
@@ -48,5 +49,8 @@ func (s AppState) WorkDir() string {
 }
 
 func (s AppState) SessionID() string {
+	if s.ArtifactSessionID != "" {
+		return s.ArtifactSessionID
+	}
 	return s.Conversation.ID
 }

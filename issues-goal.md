@@ -1500,6 +1500,23 @@ What not to do:
 
 Do not create empty session headers for every forked conversation just to make the files look valid. That would bless a model-context fork as a session lifecycle owner instead of fixing artifact ownership.
 
+Status:
+
+Resolved in current worktree. Subagent stores now distinguish model-context conversation IDs from durable artifact session ownership. Forked child conversations keep their fork IDs, but `AppState.SessionID()` can return an explicit `ArtifactSessionID`, and the Agent engine factory sets child `ArtifactSessionID` to the parent session ID. Tool-result processing continues to use `tool.SessionIDFrom(state)`, so oversized child tool outputs and `tool_result.read` now attach to the real parent session artifact tree instead of an unsaved forked-session directory.
+
+Source evidence:
+
+- `internal/app/state.go`: `AppState` now has `ArtifactSessionID`; `SessionID()` returns that owner when present and falls back to `Conversation.ID` for normal root state.
+- `internal/cli/tools.go`: the Agent `engineFactory` derives `parentSessionID` from the parent store and writes it into each child store's `ArtifactSessionID`.
+- `internal/query/loop.go`: `progressSnapshot.SessionID` still delegates to `tool.SessionIDFrom`, so the artifact owner is supplied by state rather than hard-coded in tool-result processing.
+- `internal/tool/orchestrator.go` and `internal/toolresult/storage.go`: oversized tool-result persistence still flows through `ProcessToolResult` with the session ID from state, now resolving child runs to the parent artifact owner.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/app/state.go internal/cli/tools.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/app ./internal/cli ./internal/query ./internal/tool ./internal/toolresult ./internal/tools/agent ./internal/tools/toolresultread ./cmd/pragma`.
+- Ownership scan: `rg -n "ArtifactSessionID|SessionID\\(|SessionIDFrom|ProcessToolResult|persistToolResult|tool_result.read|forkedConv|parentSessionID|Conversation\\.Fork" internal/app internal/cli/tools.go internal/query internal/tool internal/toolresult internal/tools/agent internal/tools/toolresultread -g'*.go'` showed child stores set parent artifact ownership while forked conversations remain the model-context identity.
+
 ## 32. Background Agent Completion Lives Only In The Volatile Task Registry
 
 Severity: high

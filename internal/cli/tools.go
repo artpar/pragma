@@ -71,13 +71,18 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		}
 		forkedConv.Model = subModel
 		forkedConv.Provider = d.Cfg.Provider
+		parentSessionID := ""
+		if d.Store != nil {
+			parentSessionID = d.Store.Snapshot().SessionID()
+		}
 		subStore := app.NewStateStore(app.AppState{
-			Conversation: forkedConv,
-			CWD:          d.Cwd,
-			Model:        subModel,
-			Provider:     d.Cfg.Provider,
-			MaxTokens:    d.Cfg.MaxTokens,
-			Temperature:  d.Cfg.Temperature,
+			Conversation:      forkedConv,
+			CWD:               d.Cwd,
+			Model:             subModel,
+			Provider:          d.Cfg.Provider,
+			MaxTokens:         d.Cfg.MaxTokens,
+			Temperature:       d.Cfg.Temperature,
+			ArtifactSessionID: parentSessionID,
 		})
 		subRegistry := tool.NewRegistry(d.Bus)
 		for _, td := range baseTools(d, subStore) {
