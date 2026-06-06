@@ -997,6 +997,23 @@ What not to do:
 
 Do not copy the newest timeout/status/process-summary changes between the two files or normalize the prompt strings around the duplicated runners. That preserves two process lifecycle owners and guarantees future divergence.
 
+Status:
+
+Resolved in current worktree. Shell command process lifecycle and command artifacts are now owned by `internal/shellrun`. The Bash tool and pragma-loop query path both route shell execution through that shared runner; query keeps pragma-loop parsing and XML observation formatting, while the Bash tool keeps tool-facing input validation and output wording.
+
+Source evidence:
+
+- `internal/shellrun/run.go`, `internal/shellrun/proc_unix.go`, and `internal/shellrun/proc_windows.go`: `shellrun.Execute` owns bash process creation, process-group cancellation, timeout handling, foreground-running handoff, background execution, command/status/console artifact files, output reads, status writes, and process summaries.
+- `internal/tools/bash/bash.go`: `Tool.Invoke` calls `shellrun.Execute` for foreground and background commands and no longer owns command files, status writes, process creation, or process-group setup.
+- `internal/query/miniswe_loop.go`: `runPragmaLoopBash` calls `shellrun.Execute` with pragma-loop timeout, foreground-wait, pipefail, and artifact namespace options, then projects the structured result into pragma-loop observations.
+- `internal/tools/bash/proc_unix.go` and `internal/tools/bash/proc_windows.go`: removed the Bash-local process lifecycle helpers.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/shellrun/run.go internal/shellrun/proc_unix.go internal/shellrun/proc_windows.go internal/tools/bash/bash.go internal/query/miniswe_loop.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/shellrun ./internal/tools/bash ./internal/query ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "exec\\.CommandContext|SysProcAttr|Kill\\(-|newPragmaLoopCommandFiles|writePragmaLoopCommandStatus|appendPragmaLoopRunningProcess|commandForPragmaLoopShellRun|newCommandFiles|writeCommandStatus|runningCommandContent|commandForShellRun|processGroupSummary" internal/query/miniswe_loop.go internal/tools/bash internal/shellrun -g'*.go'` showed shell process lifecycle and artifact helpers only in `internal/shellrun`.
+
 ## 22. Deterministic Replay Replays Provider Responses But Still Runs Live Tools
 
 Severity: high
