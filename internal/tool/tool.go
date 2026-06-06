@@ -66,8 +66,9 @@ func SessionIDFrom(state StateSnapshot) (string, bool) {
 // ImagePart for extracted pages) that are included alongside the tool result
 // in the conversation message sent to the LLM.
 type InvokeResult struct {
-	Content     string
-	Supplements []model.ContentPart
+	Content          string
+	Supplements      []model.ContentPart
+	StructuredOutput json.RawMessage
 }
 
 // Descriptor defines a tool that can be invoked by the LLM.

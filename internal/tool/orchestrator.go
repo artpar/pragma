@@ -66,6 +66,7 @@ type ExecuteResult struct {
 	Supplements         []model.ContentPart   // compatibility view of all supplemental content
 	SupplementsByResult [][]model.ContentPart // per-result supplemental content, same index as Results
 	FileEffects         [][]FileEffect        // per-result file mutation receipts, same index as Results
+	StructuredOutputs   []json.RawMessage     // per-result validated structured outputs, same index as Results
 }
 
 func (r ExecuteResult) ContentParts() []model.ContentPart {
@@ -84,9 +85,10 @@ func (r ExecuteResult) ContentParts() []model.ContentPart {
 
 // singleResult holds the output of one tool invocation.
 type singleResult struct {
-	part        model.ToolResultPart
-	supplements []model.ContentPart
-	fileEffects []FileEffect
+	part             model.ToolResultPart
+	supplements      []model.ContentPart
+	fileEffects      []FileEffect
+	structuredOutput json.RawMessage
 }
 
 // Execute runs a batch of tool calls, partitioning into concurrent and serial groups.
@@ -254,12 +256,14 @@ func (o *Orchestrator) Execute(ctx context.Context, calls []model.ToolCallPart, 
 		Results:             make([]model.ToolResultPart, len(singles)),
 		SupplementsByResult: make([][]model.ContentPart, len(singles)),
 		FileEffects:         make([][]FileEffect, len(singles)),
+		StructuredOutputs:   make([]json.RawMessage, len(singles)),
 	}
 	for i, s := range singles {
 		observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "range singles")
 		out.Results[i] = s.part
 		out.SupplementsByResult[i] = append([]model.ContentPart(nil), s.supplements...)
 		out.FileEffects[i] = append([]FileEffect(nil), s.fileEffects...)
+		out.StructuredOutputs[i] = append(json.RawMessage(nil), s.structuredOutput...)
 		out.Supplements = append(out.Supplements, s.supplements...)
 	}
 	observe.TraceCtx(ctx, "tool", "Orchestrator.Execute", "return: out")
@@ -568,9 +572,10 @@ func (o *Orchestrator) executeSingle(
 	supplements = append(supplements, invokeResult.Supplements...)
 
 	return singleResult{
-		part:        part,
-		supplements: supplements,
-		fileEffects: fileEffects,
+		part:             part,
+		supplements:      supplements,
+		fileEffects:      fileEffects,
+		structuredOutput: append(json.RawMessage(nil), invokeResult.StructuredOutput...),
 	}
 }
 

@@ -35,6 +35,7 @@ type EngineConfig struct {
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
 	ResponseSchema            json.RawMessage
+	RequireStructuredOutput   bool
 	TaskID                    string // when set with TaskRegistry, enables task heartbeat
 	ContentReplacementRecords []model.ContentReplacementRecord
 	FileStateRecords          []tool.FileStateRecord

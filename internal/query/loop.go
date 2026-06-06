@@ -91,6 +91,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 	malformedRetries := 0
 	const maxMalformedRetries = 3
 	turnCount := 0
+	structuredOutputSeen := false
 	for turnCount < maxTurns {
 		observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("turn %d/%d", turnCount+1, maxTurns))
 		if err := ctx.Err(); err != nil {
@@ -263,7 +264,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		switch response.StopReason {
 		case model.StopEndTurn:
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "case: model.StopEndTurn")
-			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+			emitTurnComplete(ch, response, response.StopReason, e.config.RequireStructuredOutput, structuredOutputSeen)
 			return
 
 		case model.StopMaxTokens:
@@ -275,7 +276,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ErrorType:    "response_truncated",
 				ErrorMessage: fmt.Sprintf("model %q hit max_tokens limit — response was truncated", resolvedModel),
 			})
-			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+			emitTurnComplete(ch, response, response.StopReason, e.config.RequireStructuredOutput, structuredOutputSeen)
 			return
 
 		case model.StopMalformedToolCall:
@@ -316,7 +317,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ErrorType:    "content_filtered",
 				ErrorMessage: fmt.Sprintf("model %q response was blocked by content filter — text preserved, tool calls dropped", resolvedModel),
 			})
-			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+			emitTurnComplete(ch, response, response.StopReason, e.config.RequireStructuredOutput, structuredOutputSeen)
 			return
 
 		case model.StopPauseTurn:
@@ -359,12 +360,12 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ch <- ErrorEvent{Err: err}
 				return
 			}
-			for i, r := range execResult.Results {
-				ch <- ToolResultEvent{Result: r, FileEffects: execResult.FileEffects[i]}
+			if emitToolResultEvents(ch, execResult) {
+				structuredOutputSeen = true
 			}
 			if e.config.StopAfterToolExec {
 				observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.config.StopAfterToolExec")
-				ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+				emitTurnComplete(ch, response, response.StopReason, e.config.RequireStructuredOutput, structuredOutputSeen)
 				return
 			}
 			turnCount++
@@ -379,7 +380,7 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 				ErrorType:    "provider_error",
 				ErrorMessage: fmt.Sprintf("model %q returned an error stop reason", resolvedModel),
 			})
-			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
+			emitTurnComplete(ch, response, response.StopReason, e.config.RequireStructuredOutput, structuredOutputSeen)
 			return
 
 		default:
@@ -856,6 +857,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 	results := make([]model.ToolResultPart, len(calls))
 	fileEffects := make([][]tool.FileEffect, len(calls))
 	supplementsByResult := make([][]model.ContentPart, len(calls))
+	structuredOutputs := make([]json.RawMessage, len(calls))
 	var supplements []model.ContentPart
 	var pendingRealCalls []model.ToolCallPart
 	var pendingRealIndexes []int
@@ -871,6 +873,9 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 			fileEffects[idx] = append([]tool.FileEffect(nil), execResult.FileEffects[i]...)
 			if i < len(execResult.SupplementsByResult) {
 				supplementsByResult[idx] = append([]model.ContentPart(nil), execResult.SupplementsByResult[i]...)
+			}
+			if i < len(execResult.StructuredOutputs) {
+				structuredOutputs[idx] = append(json.RawMessage(nil), execResult.StructuredOutputs[i]...)
 			}
 		}
 		supplements = append(supplements, execResult.Supplements...)
@@ -921,6 +926,7 @@ func (e *Engine) executeToolBatch(ctx context.Context, calls []model.ToolCallPar
 		Supplements:         supplements,
 		SupplementsByResult: supplementsByResult,
 		FileEffects:         fileEffects,
+		StructuredOutputs:   structuredOutputs,
 	}, nil
 }
 
@@ -1382,6 +1388,34 @@ func jsonPathExists(root any, path string) bool {
 	}
 	observe.GlobalTrace("return: true")
 	return true
+}
+
+func emitToolResultEvents(ch chan<- LoopEvent, execResult tool.ExecuteResult) bool {
+	emittedStructuredOutput := false
+	for i, result := range execResult.Results {
+		var fileEffects []tool.FileEffect
+		if i < len(execResult.FileEffects) {
+			fileEffects = execResult.FileEffects[i]
+		}
+		ch <- ToolResultEvent{Result: result, FileEffects: fileEffects}
+		if result.IsError || i >= len(execResult.StructuredOutputs) || len(execResult.StructuredOutputs[i]) == 0 {
+			continue
+		}
+		ch <- StructuredOutputEvent{
+			ToolCallID: result.ToolCallID,
+			JSON:       append(json.RawMessage(nil), execResult.StructuredOutputs[i]...),
+		}
+		emittedStructuredOutput = true
+	}
+	return emittedStructuredOutput
+}
+
+func emitTurnComplete(ch chan<- LoopEvent, response model.Response, stopReason model.StopReason, requireStructuredOutput bool, structuredOutputSeen bool) {
+	if requireStructuredOutput && !structuredOutputSeen {
+		ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
+		return
+	}
+	ch <- TurnCompleteEvent{Response: response, StopReason: stopReason}
 }
 
 func certifiedJSONEvidence(matching int, fields, paths []string) string {

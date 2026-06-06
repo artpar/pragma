@@ -134,5 +134,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 	}
 	observe.TraceCtx(ctx, "synthetic", "Tool.Invoke", "return: tool.InvokeResult{Content: \"Structured output provided successfully\"}, nil")
 
-	return tool.InvokeResult{Content: "Structured output provided successfully"}, nil
+	return tool.InvokeResult{
+		Content:          "Structured output provided successfully",
+		StructuredOutput: append(json.RawMessage(nil), input...),
+	}, nil
 }

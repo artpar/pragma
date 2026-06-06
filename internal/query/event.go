@@ -1,6 +1,7 @@
 package query
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
@@ -58,6 +59,14 @@ type ToolResultEvent struct {
 }
 
 func (ToolResultEvent) loopEventSealed() {}
+
+// StructuredOutputEvent carries a runtime-validated structured final output.
+type StructuredOutputEvent struct {
+	ToolCallID string
+	JSON       json.RawMessage
+}
+
+func (StructuredOutputEvent) loopEventSealed() {}
 
 // TurnCompleteEvent signals the agentic loop has finished.
 type TurnCompleteEvent struct {

@@ -187,6 +187,10 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 				ch <- ErrorEvent{Err: err}
 				return
 			}
+			if e.config.RequireStructuredOutput {
+				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
+				return
+			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
 			return
 		}

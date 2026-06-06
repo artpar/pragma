@@ -230,6 +230,11 @@ type webToolResultEvent struct {
 	FileEffects []webFileEffect `json:"file_effects,omitempty"`
 }
 
+type webStructuredOutputEvent struct {
+	ToolCallID string          `json:"tool_call_id"`
+	JSON       json.RawMessage `json:"json"`
+}
+
 type webTurnCompleteEvent struct {
 	StopReason string `json:"stop_reason"`
 }
@@ -345,6 +350,8 @@ func normalizeLoopEvent(data interface{}) (string, string, interface{}) {
 			IsError:     ev.Result.IsError,
 			FileEffects: effects,
 		}
+	case query.StructuredOutputEvent:
+		return "structured_output", "web.structured_output", webStructuredOutputEvent{ToolCallID: ev.ToolCallID, JSON: ev.JSON}
 	case query.TurnCompleteEvent:
 		return "turn_complete", "web.turn_complete", webTurnCompleteEvent{StopReason: string(ev.StopReason)}
 	case query.CompactionStartedEvent:

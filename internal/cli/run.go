@@ -1144,6 +1144,8 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		fallbackStructuredOutput = !nativeStructuredOutput
 		if nativeStructuredOutput {
 			d.EngineCfg.ResponseSchema = schemaJSON
+		} else {
+			d.EngineCfg.RequireStructuredOutput = true
 		}
 	}
 
@@ -1268,9 +1270,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 			flushWriter(os.Stderr)
 		case query.ToolCallEvent:
 			observe.GlobalTrace("typecase: query.ToolCallEvent")
-			if hasStructuredOutput && e.Call.Name == "StructuredOutput" {
-				structuredJSON = e.Call.Input
-			}
 			turnToolCount++
 			if d.Cfg.Verbose {
 				fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
@@ -1284,6 +1283,9 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 				fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
 				flushWriter(os.Stderr)
 			}
+		case query.StructuredOutputEvent:
+			observe.GlobalTrace("typecase: query.StructuredOutputEvent")
+			structuredJSON = append(json.RawMessage(nil), e.JSON...)
 		case query.CompactionEvent:
 			observe.GlobalTrace("typecase: query.CompactionEvent")
 			if d.Cfg.Verbose {
@@ -1324,7 +1326,10 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		}
 	} else if fallbackStructuredOutput {
 		observe.GlobalTrace("else-if: hasStructuredOutput")
-		fmt.Fprintln(os.Stderr, "warning: model did not call StructuredOutput tool")
+		if err := sessionCloseFn(); err != nil {
+			return err
+		}
+		return fmt.Errorf("structured output was not produced")
 	}
 
 	if err := sessionCloseFn(); err != nil {

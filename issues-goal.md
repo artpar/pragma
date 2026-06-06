@@ -2926,6 +2926,10 @@ Do not add a special case that subtracts tool-result messages from `countUserTur
 
 Severity: medium
 
+Status: fixed in this worktree. The synthetic `StructuredOutput` tool now returns validated JSON on `tool.InvokeResult.StructuredOutput`; `tool.ExecuteResult` preserves that payload per tool result; the query loop emits a typed `query.StructuredOutputEvent` after validated tool execution; and fallback structured-output mode configures the engine to error the turn if no validated structured output is produced. The non-interactive CLI now prints the runtime event payload instead of scraping `ToolCallEvent.Input`, and web normalization exposes the same typed event as `structured_output`.
+
+Verification: `gofmt -w internal/cli/run.go internal/query/engine.go internal/query/event.go internal/query/loop.go internal/query/miniswe_loop.go internal/tool/tool.go internal/tool/orchestrator.go internal/tools/synthetic/synthetic.go internal/web/web.go`; `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/query ./internal/tool ./internal/tools/synthetic ./internal/web ./cmd/pragma`; `git diff --check`; ownership scan for `StructuredOutput|StructuredOutputEvent|StructuredOutputs|ToolCallEvent|ResponseSchema|RequireStructuredOutput|InvokeResult|ExecuteResult`.
+
 Concrete files/functions involved:
 
 - `internal/cli/run.go`: `runNonInteractive`, `loadOutputSchema`
