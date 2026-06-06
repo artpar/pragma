@@ -109,10 +109,8 @@ func (m *Metrics) HandleEvent(event Event) {
 		m.toolErrors[e.ToolName]++
 	case CompactionCompleted:
 		m.compactions++
-	case MessageAppended:
-		if e.Role == "user" {
-			m.turnCount++
-		}
+	case UserTurnAccepted:
+		m.turnCount++
 	case SessionStarted:
 		m.sessionStart = e.EventTimestamp()
 	case SessionEnded:

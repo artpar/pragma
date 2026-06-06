@@ -88,6 +88,12 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	case "UserTurnAccepted":
+		var e UserTurnAccepted
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	case "ConversationForked":
 		var e ConversationForked
 		if err := json.Unmarshal(data, &e); err != nil {

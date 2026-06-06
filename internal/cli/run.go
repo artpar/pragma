@@ -369,6 +369,7 @@ func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, submi
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
+	rt.acceptUserTurn(submittedInput)
 	if err := rt.writePromptHistory(submittedInput); err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
@@ -383,6 +384,16 @@ func (rt *InteractiveRuntime) writePromptHistory(input string) error {
 		return nil
 	}
 	return rt.Deps.SessionWriter.WritePromptHistory(input)
+}
+
+func (rt *InteractiveRuntime) acceptUserTurn(input string) {
+	if rt == nil || rt.Deps == nil || rt.Deps.Bus == nil {
+		return
+	}
+	rt.Deps.Bus.Emit(observe.UserTurnAccepted{
+		EventHeader: observe.NewEventHeader("UserTurnAccepted", "", observe.NewSpanID(), ""),
+		PromptChars: len(strings.TrimSpace(input)),
+	})
 }
 
 func (rt *InteractiveRuntime) rememberAcceptedPrompt(input string) {
@@ -414,6 +425,7 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
 	}
+	rt.acceptUserTurn(submittedInput)
 	if err := rt.writePromptHistory(submittedInput); err != nil {
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
 		return
@@ -1647,7 +1659,7 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 			snap := d.Store.Snapshot()
 			sessionID := snap.Conversation.ID
 			durationMs := time.Since(d.SessionStart).Milliseconds()
-			turnCount := countUserTurns(snap.Conversation.Messages)
+			turnCount := d.Metrics.Snapshot().TurnCount
 			totalCost := 0.0
 			if d.CostTracker != nil {
 				totalCost = d.CostTracker.TotalUSD()
@@ -1730,10 +1742,10 @@ func sessionMetadataForSnapshot(d *Deps, snap app.AppState) session.MetadataData
 	}
 	return session.MetadataData{
 		CostUSD:    d.CostTracker.TotalUSD(),
-		TurnCount:  countUserTurns(snap.Conversation.Messages),
+		TurnCount:  msnap.TurnCount,
 		TokenUsage: msnap.TokenUsage,
 		UpdatedAt:  snap.Conversation.UpdatedAt,
-		Summary:    extractSummary(snap.Conversation.Messages),
+		Summary:    extractSummary(snap),
 		Model:      modelID,
 		Provider:   providerName,
 		WorkDir:    snap.CWD,
@@ -1823,48 +1835,58 @@ func appendPromptHistory(history []string, text string, limit int) []string {
 	return out
 }
 
-// countUserTurns counts all RoleUser messages (matching old SaveSession behavior).
-func countUserTurns(msgs []model.Message) int {
+// extractSummary returns the first accepted prompt text, truncated to 100 chars.
+func extractSummary(snap app.AppState) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	count := 0
-	for _, msg := range msgs {
-		observe.GlobalTrace("range msgs")
-		if msg.Role == model.RoleUser {
-			observe.GlobalTrace("if: msg.Role == model.RoleUser")
-			count++
+	for _, prompt := range snap.PromptHistory {
+		if summary := summarizePromptText(prompt); summary != "" {
+			observe.GlobalTrace("return: summary")
+			return summary
 		}
 	}
-	observe.GlobalTrace("return: count")
-	return count
-}
-
-// extractSummary returns the first user text message, truncated to 100 chars.
-func extractSummary(msgs []model.Message) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	for _, msg := range msgs {
+	for _, msg := range snap.Conversation.Messages {
 		observe.GlobalTrace("range msgs")
-		if msg.Role != model.RoleUser {
-			observe.GlobalTrace("if: msg.Role != model.RoleUser")
+		if !summarizableUserMessage(msg) {
+			observe.GlobalTrace("if: !summarizableUserMessage(msg)")
 			continue
 		}
 		for _, part := range msg.Content {
 			observe.GlobalTrace("range msg.Content")
-			if tp, ok := part.(model.TextPart); ok && tp.Text != "" {
+			if tp, ok := part.(model.TextPart); ok {
 				observe.GlobalTrace("if: ok && tp.Text != \"\"")
-				s := tp.Text
-				if len(s) > 100 {
-					observe.GlobalTrace("if: len(s) > 100")
-					s = s[:100]
+				if summary := summarizePromptText(tp.Text); summary != "" {
+					observe.GlobalTrace("return: summary")
+					return summary
 				}
-				observe.GlobalTrace("return: s")
-				return s
 			}
 		}
 	}
 	observe.GlobalTrace("return: \"\"")
 	return ""
+}
+
+func summarizableUserMessage(msg model.Message) bool {
+	if msg.Role != model.RoleUser || msg.Flags.IsInternal || msg.Flags.IsMeta {
+		return false
+	}
+	for _, part := range msg.Content {
+		if _, ok := part.(model.ToolResultPart); ok {
+			return false
+		}
+	}
+	return true
+}
+
+func summarizePromptText(text string) string {
+	s := strings.TrimSpace(text)
+	if s == "" || generatedPromptHistory(s) {
+		return ""
+	}
+	if len(s) > 100 {
+		s = s[:100]
+	}
+	return s
 }
 
 // applyToolFilters applies --allowed-tools and --disallowed-tools flags.

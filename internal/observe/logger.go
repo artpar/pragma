@@ -189,7 +189,7 @@ func eventLevel(kind string) Level {
 	case "ToolExecutionStarted", "APIRequestStarted", "ToolCallReceived",
 		"MCPServerConnecting", "MCPToolCallStarted":
 		return LevelDebug
-	case "ToolExecutionCompleted", "APIRequestCompleted", "MessageAppended",
+	case "ToolExecutionCompleted", "APIRequestCompleted", "MessageAppended", "UserTurnAccepted",
 		"ConversationStarted", "SessionStarted", "SessionSaved", "SessionEnded",
 		"MCPServerConnected", "MCPToolCallCompleted", "SubAgentSpawned",
 		"SubAgentCompleted", "ToolBatchStarted", "ToolBatchCompleted",
@@ -217,7 +217,7 @@ func eventLevel(kind string) Level {
 // eventTopic maps event kinds to topic categories for filtering.
 func eventTopic(kind string) string {
 	switch kind {
-	case "ConversationStarted", "MessageAppended", "ConversationForked":
+	case "ConversationStarted", "MessageAppended", "UserTurnAccepted", "ConversationForked":
 		return "conversation"
 	case "APIRequestStarted", "APIStreamChunk", "APIRequestCompleted",
 		"APIRequestFailed", "APIRetryScheduled":

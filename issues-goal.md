@@ -2888,6 +2888,10 @@ Verification evidence:
 
 Severity: medium
 
+Status: fixed in this worktree. Runtime turn acceptance now emits an explicit `observe.UserTurnAccepted` event from the engine/orchestration submission paths, `Metrics` owns `TurnCount` from that event, and session metadata persists the metrics snapshot instead of re-counting serialized `RoleUser` messages. Session summary extraction now prefers accepted prompt history and falls back only to visible user text, skipping internal/meta messages, generated task wrappers, and messages containing tool results.
+
+Verification: `gofmt -w internal/cli/run.go internal/observe/event.go internal/observe/event_catalog.go internal/observe/metrics.go internal/observe/logger.go`; `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/observe ./internal/query ./internal/model ./internal/session ./cmd/pragma`; `git diff --check`; ownership scan for `countUserTurns|extractSummary|UserTurnAccepted|MessageAppended|TurnCount|ToolResultPart|MessageFlags`.
+
 Concrete files/functions involved:
 
 - `internal/cli/run.go`: `sessionMetadataForSnapshot`, `countUserTurns`, `extractSummary`, `makeSessionSaveClose`

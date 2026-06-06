@@ -29,6 +29,13 @@ type MessageAppended struct {
 
 func (MessageAppended) eventSealed() {}
 
+type UserTurnAccepted struct {
+	EventHeader
+	PromptChars int `json:"prompt_chars"`
+}
+
+func (UserTurnAccepted) eventSealed() {}
+
 type ConversationForked struct {
 	EventHeader
 	ParentConvID string `json:"parent_conv_id"`
