@@ -524,6 +524,22 @@ What not to do:
 
 Do not add more prompt text telling generated graphs to include reducers while leaving YAML graphs responsible for bridge internals.
 
+Status:
+
+Resolved in current worktree. Bridge-owned reducer defaults are now applied in the common bridge graph resolution path, so generated and YAML-loaded bridge graphs get the same missing defaults for `total_usage` and `turn_count`. Explicit reducer declarations still win because defaults are only filled when the key is absent, and the generic definition resolver now resolves by reducer name instead of treating a matching state key in `CustomReducers` as an override.
+
+Source evidence:
+
+- `internal/lifecycle/bridge/resolve.go`: `ResolveGraph` calls `ApplyBridgeReducerDefaults` before `definition.Resolve`; `GenerateAndResolveGraph` no longer has generated-only reducer mutation.
+- `internal/lifecycle/bridge/resolve.go`: `ApplyBridgeReducerDefaults` fills missing `KeyTotalUsage: total_usage` and `KeyTurnCount: sum` reducers without replacing explicit graph reducers.
+- `internal/lifecycle/definition/resolve.go`: reducer resolution now uses the declared reducer name, allowing explicit YAML reducers such as `overwrite` to override bridge defaults.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/lifecycle/bridge/resolve.go internal/lifecycle/definition/resolve.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/lifecycle/bridge ./internal/lifecycle/definition ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "EnsureGeneratedReducers|ApplyBridgeReducerDefaults|CustomReducers\\[key\\]" internal/lifecycle -g'*.go'` showed only the common bridge default application and no state-key custom reducer override.
+
 ## 12. Background Session Registry Stores Process Startup Records Before Session Start
 
 Severity: medium

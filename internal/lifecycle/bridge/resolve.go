@@ -12,6 +12,7 @@ import (
 func ResolveGraph(def *definition.GraphDef, infra Infra) (*lifecycle.Graph, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	ApplyBridgeReducerDefaults(def)
 	factory := NewNodeFactory(infra)
 	opts := &definition.ResolveOptions{
 		CustomReducers: map[string]lifecycle.ReducerFunc{
@@ -31,17 +32,22 @@ func GenerateAndResolveGraph(ctx context.Context, prov provider.Provider, bus *o
 		observe.TraceCtx(ctx, "lifecycle/bridge", "GenerateAndResolveGraph", "if: err != nil")
 		return nil, err
 	}
-	EnsureGeneratedReducers(def)
 	return ResolveGraph(def, infra)
 }
 
-func EnsureGeneratedReducers(def *definition.GraphDef) {
+func ApplyBridgeReducerDefaults(def *definition.GraphDef) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if def.Graph.Reducers == nil {
 		observe.GlobalTrace("if: def.Graph.Reducers == nil")
 		def.Graph.Reducers = make(map[string]string)
 	}
-	def.Graph.Reducers[KeyTotalUsage] = "total_usage"
-	def.Graph.Reducers[KeyTurnCount] = "sum"
+	if _, ok := def.Graph.Reducers[KeyTotalUsage]; !ok {
+		observe.GlobalTrace("if: KeyTotalUsage reducer missing")
+		def.Graph.Reducers[KeyTotalUsage] = "total_usage"
+	}
+	if _, ok := def.Graph.Reducers[KeyTurnCount]; !ok {
+		observe.GlobalTrace("if: KeyTurnCount reducer missing")
+		def.Graph.Reducers[KeyTurnCount] = "sum"
+	}
 }
