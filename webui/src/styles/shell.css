@@ -1,0 +1,177 @@
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.session-rail,
+.workbench,
+.inspector {
+  min-height: 0;
+  border-color: var(--line);
+}
+
+.session-rail {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border-right: 1px solid var(--line);
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+.brand-strip,
+.top-strip,
+.inspector header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-strip span,
+.top-strip span,
+.inspector header span,
+.event-row span,
+.session-row span,
+.session-row small,
+.inspector > p,
+.empty-text,
+dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.run-card {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.run-card button,
+.summary-line {
+  display: grid;
+  width: 100%;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+}
+
+.run-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.run-card dl div {
+  min-width: 0;
+}
+
+dt,
+dd {
+  margin: 0;
+}
+
+dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.sessions-list {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  padding: 10px 0 0;
+}
+
+.sessions-list h2,
+.recent-activity h2,
+.blocking-panel h2 {
+  margin: 0;
+  padding: 0 12px 8px;
+  font-size: 13px;
+}
+
+.rail-scroll,
+.event-list,
+.tab-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.session-row,
+.event-row {
+  display: grid;
+  width: calc(100% - 16px);
+  gap: 4px;
+  margin: 0 8px 8px;
+  padding: 10px;
+  text-align: left;
+  min-width: 0;
+}
+
+.session-row strong,
+.event-row strong,
+.top-strip strong,
+.inspector strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row.active,
+.tabs button.active,
+.filter-row button.active {
+  border-color: var(--action);
+  background: oklch(94% 0.025 238);
+}
+
+.session-pagebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.session-pagebar div {
+  display: flex;
+  gap: 6px;
+}
+
+.session-pagebar button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+}
+
+.workbench {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, auto) minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.top-strip > div,
+.inspector header > div {
+  display: grid;
+  min-width: 0;
+}
+
+.top-strip button,
+.inspector header button,
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 34px;
+}

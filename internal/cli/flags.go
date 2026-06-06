@@ -42,5 +42,6 @@ func RegisterFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolP("continue", "c", false, "resume most recent session in current directory")
 	cmd.Flags().Bool("list-sessions", false, "list saved sessions")
 	cmd.Flags().String("output-schema", "", "JSON Schema for structured output (file path or inline JSON, non-interactive only)")
+	cmd.Flags().String("web-addr", "", "address for native web UI server (default random localhost port)")
 	cmd.MarkFlagsMutuallyExclusive("continue", "resume")
 }

@@ -148,6 +148,22 @@ func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
 	}
 }
 
+func TestRegisterFlagsIncludesNativeWebAddress(t *testing.T) {
+	cmd := &cobra.Command{Use: "pragma"}
+	RegisterFlags(cmd)
+	if err := cmd.ParseFlags([]string{"--web-addr", "127.0.0.1:4817"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	got, err := cmd.Flags().GetString("web-addr")
+	if err != nil {
+		t.Fatalf("GetString(web-addr): %v", err)
+	}
+	if got != "127.0.0.1:4817" {
+		t.Fatalf("web-addr = %q, want 127.0.0.1:4817", got)
+	}
+}
+
 func TestApplyFlagOverridesStateHandoffDoesNotImplyStopAfterToolExec(t *testing.T) {
 	cmd := &cobra.Command{Use: "pragma"}
 	RegisterFlags(cmd)

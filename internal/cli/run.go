@@ -907,6 +907,7 @@ func RunInteractive(cmd *cobra.Command) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	bridge := web.NewBridge()
+	webAddr, _ := cmd.Flags().GetString("web-addr")
 	rt, err := BuildInteractiveRuntime(cmd, bridge, bridge)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -931,9 +932,43 @@ func RunInteractive(cmd *cobra.Command) error {
 		Version:        buildinfo.Version,
 		TaskReg:        rt.Deps.TaskReg,
 		SessionStore:   rt.SlashDeps.SessionStore,
+		EventRecorder:  newSessionWebEventRecorder(rt),
 		SessionStart:   rt.Deps.SessionStart,
 		McpServerNames: connectedMcpNames(rt.Deps.McpManager),
+		WebAddr:        webAddr,
 	})
+}
+
+type sessionWebEventRecorder struct {
+	mu      sync.Mutex
+	rt      *InteractiveRuntime
+	pending []session.WebEventData
+}
+
+const maxPendingWebEvents = 200
+
+func newSessionWebEventRecorder(rt *InteractiveRuntime) func(session.WebEventData) error {
+	recorder := &sessionWebEventRecorder{rt: rt}
+	return recorder.record
+}
+
+func (r *sessionWebEventRecorder) record(event session.WebEventData) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.rt == nil || r.rt.Deps == nil || r.rt.Deps.SessionWriter == nil {
+		r.pending = append(r.pending, event)
+		if len(r.pending) > maxPendingWebEvents {
+			r.pending = r.pending[len(r.pending)-maxPendingWebEvents:]
+		}
+		return nil
+	}
+	for len(r.pending) > 0 {
+		if err := r.rt.Deps.SessionWriter.WriteWebEvent(r.pending[0]); err != nil {
+			return err
+		}
+		r.pending = r.pending[1:]
+	}
+	return r.rt.Deps.SessionWriter.WriteWebEvent(event)
 }
 
 // RunTUIInteractive launches the Bubble Tea TUI using the shared runtime.
@@ -1776,6 +1811,7 @@ func rewriteCurrentSession(d *Deps) error {
 		Todos:                  snap.Todos,
 		TeamContext:            snap.TeamContext,
 		OrchestrationArtifacts: snap.OrchestrationArtifacts,
+		WebEvents:              existing.WebEvents,
 		TaskResults:            existing.TaskResults,
 	}); err != nil {
 		return err

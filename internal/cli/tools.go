@@ -254,6 +254,10 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 		observe.GlobalTrace("if: d != nil && !d.ToolPolicy.Allows(name)")
 		return false
 	}
+	if d != nil && !builtinAllowedByToolset(d.Toolset, name) {
+		observe.GlobalTrace("if: d != nil && !builtinAllowedByToolset(d.Toolset, name)")
+		return false
+	}
 	return true
 }
 

@@ -29,6 +29,7 @@ Thumbs.db
 # Build output
 /bin/
 /dist/
+webui/node_modules/
 todo-app/
 plugins/jetbrains-reflective-mcp/gradle/
 plugins/jetbrains-reflective-mcp/gradlew

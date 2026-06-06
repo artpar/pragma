@@ -108,6 +108,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var todos []app.TodoItem
 	var teamContext *app.TeamContext
 	var orchestrationArtifacts []app.OrchestrationArtifact
+	var webEvents []WebEventData
 	var taskResults []TaskResultData
 	hasHeader := false
 
@@ -170,6 +171,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				orchestrationArtifacts = data.Artifacts
 			}
+		case EntryWebEvent:
+			var data WebEventData
+			if err := json.Unmarshal(entry.Data, &data); err == nil && data.Type != "" {
+				webEvents = append(webEvents, data)
+			}
 		case EntryTaskResult:
 			var data TaskResultData
 			if err := json.Unmarshal(entry.Data, &data); err == nil && data.TaskID != "" {
@@ -212,6 +218,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		Todos:                  todos,
 		TeamContext:            app.CopyTeamContext(teamContext),
 		OrchestrationArtifacts: orchestrationArtifacts,
+		WebEvents:              webEvents,
 		TaskResults:            taskResults,
 		Worktree:               copyWorktreeSession(meta.Worktree),
 	}, nil

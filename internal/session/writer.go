@@ -33,6 +33,7 @@ type RewriteData struct {
 	Todos                  []app.TodoItem
 	TeamContext            *app.TeamContext
 	OrchestrationArtifacts []app.OrchestrationArtifact
+	WebEvents              []WebEventData
 	TaskResults            []TaskResultData
 }
 
@@ -181,6 +182,19 @@ func (w *Writer) WriteTaskResult(result TaskResultData) error {
 	return w.writeEntry(EntryTaskResult, result)
 }
 
+func (w *Writer) WriteWebEvent(event WebEventData) error {
+	if event.Type == "" {
+		return nil
+	}
+	if event.ReceivedAt.IsZero() {
+		event.ReceivedAt = time.Now()
+	}
+	if event.Data == nil {
+		event.Data = json.RawMessage("null")
+	}
+	return w.writeEntry(EntryWebEvent, event)
+}
+
 func (w *Writer) writeEntry(kind EntryKind, data any) error {
 	entry, err := MarshalEntry(kind, data)
 	if err != nil {
@@ -282,6 +296,14 @@ func (w *Writer) Rewrite(data RewriteData) error {
 			continue
 		}
 		if err := w.encodeRewriteEntry(EntryTaskResult, result); err != nil {
+			return err
+		}
+	}
+	for _, event := range data.WebEvents {
+		if event.Type == "" {
+			continue
+		}
+		if err := w.encodeRewriteEntry(EntryWebEvent, event); err != nil {
 			return err
 		}
 	}

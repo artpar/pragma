@@ -1,0 +1,249 @@
+.blocking-panel {
+  display: grid;
+  gap: 10px;
+  max-height: 34vh;
+  overflow: auto;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  background: oklch(96% 0.013 70);
+}
+
+.request-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: start;
+}
+
+.request-summary h2 {
+  padding: 0;
+}
+
+.request-summary p {
+  grid-column: 1 / -1;
+}
+
+.blocking-panel p,
+.inline-error,
+.state-note {
+  margin: 0;
+  font-size: 12px;
+}
+
+.inline-error,
+.state-note.warning {
+  color: var(--danger);
+}
+
+.state-note {
+  color: var(--muted);
+}
+
+.status-pill {
+  align-self: start;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.status-pill.pending {
+  border-color: var(--action);
+  color: var(--action);
+}
+
+.status-pill.denied,
+.status-pill.expired,
+.status-pill.unavailable {
+  border-color: oklch(72% 0.05 24);
+  background: oklch(97% 0.014 24);
+  color: var(--danger);
+}
+
+.decision-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.primary {
+  border-color: var(--action);
+  background: var(--action);
+  color: var(--action-ink);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs button,
+.filter-row button {
+  min-height: 32px;
+  padding: 0 10px;
+  text-transform: capitalize;
+}
+
+.tab-panel {
+  padding: 12px 0;
+}
+
+.overview-grid {
+  display: grid;
+  gap: 16px;
+  padding: 0 12px;
+}
+
+.activity-view {
+  display: grid;
+  gap: 10px;
+}
+
+.handoff-view {
+  display: grid;
+  gap: 16px;
+}
+
+.record-section {
+  display: grid;
+  gap: 6px;
+}
+
+.record-section h2 {
+  margin: 0;
+  padding: 0 12px 2px;
+  font-size: 13px;
+}
+
+.activity-tools {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.activity-tools label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.activity-tools input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.filter-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.completion-list {
+  grid-column: 1 / -1;
+  display: grid;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.completion-list button {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-width: 0 0 1px;
+  text-align: left;
+}
+
+.completion-list button:last-child {
+  border-bottom: 0;
+}
+
+.completion-list button:hover,
+.completion-list button:focus {
+  background: var(--surface-3);
+}
+
+.completion-list span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer textarea,
+.blocking-panel textarea {
+  width: 100%;
+  min-width: 0;
+  resize: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 9px 10px;
+  line-height: 1.45;
+}
+
+.field-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.ask-field {
+  display: grid;
+  gap: 6px;
+}
+
+.ask-field > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ask-field > strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.option-row button {
+  min-height: 30px;
+  padding: 0 9px;
+}
+
+.option-row button.active {
+  border-color: var(--action);
+  background: oklch(94% 0.025 238);
+}
+
+.composer .inline-error {
+  grid-column: 1 / -1;
+}

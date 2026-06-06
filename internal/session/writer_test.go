@@ -301,6 +301,67 @@ func TestWriter_Rewrite(t *testing.T) {
 	}
 }
 
+func TestWriter_WebEventsRoundTripAndRewrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "web-events.jsonl")
+	received := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+
+	w, _ := NewWriter(path)
+	header := testHeader()
+	if err := w.WriteHeader(header); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteWebEvent(WebEventData{
+		Sequence:   7,
+		ReceivedAt: received,
+		Type:       "tool_call",
+		DataType:   "query.ToolCallEvent",
+		Data:       json.RawMessage(`{"tool":"Bash","unknown":"visible"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteMetadata(MetadataData{TurnCount: 1, Summary: "with web event"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := w.Rewrite(RewriteData{
+		Header:   header,
+		Messages: nil,
+		Metadata: MetadataData{TurnCount: 1, Summary: "rewritten"},
+		WebEvents: []WebEventData{{
+			Sequence:   7,
+			ReceivedAt: received,
+			Type:       "tool_call",
+			DataType:   "query.ToolCallEvent",
+			Data:       json.RawMessage(`{"tool":"Bash","unknown":"visible"}`),
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store := &Store{dir: dir}
+	if err := os.Rename(path, filepath.Join(dir, "test-jsonl-001.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.Load("test-jsonl-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sess.WebEvents) != 1 {
+		t.Fatalf("web event count: got %d, want 1", len(sess.WebEvents))
+	}
+	event := sess.WebEvents[0]
+	if event.Sequence != 7 || event.Type != "tool_call" || event.DataType != "query.ToolCallEvent" {
+		t.Fatalf("web event identity lost: %#v", event)
+	}
+	if string(event.Data) != `{"tool":"Bash","unknown":"visible"}` {
+		t.Fatalf("web event payload: got %s", event.Data)
+	}
+}
+
 func TestWriter_LastMetadataWins(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "multi-meta.jsonl")
