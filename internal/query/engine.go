@@ -204,6 +204,20 @@ func (e *Engine) FileStateRecords() []tool.FileStateRecord {
 	return e.fileState.Snapshot()
 }
 
+func (e *Engine) FileStateCache() *tool.FileStateCache {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	return e.fileState
+}
+
+func (e *Engine) SetFileStateCache(cache *tool.FileStateCache) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if cache != nil {
+		e.fileState = cache
+	}
+}
+
 // Orchestrator returns the engine's tool orchestrator.
 func (e *Engine) Orchestrator() *tool.Orchestrator {
 	observe.GlobalTrace("enter")

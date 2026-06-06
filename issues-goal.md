@@ -1447,6 +1447,23 @@ What not to do:
 
 Do not add a note to the Agent result asking the parent model to re-read files, and do not add one-off parent cache invalidation after Agent text is returned. That leaves freshness as a prompt convention instead of a runtime invariant.
 
+Status:
+
+Resolved in current worktree. Subagent engines now share the parent query engine's file-state cache instead of creating an isolated authoritative cache for shared-workspace execution. The session writer continues to persist `d.Engine.FileStateRecords()`, and child tool file effects now land in that same cache because the Agent engine factory injects the parent cache into child engines at creation time.
+
+Source evidence:
+
+- `internal/query/engine.go`: `Engine.FileStateCache` and `Engine.SetFileStateCache` expose a controlled cache handoff for runtime-owned sharing.
+- `internal/cli/tools.go`: the Agent `engineFactory` creates the child engine, then calls `subEngine.SetFileStateCache(d.Engine.FileStateCache())` when the parent engine exists.
+- `internal/cli/run.go`: session save still writes `d.Engine.FileStateRecords()`, which is now the shared cache used by parent and child engines.
+- `internal/query/loop.go`: tool execution still obtains file-state tracking from the engine-owned cache through `progressSnapshot.ReadFileState`, so no prompt-level or Agent-result convention was added.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/query/engine.go internal/cli/tools.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/query ./internal/cli ./internal/tools/agent ./cmd/pragma`.
+- Ownership scan: `rg -n "FileStateCache\\(|SetFileStateCache|FileStateRecords|NewFileStateCache|ReadFileState|engineFactory|d\\.Engine" internal/query internal/cli/tools.go internal/cli/run.go internal/tools/agent -g'*.go'` showed child engine creation now shares `d.Engine.FileStateCache()`, while session persistence remains rooted at `d.Engine.FileStateRecords()`.
+
 ## 31. Subagent Tool Result Artifacts Are Written Under Unsaved Forked Session IDs
 
 Severity: high

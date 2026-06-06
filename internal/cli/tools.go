@@ -94,7 +94,11 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		subOrch := tool.NewOrchestrator(subRegistry, d.Checker, prompter, d.Bus)
 		subCfg := d.EngineCfg
 		subCfg.Model = subModel
-		return query.NewEngine(d.Prov, subRegistry, subOrch, subStore, d.CostTracker, d.Bus, subCfg), subStore
+		subEngine := query.NewEngine(d.Prov, subRegistry, subOrch, subStore, d.CostTracker, d.Bus, subCfg)
+		if d.Engine != nil {
+			subEngine.SetFileStateCache(d.Engine.FileStateCache())
+		}
+		return subEngine, subStore
 	}
 
 	for _, td := range BaseTools(d) {
