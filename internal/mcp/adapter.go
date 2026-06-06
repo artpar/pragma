@@ -16,9 +16,11 @@ const maxDescriptionLen = 2048
 // MCPToolAdapter wraps an MCP server tool as a tool.Descriptor.
 // After registration, it is indistinguishable from a built-in tool (ADR-005).
 type MCPToolAdapter struct {
-	client   *Client
-	toolInfo ToolInfo
-	fullName string
+	client    *Client
+	toolInfo  ToolInfo
+	fullName  string
+	server    string
+	reconnect func(context.Context, string, string) (*Client, error)
 }
 
 // NewMCPToolAdapter creates an adapter. By default fullName is
@@ -38,6 +40,7 @@ func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
 		client:   client,
 		toolInfo: info,
 		fullName: fullName,
+		server:   client.Name(),
 	}
 }
 
@@ -80,18 +83,23 @@ func (a *MCPToolAdapter) InputSchema() json.RawMessage {
 func (a *MCPToolAdapter) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "enter")
 	defer observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "exit")
-	result, err := a.client.CallTool(ctx, a.toolInfo.Name, input)
+	client := a.client
+	result, err := client.CallTool(ctx, a.toolInfo.Name, input)
 	if err != nil {
 		observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: err != nil")
 		if errors.Is(err, ErrServerNotConnected) {
 			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: errors.Is(err, ErrServerNotConnected)")
-
-			if reconnErr := a.client.Reconnect(ctx); reconnErr != nil {
+			if a.reconnect == nil {
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: a.reconnect == nil")
+				return tool.InvokeResult{}, err
+			}
+			reconnectedClient, reconnErr := a.reconnect(ctx, a.server, a.fullName)
+			if reconnErr != nil {
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: reconnErr != nil")
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"reconnect failed for %s: %w\", a.fullName, re...")
 				return tool.InvokeResult{}, fmt.Errorf("reconnect failed for %s: %w", a.fullName, reconnErr)
 			}
-			result, err = a.client.CallTool(ctx, a.toolInfo.Name, input)
+			result, err = reconnectedClient.CallTool(ctx, a.toolInfo.Name, input)
 			if err != nil {
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: err != nil")
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")

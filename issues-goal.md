@@ -3882,6 +3882,10 @@ Do not patch this by only changing the tool description to tell the model to ask
 
 Severity: medium
 
+Status: fixed in this worktree. MCP adapters no longer call `Client.Reconnect` directly. Manager registration now installs adapters with a manager-owned reconnect callback. On `ErrServerNotConnected`, an adapter asks the manager to run the authoritative reconnect transaction, which disconnects the old client, unregisters stale tools, reconnects, lists tools, reapplies MCP and registry filters, registers the refreshed tool set, verifies the requested registry tool still exists, and only then returns the refreshed client for a single retry.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/mcp ./internal/tool ./cmd/pragma`; `git diff --check`; ownership scan for `.Reconnect(`, `reconnectServerForTool`, `reconnectServer`, `newToolAdapter`, `NewMCPToolAdapter`, `Client.Reconnect`, and `registeredTools[name]` under `internal/mcp`.
+
 Concrete files/functions involved:
 
 - `internal/mcp/adapter.go`: `MCPToolAdapter.Invoke`

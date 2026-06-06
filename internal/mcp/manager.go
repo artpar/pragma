@@ -411,7 +411,7 @@ func (m *Manager) registerClientTools(ctx context.Context, generation uint64, na
 			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: filter rejected tool")
 			continue
 		}
-		adapter := NewMCPToolAdapter(client, info)
+		adapter := m.newToolAdapter(client, info)
 		if registryFilter != nil && !registryFilter(adapter.Name()) {
 			observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "if: registry filter rejected tool")
 			continue
@@ -665,6 +665,28 @@ func (m *Manager) ConnectedCount() int {
 // ReconnectServer disconnects and reconnects a single server, re-registering its tools.
 // Used after OAuth authentication completes to swap the auth pseudo-tool for real tools.
 func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
+	_, err := m.reconnectServer(ctx, name)
+	return err
+}
+
+func (m *Manager) reconnectServerForTool(ctx context.Context, serverName, registryToolName string) (*Client, error) {
+	observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "exit")
+	client, err := m.reconnectServer(ctx, serverName)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, toolName := range m.registeredTools[serverName] {
+		if toolName == registryToolName {
+			return client, nil
+		}
+	}
+	return nil, fmt.Errorf("mcp tool %q is not available after reconnect", registryToolName)
+}
+
+func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, error) {
 	observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "enter")
 	defer observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "exit")
 
@@ -674,14 +696,14 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: !ok")
 		m.mu.Unlock()
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"server %q not found in config\", name)")
-		return fmt.Errorf("server %q not found in config", name)
+		return nil, fmt.Errorf("server %q not found in config", name)
 	}
 	generation := m.generation
 	if m.stopped {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: m.stopped")
 		m.mu.Unlock()
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"mcp manager stopped\")")
-		return fmt.Errorf("mcp manager stopped")
+		return nil, fmt.Errorf("mcp manager stopped")
 	}
 
 	if old, exists := m.clients[name]; exists {
@@ -704,7 +726,7 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
 		m.recordConnectFailure(generation, name, err)
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"reconnect %q: %w\", name, err)")
-		return fmt.Errorf("reconnect %q: %w", name, err)
+		return nil, fmt.Errorf("reconnect %q: %w", name, err)
 	}
 
 	m.mu.Lock()
@@ -713,9 +735,9 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 		m.mu.Unlock()
 		_ = client.Disconnect()
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
-		return fmt.Errorf("mcp manager stopped")
+		return nil, fmt.Errorf("mcp manager stopped")
 	}
 	m.clients[name] = client
 	m.statuses[name] = StatusConnected
@@ -726,7 +748,7 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 	if err != nil {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"list tools from %q after reconnect: %w\", name, err)")
-		return fmt.Errorf("list tools from %q after reconnect: %w", name, err)
+		return nil, fmt.Errorf("list tools from %q after reconnect: %w", name, err)
 	}
 
 	m.mu.Lock()
@@ -734,9 +756,9 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: inactive generation or context done")
 		m.mu.Unlock()
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
-		return fmt.Errorf("mcp manager stopped")
+		return nil, fmt.Errorf("mcp manager stopped")
 	}
 	var registered []string
 	var registerErrors []string
@@ -748,7 +770,7 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 			observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: filter rejected tool")
 			continue
 		}
-		adapter := NewMCPToolAdapter(client, info)
+		adapter := m.newToolAdapter(client, info)
 		if registryFilter != nil && !registryFilter(adapter.Name()) {
 			observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: registry filter rejected tool")
 			continue
@@ -773,7 +795,13 @@ func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
 		})
 	}
 	observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: nil")
-	return nil
+	return client, nil
+}
+
+func (m *Manager) newToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
+	adapter := NewMCPToolAdapter(client, info)
+	adapter.reconnect = m.reconnectServerForTool
+	return adapter
 }
 
 // Clients returns a snapshot of all connected clients keyed by server name.
