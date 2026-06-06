@@ -54,6 +54,10 @@ type Deps struct {
 	Toolset                *toolset.Compiled
 	ToolPolicy             ToolExposurePolicy
 	McpManager             *mcp.Manager
+	CapabilityWorkDir      string
+	capabilityMu           sync.Mutex
+	capabilityContext      context.Context
+	capabilityWG           *sync.WaitGroup
 	CronSched              *cron.Scheduler
 	HookMgr                *hook.Manager
 	Metrics                *observe.Metrics
@@ -135,16 +139,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		observe.GlobalTrace("if: cfg.HandoffSchema != model.HandoffSchemaV1")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid handoff schema %q\", cfg.HandoffSchema)")
 		return nil, fmt.Errorf("invalid handoff schema %q", cfg.HandoffSchema)
-	}
-	var activeToolset *toolset.Compiled
-	if cfg.Toolset != "" {
-		observe.GlobalTrace("if: cfg.Toolset != \"\"")
-		activeToolset, err = toolset.Resolve(cwd, cfg.Toolset)
-		if err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: nil, err")
-			return nil, err
-		}
 	}
 	toolPolicy := toolExposurePolicyFromFlags(cmd)
 
@@ -425,36 +419,10 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	registry := tool.NewRegistry(bus)
 
 	mcpManager := mcp.NewManager(bus, registry)
-	mcpManager.SetRegistryToolFilter(toolPolicy.Allows)
-	if activeToolset != nil {
-		observe.GlobalTrace("if: activeToolset != nil")
-		mcpManager.SetToolFilter(activeToolset.AllowMCPTool)
-	}
-
-	mcpServers, mcpErr := mcp.LoadConfig(cwd, bus)
-	if mcpErr != nil {
-		observe.GlobalTrace("if: mcpErr != nil")
-		fmt.Fprintf(os.Stderr, "warning: load mcp config: %v\n", mcpErr)
-	}
-	if activeToolset != nil {
-		observe.GlobalTrace("if: activeToolset != nil")
-		mcpServers = activeToolset.FilterMCPServers(mcpServers)
-	}
 
 	depsCtx, depsCancel := context.WithCancel(cmd.Context())
 	var depsWG sync.WaitGroup
-	if len(mcpServers) > 0 {
-		observe.GlobalTrace("if: len(mcpServers) > 0")
-		mcpManager.ConfigureServers(mcpServers)
-		mcpManager.SetLifecycleContext(depsCtx)
-		depsWG.Add(1)
-		go func() {
-			defer depsWG.Done()
-			connectCtx, connectCancel := context.WithTimeout(depsCtx, 60*time.Second)
-			defer connectCancel()
-			mcpManager.ConnectAllAndRegister(connectCtx, mcpServers)
-		}()
-	}
+	mcpManager.SetLifecycleContext(depsCtx)
 
 	watchdog := observe.NewMCPWatchdog(mcpManager.ServerStatus, bus, 30*time.Second)
 	depsWG.Add(1)
@@ -506,9 +474,12 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		EngineCfg:              engineCfg,
 		TaskReg:                taskReg,
 		TaskContext:            taskCtx,
-		Toolset:                activeToolset,
+		Toolset:                nil,
 		ToolPolicy:             toolPolicy,
 		McpManager:             mcpManager,
+		CapabilityWorkDir:      "",
+		capabilityContext:      depsCtx,
+		capabilityWG:           &depsWG,
 		CronSched:              cronSched,
 		HookMgr:                hookMgr,
 		Metrics:                metrics,
@@ -524,6 +495,9 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		SessionStarted:         false,
 		Cleanup:                compositeCleanup,
 		SystemPromptForWorkDir: systemPromptForWorkDir,
+	}
+	if err := refreshCapabilitiesForWorkDir(cmd.Context(), deps, activeCapabilityWorkDir(deps)); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: refresh runtime capabilities: %v\n", err)
 	}
 	return deps, nil
 }

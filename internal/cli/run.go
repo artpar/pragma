@@ -602,6 +602,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.OrchestrationArtifacts = append([]app.OrchestrationArtifact(nil), sess.OrchestrationArtifacts...)
 		st.Worktree = copyWorktreeSession(sess.Worktree)
 	})
+	ensureCapabilitiesForActiveWorkDir(context.Background(), rt.Deps)
 	rt.PromptHistory = promptHistory
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Deps.SessionStart = sessionStartForConversation(sess.Conversation)
@@ -860,7 +861,10 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 				d.TokenMonitor.SetBudget(cw)
 			}
 		},
-		McpStatus:    func() []slash.McpServerStatus { return mcpStatusesForSlash(d.McpManager) },
+		McpStatus: func() []slash.McpServerStatus {
+			ensureCapabilitiesForActiveWorkDir(context.Background(), d)
+			return mcpStatusesForSlash(d.McpManager)
+		},
 		SessionStore: sessStore,
 		SkillCatalog: skillCatalog,
 	}

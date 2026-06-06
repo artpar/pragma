@@ -169,6 +169,9 @@ func (e *Engine) runLegacyToolLoop(ctx context.Context, initialUserMessage *stri
 		}
 
 		snap := e.store.Snapshot()
+		if e.config.RefreshCapabilities != nil {
+			e.config.RefreshCapabilities(ctx)
+		}
 
 		resolvedModel := e.config.Model
 		if snap.Model != "" {

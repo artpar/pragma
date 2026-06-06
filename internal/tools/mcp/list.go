@@ -28,7 +28,8 @@ var listInputSchema = json.RawMessage(`{
 
 // ListTool lists resources exposed by connected MCP servers.
 type ListTool struct {
-	Manager *mcp.Manager
+	Manager      *mcp.Manager
+	EnsureActive func(context.Context, tool.StateSnapshot)
 }
 
 func (t *ListTool) Name() string {
@@ -74,9 +75,12 @@ func (t *ListTool) CheckPerm(ctx context.Context, _ json.RawMessage, checker per
 	return checker.Check(ctx, "ListMcpResourcesTool", "")
 }
 
-func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "enter")
 	defer observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "exit")
+	if t.EnsureActive != nil {
+		t.EnsureActive(ctx, state)
+	}
 	var in listInput
 	if len(input) > 0 {
 		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: len(input) > 0")

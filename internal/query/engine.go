@@ -42,6 +42,7 @@ type EngineConfig struct {
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
 	SessionCheckpoint         func() error
 	MCPServerStatuses         func() []MCPServerStatus
+	RefreshCapabilities       func(context.Context)
 }
 
 // MCPServerStatus mirrors the session-init MCP server metadata shape.

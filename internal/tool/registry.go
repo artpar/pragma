@@ -13,11 +13,12 @@ import (
 
 // Registry holds all registered tools and provides lookup.
 type Registry struct {
-	tools   map[string]Descriptor
-	schemas map[string]*jsonschema.Schema
-	hidden  map[string]bool
-	mu      sync.RWMutex
-	bus     *observe.EventBus
+	tools          map[string]Descriptor
+	schemas        map[string]*jsonschema.Schema
+	hidden         map[string]bool
+	exposureFilter func(string) bool
+	mu             sync.RWMutex
+	bus            *observe.EventBus
 }
 
 // NewRegistry creates a Registry.
@@ -78,6 +79,9 @@ func (r *Registry) Get(name string) (Descriptor, bool) {
 	defer observe.GlobalTrace("exit")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if !r.exposesLocked(name) {
+		return nil, false
+	}
 	desc, ok := r.tools[name]
 	observe.GlobalTrace("return: desc, ok")
 	return desc, ok
@@ -116,6 +120,16 @@ func (r *Registry) SetHidden(names map[string]bool) {
 	}
 }
 
+// SetExposureFilter installs the runtime capability filter used by Get, List,
+// ToolDefs, and Scoped. Nil means every registered tool is exposed.
+func (r *Registry) SetExposureFilter(filter func(string) bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.exposureFilter = filter
+}
+
 // List returns all registered tools (excluding hidden ones).
 func (r *Registry) List() []Descriptor {
 	observe.GlobalTrace("enter")
@@ -125,7 +139,7 @@ func (r *Registry) List() []Descriptor {
 	out := make([]Descriptor, 0, len(r.tools))
 	for _, desc := range r.tools {
 		observe.GlobalTrace("range r.tools")
-		if r.hidden[desc.Name()] {
+		if !r.visibleLocked(desc.Name()) {
 			observe.GlobalTrace("if: r.hidden[desc.Name()]")
 			continue
 		}
@@ -145,7 +159,7 @@ func (r *Registry) ToolDefs() []model.ToolDef {
 	out := make([]model.ToolDef, 0, len(r.tools))
 	for _, desc := range r.tools {
 		observe.GlobalTrace("range r.tools")
-		if r.hidden[desc.Name()] {
+		if !r.visibleLocked(desc.Name()) {
 			observe.GlobalTrace("if: r.hidden[desc.Name()]")
 			continue
 		}
@@ -175,7 +189,7 @@ func (r *Registry) Scoped(names []string) *Registry {
 	}
 	for name, desc := range r.tools {
 		observe.GlobalTrace("range r.tools")
-		if nameSet[name] {
+		if nameSet[name] && r.exposesLocked(name) {
 			observe.GlobalTrace("if: nameSet[name]")
 			scoped.tools[name] = desc
 			if schema := r.schemas[name]; schema != nil {
@@ -193,4 +207,12 @@ func (r *Registry) Scoped(names []string) *Registry {
 	}
 	observe.GlobalTrace("return: scoped")
 	return scoped
+}
+
+func (r *Registry) visibleLocked(name string) bool {
+	return !r.hidden[name] && r.exposesLocked(name)
+}
+
+func (r *Registry) exposesLocked(name string) bool {
+	return r.exposureFilter == nil || r.exposureFilter(name)
 }

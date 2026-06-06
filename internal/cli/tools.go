@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -62,7 +63,11 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	d.EngineCfg.MCPServerStatuses = func() []query.MCPServerStatus {
+		ensureCapabilitiesForActiveWorkDir(context.Background(), d)
 		return mcpStatusesForQuery(d.McpManager)
+	}
+	d.EngineCfg.RefreshCapabilities = func(ctx context.Context) {
+		ensureCapabilitiesForActiveWorkDir(ctx, d)
 	}
 
 	engineFactory := func(forkedConv model.Conversation, scopedToolNames []string, modelOverride string) (*query.Engine, *app.StateStore) {
@@ -249,28 +254,7 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 		observe.GlobalTrace("if: d != nil && !d.ToolPolicy.Allows(name)")
 		return false
 	}
-	if isRuntimeBuiltinTool(name) {
-		observe.GlobalTrace("if: isRuntimeBuiltinTool(name)")
-		observe.GlobalTrace("return: true")
-		return true
-	}
-	if d == nil || d.Toolset == nil {
-		observe.GlobalTrace("if: d == nil || d.Toolset == nil")
-		observe.GlobalTrace("return: true")
-		return true
-	}
-	if name == toolapplypatch.ToolName && d.Toolset.AllowBuiltinTool(toolapplypatch.LegacyToolName) {
-		observe.GlobalTrace("if: name == toolapplypatch.ToolName && d.Toolset.AllowBuiltinTool(toolapplypatch....")
-		observe.GlobalTrace("return: true")
-		return true
-	}
-	if name == toolapplypatch.LegacyToolName && d.Toolset.AllowBuiltinTool(toolapplypatch.ToolName) {
-		observe.GlobalTrace("if: name == toolapplypatch.LegacyToolName && d.Toolset.AllowBuiltinTool(toolapply...")
-		observe.GlobalTrace("return: true")
-		return true
-	}
-	observe.GlobalTrace("return: d.Toolset.AllowBuiltinTool(name)")
-	return d.Toolset.AllowBuiltinTool(name)
+	return true
 }
 
 type ToolExposurePolicy struct {
@@ -377,6 +361,7 @@ func baseTools(d *Deps, store *app.StateStore, searchRegistry *tool.Registry) []
 		&tooltoolsearch.Tool{
 			Registry: searchRegistry,
 			PendingMCPServers: func() []string {
+				ensureCapabilitiesForActiveWorkDir(context.Background(), d)
 				if d.McpManager == nil {
 					return nil
 				}
@@ -384,8 +369,16 @@ func baseTools(d *Deps, store *app.StateStore, searchRegistry *tool.Registry) []
 			},
 		},
 		&toolresultread.Tool{},
-		&toolworktree.EnterTool{Store: store, SystemPromptForWorkDir: runtimeSystemPromptForDeps(d)},
-		&toolworktree.ExitTool{Store: store, SystemPromptForWorkDir: runtimeSystemPromptForDeps(d)},
+		&toolworktree.EnterTool{
+			Store:                         store,
+			SystemPromptForWorkDir:        runtimeSystemPromptForDeps(d),
+			RefreshCapabilitiesForWorkDir: runtimeCapabilitiesForDeps(d),
+		},
+		&toolworktree.ExitTool{
+			Store:                         store,
+			SystemPromptForWorkDir:        runtimeSystemPromptForDeps(d),
+			RefreshCapabilitiesForWorkDir: runtimeCapabilitiesForDeps(d),
+		},
 		&toolcron.CreateTool{Scheduler: d.CronSched},
 		&toolcron.DeleteTool{Scheduler: d.CronSched},
 		&toolcron.ListTool{Scheduler: d.CronSched},
@@ -413,7 +406,12 @@ func baseTools(d *Deps, store *app.StateStore, searchRegistry *tool.Registry) []
 	if d.McpManager != nil {
 		observe.GlobalTrace("if: d.McpManager != nil")
 		tools = append(tools,
-			&toolmcp.ListTool{Manager: d.McpManager},
+			&toolmcp.ListTool{
+				Manager: d.McpManager,
+				EnsureActive: func(ctx context.Context, _ tool.StateSnapshot) {
+					ensureCapabilitiesForActiveWorkDir(ctx, d)
+				},
+			},
 		)
 	}
 
@@ -569,5 +567,19 @@ func runtimeSystemPromptForDeps(d *Deps) func(string) model.SystemPrompt {
 			return d.SystemPromptForWorkDir(workDir)
 		}
 		return model.SystemPrompt{}
+	}
+}
+
+func runtimeCapabilitiesForDeps(d *Deps) func(context.Context, string) {
+	return func(ctx context.Context, workDir string) {
+		if err := refreshCapabilitiesForWorkDir(ctx, d, workDir); err != nil && d != nil && d.Bus != nil {
+			d.Bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
+				Severity:     "warn",
+				Component:    "capabilities",
+				ErrorType:    "refresh_failed",
+				ErrorMessage: err.Error(),
+			})
+		}
 	}
 }

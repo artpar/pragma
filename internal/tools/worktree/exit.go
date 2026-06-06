@@ -47,8 +47,9 @@ type exitResult struct {
 
 // ExitTool cleans up a git worktree, preserving it if there are changes.
 type ExitTool struct {
-	Store                  *app.StateStore
-	SystemPromptForWorkDir func(string) model.SystemPrompt
+	Store                         *app.StateStore
+	SystemPromptForWorkDir        func(string) model.SystemPrompt
+	RefreshCapabilitiesForWorkDir func(context.Context, string)
 }
 
 func (t *ExitTool) Name() string {
@@ -223,7 +224,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 			RestoredCWD:  originalWorkDir,
 			Message:      "Worktree removed (no changes detected)",
 		}
-		t.restoreSessionCWD(originalWorkDir)
+		t.restoreSessionCWD(ctx, originalWorkDir)
 		data, _ := json.Marshal(result)
 		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 		return tool.InvokeResult{Content: string(data)}, nil
@@ -254,13 +255,13 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 		DiffStat:     diffStat,
 		Message:      "Worktree kept — has uncommitted changes or new commits",
 	}
-	t.restoreSessionCWD(originalWorkDir)
+	t.restoreSessionCWD(ctx, originalWorkDir)
 	data, _ := json.Marshal(result)
 	observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
 }
 
-func (t *ExitTool) restoreSessionCWD(originalWorkDir string) {
+func (t *ExitTool) restoreSessionCWD(ctx context.Context, originalWorkDir string) {
 	if t.Store == nil || originalWorkDir == "" {
 		return
 	}
@@ -273,6 +274,9 @@ func (t *ExitTool) restoreSessionCWD(originalWorkDir string) {
 		}
 		s.Worktree = nil
 	})
+	if t.RefreshCapabilitiesForWorkDir != nil {
+		t.RefreshCapabilitiesForWorkDir(ctx, originalWorkDir)
+	}
 }
 
 func (t *ExitTool) systemPromptForWorkDir(workDir string) model.SystemPrompt {

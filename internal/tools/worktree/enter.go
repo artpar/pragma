@@ -41,8 +41,9 @@ type enterResult struct {
 
 // EnterTool creates a git worktree for isolated work.
 type EnterTool struct {
-	Store                  *app.StateStore
-	SystemPromptForWorkDir func(string) model.SystemPrompt
+	Store                         *app.StateStore
+	SystemPromptForWorkDir        func(string) model.SystemPrompt
+	RefreshCapabilitiesForWorkDir func(context.Context, string)
 }
 
 func (t *EnterTool) Name() string {
@@ -193,6 +194,9 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 				HeadCommit:   headCommit,
 			}
 		})
+	}
+	if t.RefreshCapabilitiesForWorkDir != nil {
+		t.RefreshCapabilitiesForWorkDir(ctx, dir)
 	}
 	data, err := json.Marshal(result)
 	if err != nil {

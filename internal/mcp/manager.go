@@ -132,6 +132,37 @@ func (m *Manager) ConfigureServers(servers map[string]ServerConfig) {
 	}
 }
 
+// ReplaceServers makes the provided server set the authoritative MCP scope.
+// Existing clients and registered tools are disconnected/unregistered first.
+func (m *Manager) ReplaceServers(servers map[string]ServerConfig) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stopped = false
+	m.generation++
+
+	for name, client := range m.clients {
+		observe.GlobalTrace("range m.clients")
+		for _, toolName := range m.registeredTools[name] {
+			observe.GlobalTrace("range m.registeredTools[name]")
+			m.registry.Unregister(toolName)
+		}
+		_ = client.Disconnect()
+	}
+
+	m.clients = make(map[string]*Client)
+	m.configs = make(map[string]ServerConfig, len(servers))
+	m.registeredTools = make(map[string][]string)
+	m.statuses = make(map[string]string, len(servers))
+	m.lastErrors = make(map[string]string)
+	for name, cfg := range servers {
+		observe.GlobalTrace("range servers")
+		m.configs[name] = cfg
+		m.statuses[name] = StatusPending
+	}
+}
+
 func (m *Manager) activeGenerationLocked(generation uint64) bool {
 	return !m.stopped && m.generation == generation
 }
