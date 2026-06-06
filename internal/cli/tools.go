@@ -145,7 +145,7 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 			return nil, fmt.Errorf("register agent tool: %w", err)
 		}
 	}
-	askTool := &toolask.Tool{Asker: asker}
+	askTool := &toolask.Tool{Asker: asker, Bus: d.Bus}
 	if shouldRegisterBuiltinTool(d, askTool.Name()) {
 		observe.GlobalTrace("if: shouldRegisterBuiltinTool(d, askTool.Name())")
 		if err := d.Registry.Register(askTool); err != nil {

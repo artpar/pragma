@@ -144,6 +144,54 @@ type ToolPermissionPrompted struct {
 
 func (ToolPermissionPrompted) eventSealed() {}
 
+type AskPromptOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+type AskPromptQuestion struct {
+	Question    string            `json:"question"`
+	Header      string            `json:"header,omitempty"`
+	Options     []AskPromptOption `json:"options,omitempty"`
+	MultiSelect bool              `json:"multi_select,omitempty"`
+}
+
+type AskPromptRequested struct {
+	EventHeader
+	AskID      string              `json:"ask_id"`
+	SessionID  string              `json:"session_id,omitempty"`
+	ToolCallID string              `json:"tool_call_id"`
+	ToolName   string              `json:"tool_name"`
+	Question   string              `json:"question,omitempty"`
+	Questions  []AskPromptQuestion `json:"questions,omitempty"`
+}
+
+func (AskPromptRequested) eventSealed() {}
+
+type AskPromptResolved struct {
+	EventHeader
+	AskID       string `json:"ask_id"`
+	SessionID   string `json:"session_id,omitempty"`
+	ToolCallID  string `json:"tool_call_id"`
+	ToolName    string `json:"tool_name"`
+	AnswerCount int    `json:"answer_count"`
+	DurationMs  int64  `json:"duration_ms"`
+}
+
+func (AskPromptResolved) eventSealed() {}
+
+type AskPromptCancelled struct {
+	EventHeader
+	AskID        string `json:"ask_id"`
+	SessionID    string `json:"session_id,omitempty"`
+	ToolCallID   string `json:"tool_call_id"`
+	ToolName     string `json:"tool_name"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	DurationMs   int64  `json:"duration_ms"`
+}
+
+func (AskPromptCancelled) eventSealed() {}
+
 type ToolExecutionStarted struct {
 	EventHeader
 	ToolCallID     string          `json:"tool_call_id"`

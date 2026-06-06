@@ -2153,6 +2153,25 @@ What not to do:
 
 Do not teach `StatusSubscriber` to inspect web hub envelopes, TUI `AskRequestMsg` values, or the string name `AskUserQuestion`. Do not infer ask waiting from long tool duration. That would keep the runtime state hidden behind presentation-specific transports and make cancellation/recovery behavior depend on UI implementation details.
 
+Status:
+
+Resolved in current worktree. `AskUserQuestion` now publishes ask prompt requested, resolved, and cancelled events from the runtime tool invocation path before and after the blocking `Asker.Ask` call. Background status consumes those shared observe events for waiting state, while web hub `ask_request` envelopes and TUI `AskRequestMsg` remain response/display transports.
+
+Source evidence:
+
+- `internal/tool/tool.go`: added `InvocationContext` helpers so the orchestrator can pass trace, span, parent span, tool call ID, and tool name through the shared tool invocation contract.
+- `internal/tool/orchestrator.go`: `Orchestrator.executeSingle` wraps `desc.Invoke` with `WithInvocationContext`, making ask prompt events carry the same runtime tool identity as `ToolExecutionStarted`.
+- `internal/tools/ask/ask.go`: `Tool.Invoke` now emits `AskPromptRequested` before blocking on `t.Asker.Ask`, emits `AskPromptResolved` after an answer, and emits `AskPromptCancelled` on ask errors or cancellation.
+- `internal/observe/event_catalog.go` and `internal/observe/event.go`: added serializable observe events for `AskPromptRequested`, `AskPromptResolved`, and `AskPromptCancelled`, including session, tool call, prompt ID, question, option, answer count, duration, and cancellation error metadata.
+- `internal/background/subscriber.go`: `StatusSubscriber.HandleEvent` now sets status waiting on `AskPromptRequested` and clears waiting on `AskPromptResolved` or `AskPromptCancelled`, without inspecting web envelopes, TUI messages, tool names, or durations.
+- `internal/cli/tools.go`: the registered ask tool receives the shared event bus, so prompt lifecycle emission is tied to the runtime tool registration rather than UI bridge code.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/tool/tool.go internal/tool/orchestrator.go internal/tools/ask/ask.go internal/cli/tools.go internal/observe/event_catalog.go internal/observe/event.go internal/observe/logger.go internal/background/subscriber.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/tool ./internal/tools/ask ./internal/cli ./internal/observe ./internal/background ./internal/web ./internal/tui ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "AskPromptRequested|AskPromptResolved|AskPromptCancelled|WithInvocationContext|InvocationContextFrom|AskUserQuestion|waiting|Asker\\.Ask|ToolExecutionStarted|Bridge\\.Ask|AskRequestMsg" internal/tool internal/tools/ask internal/cli/tools.go internal/observe internal/background/subscriber.go internal/web/web.go internal/tui -g'*.go'` confirmed shared ask wait ownership is in observe/background, while web/TUI references remain prompt transport and display paths.
+
 ## 45. Orchestration Handoff Artifact Access Is Owned By A Volatile Web Allowlist
 
 Severity: medium

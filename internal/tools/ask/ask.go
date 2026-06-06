@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
@@ -88,13 +89,16 @@ var inputSchema = json.RawMessage(`{
 // Tool pauses execution and asks the user a question, returning their answer.
 type Tool struct {
 	Asker tool.Asker
+	Bus   *observe.EventBus
 }
+
+const toolName = "AskUserQuestion"
 
 func (t *Tool) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"AskUserQuestion\"")
-	return "AskUserQuestion"
+	observe.GlobalTrace("return: toolName")
+	return toolName
 }
 
 func (t *Tool) Description() string {
@@ -144,10 +148,10 @@ func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permiss
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "exit")
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "return: checker.Check(ctx, \"AskUserQuestion\", \"\")")
-	return checker.Check(ctx, "AskUserQuestion", "")
+	return checker.Check(ctx, toolName, "")
 }
 
-func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
+func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "ask", "Tool.Invoke", "enter")
 	defer observe.TraceCtx(ctx, "ask", "Tool.Invoke", "exit")
 
@@ -185,16 +189,94 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		return tool.InvokeResult{}, fmt.Errorf("either 'question' or 'questions' is required")
 	}
 
+	askID := observe.NewSpanID()
+	sessionID, _ := tool.SessionIDFrom(state)
+	invocation, _ := tool.InvocationContextFrom(ctx)
+	if invocation.ToolName == "" {
+		invocation.ToolName = toolName
+	}
+	promptStart := time.Now()
+	t.emitAskPromptRequested(askID, sessionID, invocation, req)
+
 	resp, err := t.Asker.Ask(ctx, req)
+	promptDuration := time.Since(promptStart).Milliseconds()
 	if err != nil {
+		t.emitAskPromptCancelled(askID, sessionID, invocation, err.Error(), promptDuration)
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"ask user: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("ask user: %w", err)
 	}
+	t.emitAskPromptResolved(askID, sessionID, invocation, len(resp.Answers), promptDuration)
 
 	content := formatResponse(req, resp)
 	observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
 	return tool.InvokeResult{Content: content}, nil
+}
+
+func (t *Tool) emitAskPromptRequested(askID, sessionID string, invocation tool.InvocationContext, req tool.AskRequest) {
+	if t.Bus == nil {
+		return
+	}
+	t.Bus.Emit(observe.AskPromptRequested{
+		EventHeader: observe.NewEventHeader("AskPromptRequested", invocation.TraceID, askID, invocation.SpanID),
+		AskID:       askID,
+		SessionID:   sessionID,
+		ToolCallID:  invocation.ToolCallID,
+		ToolName:    invocation.ToolName,
+		Question:    req.Question,
+		Questions:   observeAskQuestions(req.Questions),
+	})
+}
+
+func (t *Tool) emitAskPromptResolved(askID, sessionID string, invocation tool.InvocationContext, answerCount int, durationMs int64) {
+	if t.Bus == nil {
+		return
+	}
+	t.Bus.Emit(observe.AskPromptResolved{
+		EventHeader: observe.NewEventHeader("AskPromptResolved", invocation.TraceID, askID, invocation.SpanID),
+		AskID:       askID,
+		SessionID:   sessionID,
+		ToolCallID:  invocation.ToolCallID,
+		ToolName:    invocation.ToolName,
+		AnswerCount: answerCount,
+		DurationMs:  durationMs,
+	})
+}
+
+func (t *Tool) emitAskPromptCancelled(askID, sessionID string, invocation tool.InvocationContext, errMessage string, durationMs int64) {
+	if t.Bus == nil {
+		return
+	}
+	t.Bus.Emit(observe.AskPromptCancelled{
+		EventHeader:  observe.NewEventHeader("AskPromptCancelled", invocation.TraceID, askID, invocation.SpanID),
+		AskID:        askID,
+		SessionID:    sessionID,
+		ToolCallID:   invocation.ToolCallID,
+		ToolName:     invocation.ToolName,
+		ErrorMessage: errMessage,
+		DurationMs:   durationMs,
+	})
+}
+
+func observeAskQuestions(questions []tool.AskQuestion) []observe.AskPromptQuestion {
+	if len(questions) == 0 {
+		return nil
+	}
+	out := make([]observe.AskPromptQuestion, len(questions))
+	for i, q := range questions {
+		out[i] = observe.AskPromptQuestion{
+			Question:    q.Question,
+			Header:      q.Header,
+			MultiSelect: q.MultiSelect,
+		}
+		for _, opt := range q.Options {
+			out[i].Options = append(out[i].Options, observe.AskPromptOption{
+				Label:       opt.Label,
+				Description: opt.Description,
+			})
+		}
+	}
+	return out
 }
 
 // formatResponse formats the ask response for the LLM.

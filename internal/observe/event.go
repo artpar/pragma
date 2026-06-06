@@ -150,6 +150,24 @@ func UnmarshalEvent(data []byte) (Event, error) {
 			return nil, err
 		}
 		event = e
+	case "AskPromptRequested":
+		var e AskPromptRequested
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "AskPromptResolved":
+		var e AskPromptResolved
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
+	case "AskPromptCancelled":
+		var e AskPromptCancelled
+		if err := json.Unmarshal(data, &e); err != nil {
+			return nil, err
+		}
+		event = e
 	case "ToolExecutionStarted":
 		var e ToolExecutionStarted
 		if err := json.Unmarshal(data, &e); err != nil {

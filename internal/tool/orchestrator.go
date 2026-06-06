@@ -479,7 +479,14 @@ func (o *Orchestrator) executeSingle(
 		fileEffectCursor = cache.EffectCursor()
 	}
 	start := time.Now()
-	invokeResult, err := desc.Invoke(ctx, call.Input, state)
+	invokeCtx := WithInvocationContext(ctx, InvocationContext{
+		TraceID:      traceID,
+		SpanID:       spanID,
+		ParentSpanID: parentSpan,
+		ToolCallID:   call.ID,
+		ToolName:     call.Name,
+	})
+	invokeResult, err := desc.Invoke(invokeCtx, call.Input, state)
 	duration := time.Since(start)
 	var fileEffects []FileEffect
 	if fileState != nil {

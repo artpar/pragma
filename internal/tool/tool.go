@@ -26,6 +26,26 @@ type SessionIDProvider interface {
 	SessionID() string
 }
 
+// InvocationContext carries orchestrator-owned identity into a tool invocation.
+type InvocationContext struct {
+	TraceID      string
+	SpanID       string
+	ParentSpanID string
+	ToolCallID   string
+	ToolName     string
+}
+
+type invocationContextKey struct{}
+
+func WithInvocationContext(ctx context.Context, meta InvocationContext) context.Context {
+	return context.WithValue(ctx, invocationContextKey{}, meta)
+}
+
+func InvocationContextFrom(ctx context.Context) (InvocationContext, bool) {
+	meta, ok := ctx.Value(invocationContextKey{}).(InvocationContext)
+	return meta, ok
+}
+
 func SessionIDFrom(state StateSnapshot) (string, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

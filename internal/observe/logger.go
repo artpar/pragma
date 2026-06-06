@@ -125,6 +125,12 @@ func eventDetail(event Event) string {
 		return fmt.Sprintf("tool=%s err=%s", e.ToolName, e.ErrorMessage)
 	case ToolPermissionChecked:
 		return fmt.Sprintf("tool=%s decision=%s", e.ToolName, e.Decision)
+	case AskPromptRequested:
+		return fmt.Sprintf("tool=%s call=%s ask=%s questions=%d", e.ToolName, e.ToolCallID, e.AskID, len(e.Questions))
+	case AskPromptResolved:
+		return fmt.Sprintf("tool=%s call=%s ask=%s answers=%d dur=%dms", e.ToolName, e.ToolCallID, e.AskID, e.AnswerCount, e.DurationMs)
+	case AskPromptCancelled:
+		return fmt.Sprintf("tool=%s call=%s ask=%s dur=%dms err=%s", e.ToolName, e.ToolCallID, e.AskID, e.DurationMs, e.ErrorMessage)
 	case ErrorOccurred:
 		return fmt.Sprintf("[%s] %s: %s", e.Severity, e.Component, e.ErrorMessage)
 	case SlashCommandExecuted:
@@ -188,6 +194,7 @@ func eventLevel(kind string) Level {
 		"MCPServerConnected", "MCPToolCallCompleted", "SubAgentSpawned",
 		"SubAgentCompleted", "ToolBatchStarted", "ToolBatchCompleted",
 		"ToolPermissionChecked", "ToolPermissionPromptStarted", "ToolPermissionPrompted",
+		"AskPromptRequested", "AskPromptResolved", "AskPromptCancelled",
 		"PermissionRuleMatched", "SlashCommandExecuted",
 		"AgentMDLoaded", "SystemPromptBuilt",
 		"BriefMessageSent", "McpOAuthCompleted":
@@ -216,6 +223,7 @@ func eventTopic(kind string) string {
 		"APIRequestFailed", "APIRetryScheduled":
 		return "api"
 	case "ToolCallReceived", "ToolPermissionChecked", "ToolPermissionPromptStarted", "ToolPermissionPrompted",
+		"AskPromptRequested", "AskPromptResolved", "AskPromptCancelled",
 		"ToolExecutionStarted", "ToolExecutionCompleted", "ToolExecutionFailed",
 		"ToolBatchStarted", "ToolBatchCompleted":
 		return "tool"

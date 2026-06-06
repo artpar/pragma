@@ -91,6 +91,24 @@ func (s *StatusSubscriber) HandleEvent(event observe.Event) {
 		s.waiting = false
 		s.updateStatusLocked()
 		s.mu.Unlock()
+	case observe.AskPromptRequested:
+		observe.GlobalTrace("typecase: observe.AskPromptRequested")
+		s.mu.Lock()
+		s.waiting = true
+		s.updateStatusLocked()
+		s.mu.Unlock()
+	case observe.AskPromptResolved:
+		observe.GlobalTrace("typecase: observe.AskPromptResolved")
+		s.mu.Lock()
+		s.waiting = false
+		s.updateStatusLocked()
+		s.mu.Unlock()
+	case observe.AskPromptCancelled:
+		observe.GlobalTrace("typecase: observe.AskPromptCancelled")
+		s.mu.Lock()
+		s.waiting = false
+		s.updateStatusLocked()
+		s.mu.Unlock()
 	case observe.PermissionDecisionFinal:
 		observe.GlobalTrace("typecase: observe.PermissionDecisionFinal")
 		s.mu.Lock()
