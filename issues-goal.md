@@ -3432,6 +3432,10 @@ Do not patch individual UI/session-list callers to fall back to loading full ses
 
 Severity: medium
 
+Status: already fixed in this worktree. `StateStore.Snapshot` now deep-copies `TeamContext` with `app.CopyTeamContext`, and `CopyTeamContext` returns a new struct value for non-nil team context pointers. Snapshot callers in team create/delete therefore read a copied team context instead of a mutable pointer into the live store.
+
+Verification: `go build ./cmd/pragma`; `go vet ./internal/app ./internal/tools/teamcreate ./internal/tools/teamdelete ./cmd/pragma`; ownership scan for `CopyTeamContext|TeamContext|Snapshot\\(|Worktree|Temperature|Thinking`.
+
 Concrete files/functions involved:
 
 - `internal/app/store.go`: `StateStore.Snapshot`, `StateStore.Update`
