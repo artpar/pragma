@@ -3221,6 +3221,10 @@ Do not patch `RunCronDaemon` to recreate the job after a launch error. That woul
 
 Severity: high
 
+Status: fixed in this worktree. Replay live handoff no longer streams providers from the Cobra command. `replayLiveFromCheckpoint` reconstructs the recorded request, registers the normal non-interactive tool runtime, and hands the request to `query.Engine.RunFromRequest`; the query engine seeds conversation state from that checkpoint and runs the existing legacy tool-loop path so streaming, retry handling, stop-reason behavior, tool execution, and conversation mutation stay in the query runtime.
+
+Verification: `gofmt -w cmd/pragma/replay.go internal/query/loop.go`; `go build ./cmd/pragma`; `go vet ./cmd/pragma ./internal/query ./internal/cli`; `git diff --check`; boundary scan for `RunFromRequest|seedFromRequest|runLegacyToolLoop|replayLiveFromCheckpoint|AccumulateStream|\\.Prov\\.Stream|printReplayResponse|RegisterTools|NonInteractivePrompter|NonInteractiveAsker`.
+
 Concrete files/functions involved:
 
 - `cmd/pragma/replay.go`: `replayDeterministic`, `replayLiveFromCheckpoint`, `requestParamsFromEvent`, `printReplayResponse`

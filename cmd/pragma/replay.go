@@ -11,7 +11,9 @@ import (
 	"github.com/artpar/pragma/internal/cli"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/tool"
 )
 
 func replayCmd() *cobra.Command {
@@ -199,15 +201,11 @@ func replayLiveFromCheckpoint(cmd *cobra.Command, d *cli.Deps, engine *observe.R
 	if cmd.Flags().Changed("model") || cmd.Flags().Changed("provider") {
 		params.Model = d.Cfg.Model
 	}
-	chunks, err := d.Prov.Stream(cmd.Context(), params)
+	queryEngine, err := cli.RegisterTools(d, &permission.NonInteractivePrompter{}, &tool.NonInteractiveAsker{})
 	if err != nil {
 		return err
 	}
-	resp, err := provider.AccumulateStream(chunks)
-	if err != nil {
-		return err
-	}
-	return printReplayResponse(resp)
+	return cli.ConsumeEngineEvents(queryEngine.RunFromRequest(cmd.Context(), params), d.Cfg.Verbose)
 }
 
 func requestParamsFromEvent(req observe.APIRequestStarted) provider.RequestParams {

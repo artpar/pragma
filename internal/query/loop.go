@@ -55,6 +55,57 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 	return ch
 }
 
+// RunFromRequest resumes the standard query runtime from a recorded provider
+// request. The replay command supplies the checkpoint; streaming, stop-reason
+// handling, tool execution, and conversation mutation remain owned by Engine.
+func (e *Engine) RunFromRequest(ctx context.Context, params provider.RequestParams) <-chan LoopEvent {
+	observe.TraceCtx(ctx, "query", "Engine.RunFromRequest", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.RunFromRequest", "exit")
+	ch := make(chan LoopEvent, 16)
+	go func() {
+		defer close(ch)
+		defer func() {
+			if r := recover(); r != nil {
+				observe.TraceCtx(ctx, "query", "Engine.RunFromRequest", "if: r != nil")
+				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
+			}
+		}()
+		e.seedFromRequest(params)
+		e.runLegacyToolLoop(ctx, nil, ch)
+	}()
+	observe.TraceCtx(ctx, "query", "Engine.RunFromRequest", "return: ch")
+	return ch
+}
+
+func (e *Engine) seedFromRequest(params provider.RequestParams) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	seed := model.Conversation{
+		Messages: params.Messages,
+		System:   params.System,
+	}.DeepCopy()
+	e.store.Update(func(s *app.AppState) {
+		s.Conversation.Messages = seed.Messages
+		s.Conversation.System = seed.System
+		if params.Model != "" {
+			s.Model = params.Model
+			s.Conversation.Model = params.Model
+		}
+		if params.MaxTokens > 0 {
+			s.MaxTokens = params.MaxTokens
+		}
+	})
+	if params.Model != "" {
+		e.config.Model = params.Model
+	}
+	if params.MaxTokens > 0 {
+		e.config.MaxTokens = params.MaxTokens
+	}
+	e.config.Temperature = params.Temperature
+	e.config.Thinking = params.Thinking
+	e.config.ResponseSchema = append(json.RawMessage(nil), params.ResponseSchema...)
+}
+
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
@@ -63,6 +114,10 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		return
 	}
 
+	e.runLegacyToolLoop(ctx, &userMessage, ch)
+}
+
+func (e *Engine) runLegacyToolLoop(ctx context.Context, initialUserMessage *string, ch chan<- LoopEvent) {
 	defer func() {
 		e.runStopHook(ch)
 	}()
@@ -73,19 +128,22 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		maxTurns = DefaultMaxTurns
 	}
 
-	userMsg := model.Message{
-		ID:        model.NewUUID(),
-		Role:      model.RoleUser,
-		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
-		Timestamp: time.Now(),
-	}
-	if err := e.appendConversationMessage(userMsg, func(s *app.AppState) {
-		if e.isStateHandoffMode() && s.HandoffState.IsZero() {
-			s.HandoffState = model.NewHandoffState(userMessage)
+	if initialUserMessage != nil {
+		userMessage := *initialUserMessage
+		userMsg := model.Message{
+			ID:        model.NewUUID(),
+			Role:      model.RoleUser,
+			Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
+			Timestamp: time.Now(),
 		}
-	}); err != nil {
-		ch <- ErrorEvent{Err: err}
-		return
+		if err := e.appendConversationMessage(userMsg, func(s *app.AppState) {
+			if e.isStateHandoffMode() && s.HandoffState.IsZero() {
+				s.HandoffState = model.NewHandoffState(userMessage)
+			}
+		}); err != nil {
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 	}
 
 	malformedRetries := 0
