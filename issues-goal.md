@@ -2609,6 +2609,23 @@ What not to do:
 
 Do not patch `makeSessionSaveClose` to skip file-state writes only after `/clear`. That would hide one persistence symptom while leaving the engine using stale session-scoped state during the new conversation.
 
+Status:
+
+Resolved in current worktree. Conversation/session-scoped engine caches now reset through one runtime boundary when `/clear` starts a new conversation, and resume uses the same combined engine reset path. Session save behavior remains owned by `makeSessionSaveClose`.
+
+Source evidence:
+
+- `internal/query/engine.go`: added `Engine.ResetSessionState`, which rebuilds content-replacement tracking and restores file-state records together after an active conversation/session change.
+- `internal/query/engine.go`: cache-specific reset helpers are private to the engine, so runtime callers do not separately own content-replacement or file-state cache lifecycle.
+- `internal/cli/run.go`: `closeCurrentSessionAfterClear` now calls `rt.Engine.ResetSessionState(nil, nil)` before rebuilding save callbacks for the next session.
+- `internal/cli/run.go`: `InteractiveRuntime.Resume` now uses `ResetSessionState(sess.ContentReplacements, sess.FileStateRecords)`, keeping resume and clear on the same engine-owned transition path.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/query/engine.go internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/query ./internal/cli ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "ResetSessionState|ResetContentReplacementState|ResetFileState|resetContentReplacementState|resetFileState|closeCurrentSessionAfterClear|makeSessionSaveClose|FileStateRecords\\(\\)|ContentReplacementRecords|FileStateCache|contentReplacementState" internal/cli internal/query internal/toolresult internal/tool -g'*.go'` confirmed `/clear` and `/resume` use the combined engine reset boundary and `makeSessionSaveClose` still persists from `Engine.FileStateRecords()`.
+
 ## 54. Runtime Resume Leaves SessionStart Bound To The Previous Session
 
 Severity: medium

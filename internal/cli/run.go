@@ -339,11 +339,16 @@ func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context)
 	if err := rt.closeCurrentSession(ctx); err != nil {
 		return err
 	}
+	if rt.Engine != nil {
+		rt.Engine.ResetSessionState(nil, nil)
+	}
 	rt.Deps.SessionWriter = nil
 	rt.Deps.SessionHeader = session.HeaderData{}
 	rt.Deps.SessionLastIdx = 0
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
-	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
+	if rt.Engine != nil {
+		rt.Engine.SetSessionCheckpoint(rt.sessionSave)
+	}
 	return nil
 }
 
@@ -550,8 +555,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	})
 	rt.PromptHistory = promptHistory
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
-	rt.Engine.ResetContentReplacementState(sess.ContentReplacements)
-	rt.Engine.ResetFileState(sess.FileStateRecords)
+	rt.Engine.ResetSessionState(sess.ContentReplacements, sess.FileStateRecords)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
 	sessionHookResult, err := beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)

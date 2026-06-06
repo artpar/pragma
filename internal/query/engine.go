@@ -177,16 +177,23 @@ func (e *Engine) SetSessionCheckpoint(checkpoint func() error) {
 	e.config.SessionCheckpoint = checkpoint
 }
 
-// ResetContentReplacementState rebuilds read-time replacement tracking after
-// the active conversation changes, such as an in-TUI session resume.
-func (e *Engine) ResetContentReplacementState(records []model.ContentReplacementRecord) {
+// ResetSessionState rebuilds read-time replacement tracking and file freshness
+// after the active conversation/session changes.
+func (e *Engine) ResetSessionState(contentReplacementRecords []model.ContentReplacementRecord, fileStateRecords []tool.FileStateRecord) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	e.resetContentReplacementState(contentReplacementRecords)
+	e.resetFileState(fileStateRecords)
+}
+
+func (e *Engine) resetContentReplacementState(records []model.ContentReplacementRecord) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	snap := e.store.Snapshot()
 	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), records)
 }
 
-func (e *Engine) ResetFileState(records []tool.FileStateRecord) {
+func (e *Engine) resetFileState(records []tool.FileStateRecord) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if e.fileState == nil {
