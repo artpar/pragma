@@ -2867,6 +2867,23 @@ What not to do:
 
 Do not patch individual providers by adding arbitrary buffers, and do not only lower the auto-compaction threshold. That hides the undercount for some models while preserving two different definitions of request size.
 
+Status:
+
+Resolved in current worktree. Fallback context-window admission now estimates the same logical request envelope passed to provider token counters instead of counting only conversation messages.
+
+Source evidence:
+
+- `internal/compact/tokens.go`: added `EstimateRequestTokens(provider.RequestParams)` as the compact-owned fallback request estimator.
+- `internal/compact/tokens.go`: request estimation now includes conversation messages, system prompt blocks, tool names/descriptions/input schemas, and response schema bytes.
+- `internal/compact/tokens.go`: added `EstimateToolDefTokens` for provider-visible tool schema sizing.
+- `internal/query/loop.go`: `requestTokenCount` now constructs one `provider.RequestParams` value and uses it for both precise `TokenCounter` calls and fallback `compact.EstimateRequestTokens`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/compact/tokens.go internal/query/loop.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/compact ./internal/query ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "EstimateRequestTokens|EstimateToolDefTokens|EstimateConversationTokens|EstimateSystemPromptTokens|requestTokenCount|TokenCounter|RequestParams|ResponseSchema|Tools:|InputSchema|BuildCompactionDeps|EffectiveWindow" internal/compact internal/query internal/provider internal/cli -g'*.go'` confirmed fallback admission now flows through request-level estimation while provider `TokenCounter` remains the precision override.
+
 ## 59. Session Metadata Treats Internal Context And Tool Results As User Turns
 
 Severity: medium

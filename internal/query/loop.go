@@ -512,14 +512,14 @@ func (e *Engine) isAtBlockingLimit(ctx context.Context, resolvedModel string, me
 func (e *Engine) requestTokenCount(ctx context.Context, resolvedModel string, messages []model.Message, system model.SystemPrompt, tools []model.ToolDef) int {
 	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "exit")
+	countParams := provider.RequestParams{
+		Model:    resolvedModel,
+		Messages: messages,
+		System:   system,
+		Tools:    tools,
+	}
 	if counter, ok := e.provider.(provider.TokenCounter); ok {
 		observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "if: ok")
-		countParams := provider.RequestParams{
-			Model:    resolvedModel,
-			Messages: messages,
-			System:   system,
-			Tools:    tools,
-		}
 		if precise, err := counter.CountTokens(ctx, countParams); err == nil {
 			observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "if: err == nil")
 			debug.Log("Precise token count for model %s: %d", resolvedModel, precise)
@@ -528,9 +528,9 @@ func (e *Engine) requestTokenCount(ctx context.Context, resolvedModel string, me
 			return precise
 		}
 	}
-	est := compact.EstimateConversationTokens(messages)
+	est := compact.EstimateRequestTokens(countParams)
 	debug.Log("Estimated token count for model %s: %d", resolvedModel, est)
-	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: compact.EstimateConversationTokens(messages)")
+	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: compact.EstimateRequestTokens(countParams)")
 	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: est")
 	return est
 }

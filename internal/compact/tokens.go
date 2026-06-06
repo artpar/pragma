@@ -3,6 +3,7 @@ package compact
 import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
 )
 
 // bytesPerToken is the rough heuristic for token estimation.
@@ -15,6 +16,12 @@ const structOverheadToolCall = 10
 
 // structOverheadToolResult accounts for JSON structure tokens around a tool result.
 const structOverheadToolResult = 5
+
+// structOverheadToolDef accounts for provider tool schema wrapper fields.
+const structOverheadToolDef = 20
+
+// structOverheadResponseSchema accounts for structured output wrapper fields.
+const structOverheadResponseSchema = 10
 
 // fixedImageTokens is the estimated token count for an image content block.
 const fixedImageTokens = 2000
@@ -90,6 +97,36 @@ func EstimateConversationTokens(msgs []model.Message) int {
 		observe.GlobalTrace("range msgs")
 		tokens += EstimateTokens(msg)
 	}
+	observe.GlobalTrace("return: tokens")
+	return tokens
+}
+
+func EstimateRequestTokens(params provider.RequestParams) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	tokens := EstimateConversationTokens(params.Messages)
+	tokens += EstimateSystemPromptTokens(params.System)
+	for _, tool := range params.Tools {
+		observe.GlobalTrace("range params.Tools")
+		tokens += EstimateToolDefTokens(tool)
+	}
+	if len(params.ResponseSchema) > 0 {
+		observe.GlobalTrace("if: len(params.ResponseSchema) > 0")
+		tokens += len(params.ResponseSchema)/bytesPerToken + structOverheadResponseSchema
+	}
+	observe.GlobalTrace("return: tokens")
+	return tokens
+}
+
+func EstimateToolDefTokens(tool model.ToolDef) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	size := len(tool.Name) + len(tool.Description) + len(tool.InputSchema)
+	tokens := size / bytesPerToken
+	if tokens == 0 && size > 0 {
+		tokens = 1
+	}
+	tokens += structOverheadToolDef
 	observe.GlobalTrace("return: tokens")
 	return tokens
 }
