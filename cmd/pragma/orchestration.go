@@ -1,20 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"time"
-
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/pragma/internal/cli"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/orchestration"
-	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/persona"
-	"github.com/artpar/pragma/internal/query"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 func orchestrationCmd() *cobra.Command {
@@ -40,84 +32,12 @@ func orchestrationRunCmd() *cobra.Command {
 
 func runOrchestration(cmd *cobra.Command, args []string) error {
 	taskPrompt, _ := cmd.Flags().GetString("prompt")
-	if taskPrompt == "" {
-		return fmt.Errorf("--prompt is required for orchestration run; use /orchestrate from interactive Pragma for browser-driven orchestration")
-	}
-
-	def, err := orchestration.LoadDefinitionFile(args[0])
-	if err != nil {
-		return err
-	}
-
-	d, err := cli.SetupDeps(cmd)
-	if err != nil {
-		return err
-	}
-	if d.Cleanup != nil {
-		defer d.Cleanup()
-	}
-	d.Bus.Subscribe(d.StderrLogger)
-	if !cmd.Flags().Changed("permission-mode") {
-		d.Checker = permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
-	}
-
-	prompter := &permission.NonInteractivePrompter{}
-	asker := &tool.NonInteractiveAsker{}
-	engine, err := cli.RegisterTools(d, prompter, asker)
-	if err != nil {
-		return err
-	}
-	compDeps, _ := cli.BuildCompactionDeps(d)
-	engine.SetCompaction(compDeps)
-
 	personaDir, _ := cmd.Flags().GetString("persona-dir")
-	return printOrchestrationEvents(orchestration.RunEventsWithOptions(cmd.Context(), engine, def, orchestration.RunOptions{
-		PersonaDir:   personaDir,
-		TaskPrompt:   taskPrompt,
-		ArtifactRoot: filepath.Join(os.TempDir(), "pragma", "orchestrations", fmt.Sprintf("cli-%d-%s", os.Getpid(), time.Now().UTC().Format("20060102T150405.000000000Z"))),
-	}))
-}
-
-func printOrchestrationEvents(events <-chan query.LoopEvent) error {
-	for ev := range events {
-		switch e := ev.(type) {
-		case query.TextEvent:
-			fmt.Print(e.Text)
-		case query.OrchestrationStartedEvent:
-			fmt.Printf("[orchestration: %s initial=%s]\n", e.Name, e.Initial)
-		case query.OrchestrationStateStartedEvent:
-			if e.Control != "" {
-				fmt.Printf("\n[control: %s (%s)]\n", e.StateID, e.Control)
-			} else {
-				fmt.Printf("\n[orchestration: %s persona=%s]\n", e.StateID, e.PersonaID)
-			}
-		case query.OrchestrationStateCompletedEvent:
-			fmt.Printf("\n[state %s complete in %s]\n", e.StateID, e.Duration.Round(time.Second))
-		case query.OrchestrationControlEvent:
-			if e.Event != "" {
-				fmt.Printf("[control: %s emitted %s]\n", e.StateID, e.Event)
-			}
-		case query.OrchestrationTransitionEvent:
-			fmt.Printf("\n[transition: %s --%s--> %s]\n", e.From, e.Event, e.To)
-		case query.OrchestrationCompletedEvent:
-			fmt.Print("\n[orchestration: done]\n")
-		case query.ThinkingEvent:
-			if e.Text != "" {
-				fmt.Fprint(os.Stderr, e.Text)
-			}
-		case query.ToolCallEvent:
-			fmt.Fprintf(os.Stderr, "[tool: %s]\n", e.Call.Name)
-		case query.ToolResultEvent:
-			fmt.Fprintf(os.Stderr, "[result: %s]\n", e.Result.ToolCallID)
-		case query.RetryEvent:
-			fmt.Fprintf(os.Stderr, "[retry: %s in %s]\n", e.Kind, e.Delay)
-		case query.ErrorEvent:
-			return e.Err
-		case query.TurnCompleteEvent:
-			return nil
-		}
-	}
-	return nil
+	return cli.RunStandaloneOrchestration(cmd, cli.StandaloneOrchestrationOptions{
+		DefinitionPath: args[0],
+		PersonaDir:     personaDir,
+		Prompt:         taskPrompt,
+	})
 }
 
 func controlName(state orchestration.State) string {

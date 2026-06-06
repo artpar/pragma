@@ -2255,6 +2255,23 @@ What not to do:
 
 Do not copy `startSessionForCurrentConversation`, hook handling, prompt-history writes, and `persistSessionAfterLoopEvent` into `cmd/pragma/orchestration.go`. That would preserve the duplicated execution path and make future lifecycle fixes depend on keeping another command-local loop in sync.
 
+Status:
+
+Resolved in current worktree. `pragma orchestration run` now delegates to a CLI/runtime orchestration entrypoint that builds the shared interactive runtime, accepts the prompt through the normal hook boundary, runs `InteractiveRuntime.runOrchestration`, and only adapts the resulting event stream to stdout/stderr. The Cobra command no longer owns dependency setup, tool registration, compaction, engine construction, or direct orchestration runner execution.
+
+Source evidence:
+
+- `internal/cli/run.go`: added `BuildInteractiveRuntimeWithOptions`, allowing command-specific dependency configuration before tool/orchestrator registration while preserving the existing `BuildInteractiveRuntime` call contract.
+- `internal/cli/run.go`: added `RunStandaloneOrchestration`, which configures non-interactive prompt/ask transports, applies the standalone command's default bypass permission policy before registration, calls `acceptPromptSubmission`, and routes execution through `InteractiveRuntime.runOrchestration`.
+- `internal/cli/run.go`: standalone orchestration output is handled by `consumeStandaloneOrchestrationEvents` and `printStandaloneOrchestrationLoopEvent`, which adapt shared runtime events to stdout/stderr without owning lifecycle or orchestration control flow.
+- `cmd/pragma/orchestration.go`: `runOrchestration` now reads only `--prompt`, `--persona-dir`, and the definition path, then calls `cli.RunStandaloneOrchestration`; direct calls to `cli.SetupDeps`, `cli.RegisterTools`, `cli.BuildCompactionDeps`, and `orchestration.RunEventsWithOptions` were removed.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/run.go cmd/pragma/orchestration.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./cmd/pragma ./internal/cli ./internal/orchestration ./internal/query ./internal/session ./internal/web`; `git diff --check`.
+- Ownership scan: `rg -n "RunStandaloneOrchestration|StandaloneOrchestrationOptions|BuildInteractiveRuntimeWithOptions|runOrchestration\\(|RunEventsWithOptions|RunFileEventsWithOptions|SetupDeps\\(|RegisterTools\\(|BuildCompactionDeps\\(|startSessionForCurrentConversation|acceptPromptSubmission|sessionSave|printStandaloneOrchestrationLoopEvent|printOrchestrationEvents" cmd/pragma/orchestration.go internal/cli/run.go internal/orchestration -g'*.go'` confirmed the command delegates to `internal/cli`, with orchestration runner and lifecycle ownership centralized under the shared runtime path.
+
 ## 47. Web Session List Uses Slash Resume Candidates As Its API Contract
 
 Severity: medium

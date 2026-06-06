@@ -228,6 +228,10 @@ type InteractiveRuntime struct {
 	Cleanup                    func(context.Context)
 }
 
+type InteractiveRuntimeOptions struct {
+	ConfigureDeps func(*Deps)
+}
+
 func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan interactive.Event {
 	ch := make(chan interactive.Event, 16)
 	go func() {
@@ -697,6 +701,10 @@ func (rt *InteractiveRuntime) clearPendingSessionStartHook() {
 
 // BuildInteractiveRuntime wires the shared dependencies for an interactive UI.
 func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, asker tool.Asker) (*InteractiveRuntime, error) {
+	return BuildInteractiveRuntimeWithOptions(cmd, prompter, asker, InteractiveRuntimeOptions{})
+}
+
+func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.Prompter, asker tool.Asker, opts InteractiveRuntimeOptions) (*InteractiveRuntime, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	d, err := SetupDeps(cmd)
@@ -704,6 +712,10 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
 		return nil, err
+	}
+
+	if opts.ConfigureDeps != nil {
+		opts.ConfigureDeps(d)
 	}
 
 	engine, err := RegisterTools(d, prompter, asker)
@@ -886,6 +898,123 @@ func RunTUIInteractive(cmd *cobra.Command) error {
 	observe.GlobalTrace("return: nil")
 
 	return nil
+}
+
+type StandaloneOrchestrationOptions struct {
+	DefinitionPath string
+	PersonaDir     string
+	Prompt         string
+	Stdout         io.Writer
+	Stderr         io.Writer
+}
+
+func RunStandaloneOrchestration(cmd *cobra.Command, opts StandaloneOrchestrationOptions) error {
+	if strings.TrimSpace(opts.Prompt) == "" {
+		return fmt.Errorf("--prompt is required for orchestration run; use /orchestrate from interactive Pragma for browser-driven orchestration")
+	}
+	stdout := opts.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	stderr := opts.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+
+	prompter := &permission.NonInteractivePrompter{}
+	asker := &tool.NonInteractiveAsker{}
+	rt, err := BuildInteractiveRuntimeWithOptions(cmd, prompter, asker, InteractiveRuntimeOptions{
+		ConfigureDeps: func(d *Deps) {
+			d.Bus.Subscribe(d.StderrLogger)
+			if !cmd.Flags().Changed("permission-mode") {
+				d.Checker = permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
+			}
+		},
+	})
+	if err != nil {
+		return err
+	}
+	defer rt.Cleanup(cmd.Context())
+
+	promptHookResult, err := acceptPromptSubmission(cmd.Context(), rt.Deps, opts.Prompt)
+	if err != nil {
+		return err
+	}
+
+	events := make(chan interactive.Event, 16)
+	go func() {
+		defer close(events)
+		rt.runOrchestration(cmd.Context(), slash.OrchestrationRequest{
+			DefinitionPath: opts.DefinitionPath,
+			PersonaDir:     opts.PersonaDir,
+			Prompt:         opts.Prompt,
+		}, opts.Prompt, promptHookResult, events)
+	}()
+	return consumeStandaloneOrchestrationEvents(events, stdout, stderr)
+}
+
+func consumeStandaloneOrchestrationEvents(events <-chan interactive.Event, stdout, stderr io.Writer) error {
+	for ev := range events {
+		switch e := ev.(type) {
+		case interactive.LoopEvent:
+			done, err := printStandaloneOrchestrationLoopEvent(e.Event, stdout, stderr)
+			if err != nil || done {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func printStandaloneOrchestrationLoopEvent(ev query.LoopEvent, stdout, stderr io.Writer) (bool, error) {
+	switch e := ev.(type) {
+	case query.TextEvent:
+		fmt.Fprint(stdout, e.Text)
+		flushWriter(stdout)
+	case query.OrchestrationStartedEvent:
+		fmt.Fprintf(stdout, "[orchestration: %s initial=%s]\n", e.Name, e.Initial)
+		flushWriter(stdout)
+	case query.OrchestrationStateStartedEvent:
+		if e.Control != "" {
+			fmt.Fprintf(stdout, "\n[control: %s (%s)]\n", e.StateID, e.Control)
+		} else {
+			fmt.Fprintf(stdout, "\n[orchestration: %s persona=%s]\n", e.StateID, e.PersonaID)
+		}
+		flushWriter(stdout)
+	case query.OrchestrationStateCompletedEvent:
+		fmt.Fprintf(stdout, "\n[state %s complete in %s]\n", e.StateID, e.Duration.Round(time.Second))
+		flushWriter(stdout)
+	case query.OrchestrationControlEvent:
+		if e.Event != "" {
+			fmt.Fprintf(stdout, "[control: %s emitted %s]\n", e.StateID, e.Event)
+			flushWriter(stdout)
+		}
+	case query.OrchestrationTransitionEvent:
+		fmt.Fprintf(stdout, "\n[transition: %s --%s--> %s]\n", e.From, e.Event, e.To)
+		flushWriter(stdout)
+	case query.OrchestrationCompletedEvent:
+		fmt.Fprint(stdout, "\n[orchestration: done]\n")
+		flushWriter(stdout)
+	case query.ThinkingEvent:
+		if e.Text != "" {
+			fmt.Fprint(stderr, e.Text)
+			flushWriter(stderr)
+		}
+	case query.ToolCallEvent:
+		fmt.Fprintf(stderr, "[tool: %s]\n", e.Call.Name)
+		flushWriter(stderr)
+	case query.ToolResultEvent:
+		fmt.Fprintf(stderr, "[result: %s]\n", e.Result.ToolCallID)
+		flushWriter(stderr)
+	case query.RetryEvent:
+		fmt.Fprintf(stderr, "[retry: %s in %s]\n", e.Kind, e.Delay)
+		flushWriter(stderr)
+	case query.ErrorEvent:
+		return false, e.Err
+	case query.TurnCompleteEvent:
+		return true, nil
+	}
+	return false, nil
 }
 
 type nonInteractiveRunOptions struct {
