@@ -32,6 +32,7 @@ type RewriteData struct {
 	PromptHistory          []PromptHistoryData
 	FileStateRecords       []tool.FileStateRecord
 	Todos                  []app.TodoItem
+	TeamContext            *app.TeamContext
 	OrchestrationArtifacts []app.OrchestrationArtifact
 	TaskResults            []TaskResultData
 }
@@ -161,6 +162,10 @@ func (w *Writer) WriteTodos(items []app.TodoItem) error {
 	return w.writeEntry(EntryTodos, TodosData{Items: items})
 }
 
+func (w *Writer) WriteTeamContext(ctx *app.TeamContext) error {
+	return w.writeEntry(EntryTeamContext, TeamContextData{Context: app.CopyTeamContext(ctx)})
+}
+
 func (w *Writer) WriteOrchestrationArtifacts(artifacts []app.OrchestrationArtifact) error {
 	if len(artifacts) == 0 {
 		return nil
@@ -258,6 +263,11 @@ func (w *Writer) Rewrite(data RewriteData) error {
 	}
 	if len(data.Todos) > 0 {
 		if err := w.encodeRewriteEntry(EntryTodos, TodosData{Items: data.Todos}); err != nil {
+			return err
+		}
+	}
+	if data.TeamContext != nil {
+		if err := w.encodeRewriteEntry(EntryTeamContext, TeamContextData{Context: app.CopyTeamContext(data.TeamContext)}); err != nil {
 			return err
 		}
 	}

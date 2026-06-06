@@ -21,6 +21,7 @@ const (
 	EntryPromptHistory          EntryKind = "prompt_history"
 	EntryFileState              EntryKind = "file_state"
 	EntryTodos                  EntryKind = "todos"
+	EntryTeamContext            EntryKind = "team_context"
 	EntryTaskResult             EntryKind = "task_result"
 	EntryOrchestrationArtifacts EntryKind = "orchestration_artifacts"
 )
@@ -72,6 +73,10 @@ type FileStateData struct {
 
 type TodosData struct {
 	Items []app.TodoItem `json:"items"`
+}
+
+type TeamContextData struct {
+	Context *app.TeamContext `json:"context,omitempty"`
 }
 
 type OrchestrationArtifactsData struct {

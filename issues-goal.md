@@ -2712,6 +2712,27 @@ What not to do:
 
 Do not make `TeamDelete` scan `~/.pragma/teams` or infer the active team from recent tool-result text. That would recreate session state from side effects. The active team identity needs one durable owner and one resume path.
 
+Status:
+
+Resolved in current worktree. Team leadership state is now a first-class session entry. Normal saves persist the current `TeamContext`, including nil entries after deletion, and setup/runtime resume hydrate `AppState.TeamContext` from the loaded session instead of inferring from files or messages.
+
+Source evidence:
+
+- `internal/app/state.go`: added `CopyTeamContext` for pointer-safe ownership transfer.
+- `internal/app/store.go`: `StateStore.Snapshot` now deep-copies `TeamContext`, so session save reads do not expose the store's mutable pointer.
+- `internal/session/entry.go`: added `EntryTeamContext` and `TeamContextData`.
+- `internal/session/writer.go`: added `WriteTeamContext`; normal save can record both active and cleared team context, while rewrite includes active team context in the rebuilt session file.
+- `internal/session/store.go`: `Store.Load` now reads `team_context` entries with last-entry-wins semantics.
+- `internal/session/session.go`: `Session` now carries `TeamContext`.
+- `internal/cli/deps.go`: startup resume hydrates `AppState.TeamContext` from the loaded session.
+- `internal/cli/run.go`: runtime resume restores `TeamContext`, normal save writes it, and session rewrite carries it forward from the app snapshot.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/app/state.go internal/app/store.go internal/session/entry.go internal/session/session.go internal/session/writer.go internal/session/store.go internal/cli/deps.go internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/app ./internal/session ./internal/cli ./internal/tools/teamcreate ./internal/tools/teamdelete ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "TeamContext|team_context|EntryTeamContext|TeamContextData|WriteTeamContext|CopyTeamContext|session\\.RewriteData|Store\\) Load|makeSessionSaveClose|InteractiveRuntime\\) Resume|SetupDeps" internal/app internal/session internal/cli internal/tools/teamcreate internal/tools/teamdelete -g'*.go'` confirmed team tools still own create/delete transitions while session/cli own persistence and resume hydration.
+
 ## 56. State-Handoff Tool Side Effects Are Reordered Ahead Of Real Tool Execution
 
 Severity: medium

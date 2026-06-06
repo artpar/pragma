@@ -20,6 +20,14 @@ type TeamContext struct {
 	LeadAgentID  string `json:"lead_agent_id"`
 }
 
+func CopyTeamContext(ctx *TeamContext) *TeamContext {
+	if ctx == nil {
+		return nil
+	}
+	cp := *ctx
+	return &cp
+}
+
 // WorktreeSession tracks a temporary worktree entered during the active session.
 type WorktreeSession struct {
 	OriginalCWD  string `json:"original_cwd"`

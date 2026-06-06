@@ -47,6 +47,7 @@ func (s *StateStore) Snapshot() AppState {
 		wt := *s.state.Worktree
 		snap.Worktree = &wt
 	}
+	snap.TeamContext = CopyTeamContext(s.state.TeamContext)
 	return snap
 }
 

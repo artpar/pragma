@@ -102,6 +102,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var promptHistory []PromptHistoryData
 	var fileStateRecords []tool.FileStateRecord
 	var todos []app.TodoItem
+	var teamContext *app.TeamContext
 	var orchestrationArtifacts []app.OrchestrationArtifact
 	var taskResults []TaskResultData
 	hasHeader := false
@@ -156,6 +157,11 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				todos = data.Items
 			}
+		case EntryTeamContext:
+			var data TeamContextData
+			if err := json.Unmarshal(entry.Data, &data); err == nil {
+				teamContext = app.CopyTeamContext(data.Context)
+			}
 		case EntryOrchestrationArtifacts:
 			var data OrchestrationArtifactsData
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
@@ -198,6 +204,7 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		PromptHistory:          promptHistory,
 		FileStateRecords:       fileStateRecords,
 		Todos:                  todos,
+		TeamContext:            app.CopyTeamContext(teamContext),
 		OrchestrationArtifacts: orchestrationArtifacts,
 		TaskResults:            taskResults,
 		Worktree:               copyWorktreeSession(meta.Worktree),

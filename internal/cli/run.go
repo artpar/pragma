@@ -549,6 +549,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.CWD = sess.Conversation.WorkDir
 		st.HandoffState = sess.HandoffState
 		st.Todos = sess.Todos
+		st.TeamContext = app.CopyTeamContext(sess.TeamContext)
 		st.PromptHistory = promptHistory
 		st.OrchestrationArtifacts = append([]app.OrchestrationArtifact(nil), sess.OrchestrationArtifacts...)
 		st.Worktree = copyWorktreeSession(sess.Worktree)
@@ -1620,6 +1621,9 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 		if err := d.SessionWriter.WriteTodos(snap.Todos); err != nil {
 			return err
 		}
+		if err := d.SessionWriter.WriteTeamContext(snap.TeamContext); err != nil {
+			return err
+		}
 		if err := d.SessionWriter.WriteOrchestrationArtifacts(snap.OrchestrationArtifacts); err != nil {
 			return err
 		}
@@ -1696,6 +1700,7 @@ func rewriteCurrentSession(d *Deps) error {
 		PromptHistory:          existing.PromptHistory,
 		FileStateRecords:       fileStateRecords,
 		Todos:                  snap.Todos,
+		TeamContext:            snap.TeamContext,
 		OrchestrationArtifacts: snap.OrchestrationArtifacts,
 		TaskResults:            existing.TaskResults,
 	}); err != nil {
