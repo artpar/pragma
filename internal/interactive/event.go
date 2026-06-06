@@ -29,3 +29,11 @@ type SlashResultEvent struct {
 }
 
 func (SlashResultEvent) interactiveEventSealed() {}
+
+// RuntimeTerminatedEvent signals that the interactive runtime has completed
+// its lifecycle shutdown and presentation surfaces should stop accepting input.
+type RuntimeTerminatedEvent struct {
+	Reason string
+}
+
+func (RuntimeTerminatedEvent) interactiveEventSealed() {}

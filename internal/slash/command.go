@@ -25,7 +25,7 @@ type Result struct {
 	DisplayText       string // text to show in the interactive output surface
 	ClearConversation bool   // true for /clear: presentation should reset visible conversation
 	RewriteSession    bool   // true when conversation messages were replaced and the session log must be rewritten
-	Quit              bool   // true for /exit: presentation should exit
+	Quit              bool   // true for /exit: runtime should terminate after command handling
 	InjectPrompt      string // if set, presentation feeds this as a user message to the engine
 	Orchestrate       *OrchestrationRequest
 	OpenTeams         bool // true for /teams: presentation opens team selection

@@ -279,8 +279,18 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput strin
 			return
 		}
 	}
-	if result.DisplayText != "" || result.OpenTeams || result.OpenModelPicker || result.OpenResumePicker || result.ResumeSessionID != "" || result.ClearConversation || result.Quit {
+	if result.Quit {
+		if err := rt.CloseSession(); err != nil {
+			ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+			return
+		}
+	}
+	if result.DisplayText != "" || result.OpenTeams || result.OpenModelPicker || result.OpenResumePicker || result.ResumeSessionID != "" || result.ClearConversation {
 		ch <- interactive.SlashResultEvent{Result: result}
+	}
+	if result.Quit {
+		ch <- interactive.RuntimeTerminatedEvent{Reason: "exit"}
+		return
 	}
 	if result.Orchestrate != nil {
 		rt.runOrchestration(ctx, *result.Orchestrate, submittedInput, promptHookResult, ch)

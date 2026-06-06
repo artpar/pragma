@@ -1800,6 +1800,25 @@ What not to do:
 
 Do not add a JavaScript branch that calls `window.close()` or hides the prompt when it sees `Quit`. That would make web imitate TUI while leaving slash command lifecycle ownership in presentation code.
 
+Status:
+
+Resolved in current worktree. `/exit` is now a runtime lifecycle command: the slash handler only returns quit intent, `InteractiveRuntime.runSlash` closes the active session, and presentation surfaces receive an explicit runtime termination event instead of deciding whether the session should close.
+
+Source evidence:
+
+- `internal/slash/commands.go`: `handleExit` no longer calls `SessionSave`; it returns `Result{Quit: true}` as command intent only.
+- `internal/slash/command.go`: `Result.Quit` is documented as runtime termination intent rather than a presentation exit instruction.
+- `internal/cli/run.go`: `InteractiveRuntime.runSlash` handles `result.Quit` by calling `rt.CloseSession()` before emitting `interactive.RuntimeTerminatedEvent`.
+- `internal/interactive/event.go`: added `RuntimeTerminatedEvent` as the presentation-facing signal that runtime shutdown has completed.
+- `internal/tui/handlers.go`: TUI no longer closes the session from `SlashResultEvent`; it exits UI on `RuntimeTerminatedEvent` and skips a second session close.
+- `internal/web/web.go`: web publishes `runtime_terminated` as an explicit runtime lifecycle event instead of treating `/exit` as only a command-result display.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/interactive/event.go internal/slash/command.go internal/slash/commands.go internal/cli/run.go internal/tui/handlers.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/interactive ./internal/slash ./internal/cli ./internal/tui ./internal/web ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "RuntimeTerminatedEvent|result\\.Quit|handleExit|CloseSession\\(\\)|finishRuntimeTermination|quitWithSessionClose|runtime_terminated|slash_result|SessionSave|Quit" internal/interactive/event.go internal/slash/command.go internal/slash/commands.go internal/cli/run.go internal/tui/handlers.go internal/web/web.go -g'*.go'` confirmed `result.Quit` is consumed by runtime and presentations react to `RuntimeTerminatedEvent`.
+
 ## 38. SessionStart Hook Blocks Are Converted Into Model Context Instead Of Stopping Session Start
 
 Severity: high

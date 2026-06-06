@@ -651,6 +651,9 @@ func (s *server) start(input string, rawRequest map[string]json.RawMessage) bool
 			case interactive.SlashResultEvent:
 				s.hub.publish("slash_result", e.Result)
 				continue
+			case interactive.RuntimeTerminatedEvent:
+				s.hub.publish("runtime_terminated", e)
+				continue
 			case interactive.LoopEvent:
 				if handoff, ok := e.Event.(query.OrchestrationHandoffEvent); ok {
 					s.rememberArtifact(handoff.Path)
@@ -1347,6 +1350,7 @@ function eventDisplayTitle(envelope){
   if(envelope.type === 'session_resumed') return 'Session resumed';
   if(envelope.type === 'resume_requested') return 'Resume requested';
   if(envelope.type === 'slash_result') return 'Command result';
+  if(envelope.type === 'runtime_terminated') return 'Runtime terminated';
   if(envelope.type === 'run_idle') return 'Ready';
   switch(envelope.type){
     case 'text': return 'Assistant';

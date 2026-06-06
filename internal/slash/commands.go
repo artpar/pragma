@@ -449,15 +449,9 @@ func handleMcp(_ context.Context, _ string, deps Deps) (Result, error) {
 	return Result{DisplayText: b.String()}, nil
 }
 
-func handleExit(_ context.Context, _ string, deps Deps) (Result, error) {
+func handleExit(_ context.Context, _ string, _ Deps) (Result, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if deps.SessionSave != nil {
-		observe.GlobalTrace("if: deps.SessionSave != nil")
-		if err := deps.SessionSave(); err != nil {
-			return Result{}, err
-		}
-	}
 	observe.GlobalTrace("return: Result{Quit: true}, nil")
 	return Result{Quit: true}, nil
 }

@@ -58,9 +58,6 @@ func latestAssistantText(store *app.StateStore) string {
 }
 
 func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd) {
-	if result.Quit {
-		return m.quit()
-	}
 	if result.ClearConversation {
 		m.outputSegs = m.outputSegs[:0]
 	}
@@ -136,6 +133,9 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 			return next, cmd
 		}
 		return next, waitForEvent(m.eventCh)
+	case interactive.RuntimeTerminatedEvent:
+		observe.GlobalTrace("typecase: interactive.RuntimeTerminatedEvent")
+		return m.finishRuntimeTermination()
 	case interactive.LoopEvent:
 		loopEvent = ev.Event
 	default:
@@ -865,9 +865,21 @@ func trimOutputSegs(segs []segment) []segment {
 func (m Model) quit() (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	return m.quitWithSessionClose(true)
+}
+
+func (m Model) finishRuntimeTermination() (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	return m.quitWithSessionClose(false)
+}
+
+func (m Model) quitWithSessionClose(closeSession bool) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.cancel()
-	if m.closeSession != nil {
-		observe.GlobalTrace("if: m.closeSession != nil")
+	if closeSession && m.closeSession != nil {
+		observe.GlobalTrace("if: closeSession && m.closeSession != nil")
 		if err := m.closeSession(); err != nil {
 			m.outputSegs = appendText(m.outputSegs, "\n"+errorStyle.Render("Error: "+err.Error())+"\n\n")
 			m.viewport.SetContent(m.viewportContent())
