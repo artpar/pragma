@@ -853,6 +853,22 @@ What not to do:
 
 Do not add an `EventBus` closed check inside the watchdog as the fix. That hides the symptom while leaving the dependency cleanup path without ownership of a goroutine it started.
 
+Status:
+
+Resolved in current worktree. MCP connection work and the MCP watchdog now share a dependency-lifecycle context and wait group owned by `SetupDeps` cleanup. Cleanup cancels and waits for those goroutines before disconnecting MCP servers and draining the event bus.
+
+Source evidence:
+
+- `internal/cli/deps.go`: `SetupDeps` creates `depsCtx`/`depsCancel` and `depsWG` for dependency-owned goroutines.
+- `internal/cli/deps.go`: MCP `ConnectAllAndRegister` and `watchdog.Start` both run under `depsCtx` and register with `depsWG`.
+- `internal/cli/deps.go`: `compositeCleanup` cancels `depsCtx`, waits for `depsWG` with a bounded timeout, then calls `DisconnectAll` and `bus.Drain`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/deps.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/observe ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "watchdog\\.Start\\(cmd\\.Context\\(\\)|mcpCancel|mcpWG|depsCtx|depsCancel|depsWG|watchdog\\.Start" internal/cli/deps.go` showed no command-context watchdog startup and no old MCP-only cleanup context.
+
 ## 19. Config Tool Maintains A Separate Settings Contract From Runtime Config
 
 Severity: medium

@@ -428,42 +428,42 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		mcpServers = activeToolset.FilterMCPServers(mcpServers)
 	}
 
-	var mcpCancel context.CancelFunc
-	var mcpWG sync.WaitGroup
+	depsCtx, depsCancel := context.WithCancel(cmd.Context())
+	var depsWG sync.WaitGroup
 	if len(mcpServers) > 0 {
 		observe.GlobalTrace("if: len(mcpServers) > 0")
 		mcpManager.ConfigureServers(mcpServers)
-		var mcpCtx context.Context
-		mcpCtx, mcpCancel = context.WithCancel(cmd.Context())
-		mcpManager.SetLifecycleContext(mcpCtx)
-		mcpWG.Add(1)
+		mcpManager.SetLifecycleContext(depsCtx)
+		depsWG.Add(1)
 		go func() {
-			defer mcpWG.Done()
-			connectCtx, connectCancel := context.WithTimeout(mcpCtx, 60*time.Second)
+			defer depsWG.Done()
+			connectCtx, connectCancel := context.WithTimeout(depsCtx, 60*time.Second)
 			defer connectCancel()
 			mcpManager.ConnectAllAndRegister(connectCtx, mcpServers)
 		}()
 	}
 
 	watchdog := observe.NewMCPWatchdog(mcpManager.ServerStatus, bus, 30*time.Second)
-	go watchdog.Start(cmd.Context())
+	depsWG.Add(1)
+	go func() {
+		defer depsWG.Done()
+		watchdog.Start(depsCtx)
+	}()
 
 	compositeCleanup := func() {
 		if taskReg != nil {
 			taskReg.ShutdownActive(500 * time.Millisecond)
 		}
 		taskCancel()
-		if mcpCancel != nil {
-			mcpCancel()
-			done := make(chan struct{})
-			go func() {
-				mcpWG.Wait()
-				close(done)
-			}()
-			select {
-			case <-done:
-			case <-time.After(500 * time.Millisecond):
-			}
+		depsCancel()
+		done := make(chan struct{})
+		go func() {
+			depsWG.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
 		}
 		mcpManager.DisconnectAll()
 		bus.Drain()
