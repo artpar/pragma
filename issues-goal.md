@@ -3360,6 +3360,10 @@ Do not patch `GlobalTrace` to silently ignore closed buses and call that suffici
 
 Severity: high
 
+Status: fixed in this worktree. `pragma lifecycle run` now requests the non-interactive bypass default through `cli.SetupDepsWithOptions`, which still preserves configured or explicit permission policy, and passes `d.Checker` into the lifecycle command orchestrator. The command-local `permission.NewRuleChecker(nil, permission.ModeBypassPermissions, ...)` path was removed, so lifecycle graph tool execution uses the same resolved checker boundary as registered runtime tools.
+
+Verification: `gofmt -w cmd/pragma/lifecycle.go`; `go build ./cmd/pragma`; `go vet ./cmd/pragma ./internal/cli ./internal/lifecycle ./internal/tool`; `git diff --check`; ownership scan for `runLifecycle|SetupDepsWithOptions|DefaultPermissionMode|NewRuleChecker|ModeBypassPermissions|NewOrchestrator\\(d\\.Registry|d\\.Checker|RegisterTools`.
+
 Concrete files/functions involved:
 
 - `cmd/pragma/lifecycle.go`: `runLifecycle`, `generateGraph`, `loadYAMLGraph`

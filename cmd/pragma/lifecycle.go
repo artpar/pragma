@@ -73,7 +73,7 @@ func lifecycleListCmd() *cobra.Command {
 }
 
 func runLifecycle(cmd *cobra.Command, args []string) error {
-	d, err := cli.SetupDeps(cmd)
+	d, err := cli.SetupDepsWithOptions(cmd, cli.SetupDepsOptions{DefaultPermissionMode: permission.ModeBypassPermissions})
 	if err != nil {
 		return err
 	}
@@ -95,9 +95,6 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("provide either a YAML file path or --structure, not both")
 	}
 
-	// Lifecycle is non-interactive — bypass permission prompts.
-	checker := permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
-
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tool.NonInteractiveAsker{}
 	_, err = cli.RegisterTools(d, prompter, asker)
@@ -105,7 +102,7 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	orch := tool.NewOrchestrator(d.Registry, checker, prompter, d.Bus)
+	orch := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
 	if d.HookMgr != nil {
 		orch.SetHookManager(d.HookMgr)
 	}
