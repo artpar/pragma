@@ -3467,6 +3467,10 @@ Do not rely on callers to treat snapshots as read-only by convention. The store 
 
 Severity: medium
 
+Status: fixed in this worktree. Runtime shutdown now uses the session persistence boundary as the worktree shutdown policy: `closeCurrentSession` calls the runtime session save path before close, `sessionMetadataForSnapshot` persists `AppState.Worktree` into `session.MetadataData`, `session.Store.loadJSONL` projects it back into `session.Session`, and runtime resume restores it into `AppState.Worktree` after validating the worktree path. `EnterWorktree` no longer promises a UI/session-exit prompt; its description now states that active worktree state is saved for resume and `ExitWorktree` remains the explicit lifecycle-resolution transition.
+
+Verification: `gofmt -w internal/tools/worktree/enter.go`; `go build ./cmd/pragma`; `go vet ./internal/tools/worktree ./internal/cli ./internal/session ./internal/web ./internal/tui ./cmd/pragma`; `git diff --check`; ownership scan for `Worktree|sessionMetadataForSnapshot|validateResumableWorktree|closeCurrentSession|WriteMetadata|Load|ExitWorktree|On session exit`.
+
 Concrete files/functions involved:
 
 - `internal/tools/worktree/enter.go`: `EnterTool.Invoke`, `enterDescription`

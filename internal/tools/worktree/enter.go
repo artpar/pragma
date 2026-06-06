@@ -78,7 +78,7 @@ const enterDescription = `Use this tool ONLY when the user explicitly asks to wo
 - Creates a new git worktree inside ` + "`.pragma/worktrees/`" + ` with a new branch based on HEAD
 - Switches the session's working directory to the new worktree
 - Use ExitWorktree to leave the worktree mid-session (keep or remove)
-- On session exit, if still in the worktree, the user will be prompted to keep or remove it`
+- On session exit, active worktree state is saved with the session so it can be resumed; use ExitWorktree to resolve the worktree lifecycle`
 
 func (t *EnterTool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
