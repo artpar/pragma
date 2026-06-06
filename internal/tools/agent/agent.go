@@ -273,6 +273,7 @@ func (t *Tool) invoke(ctx context.Context, in AgentInput, state tool.StateSnapsh
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: wtPath != \"\"")
 		subStore.Update(func(s *app.AppState) {
 			s.CWD = wtPath
+			s.Conversation.WorkDir = wtPath
 		})
 	}
 

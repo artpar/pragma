@@ -3504,6 +3504,10 @@ Do not solve this by adding more text to the worktree tool prompt or by making t
 
 Severity: high
 
+Status: fixed in this worktree. Child engine creation now inherits workdir from the parent runtime store snapshot instead of setup-time `Deps.Cwd`: `RegisterTools` reads `d.Store.Snapshot().CWD`, falls back to `d.Cwd` only when the live state has no CWD, and initializes both `subStore.CWD` and `forkedConv.WorkDir` from that active value. Explicit Agent `isolation:"worktree"` remains a child-owned override and now updates both `subStore.CWD` and `subStore.Conversation.WorkDir` to the isolated worktree path.
+
+Verification: `gofmt -w internal/cli/tools.go internal/tools/agent/agent.go`; `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/tools/agent ./internal/tools/worktree ./cmd/pragma`; `git diff --check`; ownership scan for `engineFactory|activeCWD|forkedConv\\.WorkDir|Snapshot\\(\\)|CWD:|d\\.Cwd|state\\.WorkDir\\(|isolation|Conversation\\.WorkDir|subStore\\.Update`.
+
 Concrete files/functions involved:
 
 - `internal/cli/tools.go`: `RegisterTools`, `engineFactory`, `baseTools`
