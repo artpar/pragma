@@ -49,6 +49,12 @@ type LifecycleCommandResult struct {
 	Message string
 }
 
+type UpdateFields struct {
+	Status      *TaskStatus
+	Description *string
+	Result      *string
+}
+
 // NewRegistry creates a task Registry.
 func NewRegistry(bus *observe.EventBus) *Registry {
 	observe.GlobalTrace("enter")
@@ -143,6 +149,25 @@ func (r *Registry) Update(id string, fn func(*Task)) error {
 	t.UpdatedAt = time.Now()
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+func (r *Registry) UpdateFields(id string, fields UpdateFields) error {
+	if fields.Status != nil {
+		if _, err := ParseStatus(string(*fields.Status)); err != nil {
+			return err
+		}
+	}
+	return r.Update(id, func(t *Task) {
+		if fields.Status != nil {
+			t.Status = *fields.Status
+		}
+		if fields.Description != nil {
+			t.Description = *fields.Description
+		}
+		if fields.Result != nil {
+			t.Result = *fields.Result
+		}
+	})
 }
 
 // GetByName returns a snapshot of the first task with a matching AgentName.

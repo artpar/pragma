@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"github.com/artpar/pragma/internal/observe"
 	"time"
 )
@@ -20,6 +21,16 @@ const (
 	TaskFailed    TaskStatus = "failed"
 	TaskCancelled TaskStatus = "cancelled"
 )
+
+func ParseStatus(raw string) (TaskStatus, error) {
+	status := TaskStatus(raw)
+	switch status {
+	case TaskPending, TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
+		return status, nil
+	default:
+		return "", fmt.Errorf("invalid task status %q", raw)
+	}
+}
 
 // Task represents a trackable unit of work (e.g., a background sub-agent).
 type Task struct {

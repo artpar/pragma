@@ -29,7 +29,7 @@ var inputSchema = json.RawMessage(`{
 		},
 		"status": {
 			"type": "string",
-			"enum": ["pending", "running", "completed", "failed"],
+			"enum": ["pending", "running", "completed", "failed", "cancelled"],
 			"description": "New task status"
 		},
 		"description": {
@@ -63,17 +63,17 @@ func (t *Tool) Description() string {
 
 const taskUpdateDescription = `Update a task's status, description, or result.
 
-Status workflow: pending → in_progress → completed. Use 'deleted' to permanently remove.
+Status workflow: pending → running → completed or failed. Cancelled tasks use cancelled.
 
 When to use:
-- Mark tasks in_progress BEFORE beginning work
+- Mark tasks running BEFORE beginning work
 - Mark tasks completed ONLY when fully accomplished
-- If blocked, keep as in_progress and create a new task for the blocker
+- If blocked, keep as running and create a new task for the blocker
 - Never mark a task completed if tests are failing or implementation is partial
 
 Tips:
 - Read a task's latest state with TaskGet before updating
-- Set status to in_progress when starting, completed when done`
+- Set status to running when starting, completed when done`
 
 func (t *Tool) InputSchema() json.RawMessage {
 	observe.GlobalTrace("enter")
@@ -110,17 +110,21 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 		return tool.InvokeResult{}, fmt.Errorf("id is required")
 	}
 
-	err := t.Tasks.Update(in.ID, func(tk *task.Task) {
-		if in.Status != "" {
-			tk.Status = task.TaskStatus(in.Status)
+	var fields task.UpdateFields
+	if in.Status != "" {
+		status, parseErr := task.ParseStatus(in.Status)
+		if parseErr != nil {
+			return tool.InvokeResult{Content: parseErr.Error()}, nil
 		}
-		if in.Description != "" {
-			tk.Description = in.Description
-		}
-		if in.Result != "" {
-			tk.Result = in.Result
-		}
-	})
+		fields.Status = &status
+	}
+	if in.Description != "" {
+		fields.Description = &in.Description
+	}
+	if in.Result != "" {
+		fields.Result = &in.Result
+	}
+	err := t.Tasks.UpdateFields(in.ID, fields)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: tool.InvokeResult{Content: err.Error()}, nil")

@@ -1604,6 +1604,23 @@ What not to do:
 
 Do not add display-side aliases for `in_progress` or silently map unknown strings in `TaskOutput`. That hides the bad state after it has already escaped the lifecycle owner.
 
+Status:
+
+Resolved in current worktree. `TaskUpdate` no longer casts arbitrary status strings into `task.TaskStatus` or documents non-runtime statuses. Status validation now lives with the task domain constants, and `TaskUpdate` routes updates through a registry-owned field update method that validates status before mutating task state.
+
+Source evidence:
+
+- `internal/task/task.go`: added `ParseStatus`, accepting only `pending`, `running`, `completed`, `failed`, and `cancelled`.
+- `internal/task/registry.go`: added `UpdateFields`, a registry-owned update boundary that validates any supplied status before applying task field changes.
+- `internal/tools/taskupdate/taskupdate.go`: removed `task.TaskStatus(in.Status)` raw cast; the tool now calls `task.ParseStatus` and `Registry.UpdateFields`.
+- `internal/tools/taskupdate/taskupdate.go`: schema enum and description now match actual runtime task statuses and no longer mention `in_progress` or `deleted`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/task/task.go internal/task/registry.go internal/tools/taskupdate/taskupdate.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/task ./internal/tools/taskupdate ./internal/tools/taskoutput ./internal/tools/tasklist ./internal/tools/agent ./cmd/pragma`.
+- Ownership scan: `rg -n "TaskUpdate|UpdateFields|ParseStatus|TaskStatus\\(in\\.Status\\)|in_progress|deleted|enum|TaskPending|TaskRunning|TaskCompleted|TaskFailed|TaskCancelled" internal/task internal/tools/taskupdate internal/tools/taskoutput internal/tools/tasklist -g'*.go'` showed no raw `TaskUpdate` status cast and no non-runtime status guidance remains in the tool.
+
 ## 34. Background Permission-Waiting Status Is Driven By A Post-Decision Event
 
 Severity: medium
