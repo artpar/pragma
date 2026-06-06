@@ -134,9 +134,14 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 				}
 			}
 
-			nextPending := e.resolveNextNodes(step, pending, state, func(ev ExecutionEvent) {
+			nextPending, err := e.resolveNextNodes(step, pending, state, func(ev ExecutionEvent) {
 				ch <- ev
 			})
+			if err != nil {
+				e.emitCompleted(step, err)
+				ch <- ExecutionEvent{Type: "completed", Step: step, State: state.Snapshot(), Err: err}
+				return
+			}
 			pending = nextPending
 		}
 
@@ -217,7 +222,7 @@ func (e *Executor) executeSuperstep(ctx context.Context, step int, pending []str
 }
 
 // resolveNextNodes determines which nodes to execute next based on edges.
-func (e *Executor) resolveNextNodes(step int, completed []string, state State, emit func(ExecutionEvent)) []string {
+func (e *Executor) resolveNextNodes(step int, completed []string, state State, emit func(ExecutionEvent)) ([]string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	seen := make(map[string]bool)
@@ -247,7 +252,11 @@ func (e *Executor) resolveNextNodes(step int, completed []string, state State, e
 		if ce, ok := e.graph.conditionalEdges[node]; ok {
 			observe.GlobalTrace("if: ok")
 			key := ce.Router(state)
-			target := ce.PathMap[key]
+			target, ok := ce.PathMap[key]
+			if !ok {
+				observe.GlobalTrace("if: !ok")
+				return nil, fmt.Errorf("lifecycle: node %q router returned unmapped route key %q", node, key)
+			}
 			if target == "" {
 				observe.GlobalTrace("if: target == \"\"")
 
@@ -273,7 +282,7 @@ func (e *Executor) resolveNextNodes(step int, completed []string, state State, e
 	}
 	observe.GlobalTrace("return: next")
 
-	return next
+	return next, nil
 }
 
 func (e *Executor) emitStepStarted(step int, nodes []string) {

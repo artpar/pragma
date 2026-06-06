@@ -23,8 +23,8 @@ type Graph struct {
 // Context carries cancellation and deadline.
 type NodeFunc func(ctx context.Context, state State) (StateUpdate, error)
 
-// RouterFunc inspects state and returns the name of the next node.
-// Returns "" to signal END (termination).
+// RouterFunc inspects state and returns a route key.
+// ConditionalEdge.PathMap owns the route key to node/END mapping.
 type RouterFunc func(state State) string
 
 // ConditionalEdge routes from a source node based on state inspection.

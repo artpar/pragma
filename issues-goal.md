@@ -1096,6 +1096,23 @@ What not to do:
 
 Do not add more default `""` paths to generated graphs or make routers coerce unknown values to `"end"`. That hides invalid control state instead of making the graph contract explicit.
 
+Status:
+
+Resolved in current worktree. Conditional route resolution now checks the `PathMap` membership bit before interpreting the target. Missing route keys return a lifecycle error from `Executor.resolveNextNodes`, while explicit `target == ""` mappings still emit an END transition. `RouterFunc` documentation now states that routers return route keys and `ConditionalEdge.PathMap` owns the route-key-to-node/END mapping.
+
+Source evidence:
+
+- `internal/lifecycle/executor.go`: `Executor.Stream` now handles `resolveNextNodes` errors by emitting/completing with that error instead of falling through to normal graph completion.
+- `internal/lifecycle/executor.go`: `Executor.resolveNextNodes` now uses `target, ok := ce.PathMap[key]`; `!ok` returns `lifecycle: node %q router returned unmapped route key %q`.
+- `internal/lifecycle/executor.go`: explicit END behavior remains tied to `target == ""` after a successful `PathMap` lookup.
+- `internal/lifecycle/graph.go`: `RouterFunc` contract documentation now names route keys and keeps node/END mapping ownership with `ConditionalEdge.PathMap`.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/lifecycle/executor.go internal/lifecycle/graph.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/lifecycle ./internal/lifecycle/definition ./internal/lifecycle/bridge ./cmd/pragma`.
+- Contract scan: `rg -n "resolveNextNodes\\(|PathMap\\[key\\]|unmapped route key|RouterFunc" internal/lifecycle -g'*.go'` showed the executor uses `target, ok := ce.PathMap[key]`, the missing-key error is present, and no unchecked `PathMap[key]` lookup remains in lifecycle routing.
+
 ## 24. UI Close Paths Close The Session Writer Before Session Lifecycle Ends
 
 Severity: medium
