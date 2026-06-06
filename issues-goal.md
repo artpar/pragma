@@ -3115,6 +3115,10 @@ Do not patch `loadExportConversationFile` by copying just `EntryMetadata` handli
 
 Severity: medium
 
+Status: fixed in this worktree. `RunLocalCommand` now always uses `BuildLocalSlashDeps`, which constructs a minimal local `StateStore`, zeroed `CostTracker`, session store, skill loader, model/provider, CWD, and MCP status provider without starting engine/provider runtime infrastructure. `handleCost` and `handleModel` therefore receive the dependencies they require, and the previously unsafe `/advisor` local command was removed in issue 63.
+
+Verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/slash ./internal/app ./internal/model ./cmd/pragma`; `git diff --check`; ownership scan for `RunLocalCommand|BuildLocalSlashDeps|TypeLocal|handleCost|handleModel|CostTracker|NewStateStore|advisor`.
+
 Concrete files/functions involved:
 
 - `internal/cli/subcommands.go`: `RunLocalCommand`
