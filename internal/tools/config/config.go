@@ -17,7 +17,7 @@ import (
 
 // ConfigInput defines the parameters for the Config tool.
 type ConfigInput struct {
-	Setting string `json:"setting" desc:"The setting name (e.g., 'model', 'verbose', 'theme', 'permission_mode')"`
+	Setting string `json:"setting" desc:"The setting name (e.g., 'model', 'provider', 'verbose', 'permission_mode')"`
 	Value   *any   `json:"value,omitempty" desc:"Value to set. Omit to read current value."`
 }
 
@@ -28,7 +28,7 @@ var inputSchema = json.RawMessage(`{
 	"properties": {
 		"setting": {
 			"type": "string",
-			"description": "The setting name (e.g., 'model', 'verbose', 'theme', 'permission_mode')"
+			"description": "The setting name (e.g., 'model', 'provider', 'verbose', 'permission_mode')"
 		},
 		"value": {
 			"description": "Value to set. Omit to read current value."
@@ -88,10 +88,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{Content: "Setting name is required."}, nil
 	}
 
-	def := FindSetting(in.Setting)
+	def := goconfig.FindSetting(in.Setting)
 	if def == nil {
 		return tool.InvokeResult{
-			Content: fmt.Sprintf("Unknown setting: %q. Available settings: %s", in.Setting, strings.Join(SettingNames(), ", ")),
+			Content: fmt.Sprintf("Unknown setting: %q. Available settings: %s", in.Setting, strings.Join(goconfig.SettingNames(), ", ")),
 		}, nil
 	}
 
@@ -102,7 +102,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 }
 
 // handleGet reads a setting value from the merged config.
-func (t *Tool) handleGet(ctx context.Context, def *SettingDef) (tool.InvokeResult, error) {
+func (t *Tool) handleGet(ctx context.Context, def *goconfig.SettingDef) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "config", "Tool.handleGet", "enter")
 	defer observe.TraceCtx(ctx, "config", "Tool.handleGet", "exit")
 
@@ -116,7 +116,7 @@ func (t *Tool) handleGet(ctx context.Context, def *SettingDef) (tool.InvokeResul
 }
 
 // handleSet validates and writes a setting value.
-func (t *Tool) handleSet(ctx context.Context, def *SettingDef, value any) (tool.InvokeResult, error) {
+func (t *Tool) handleSet(ctx context.Context, def *goconfig.SettingDef, value any) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "config", "Tool.handleSet", "enter")
 	defer observe.TraceCtx(ctx, "config", "Tool.handleSet", "exit")
 
@@ -177,7 +177,7 @@ func (t *Tool) handleSet(ctx context.Context, def *SettingDef, value any) (tool.
 }
 
 // applyLiveValue updates the live runtime for settings that have immediate effect.
-func (t *Tool) applyLiveValue(def *SettingDef, value any) {
+func (t *Tool) applyLiveValue(def *goconfig.SettingDef, value any) {
 	if def.AppStateKey == "" || t.Store == nil {
 		return
 	}
@@ -195,6 +195,10 @@ func (t *Tool) applyLiveValue(def *SettingDef, value any) {
 	})
 }
 
+func (t *Tool) syncToAppState(def *goconfig.SettingDef, value any) {
+	t.applyLiveValue(def, value)
+}
+
 // coerceBool converts string "true"/"false" to bool. Returns value unchanged if not coercible.
 func coerceBool(value any) any {
 	if s, ok := value.(string); ok {
@@ -209,7 +213,7 @@ func coerceBool(value any) any {
 }
 
 // readSettingFromFile reads a single setting value from the appropriate config file.
-func readSettingFromFile(def *SettingDef, workDir string) (any, error) {
+func readSettingFromFile(def *goconfig.SettingDef, workDir string) (any, error) {
 	var targetPath string
 	if def.Source == "global" {
 		p, err := goconfig.GlobalSettingsPath()
@@ -326,7 +330,7 @@ func generateDescription() string {
 	b.WriteString("- **Set new value:** Include the \"value\" parameter\n\n")
 	b.WriteString("## Available settings\n\n")
 
-	for _, s := range SupportedSettings {
+	for _, s := range goconfig.SupportedSettings {
 		line := fmt.Sprintf("- **%s**", s.Name)
 		if s.Options != nil {
 			line += fmt.Sprintf(": %s", strings.Join(s.Options, ", "))
@@ -340,7 +344,7 @@ func generateDescription() string {
 	b.WriteString("\n## Examples\n")
 	b.WriteString("- Get model: `{\"setting\": \"model\"}`\n")
 	b.WriteString("- Set model: `{\"setting\": \"model\", \"value\": \"claude-opus-4-6\"}`\n")
-	b.WriteString("- Set theme: `{\"setting\": \"theme\", \"value\": \"dark\"}`\n")
+	b.WriteString("- Set permission mode: `{\"setting\": \"permission_mode\", \"value\": \"acceptEdits\"}`\n")
 
 	return b.String()
 }

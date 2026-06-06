@@ -901,6 +901,23 @@ What not to do:
 
 Do not add more tool-local entries to `SupportedSettings` or special-case ignored keys in the UI. The tool-local schema is the boundary leak.
 
+Status:
+
+Resolved in current worktree. Supported writable settings are now defined by the runtime config package, and the model-facing Config tool reads that config-owned catalog instead of maintaining a separate schema with ignored keys.
+
+Source evidence:
+
+- `internal/config/settings.go`: added the config-owned `SettingDef`, `SupportedSettings`, `FindSetting`, and `SettingNames` catalog for real `internal/config.Config` fields.
+- `internal/tools/config/config.go`: `Tool.Invoke`, description generation, get/set handling, and live sync use `goconfig` setting definitions directly.
+- `internal/tools/config/settings.go`: the tool package now only re-exports the config-owned setting catalog for package compatibility; it no longer defines tool-local settings.
+- `internal/tools/config/config.go`: removed user-facing examples and input descriptions for unsupported `theme`; `autoCompactEnabled` and `theme` are absent from the production supported settings catalog.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/config/settings.go internal/tools/config/config.go internal/tools/config/settings.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/config ./internal/tools/config ./internal/cli ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "autoCompactEnabled|theme|var SupportedSettings|goconfig\\.SupportedSettings|syncToAppState|FindSetting\\(|SettingNames\\(" internal/config internal/tools/config internal/cli -g'*.go' -g'!*_test.go'` showed no production references to unsupported `autoCompactEnabled` or `theme`, and showed the settings catalog owned by `internal/config`.
+
 ## 20. Teammate Messages Are Drained By Both Agent Loop And Query Engine
 
 Severity: medium
