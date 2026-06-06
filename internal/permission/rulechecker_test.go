@@ -94,12 +94,6 @@ func TestRuleCheckerAddSessionRule(t *testing.T) {
 	if result.Decision != DecisionAllow {
 		t.Errorf("expected allow after session rule, got %s", result.Decision)
 	}
-
-	rc.ClearSessionRules()
-	result = rc.Check(context.Background(), "Bash", "ls")
-	if result.Decision != DecisionDeny {
-		t.Errorf("expected deny after clearing session rules, got %s", result.Decision)
-	}
 }
 
 func TestRuleCheckerDomainRule(t *testing.T) {

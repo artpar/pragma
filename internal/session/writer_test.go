@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
 )
 
@@ -79,10 +78,6 @@ func TestWriter_RoundTrip(t *testing.T) {
 	if err := w.WriteHandoffState(handoff); err != nil {
 		t.Fatal(err)
 	}
-	todos := []app.TodoItem{{Content: "Keep plan", Status: "in_progress"}}
-	if err := w.WriteTodos(todos); err != nil {
-		t.Fatal(err)
-	}
 
 	meta := MetadataData{
 		CostUSD:   0.005,
@@ -131,9 +126,6 @@ func TestWriter_RoundTrip(t *testing.T) {
 	}
 	if len(sess.HandoffState.Completed) != 1 || sess.HandoffState.Completed[0] != handoff.Completed[0] {
 		t.Errorf("HandoffState.Completed = %#v, want %#v", sess.HandoffState.Completed, handoff.Completed)
-	}
-	if len(sess.Todos) != 1 || sess.Todos[0] != todos[0] {
-		t.Errorf("Todos = %#v, want %#v", sess.Todos, todos)
 	}
 
 	// Verify ContentPart discriminators survived

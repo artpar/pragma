@@ -138,9 +138,9 @@ func TestOrchestratorConcurrentTools(t *testing.T) {
 	defer bus.Drain()
 
 	calls := []model.ToolCallPart{
-		{ID: "tc-1", Name: "SlowTool", Input: json.RawMessage(`{"value":"a"}`)},
-		{ID: "tc-2", Name: "SlowTool", Input: json.RawMessage(`{"value":"b"}`)},
-		{ID: "tc-3", Name: "SlowTool", Input: json.RawMessage(`{"value":"c"}`)},
+		{ID: "tc-1", Name: "SlowTool", Input: json.RawMessage(`"a"`)},
+		{ID: "tc-2", Name: "SlowTool", Input: json.RawMessage(`"b"`)},
+		{ID: "tc-3", Name: "SlowTool", Input: json.RawMessage(`"c"`)},
 	}
 
 	start := time.Now()
@@ -183,8 +183,8 @@ func TestOrchestratorSerialTools(t *testing.T) {
 	defer bus.Drain()
 
 	calls := []model.ToolCallPart{
-		{ID: "tc-1", Name: "SerialTool", Input: json.RawMessage(`{"value":"a"}`)},
-		{ID: "tc-2", Name: "SerialTool", Input: json.RawMessage(`{"value":"b"}`)},
+		{ID: "tc-1", Name: "SerialTool", Input: json.RawMessage(`"a"`)},
+		{ID: "tc-2", Name: "SerialTool", Input: json.RawMessage(`"b"`)},
 	}
 
 	start := time.Now()
@@ -310,7 +310,7 @@ func TestOrchestratorPanicRecovery(t *testing.T) {
 
 	calls := []model.ToolCallPart{
 		{ID: "tc-1", Name: "PanicTool", Input: json.RawMessage(`{}`)},
-		{ID: "tc-2", Name: "SafeTool", Input: json.RawMessage(`{"message":"hello"}`)},
+		{ID: "tc-2", Name: "SafeTool", Input: json.RawMessage(`"hello"`)},
 	}
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
@@ -331,8 +331,8 @@ func TestOrchestratorPanicRecovery(t *testing.T) {
 	if results.Results[1].IsError {
 		t.Errorf("SafeTool got error: %s", results.Results[1].Content)
 	}
-	if results.Results[1].Content != `{"message":"hello"}` {
-		t.Errorf("SafeTool content: got %q, want %q", results.Results[1].Content, `{"message":"hello"}`)
+	if results.Results[1].Content != `"hello"` {
+		t.Errorf("SafeTool content: got %q, want %q", results.Results[1].Content, `"hello"`)
 	}
 }
 
@@ -390,9 +390,9 @@ func TestOrchestratorResultOrder(t *testing.T) {
 	defer bus.Drain()
 
 	calls := []model.ToolCallPart{
-		{ID: "tc-1", Name: "A", Input: json.RawMessage(`{"value":"first"}`)},
-		{ID: "tc-2", Name: "B", Input: json.RawMessage(`{"value":"second"}`)},
-		{ID: "tc-3", Name: "A", Input: json.RawMessage(`{"value":"third"}`)},
+		{ID: "tc-1", Name: "A", Input: json.RawMessage(`"first"`)},
+		{ID: "tc-2", Name: "B", Input: json.RawMessage(`"second"`)},
+		{ID: "tc-3", Name: "A", Input: json.RawMessage(`"third"`)},
 	}
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})
@@ -440,8 +440,8 @@ func TestOrchestratorPreservesOrderAcrossSerialAndConcurrentTools(t *testing.T) 
 	defer bus.Drain()
 
 	calls := []model.ToolCallPart{
-		{ID: "tc-read", Name: "Read", Input: json.RawMessage(`{"action":"reading"}`)},
-		{ID: "tc-write", Name: "Write", Input: json.RawMessage(`{"action":"writing"}`)},
+		{ID: "tc-read", Name: "Read", Input: json.RawMessage(`"reading"`)},
+		{ID: "tc-write", Name: "Write", Input: json.RawMessage(`"writing"`)},
 	}
 
 	results := orch.Execute(context.Background(), calls, staticState{"/tmp"})

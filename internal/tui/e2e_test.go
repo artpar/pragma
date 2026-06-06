@@ -2,7 +2,6 @@ package tui
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,10 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
-	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/tui/render"
 )
@@ -38,22 +35,6 @@ func newTestModel() Model {
 		ModelName:   "test-model",
 		Provider:    "test",
 	}
-	runInput := func(ctx context.Context, input string) <-chan interactive.Event {
-		ch := make(chan interactive.Event, 4)
-		go func() {
-			defer close(ch)
-			if name, args, ok := slash.Parse(input); ok {
-				ch <- interactive.AcceptedPromptEvent{Prompt: input}
-				result, err := slashCmds.Execute(ctx, name, args, slashDeps)
-				if err != nil {
-					ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
-					return
-				}
-				ch <- interactive.SlashResultEvent{Result: result}
-			}
-		}()
-		return ch
-	}
 
 	return New(Config{
 		Store:       store,
@@ -61,7 +42,6 @@ func newTestModel() Model {
 		Metrics:     metrics,
 		ModelName:   "test-model",
 		Provider:    "test",
-		RunInput:    runInput,
 		SlashCmds:   slashCmds,
 		SlashDeps:   slashDeps,
 	})

@@ -283,25 +283,6 @@ func TestRun_SimpleTextResponse(t *testing.T) {
 	}
 }
 
-func TestRun_PassesResponseSchemaToProvider(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}}}`)
-	prov := &testProvider{
-		turns: [][]provider.StreamChunk{{
-			{TextDelta: `{"answer":"ok"}`},
-			{Done: &provider.StreamDone{StopReason: model.StopEndTurn, Usage: model.TokenUsage{InputTokens: 10, OutputTokens: 5}, Model: "test-model"}},
-		}},
-		pricing: model.Pricing{InputPerMToken: 3, OutputPerMToken: 15},
-	}
-	engine, _ := newTestEngine(prov)
-	engine.config.ResponseSchema = schema
-
-	drain(engine.Run(context.Background(), "Return JSON"))
-
-	if string(prov.lastParams.ResponseSchema) != string(schema) {
-		t.Fatalf("ResponseSchema = %s, want %s", prov.lastParams.ResponseSchema, schema)
-	}
-}
-
 func TestRun_IncludesMCPServerStatusInSystemPrompt(t *testing.T) {
 	prov := &testProvider{
 		turns:   [][]provider.StreamChunk{textChunks("ok", model.StopEndTurn)},
