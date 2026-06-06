@@ -3150,6 +3150,10 @@ Do not add nil guards inside `handleCost`, `handleModel`, and `handleAdvisor` th
 
 Severity: medium
 
+Status: fixed in this worktree. `/commit` now injects a prompt instructing the model to inspect repository state through the normal Bash tool runtime, and no longer executes shell commands during slash prompt construction. The unused `ExecShellInPrompt` preprocessor and its `exec.CommandContext` shell path were removed.
+
+Verification: `gofmt -w internal/slash/commit.go`; `go build ./cmd/pragma`; `go vet ./internal/slash ./internal/cli ./internal/tool ./cmd/pragma`; `git diff --check`; ownership scan for `ExecShellInPrompt|execShellCommand|blockPattern|inlinePattern|commitPromptTemplate|handleCommit|AllowedTools` and git substitution strings.
+
 Concrete files/functions involved:
 
 - `internal/slash/commit.go`: `commitPromptTemplate`, `handleCommit`
