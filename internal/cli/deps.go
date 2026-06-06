@@ -312,19 +312,8 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		if err := validateResumeWorkDir(cwd, sess); err != nil {
 			return nil, err
 		}
-		conv = sess.Conversation
-		if conv.WorkDir != "" {
-			runtimeCWD = conv.WorkDir
-		}
-		if sess.SystemOverride != "" {
-			observe.GlobalTrace("if: sess.SystemOverride != \"\"")
-			conv.System = model.SystemPrompt{
-				Blocks: []model.SystemBlock{{Text: sess.SystemOverride, Cacheable: true}},
-			}
-		} else {
-			observe.GlobalTrace("else: sess.SystemOverride != \"\"")
-			conv.System = systemPromptForWorkDir(runtimeCWD)
-		}
+		conv = resumedConversation(sess, cwd)
+		runtimeCWD = conv.WorkDir
 		resumedCost = sess.CostUSD
 		resumedTokens = sess.TokenUsage
 		resumedHandoffState = sess.HandoffState

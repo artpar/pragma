@@ -579,17 +579,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Deps.SessionStarted = false
 	rt.applyResumeProvider(providerBinding)
 	promptHistory := sessionPromptHistory(sess)
-	resumedConv := sess.Conversation
-	if resumedConv.WorkDir == "" {
-		resumedConv.WorkDir = rt.Deps.Cwd
-	}
-	if sess.SystemOverride != "" {
-		resumedConv.System = model.SystemPrompt{
-			Blocks: []model.SystemBlock{{Text: sess.SystemOverride, Cacheable: true}},
-		}
-	} else if rt.Deps.SystemPromptForWorkDir != nil {
-		resumedConv.System = rt.Deps.SystemPromptForWorkDir(resumedConv.WorkDir)
-	}
+	resumedConv := resumedConversation(sess, rt.Deps.Cwd)
 	rt.Deps.Store.Update(func(st *app.AppState) {
 		st.Conversation = resumedConv
 		st.Model = providerBinding.modelID

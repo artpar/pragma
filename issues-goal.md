@@ -3808,6 +3808,10 @@ Do not patch this by only reloading MCP config after `EnterWorktree`. That would
 
 Severity: high
 
+Status: fixed in this worktree. Resume now restores the loaded session conversation through `resumedConversation`, which preserves `sess.Conversation.System` exactly as reconstructed from the session header. `SetupDeps` and interactive `/resume` only fill a missing runtime workdir fallback; they no longer rebuild from current project files/config or reapply `SystemOverride` over the persisted prompt.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/cli ./internal/session ./internal/model ./internal/query ./cmd/pragma`; `git diff --check`; ownership scan for remaining resume-time prompt rebuilds using `sess.Conversation`, `resumedConv.System`, `conv.System = systemPromptForWorkDir`, `SystemPromptForWorkDir(resumed`, `sess.SystemOverride`, and `SystemOverride`.
+
 Concrete files/functions involved:
 
 - `internal/session/entry.go`: `HeaderData.System`
