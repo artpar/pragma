@@ -121,8 +121,13 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", \"\")")
 		return checker.Check(ctx, "Grep", "")
 	}
+	if in.Path == "" {
+		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "if: in.Path == \"\"")
+		observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", \"\")")
+		return checker.Check(ctx, "Grep", "")
+	}
 	observe.TraceCtx(ctx, "grep", "Tool.CheckPerm", "return: checker.Check(ctx, \"Grep\", in.Path)")
-	return checker.Check(ctx, "Grep", in.Path)
+	return permission.CheckPath(ctx, checker, "Grep", in.Path)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {

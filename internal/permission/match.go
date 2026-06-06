@@ -65,13 +65,8 @@ func MatchPathContent(pattern, filePath, workDir string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	cleanPath := filepath.Clean(filePath)
-
-	if strings.HasPrefix(pattern, "/") {
-		observe.GlobalTrace("if: strings.HasPrefix(pattern, \"/\")")
-		pattern = filepath.Join(workDir, pattern)
-	}
-	pattern = filepath.Clean(pattern)
+	cleanPath := normalizePathContent(filePath, workDir)
+	pattern = normalizePathPattern(pattern, workDir)
 
 	matched, err := doublestar.Match(pattern, cleanPath)
 	if err != nil {
@@ -81,6 +76,28 @@ func MatchPathContent(pattern, filePath, workDir string) bool {
 	}
 	observe.GlobalTrace("return: matched")
 	return matched
+}
+
+func normalizePathContent(filePath, workDir string) string {
+	cleanPath := filepath.Clean(filePath)
+	if workDir != "" && !filepath.IsAbs(cleanPath) && !strings.HasPrefix(cleanPath, "~") {
+		cleanPath = filepath.Join(workDir, cleanPath)
+	}
+	return filepath.Clean(cleanPath)
+}
+
+func normalizePathPattern(pattern, workDir string) string {
+	cleanPattern := filepath.Clean(pattern)
+	if workDir == "" || strings.HasPrefix(cleanPattern, "~") {
+		return cleanPattern
+	}
+	if strings.HasPrefix(cleanPattern, string(filepath.Separator)) {
+		return filepath.Join(workDir, cleanPattern)
+	}
+	if !filepath.IsAbs(cleanPattern) {
+		return filepath.Join(workDir, cleanPattern)
+	}
+	return cleanPattern
 }
 
 // MatchDomainContent matches a domain rule against a domain content string.

@@ -68,6 +68,17 @@ type Checker interface {
 	AddPersistentRule(rule Rule) error
 }
 
+type PathChecker interface {
+	CheckPath(ctx context.Context, toolName string, path string) CheckResult
+}
+
+func CheckPath(ctx context.Context, checker Checker, toolName string, path string) CheckResult {
+	if pathChecker, ok := checker.(PathChecker); ok {
+		return pathChecker.CheckPath(ctx, toolName, path)
+	}
+	return checker.Check(ctx, toolName, path)
+}
+
 type WorkDirScopedChecker interface {
 	Checker
 	WithWorkDir(workDir string) Checker

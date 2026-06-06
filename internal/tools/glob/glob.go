@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -97,13 +96,13 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		return checker.Check(ctx, "Glob", "")
 	}
 
-	if in.Path != "" && filepath.IsAbs(in.Path) {
-		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "if: in.Path != \"\" && filepath.IsAbs(in.Path)")
-		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Path)")
-		return checker.Check(ctx, "Glob", in.Path)
+	if in.Path != "" {
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "if: in.Path != \"\"")
+		observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: permission.CheckPath(ctx, checker, \"Glob\", in.Path)")
+		return permission.CheckPath(ctx, checker, "Glob", in.Path)
 	}
-	observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: checker.Check(ctx, \"Glob\", in.Pattern)")
-	return checker.Check(ctx, "Glob", in.Pattern)
+	observe.TraceCtx(ctx, "glob", "Tool.CheckPerm", "return: permission.CheckPath(ctx, checker, \"Glob\", in.Pattern)")
+	return permission.CheckPath(ctx, checker, "Glob", in.Pattern)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {

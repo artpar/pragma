@@ -3652,6 +3652,10 @@ Do not patch individual file tools to send absolute paths from `CheckPerm`; that
 
 Severity: high
 
+Status: fixed in this worktree. Permission checks now support an explicit typed path request through `permission.CheckPath`/`PathChecker`. `RuleChecker.CheckPath` evaluates rule matching, dangerous-path detection, and accept-edits behavior as path semantics regardless of whether the raw input is relative, absolute, or home-relative. File/path tools now emit typed path permission checks at extraction time, and `MatchPathContent` resolves relative actual paths and path rule patterns against the active workdir instead of relying on string syntax.
+
+Verification: `gofmt -w internal/permission/permission.go internal/permission/rulechecker.go internal/permission/match.go internal/tools/fileread/fileread.go internal/tools/fileedit/fileedit.go internal/tools/filewrite/filewrite.go internal/tools/notebookedit/notebookedit.go internal/tools/glob/glob.go internal/tools/grep/grep.go`; `go build ./cmd/pragma`; `go vet ./internal/permission ./internal/tools/fileread ./internal/tools/fileedit ./internal/tools/filewrite ./internal/tools/notebookedit ./internal/tools/glob ./internal/tools/grep ./internal/cli ./cmd/pragma`; `git diff --check`; ownership scan for `CheckPath|checker.Check(ctx, "(Read|Edit|Write|NotebookEdit|Glob|Grep)"|isFilePath|shouldCheckDangerousPath|contentPath|MatchPathContent`.
+
 Concrete files/functions involved:
 
 - `internal/tools/fileread/fileread.go`: `Tool.CheckPerm`

@@ -138,7 +138,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		return checker.Check(ctx, "Edit", "")
 	}
 	observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"Edit\", in.FilePath)")
-	return checker.Check(ctx, "Edit", in.FilePath)
+	return permission.CheckPath(ctx, checker, "Edit", in.FilePath)
 }
 
 func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {

@@ -25,6 +25,13 @@ type scopedRuleChecker struct {
 	workDir string
 }
 
+type contentKind int
+
+const (
+	contentGeneric contentKind = iota
+	contentPath
+)
+
 // NewRuleChecker creates a RuleChecker with the given rules and mode.
 // Rules must be pre-sorted by source priority (policy first).
 func NewRuleChecker(rules []Rule, mode PermissionMode, workDir string, bus *observe.EventBus) *RuleChecker {
@@ -42,7 +49,11 @@ func NewRuleChecker(rules []Rule, mode PermissionMode, workDir string, bus *obse
 // Check evaluates permission for a tool invocation.
 // content is the tool-specific extracted string (command for Bash, path for file tools, domain:X for WebFetch).
 func (rc *RuleChecker) Check(ctx context.Context, toolName string, content string) CheckResult {
-	return rc.check(ctx, toolName, content, rc.workDir)
+	return rc.check(ctx, toolName, content, rc.workDir, contentGeneric)
+}
+
+func (rc *RuleChecker) CheckPath(ctx context.Context, toolName string, path string) CheckResult {
+	return rc.check(ctx, toolName, path, rc.workDir, contentPath)
 }
 
 func (rc *RuleChecker) WithWorkDir(workDir string) Checker {
@@ -53,7 +64,11 @@ func (rc *RuleChecker) WithWorkDir(workDir string) Checker {
 }
 
 func (sc *scopedRuleChecker) Check(ctx context.Context, toolName string, content string) CheckResult {
-	return sc.base.check(ctx, toolName, content, sc.workDir)
+	return sc.base.check(ctx, toolName, content, sc.workDir, contentGeneric)
+}
+
+func (sc *scopedRuleChecker) CheckPath(ctx context.Context, toolName string, path string) CheckResult {
+	return sc.base.check(ctx, toolName, path, sc.workDir, contentPath)
 }
 
 func (sc *scopedRuleChecker) AddSessionRule(rule Rule) {
@@ -64,7 +79,7 @@ func (sc *scopedRuleChecker) AddPersistentRule(rule Rule) error {
 	return sc.base.addPersistentRule(sc.workDir, rule)
 }
 
-func (rc *RuleChecker) check(ctx context.Context, toolName string, content string, workDir string) CheckResult {
+func (rc *RuleChecker) check(ctx context.Context, toolName string, content string, workDir string, kind contentKind) CheckResult {
 	observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "enter")
 	defer observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "exit")
 	rc.mu.RLock()
@@ -89,7 +104,7 @@ func (rc *RuleChecker) check(ctx context.Context, toolName string, content strin
 			}
 		}
 
-		if content != "" && MatchContent(rule.Content, content, workDir) {
+		if content != "" && matchPermissionContent(rule.Content, content, workDir, kind) {
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: content != \"\" && MatchContent(rule.Content, content, rc.workDir)")
 			rc.emitRuleMatched(toolName, rule.Content, string(rule.Source), string(rule.Decision))
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: CheckResult{\n\tDecision:\trule.Decision,\n\tRule:\t\trule,\n\tContent:\tcontent,\n}")
@@ -101,7 +116,7 @@ func (rc *RuleChecker) check(ctx context.Context, toolName string, content strin
 		}
 	}
 
-	if rc.mode != ModeBypassPermissions && content != "" && isFilePath(content) {
+	if rc.mode != ModeBypassPermissions && content != "" && shouldCheckDangerousPath(content, kind) {
 		observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "if: rc.mode != ModeBypassPermissions && content != \"\" && isFilePath(content)")
 		for _, absPath := range resolvePathsForCheck(content, workDir) {
 			observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "range resolvePathsForCheck(content, rc.workDir)")
@@ -245,6 +260,17 @@ func (rc *RuleChecker) acceptEditsDecision(toolName, content string, activeWorkD
 	}
 	observe.GlobalTrace("return: DecisionAllow, true")
 	return DecisionAllow, true
+}
+
+func matchPermissionContent(ruleContent, actualContent, workDir string, kind contentKind) bool {
+	if kind == contentPath {
+		return MatchPathContent(ruleContent, actualContent, workDir)
+	}
+	return MatchContent(ruleContent, actualContent, workDir)
+}
+
+func shouldCheckDangerousPath(content string, kind contentKind) bool {
+	return kind == contentPath || isFilePath(content)
 }
 
 func (rc *RuleChecker) emitRuleMatched(toolName, pattern, source, decision string) {
