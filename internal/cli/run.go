@@ -31,7 +31,6 @@ import (
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
-	"github.com/artpar/pragma/internal/skill"
 	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/sysprompt"
 	"github.com/artpar/pragma/internal/tool"
@@ -580,11 +579,22 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Deps.SessionStarted = false
 	rt.applyResumeProvider(providerBinding)
 	promptHistory := sessionPromptHistory(sess)
+	resumedConv := sess.Conversation
+	if resumedConv.WorkDir == "" {
+		resumedConv.WorkDir = rt.Deps.Cwd
+	}
+	if sess.SystemOverride != "" {
+		resumedConv.System = model.SystemPrompt{
+			Blocks: []model.SystemBlock{{Text: sess.SystemOverride, Cacheable: true}},
+		}
+	} else if rt.Deps.SystemPromptForWorkDir != nil {
+		resumedConv.System = rt.Deps.SystemPromptForWorkDir(resumedConv.WorkDir)
+	}
 	rt.Deps.Store.Update(func(st *app.AppState) {
-		st.Conversation = sess.Conversation
+		st.Conversation = resumedConv
 		st.Model = providerBinding.modelID
 		st.Provider = providerBinding.providerName
-		st.CWD = sess.Conversation.WorkDir
+		st.CWD = resumedConv.WorkDir
 		st.HandoffState = sess.HandoffState
 		st.Todos = sess.Todos
 		st.TeamContext = app.CopyTeamContext(sess.TeamContext)
@@ -817,18 +827,7 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 	engine.SetSessionCheckpoint(sessionSaveFn)
 
 	slashCmds := slash.NewRegistry()
-
-	skillLoader := skill.NewLoader(d.Cwd)
-	if skills, err := skillLoader.LoadAll(); err == nil {
-		observe.GlobalTrace("if: err == nil")
-		for _, s := range skills {
-			observe.GlobalTrace("range skills")
-			slashCmds.Register(slash.Command{
-				Name:        s.Name,
-				Description: s.Description,
-			})
-		}
-	}
+	skillCatalog := runtimeSkillCatalog(d)
 
 	sessStore, _ := session.NewStore()
 	promptHistory := d.Store.Snapshot().PromptHistory
@@ -863,7 +862,7 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 		},
 		McpStatus:    func() []slash.McpServerStatus { return mcpStatusesForSlash(d.McpManager) },
 		SessionStore: sessStore,
-		SkillLoader:  skillLoader,
+		SkillCatalog: skillCatalog,
 	}
 
 	rt := &InteractiveRuntime{

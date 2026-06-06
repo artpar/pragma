@@ -13,7 +13,8 @@ func handleSkills(_ context.Context, args string, deps Deps) (Result, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 
-	if deps.SkillLoader == nil {
+	catalog := deps.skillCatalog()
+	if catalog == nil {
 		observe.GlobalTrace("if: deps.SkillLoader == nil")
 		observe.GlobalTrace("return: Result{DisplayText: \"Skills loader not available.\"}, nil")
 		return Result{DisplayText: "Skills loader not available."}, nil
@@ -23,7 +24,7 @@ func handleSkills(_ context.Context, args string, deps Deps) (Result, error) {
 
 	if args != "" {
 		observe.GlobalTrace("if: args != \"\"")
-		s, err := deps.SkillLoader.Load(args)
+		s, err := catalog.Load(args)
 		if err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Skill not found: %s\", args)}, nil")
@@ -86,7 +87,7 @@ func handleSkills(_ context.Context, args string, deps Deps) (Result, error) {
 		return Result{DisplayText: b.String()}, nil
 	}
 
-	skills, err := deps.SkillLoader.LoadAll()
+	skills, err := catalog.LoadAll()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Error loading skills: %s\", err)}, nil")

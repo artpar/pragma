@@ -668,8 +668,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyTab:
 		observe.GlobalTrace("case: tea.KeyTab — slash completion")
-		if m.slashCmds != nil && m.input.CompleteSlash(m.slashCmds.Commands(), m.workspace) {
-			m.input.RefreshSlashCompletions(m.slashCmds.Commands(), m.workspace)
+		if m.slashCmds != nil && m.input.CompleteSlash(m.slashCommands(), m.completionWorkspace()) {
+			m.input.RefreshSlashCompletions(m.slashCommands(), m.completionWorkspace())
 			m.syncViewportHeight()
 			return m, nil
 		}
@@ -706,11 +706,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	cmd := m.input.Update(msg)
 	if m.slashCmds != nil {
-		m.input.RefreshSlashCompletions(m.slashCmds.Commands(), m.workspace)
+		m.input.RefreshSlashCompletions(m.slashCommands(), m.completionWorkspace())
 	}
 	m.syncViewportHeight()
 	observe.GlobalTrace("return: m, cmd")
 	return m, cmd
+}
+
+func (m Model) slashCommands() []slash.Command {
+	if m.slashCmds == nil {
+		return nil
+	}
+	return m.slashCmds.CommandsWithDeps(m.slashDeps)
+}
+
+func (m Model) completionWorkspace() string {
+	if m.slashDeps.Store != nil {
+		if cwd := m.slashDeps.Store.Snapshot().CWD; cwd != "" {
+			return cwd
+		}
+	}
+	return m.workspace
 }
 
 // handleInputSubmitted processes user message submission.

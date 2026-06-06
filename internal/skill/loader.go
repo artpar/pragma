@@ -19,12 +19,61 @@ type Loader struct {
 	workDir string
 }
 
+// Catalog is the callable skill surface for a current project context.
+type Catalog interface {
+	LoadAll() ([]Skill, error)
+	Load(name string) (Skill, error)
+}
+
+// WorkDirFunc returns the runtime workdir whose project skills are active.
+type WorkDirFunc func() string
+
+// RuntimeCatalog resolves project skills against the current runtime workdir.
+type RuntimeCatalog struct {
+	fallbackWorkDir string
+	currentWorkDir  WorkDirFunc
+}
+
 // NewLoader creates a Loader for the given working directory.
 func NewLoader(workDir string) *Loader {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Loader{workDir: workDir}")
 	return &Loader{workDir: workDir}
+}
+
+// NewRuntimeCatalog creates a catalog that re-resolves its loader per call.
+func NewRuntimeCatalog(fallbackWorkDir string, currentWorkDir WorkDirFunc) *RuntimeCatalog {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	return &RuntimeCatalog{
+		fallbackWorkDir: fallbackWorkDir,
+		currentWorkDir:  currentWorkDir,
+	}
+}
+
+func (c *RuntimeCatalog) LoadAll() ([]Skill, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	return NewLoader(c.workDir()).LoadAll()
+}
+
+func (c *RuntimeCatalog) Load(name string) (Skill, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	return NewLoader(c.workDir()).Load(name)
+}
+
+func (c *RuntimeCatalog) workDir() string {
+	if c != nil && c.currentWorkDir != nil {
+		if workDir := strings.TrimSpace(c.currentWorkDir()); workDir != "" {
+			return workDir
+		}
+	}
+	if c != nil {
+		return c.fallbackWorkDir
+	}
+	return ""
 }
 
 // LoadAll discovers skills from all scopes and returns them.

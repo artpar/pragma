@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
@@ -46,7 +47,8 @@ type exitResult struct {
 
 // ExitTool cleans up a git worktree, preserving it if there are changes.
 type ExitTool struct {
-	Store *app.StateStore
+	Store                  *app.StateStore
+	SystemPromptForWorkDir func(string) model.SystemPrompt
 }
 
 func (t *ExitTool) Name() string {
@@ -262,8 +264,20 @@ func (t *ExitTool) restoreSessionCWD(originalWorkDir string) {
 	if t.Store == nil || originalWorkDir == "" {
 		return
 	}
+	system := t.systemPromptForWorkDir(originalWorkDir)
 	t.Store.Update(func(s *app.AppState) {
 		s.CWD = originalWorkDir
+		s.Conversation.WorkDir = originalWorkDir
+		if len(system.Blocks) > 0 {
+			s.Conversation.System = system
+		}
 		s.Worktree = nil
 	})
+}
+
+func (t *ExitTool) systemPromptForWorkDir(workDir string) model.SystemPrompt {
+	if t.SystemPromptForWorkDir == nil {
+		return model.SystemPrompt{}
+	}
+	return t.SystemPromptForWorkDir(workDir)
 }

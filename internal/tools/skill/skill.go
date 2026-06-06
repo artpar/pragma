@@ -38,7 +38,7 @@ var inputSchema = json.RawMessage(`{
 // Tool implements the Skill tool for executing user-defined skills.
 type Tool struct {
 	Agent  *toolagent.Tool
-	Loader *skillpkg.Loader
+	Loader skillpkg.Catalog
 }
 
 func (t *Tool) Name() string {
@@ -119,6 +119,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "return: tool.InvokeResult{Content: \"Skill name is required.\"}, nil")
 		return tool.InvokeResult{Content: "Skill name is required."}, nil
 	}
+	if t.Loader == nil {
+		return tool.InvokeResult{Content: "Skills loader is unavailable."}, nil
+	}
 
 	s, err := t.Loader.Load(name)
 	if err != nil {
@@ -191,6 +194,9 @@ func skillAgentResultText(content string) string {
 func (t *Tool) availableSkillNames() []string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if t.Loader == nil {
+		return nil
+	}
 	skills, err := t.Loader.LoadAll()
 	if err != nil || len(skills) == 0 {
 		observe.GlobalTrace("if: err != nil || len(skills) == 0")

@@ -3576,6 +3576,10 @@ Do not patch this by special-casing worktree paths inside the Config tool or by 
 
 Severity: medium
 
+Status: fixed in this worktree. Skill discovery now has a `skill.Catalog` boundary, with `RuntimeCatalog` resolving project skills from the current runtime workdir instead of setup `cwd`. Interactive slash execution, `/skills`, TUI/web slash completion, and the model-facing `Skill` tool all consume that runtime catalog. Runtime CWD transitions through worktree enter/exit and live resume also update `Conversation.WorkDir` and rebuild the stored system prompt for the active workdir, preserving explicit system-prompt overrides.
+
+Verification: `gofmt -w internal/skill/loader.go internal/sysprompt/builder.go internal/slash/command.go internal/slash/skills_cmd.go internal/tools/skill/skill.go internal/cli/deps.go internal/cli/tools.go internal/tools/worktree/enter.go internal/tools/worktree/exit.go internal/cli/run.go internal/cli/subcommands.go internal/tui/handlers.go internal/web/web.go`; `go build ./cmd/pragma`; `go vet ./internal/skill ./internal/sysprompt ./internal/slash ./internal/tools/skill ./internal/tools/worktree ./internal/cli ./internal/web ./cmd/pragma`; `git diff --check`; ownership scans for frozen `skill.NewLoader(d.Cwd)`/`skill.NewLoader(cwd)` paths and for `RuntimeCatalog|runtimeSkillCatalog|CommandsWithDeps|SystemPromptForWorkDir|Conversation.WorkDir`.
+
 Concrete files/functions involved:
 
 - `internal/sysprompt/builder.go`: `Builder.Build`, `buildSkillBlock`

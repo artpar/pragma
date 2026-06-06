@@ -71,6 +71,7 @@ type Deps struct {
 	// Session + skill support — nil-safe.
 	SessionStore *session.Store
 	SkillLoader  *skill.Loader
+	SkillCatalog skill.Catalog
 
 	// Presentation-local support — nil-safe.
 	LatestAssistantText func() string
@@ -147,11 +148,20 @@ func (r *Registry) Execute(ctx context.Context, name, args string, deps Deps) (R
 	defer observe.TraceCtx(ctx, "slash", "Registry.Execute", "exit")
 	cmd, ok := r.commands[strings.ToLower(name)]
 	if !ok {
+		if result, found := skillCommandResult(name, args, deps); found {
+			return result, nil
+		}
 		observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: !ok")
 		observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: Result{}, fmt.Errorf(\"%w: /%s\", ErrUnknownCommand, name)")
 		return Result{}, fmt.Errorf("%w: /%s", ErrUnknownCommand, name)
 	}
-	deps.Commands = r.Commands()
+	if cmd.Handle == nil {
+		if result, found := skillCommandResult(name, args, deps); found {
+			return result, nil
+		}
+		return Result{}, fmt.Errorf("%w: /%s", ErrUnknownCommand, name)
+	}
+	deps.Commands = r.CommandsWithDeps(deps)
 	start := time.Now()
 	result, err := cmd.Handle(ctx, args, deps)
 	if deps.Bus != nil {
@@ -179,6 +189,75 @@ func (r *Registry) Commands() []Command {
 	})
 	observe.GlobalTrace("return: sorted")
 	return sorted
+}
+
+func (r *Registry) CommandsWithDeps(deps Deps) []Command {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	commands := r.Commands()
+	catalog := deps.skillCatalog()
+	if catalog == nil {
+		return commands
+	}
+	skills, err := catalog.LoadAll()
+	if err != nil || len(skills) == 0 {
+		return commands
+	}
+	seen := make(map[string]bool, len(commands)+len(skills))
+	for _, cmd := range commands {
+		seen[strings.ToLower(cmd.Name)] = true
+		for _, alias := range cmd.Aliases {
+			seen[strings.ToLower(alias)] = true
+		}
+	}
+	for _, s := range skills {
+		name := strings.ToLower(strings.TrimSpace(s.Name))
+		if name == "" || seen[name] {
+			continue
+		}
+		commands = append(commands, Command{
+			Name:        s.Name,
+			Description: s.Description,
+			Type:        TypePrompt,
+		})
+		seen[name] = true
+	}
+	sort.Slice(commands, func(i, j int) bool {
+		return commands[i].Name < commands[j].Name
+	})
+	return commands
+}
+
+func (d Deps) skillCatalog() skill.Catalog {
+	if d.SkillCatalog != nil {
+		return d.SkillCatalog
+	}
+	if d.SkillLoader != nil {
+		return d.SkillLoader
+	}
+	return nil
+}
+
+func skillCommandResult(name, args string, deps Deps) (Result, bool) {
+	catalog := deps.skillCatalog()
+	if catalog == nil {
+		return Result{}, false
+	}
+	skillName := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
+	if skillName == "" {
+		return Result{}, false
+	}
+	s, err := catalog.Load(skillName)
+	if err != nil {
+		return Result{}, false
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Invoke the %q skill", s.Name)
+	if strings.TrimSpace(args) != "" {
+		fmt.Fprintf(&b, " with arguments: %s", strings.TrimSpace(args))
+	}
+	b.WriteString(".")
+	return Result{InjectPrompt: b.String()}, true
 }
 
 // Parse checks if input is a slash command.

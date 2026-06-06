@@ -38,38 +38,39 @@ import (
 
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
-	Cfg            config.Config
-	Creds          config.Credentials
-	Bus            *observe.EventBus
-	StderrLogger   *observe.Logger
-	Prov           provider.Provider
-	Checker        permission.Checker
-	Store          *app.StateStore
-	Registry       *tool.Registry
-	Engine         *query.Engine
-	CostTracker    *model.CostTracker
-	EngineCfg      query.EngineConfig
-	TaskReg        *task.Registry
-	TaskContext    context.Context
-	Toolset        *toolset.Compiled
-	ToolPolicy     ToolExposurePolicy
-	McpManager     *mcp.Manager
-	CronSched      *cron.Scheduler
-	HookMgr        *hook.Manager
-	Metrics        *observe.Metrics
-	Auditor        *observe.Auditor
-	TokenMonitor   *observe.TokenMonitor
-	LogFilePath    string
-	RecordingPath  string
-	Cwd            string
-	SessionStart   time.Time
-	SessionHeader  session.HeaderData
-	SessionWriter  *session.Writer
-	SessionLastIdx int
-	SessionStarted bool
-	ModelSwitcher  func(string) error
-	Cleanup        func()
-	recorder       *observe.Recorder
+	Cfg                    config.Config
+	Creds                  config.Credentials
+	Bus                    *observe.EventBus
+	StderrLogger           *observe.Logger
+	Prov                   provider.Provider
+	Checker                permission.Checker
+	Store                  *app.StateStore
+	Registry               *tool.Registry
+	Engine                 *query.Engine
+	CostTracker            *model.CostTracker
+	EngineCfg              query.EngineConfig
+	TaskReg                *task.Registry
+	TaskContext            context.Context
+	Toolset                *toolset.Compiled
+	ToolPolicy             ToolExposurePolicy
+	McpManager             *mcp.Manager
+	CronSched              *cron.Scheduler
+	HookMgr                *hook.Manager
+	Metrics                *observe.Metrics
+	Auditor                *observe.Auditor
+	TokenMonitor           *observe.TokenMonitor
+	LogFilePath            string
+	RecordingPath          string
+	Cwd                    string
+	SessionStart           time.Time
+	SessionHeader          session.HeaderData
+	SessionWriter          *session.Writer
+	SessionLastIdx         int
+	SessionStarted         bool
+	ModelSwitcher          func(string) error
+	SystemPromptForWorkDir func(string) model.SystemPrompt
+	Cleanup                func()
+	recorder               *observe.Recorder
 }
 
 type SetupDepsOptions struct {
@@ -242,26 +243,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 
 	hookMgr := hook.NewManager(cwd, "", bus)
 
-	// System prompt
-	var sysPrompt model.SystemPrompt
-	if cfg.SystemPrompt != "" {
-		observe.GlobalTrace("if: cfg.SystemPrompt != \"\"")
-		sysPrompt = model.SystemPrompt{
-			Blocks: []model.SystemBlock{{Text: cfg.SystemPrompt, Cacheable: true}},
-		}
-	} else {
-		observe.GlobalTrace("else: cfg.SystemPrompt != \"\"")
-		builder := sysprompt.New(cwd, cfg.Model, bus)
-		sysPrompt = builder.Build()
-	}
-
-	appendPrompt, _ := cmd.Flags().GetString("append-system-prompt")
-	if appendPrompt != "" {
-		observe.GlobalTrace("if: appendPrompt != \"\"")
-		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
-	}
-	sysPrompt = applySystemPromptToolFilters(cmd, sysPrompt)
-
 	// Conversation (new or resumed)
 	var conv model.Conversation
 	var resumedCost float64
@@ -280,6 +261,9 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	var sessionHeader session.HeaderData
 	var sessionLastIdx int
 	runtimeCWD := cwd
+	systemPromptForWorkDir := func(workDir string) model.SystemPrompt {
+		return buildRuntimeSystemPrompt(cmd, cfg, bus, workDir)
+	}
 	resumeID, _ := cmd.Flags().GetString("resume")
 
 	continueFlag, _ := cmd.Flags().GetBool("continue")
@@ -345,7 +329,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 			}
 		} else {
 			observe.GlobalTrace("else: sess.SystemOverride != \"\"")
-			conv.System = sysPrompt
+			conv.System = systemPromptForWorkDir(runtimeCWD)
 		}
 		resumedCost = sess.CostUSD
 		resumedTokens = sess.TokenUsage
@@ -368,6 +352,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		sessionLastIdx = len(conv.Messages)
 	} else {
 		observe.GlobalTrace("else: resumeID != \"\"")
+		sysPrompt := systemPromptForWorkDir(cwd)
 		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)
 		sessionStart = conv.CreatedAt
 		sessionHeader = session.HeaderData{
@@ -508,36 +493,37 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tCreds:\t\tcreds,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t...")
 
 	deps = &Deps{
-		Cfg:            cfg,
-		Creds:          creds,
-		Bus:            bus,
-		StderrLogger:   logger,
-		Prov:           prov,
-		Checker:        checker,
-		Store:          store,
-		Registry:       registry,
-		Engine:         nil,
-		CostTracker:    costTracker,
-		EngineCfg:      engineCfg,
-		TaskReg:        taskReg,
-		TaskContext:    taskCtx,
-		Toolset:        activeToolset,
-		ToolPolicy:     toolPolicy,
-		McpManager:     mcpManager,
-		CronSched:      cronSched,
-		HookMgr:        hookMgr,
-		Metrics:        metrics,
-		Auditor:        auditor,
-		TokenMonitor:   tokenMon,
-		LogFilePath:    logFilePath,
-		RecordingPath:  "",
-		Cwd:            cwd,
-		SessionStart:   sessionStart,
-		SessionHeader:  sessionHeader,
-		SessionWriter:  sessionWriter,
-		SessionLastIdx: sessionLastIdx,
-		SessionStarted: false,
-		Cleanup:        compositeCleanup,
+		Cfg:                    cfg,
+		Creds:                  creds,
+		Bus:                    bus,
+		StderrLogger:           logger,
+		Prov:                   prov,
+		Checker:                checker,
+		Store:                  store,
+		Registry:               registry,
+		Engine:                 nil,
+		CostTracker:            costTracker,
+		EngineCfg:              engineCfg,
+		TaskReg:                taskReg,
+		TaskContext:            taskCtx,
+		Toolset:                activeToolset,
+		ToolPolicy:             toolPolicy,
+		McpManager:             mcpManager,
+		CronSched:              cronSched,
+		HookMgr:                hookMgr,
+		Metrics:                metrics,
+		Auditor:                auditor,
+		TokenMonitor:           tokenMon,
+		LogFilePath:            logFilePath,
+		RecordingPath:          "",
+		Cwd:                    cwd,
+		SessionStart:           sessionStart,
+		SessionHeader:          sessionHeader,
+		SessionWriter:          sessionWriter,
+		SessionLastIdx:         sessionLastIdx,
+		SessionStarted:         false,
+		Cleanup:                compositeCleanup,
+		SystemPromptForWorkDir: systemPromptForWorkDir,
 	}
 	return deps, nil
 }
@@ -553,6 +539,24 @@ func contentReplacementRecorder(deps func() *Deps) func([]model.ContentReplaceme
 		}
 		return d.SessionWriter.WriteContentReplacement(records)
 	}
+}
+
+func buildRuntimeSystemPrompt(cmd *cobra.Command, cfg config.Config, bus *observe.EventBus, workDir string) model.SystemPrompt {
+	var sysPrompt model.SystemPrompt
+	if cfg.SystemPrompt != "" {
+		sysPrompt = model.SystemPrompt{
+			Blocks: []model.SystemBlock{{Text: cfg.SystemPrompt, Cacheable: true}},
+		}
+	} else {
+		builder := sysprompt.New(workDir, cfg.Model, bus)
+		sysPrompt = builder.Build()
+	}
+
+	appendPrompt, _ := cmd.Flags().GetString("append-system-prompt")
+	if appendPrompt != "" {
+		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
+	}
+	return applySystemPromptToolFilters(cmd, sysPrompt)
 }
 
 func applySystemPromptToolFilters(cmd *cobra.Command, prompt model.SystemPrompt) model.SystemPrompt {

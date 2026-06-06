@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/tool"
@@ -40,7 +41,8 @@ type enterResult struct {
 
 // EnterTool creates a git worktree for isolated work.
 type EnterTool struct {
-	Store *app.StateStore
+	Store                  *app.StateStore
+	SystemPromptForWorkDir func(string) model.SystemPrompt
 }
 
 func (t *EnterTool) Name() string {
@@ -177,8 +179,13 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 		OriginalWorkDir: originalWorkDir,
 	}
 	if t.Store != nil {
+		system := t.systemPromptForWorkDir(dir)
 		t.Store.Update(func(s *app.AppState) {
 			s.CWD = dir
+			s.Conversation.WorkDir = dir
+			if len(system.Blocks) > 0 {
+				s.Conversation.System = system
+			}
 			s.Worktree = &app.WorktreeSession{
 				OriginalCWD:  originalWorkDir,
 				WorktreePath: dir,
@@ -195,4 +202,11 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 	}
 	observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 	return tool.InvokeResult{Content: string(data)}, nil
+}
+
+func (t *EnterTool) systemPromptForWorkDir(workDir string) model.SystemPrompt {
+	if t.SystemPromptForWorkDir == nil {
+		return model.SystemPrompt{}
+	}
+	return t.SystemPromptForWorkDir(workDir)
 }

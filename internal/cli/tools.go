@@ -161,10 +161,10 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 		}
 	}
 
-	skillLoader := skill.NewLoader(d.Cwd)
+	skillCatalog := runtimeSkillCatalog(d)
 	skillTool := &toolskill.Tool{
 		Agent:  agentTool,
-		Loader: skillLoader,
+		Loader: skillCatalog,
 	}
 	if shouldRegisterBuiltinTool(d, skillTool.Name()) {
 		observe.GlobalTrace("if: shouldRegisterBuiltinTool(d, skillTool.Name())")
@@ -384,8 +384,8 @@ func baseTools(d *Deps, store *app.StateStore, searchRegistry *tool.Registry) []
 			},
 		},
 		&toolresultread.Tool{},
-		&toolworktree.EnterTool{Store: store},
-		&toolworktree.ExitTool{Store: store},
+		&toolworktree.EnterTool{Store: store, SystemPromptForWorkDir: runtimeSystemPromptForDeps(d)},
+		&toolworktree.ExitTool{Store: store, SystemPromptForWorkDir: runtimeSystemPromptForDeps(d)},
 		&toolcron.CreateTool{Scheduler: d.CronSched},
 		&toolcron.DeleteTool{Scheduler: d.CronSched},
 		&toolcron.ListTool{Scheduler: d.CronSched},
@@ -540,4 +540,34 @@ func activeModelForDeps(d *Deps) string {
 		return d.EngineCfg.Model
 	}
 	return d.Cfg.Model
+}
+
+func runtimeSkillCatalog(d *Deps) skill.Catalog {
+	fallback := ""
+	if d != nil {
+		fallback = d.Cwd
+	}
+	return skill.NewRuntimeCatalog(fallback, func() string {
+		if d != nil && d.Store != nil {
+			if cwd := d.Store.Snapshot().CWD; cwd != "" {
+				return cwd
+			}
+		}
+		return fallback
+	})
+}
+
+func runtimeSystemPromptForDeps(d *Deps) func(string) model.SystemPrompt {
+	return func(workDir string) model.SystemPrompt {
+		if d == nil {
+			return model.SystemPrompt{}
+		}
+		if workDir == "" {
+			workDir = d.Cwd
+		}
+		if d.SystemPromptForWorkDir != nil {
+			return d.SystemPromptForWorkDir(workDir)
+		}
+		return model.SystemPrompt{}
+	}
 }

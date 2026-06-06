@@ -772,9 +772,15 @@ func (s *server) completionItems(value string) []completionItem {
 	if s.cfg.SlashCmds == nil {
 		commands = nil
 	} else {
-		commands = s.cfg.SlashCmds.Commands()
+		commands = s.cfg.SlashCmds.CommandsWithDeps(s.cfg.SlashDeps)
 	}
-	items := slash.CompletionItems(value, commands, s.cfg.Workspace)
+	workspace := s.cfg.Workspace
+	if s.cfg.Store != nil {
+		if cwd := s.cfg.Store.Snapshot().CWD; cwd != "" {
+			workspace = cwd
+		}
+	}
+	items := slash.CompletionItems(value, commands, workspace)
 	out := make([]completionItem, 0, len(items))
 	for _, item := range items {
 		out = append(out, completionItem{

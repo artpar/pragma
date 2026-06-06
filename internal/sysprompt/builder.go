@@ -11,9 +11,10 @@ import (
 
 // Builder composes a system prompt from static blocks, AGENT.md files, and environment.
 type Builder struct {
-	workDir string
-	model   string
-	bus     *observe.EventBus
+	workDir      string
+	model        string
+	bus          *observe.EventBus
+	skillCatalog skill.Catalog
 }
 
 // New creates a Builder. workDir is the project root. bus may be nil.
@@ -26,6 +27,14 @@ func New(workDir, modelID string, bus *observe.EventBus) *Builder {
 		model:   modelID,
 		bus:     bus,
 	}
+}
+
+// WithSkillCatalog sets the catalog used for the skill system-prompt block.
+func (b *Builder) WithSkillCatalog(catalog skill.Catalog) *Builder {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	b.skillCatalog = catalog
+	return b
 }
 
 // Build composes the full system prompt.
@@ -73,8 +82,11 @@ func (b *Builder) Build() model.SystemPrompt {
 func (b *Builder) buildSkillBlock() (model.SystemBlock, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	loader := skill.NewLoader(b.workDir)
-	skills, err := loader.LoadAll()
+	catalog := b.skillCatalog
+	if catalog == nil {
+		catalog = skill.NewLoader(b.workDir)
+	}
+	skills, err := catalog.LoadAll()
 	if err != nil || len(skills) == 0 {
 		observe.GlobalTrace("if: err != nil || len(skills) == 0")
 		observe.GlobalTrace("return: model.SystemBlock{}, false")

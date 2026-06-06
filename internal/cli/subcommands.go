@@ -73,7 +73,7 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 		},
 		PreparePrompt: func(ctx context.Context, d *Deps) (nonInteractivePromptPlan, error) {
 			sessStore, _ := session.NewStore()
-			skillLoader := skill.NewLoader(d.Cwd)
+			skillCatalog := runtimeSkillCatalog(d)
 			slashDeps := slash.Deps{
 				Store:        d.Store,
 				CostTracker:  d.CostTracker,
@@ -82,7 +82,7 @@ func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) e
 				Provider:     d.Cfg.Provider,
 				Cwd:          d.Cwd,
 				SessionStore: sessStore,
-				SkillLoader:  skillLoader,
+				SkillCatalog: skillCatalog,
 			}
 			result, err := slashCmd.Handle(ctx, args, slashDeps)
 			if err != nil {
@@ -147,7 +147,9 @@ func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
 	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
 
 	ss, _ := session.NewStore()
-	sl := skill.NewLoader(cwd)
+	sl := skill.NewRuntimeCatalog(cwd, func() string {
+		return cwd
+	})
 	conv := model.NewConversation(model.SystemPrompt{}, cfg.Model, cfg.Provider, cwd)
 	store := app.NewStateStore(app.AppState{
 		Conversation: conv,
@@ -165,7 +167,7 @@ func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
 		Provider:     cfg.Provider,
 		Cwd:          cwd,
 		SessionStore: ss,
-		SkillLoader:  sl,
+		SkillCatalog: sl,
 		McpStatus:    localMcpStatuses(cwd),
 	}, nil
 }
