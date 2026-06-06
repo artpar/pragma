@@ -1298,6 +1298,24 @@ What not to do:
 
 Do not add stricter prompt wording, more substring rules, or a web-side warning for missing handoff files. Those preserve prompt/filesystem side effects as the FSM control interface.
 
+Status:
+
+Resolved in current worktree. Orchestration FSM event selection no longer reads model-authored files or parses `Decision:` prose. Persona states now select events only through explicit `event.default` or runtime control states; `from_file` selection fails fast with an ownership-boundary error. Handoff propagation no longer depends on prompt-directed handoff files: the runtime captures the completed persona output from `RunStateEvents` and passes that text as the next phase handoff payload.
+
+Source evidence:
+
+- `internal/orchestration/runner.go`: `runEvents` now receives `(event, nextHandoff)` from `RunNodeEvents` and emits a runtime handoff event without reading a handoff file path.
+- `internal/orchestration/runner.go`: `RunNodeEvents` now returns the selected event and runtime-captured handoff text; control states return only their control event.
+- `internal/orchestration/runner.go`: `SelectStateEvent` now rejects `state.Event.FromFile` with `file-based orchestration event selection is unsupported...` instead of reading files and parsing text.
+- `internal/orchestration/runner.go`: the `Decision:` parser helpers, `selectedHandoffPrompt`, `handoffPromptPath`, and prompt-rendered handoff-file instructions were removed.
+- `internal/orchestration/runner.go`: `EnsureRunDirs` no longer resets or creates `handoff-prompts`; it only prepares runtime artifact/process directories.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/orchestration/runner.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/orchestration ./cmd/pragma`.
+- Ownership scan: `rg -n "selectedHandoffPrompt|handoffPromptPath|RenderNextHandoff|handoff-prompts|selectDecisionEvent|lastDecisionValue|Decision:|from_file|RunNodeEvents\\(" internal/orchestration cmd/pragma/orchestration.go -g'*.go'` showed no handoff-file reader, no prompt-rendered handoff target, and no `Decision:` parser remains; only the schema `from_file` field remains, with runtime rejection.
+
 ## 28. MCP Resource Reads Persist Binary Blobs In Workspace Cache Outside Session Artifacts
 
 Severity: medium
