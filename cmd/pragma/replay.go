@@ -11,10 +11,7 @@ import (
 	"github.com/artpar/pragma/internal/cli"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
-	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
-	replayprov "github.com/artpar/pragma/internal/provider/replay"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 func replayCmd() *cobra.Command {
@@ -25,14 +22,14 @@ func replayCmd() *cobra.Command {
 
 Modes:
   --events          Display event stream (read-only, no execution)
-  --deterministic   Replay with recorded API responses
+  --deterministic   Render recorded API responses (read-only, no tool execution)
   --until-turn=N    Replay N turns, then switch to live provider (requires --then-live)
   --then-live       Switch to real provider after --until-turn`,
 		Args: cobra.ExactArgs(1),
 		RunE: replayRun,
 	}
 	cmd.Flags().Bool("events", false, "display event stream (read-only)")
-	cmd.Flags().Bool("deterministic", false, "replay with recorded API responses")
+	cmd.Flags().Bool("deterministic", false, "render recorded API responses without executing tools")
 	cmd.Flags().Int("until-turn", 0, "replay up to N turns")
 	cmd.Flags().Bool("then-live", false, "switch to live provider after --until-turn")
 	cmd.AddCommand(replayExportCmd())
@@ -148,8 +145,12 @@ func formatEventDetail(ev observe.Event) string {
 	}
 }
 
-// replayDeterministic runs the engine with recorded API responses.
+// replayDeterministic renders recorded responses without running the live engine.
 func replayDeterministic(cmd *cobra.Command, engine *observe.ReplayEngine, untilTurn int, thenLive bool) error {
+	if !thenLive {
+		return replayRecordedResponses(engine, untilTurn)
+	}
+
 	d, err := cli.SetupDeps(cmd)
 	if err != nil {
 		return err
@@ -162,29 +163,31 @@ func replayDeterministic(cmd *cobra.Command, engine *observe.ReplayEngine, until
 		return replayLiveFromCheckpoint(cmd, d, engine, untilTurn+1)
 	}
 
-	// Build replay provider from recorded API responses.
-	var rp *replayprov.Provider
-	rp = replayprov.New(engine, nil, 0)
+	return replayRecordedResponses(engine, untilTurn)
+}
 
-	// Swap provider to replay — all downstream consumers use this
-	d.Prov = rp
-
-	// Build engine using standard tool registration path
-	prompter := &permission.NonInteractivePrompter{}
-	asker := &tool.NonInteractiveAsker{}
-	queryEngine, err := cli.RegisterTools(d, prompter, asker)
-	if err != nil {
-		return fmt.Errorf("register tools for replay: %w", err)
+func replayRecordedResponses(engine *observe.ReplayEngine, untilTurn int) error {
+	printed := 0
+	for turn := 1; ; turn++ {
+		if untilTurn > 0 && turn > untilTurn {
+			break
+		}
+		resp, ok := engine.APIResponse(turn)
+		if !ok {
+			break
+		}
+		printed++
+		if untilTurn != 1 {
+			fmt.Fprintf(os.Stderr, "\n[replay turn %d]\n", turn)
+		}
+		if err := printReplayResponse(resp); err != nil {
+			return err
+		}
 	}
-
-	firstPrompt := extractFirstUserPrompt(engine)
-	if firstPrompt == "" {
-		return fmt.Errorf("no user message found in recorded events")
+	if printed == 0 {
+		return fmt.Errorf("recording has no recorded API responses")
 	}
-
-	verbose, _ := cmd.Flags().GetBool("verbose")
-	events := queryEngine.Run(cmd.Context(), firstPrompt)
-	return cli.ConsumeEngineEvents(events, verbose)
+	return nil
 }
 
 func replayLiveFromCheckpoint(cmd *cobra.Command, d *cli.Deps, engine *observe.ReplayEngine, turn int) error {
@@ -252,16 +255,4 @@ func printReplayResponse(resp model.Response) error {
 		fmt.Println()
 	}
 	return nil
-}
-
-// extractFirstUserPrompt scans recorded events for the first user message.
-func extractFirstUserPrompt(engine *observe.ReplayEngine) string {
-	for _, ev := range engine.Events() {
-		if ma, ok := ev.(observe.MessageAppended); ok && ma.Role == "user" {
-			// The actual text isn't in the event — return a generic prompt
-			// that will be paired with the recorded API response
-			return "Replay: continue from recorded session"
-		}
-	}
-	return ""
 }

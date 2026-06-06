@@ -1047,6 +1047,23 @@ What not to do:
 
 Do not add another provider-side fallback or keep relying on the generic prompt from `extractFirstUserPrompt`. Provider replay alone cannot make tool execution deterministic.
 
+Status:
+
+Resolved in current worktree for pure deterministic replay. Deterministic replay is now read-only: it renders recorded API responses from `observe.ReplayEngine` instead of constructing the live runtime, registering tools, running the query engine, or replaying from a synthetic prompt. The explicit `--then-live` handoff remains the only path that creates runtime dependencies and live provider calls.
+
+Source evidence:
+
+- `cmd/pragma/replay.go`: `replayDeterministic` returns `replayRecordedResponses` immediately when `--then-live` is not set, so pure deterministic replay never calls `cli.SetupDeps`, `RegisterTools`, or `Engine.Run`.
+- `cmd/pragma/replay.go`: removed replay-provider construction, non-interactive prompter/asker setup, live tool registration, and `queryEngine.Run` from deterministic replay.
+- `cmd/pragma/replay.go`: removed `extractFirstUserPrompt` and the `"Replay: continue from recorded session"` fallback prompt.
+- `cmd/pragma/replay.go`: deterministic replay help text now says it renders recorded API responses read-only and executes no tools.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w cmd/pragma/replay.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./cmd/pragma ./internal/observe ./internal/provider/replay`; `git diff --check`.
+- Contract scan: `rg -n "extractFirstUserPrompt|Replay: continue|replayprov|NonInteractivePrompter|NonInteractiveAsker|RegisterTools|queryEngine\\.Run|runPragmaLoopBash|shellrun\\.Execute" cmd/pragma/replay.go internal/query/miniswe_loop.go` showed no deterministic replay runtime/tool-registration path; `runPragmaLoopBash` remains only in the normal query path.
+
 ## 23. Lifecycle Conditional Routing Treats Unknown Route Keys As END
 
 Severity: high
