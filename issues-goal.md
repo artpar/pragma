@@ -4167,6 +4167,10 @@ Do not patch this only by changing SelfTrace's buffer from 1 MB to 64 MB. That k
 
 ## 94. Raw HTTP Capture Has No Completion Contract For Replay Evidence
 
+Status: fixed in this worktree. Raw HTTP response validity is now owned by `internal/provider/rawcapture.ReadResponseEvidence`, which requires `response.meta.json.completed_at`, matching `response_bytes`, and matching `response_sha256` before a `response.raw` can be treated as complete. Capture body write/read/close failures now leave an explicit incomplete metadata state through `capture_error`; `replay raw-http audit`, `replay raw-http dump`, and `inspect raw-http` consume the shared reader instead of trusting raw file presence.
+
+Verification: `go build ./cmd/pragma`; `go vet ./internal/provider/rawcapture ./cmd/pragma`; `git diff --check`; source scan for `ReadResponseEvidence`, byte/hash mismatch statuses, `response.raw`, and `completed_at` in `internal/provider/rawcapture/rawcapture.go`, `cmd/pragma/replay_raw_http.go`, and `cmd/pragma/inspect.go`. No tests were added or run per instruction.
+
 ### Source
 
 - `README.md`: benchmark output documents `raw-http-pragma/` as the raw HTTP capture directory for Pragma runs

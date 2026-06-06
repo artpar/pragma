@@ -21,6 +21,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/provider/rawcapture"
 )
 
 type rawHTTPRequestMeta struct {
@@ -28,12 +29,6 @@ type rawHTTPRequestMeta struct {
 	Method    string `json:"method"`
 	URL       string `json:"url"`
 	StartedAt string `json:"started_at,omitempty"`
-}
-
-type rawHTTPResponseMeta struct {
-	StatusCode  int    `json:"status_code,omitempty"`
-	StartedAt   string `json:"started_at,omitempty"`
-	CompletedAt string `json:"completed_at,omitempty"`
 }
 
 type rawHTTPChatRequest struct {
@@ -1497,30 +1492,25 @@ func auditRawHTTPReplayEvidence(root string, requireResponses bool, w io.Writer)
 	missing := 0
 	for _, dir := range cases {
 		requestPath := filepath.Join(dir, "request.json")
-		responsePath := filepath.Join(dir, "response.raw")
 		reqInfo, err := os.Stat(requestPath)
 		if err != nil {
 			return err
 		}
-		respInfo, err := os.Stat(responsePath)
-		status := "response_ok"
-		responseBytes := int64(0)
+		evidence, err := rawcapture.ReadResponseEvidence(dir)
+		if err != nil {
+			return fmt.Errorf("read %s response evidence: %w", filepath.Base(dir), err)
+		}
+		status := rawHTTPResponseEvidenceStatus(evidence)
+		responseBytes := evidence.FileBytes
 		summary := ""
-		if os.IsNotExist(err) {
-			status = "missing_response"
-			missing++
-		} else if err != nil {
-			return err
-		} else {
-			responseBytes = respInfo.Size()
-			body, err := os.ReadFile(responsePath)
-			if err != nil {
-				return err
-			}
-			status, summary = classifyRawHTTPResponseEvidence(body)
+		if evidence.Complete {
+			status, summary = classifyRawHTTPResponseEvidence(evidence.Body)
 			if status != "response_ok" {
 				missing++
 			}
+		} else {
+			missing++
+			summary = summarizeRawHTTPResponseEvidenceProblem(evidence)
 		}
 		fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\n",
 			filepath.ToSlash(dir),
@@ -1534,6 +1524,33 @@ func auditRawHTTPReplayEvidence(root string, requireResponses bool, w io.Writer)
 		return fmt.Errorf("%d replay case(s) lack usable response evidence", missing)
 	}
 	return nil
+}
+
+func rawHTTPResponseEvidenceStatus(evidence rawcapture.ResponseEvidence) string {
+	if evidence.Complete {
+		return "response_ok"
+	}
+	if evidence.Problem != "" {
+		return evidence.Problem
+	}
+	return "incomplete_response"
+}
+
+func summarizeRawHTTPResponseEvidenceProblem(evidence rawcapture.ResponseEvidence) string {
+	switch evidence.Problem {
+	case "response_transport_error":
+		return trimSummary(evidence.Meta.Error)
+	case "capture_write_error":
+		return trimSummary(evidence.Meta.CaptureError)
+	case "response_byte_mismatch":
+		return fmt.Sprintf("metadata response_bytes=%d file_bytes=%d", evidence.Meta.ResponseBytes, evidence.FileBytes)
+	case "response_sha256_mismatch":
+		return "metadata response_sha256 does not match response.raw"
+	case "missing_response_sha256":
+		return "metadata response_sha256 is empty"
+	default:
+		return ""
+	}
 }
 
 func classifyRawHTTPResponseEvidence(body []byte) (string, string) {
@@ -1615,7 +1632,7 @@ func dumpRawHTTPCaptures(captureDir, outDir string, overwrite bool) error {
 		return err
 	}
 
-	index := []string{"turn\tsource_dir\trequest_path\tresponse_path\tstatus_code\tstarted_at\tcompleted_at"}
+	index := []string{"turn\tsource_dir\trequest_path\tresponse_path\tresponse_state\tstatus_code\tstarted_at\tcompleted_at"}
 	for _, turn := range turns {
 		turnNumber := rawHTTPTurnNumber(filepath.Base(turn))
 		dest := filepath.Join(outDir, "turn-"+turnNumber)
@@ -1643,40 +1660,46 @@ func dumpRawHTTPCaptures(captureDir, outDir string, overwrite bool) error {
 		}
 
 		responsePath := ""
-		rawResponse := filepath.Join(turn, "response.raw")
-		if _, err := os.Stat(rawResponse); err == nil {
+		evidence, err := rawcapture.ReadResponseEvidence(turn)
+		if err != nil {
+			return fmt.Errorf("dump %s response evidence: %w", filepath.Base(turn), err)
+		}
+		responseState := rawHTTPResponseEvidenceStatus(evidence)
+		if evidence.RawPath != "" {
 			responsePath = filepath.Join(dest, "response.json")
-			if err := writePrettyJSONFile(rawResponse, responsePath); err != nil {
+			if !evidence.Complete {
+				responsePath = filepath.Join(dest, "response.raw")
+				if err := copyFile(evidence.RawPath, responsePath); err != nil {
+					return fmt.Errorf("dump %s response.raw: %w", filepath.Base(turn), err)
+				}
+			} else if err := writePrettyJSONFile(evidence.RawPath, responsePath); err != nil {
 				if !errorsIsJSONSyntax(err) {
 					return fmt.Errorf("dump %s response.raw: %w", filepath.Base(turn), err)
 				}
 				responsePath = filepath.Join(dest, "response.raw")
-				if err := copyFile(rawResponse, responsePath); err != nil {
+				if err := copyFile(evidence.RawPath, responsePath); err != nil {
 					return fmt.Errorf("dump %s response.raw: %w", filepath.Base(turn), err)
 				}
 			}
-			if strings.HasSuffix(responsePath, ".json") {
+			if evidence.Complete && strings.HasSuffix(responsePath, ".json") {
 				if err := writeResponseContent(responsePath, filepath.Join(dest, "response_content.md")); err != nil {
 					return fmt.Errorf("dump %s response_content.md: %w", filepath.Base(turn), err)
 				}
 			}
-		} else if !os.IsNotExist(err) {
-			return err
 		}
 
 		var reqMeta rawHTTPRequestMeta
 		_ = readJSONFile(filepath.Join(turn, "request.meta.json"), &reqMeta)
-		var respMeta rawHTTPResponseMeta
-		_ = readJSONFile(filepath.Join(turn, "response.meta.json"), &respMeta)
-		startedAt := firstNonEmptyRawHTTPDump(respMeta.StartedAt, reqMeta.StartedAt)
+		startedAt := firstNonEmptyRawHTTPDump(evidence.Meta.StartedAt, reqMeta.StartedAt)
 		index = append(index, strings.Join([]string{
 			turnNumber,
 			filepath.Base(turn),
 			filepath.ToSlash(filepath.Join("turn-"+turnNumber, "request.json")),
 			filepath.ToSlash(strings.TrimPrefix(responsePath, outDir+string(os.PathSeparator))),
-			fmt.Sprintf("%d", respMeta.StatusCode),
+			responseState,
+			fmt.Sprintf("%d", evidence.Meta.StatusCode),
 			startedAt,
-			respMeta.CompletedAt,
+			evidence.Meta.CompletedAt,
 		}, "\t"))
 	}
 
@@ -1693,7 +1716,8 @@ orchestration phases, personas, checklist items, or completion state.
 
 Each turn directory contains copied or pretty-printed captured files:
 - request.json
-- response.json or response.raw
+- response.json for complete JSON responses, or response.raw for non-JSON or
+  incomplete response bytes
 - request.meta.json / response.meta.json when present
 - request.headers.json / response.headers.json when present
 - request_messages.md and response_content.md for readable inspection

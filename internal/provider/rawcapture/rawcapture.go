@@ -47,7 +47,7 @@ type requestMeta struct {
 	Stream        *bool  `json:"stream,omitempty"`
 }
 
-type responseMeta struct {
+type ResponseMeta struct {
 	Sequence       uint64 `json:"sequence"`
 	TraceID        string `json:"trace_id,omitempty"`
 	SpanID         string `json:"span_id,omitempty"`
@@ -58,6 +58,20 @@ type responseMeta struct {
 	ResponseBytes  int64  `json:"response_bytes,omitempty"`
 	ResponseSHA256 string `json:"response_sha256,omitempty"`
 	Error          string `json:"error,omitempty"`
+	CaptureError   string `json:"capture_error,omitempty"`
+}
+
+type responseMeta = ResponseMeta
+
+type ResponseEvidence struct {
+	Dir       string
+	MetaPath  string
+	RawPath   string
+	Meta      ResponseMeta
+	Body      []byte
+	FileBytes int64
+	Complete  bool
+	Problem   string
 }
 
 func WithTrace(ctx context.Context, traceID, spanID string) context.Context {
@@ -226,6 +240,7 @@ type recordingBody struct {
 	meta     responseMeta
 	hash     hashWriter
 	bytes    int64
+	writeErr error
 	once     sync.Once
 }
 
@@ -238,9 +253,22 @@ func (b *recordingBody) Read(p []byte) (int, error) {
 	n, err := b.rc.Read(p)
 	if n > 0 {
 		chunk := p[:n]
-		_, _ = b.file.Write(chunk)
-		_, _ = b.hash.Write(chunk)
-		b.bytes += int64(n)
+		if b.writeErr == nil {
+			written, writeErr := b.file.Write(chunk)
+			if writeErr != nil {
+				b.writeErr = writeErr
+			}
+			if written > 0 {
+				_, _ = b.hash.Write(chunk[:written])
+				b.bytes += int64(written)
+			}
+			if written != len(chunk) && b.writeErr == nil {
+				b.writeErr = io.ErrShortWrite
+			}
+		}
+	}
+	if err != nil && err != io.EOF && b.writeErr == nil {
+		b.writeErr = err
 	}
 	return n, err
 }
@@ -249,13 +277,92 @@ func (b *recordingBody) Close() error {
 	var closeErr error
 	b.once.Do(func() {
 		closeErr = b.rc.Close()
-		_ = b.file.Close()
-		b.meta.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		fileCloseErr := b.file.Close()
 		b.meta.ResponseBytes = b.bytes
 		b.meta.ResponseSHA256 = hex.EncodeToString(b.hash.Sum(nil))
+		if b.writeErr != nil {
+			b.meta.CaptureError = b.writeErr.Error()
+		} else if fileCloseErr != nil {
+			b.meta.CaptureError = fileCloseErr.Error()
+		} else {
+			b.meta.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		}
 		writeJSON(b.metaPath, b.meta, 0o600)
 	})
 	return closeErr
+}
+
+func ReadResponseEvidence(dir string) (ResponseEvidence, error) {
+	metaPath := filepath.Join(dir, "response.meta.json")
+	rawPath := filepath.Join(dir, "response.raw")
+	evidence := ResponseEvidence{
+		Dir:      dir,
+		MetaPath: metaPath,
+		RawPath:  rawPath,
+	}
+
+	metaData, err := os.ReadFile(metaPath)
+	if os.IsNotExist(err) {
+		evidence.Problem = "missing_response_meta"
+		if info, statErr := os.Stat(rawPath); statErr == nil && !info.IsDir() {
+			evidence.FileBytes = info.Size()
+		} else if os.IsNotExist(statErr) {
+			evidence.Problem = "missing_response"
+			evidence.RawPath = ""
+		} else if statErr != nil {
+			return evidence, statErr
+		}
+		return evidence, nil
+	}
+	if err != nil {
+		return evidence, err
+	}
+	if err := json.Unmarshal(metaData, &evidence.Meta); err != nil {
+		evidence.Problem = "invalid_response_meta"
+		return evidence, nil
+	}
+	if evidence.Meta.CompletedAt == "" {
+		evidence.Problem = "incomplete_response"
+	}
+	if evidence.Meta.Error != "" {
+		evidence.Problem = "response_transport_error"
+		evidence.RawPath = ""
+		return evidence, nil
+	}
+	if evidence.Meta.CaptureError != "" {
+		evidence.Problem = "capture_write_error"
+	}
+
+	body, err := os.ReadFile(rawPath)
+	if os.IsNotExist(err) {
+		evidence.RawPath = ""
+		if evidence.Problem == "" {
+			evidence.Problem = "missing_response"
+		}
+		return evidence, nil
+	}
+	if err != nil {
+		return evidence, err
+	}
+	evidence.Body = body
+	evidence.FileBytes = int64(len(body))
+	if evidence.Problem != "" {
+		return evidence, nil
+	}
+	if evidence.Meta.ResponseBytes != evidence.FileBytes {
+		evidence.Problem = "response_byte_mismatch"
+		return evidence, nil
+	}
+	if evidence.Meta.ResponseSHA256 == "" {
+		evidence.Problem = "missing_response_sha256"
+		return evidence, nil
+	}
+	if !strings.EqualFold(evidence.Meta.ResponseSHA256, sha256Hex(body)) {
+		evidence.Problem = "response_sha256_mismatch"
+		return evidence, nil
+	}
+	evidence.Complete = true
+	return evidence, nil
 }
 
 func drainRequestBody(req *http.Request) ([]byte, error) {

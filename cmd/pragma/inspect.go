@@ -12,6 +12,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"github.com/artpar/pragma/internal/provider/rawcapture"
 )
 
 type inspectRawHTTPInputKind string
@@ -236,7 +238,45 @@ func loadInspectRawHTTPTurn(input inspectRawHTTPInput, dir string) (inspectRawHT
 		turn.ResponseBytes = v
 	}
 
-	responsePath := inspectRawHTTPResponsePath(dir)
+	var body []byte
+	responsePath := ""
+	if input.Kind == inspectRawHTTPInputCapture {
+		evidence, err := rawcapture.ReadResponseEvidence(dir)
+		if err != nil {
+			return turn, fmt.Errorf("inspect turn %s response evidence: %w", turn.Turn, err)
+		}
+		if evidence.Meta.StartedAt != "" {
+			turn.StartedAt = firstNonEmptyRawHTTPDump(evidence.Meta.StartedAt, reqMeta.string("started_at"))
+		}
+		turn.CompletedAt = evidence.Meta.CompletedAt
+		turn.Status = firstNonEmptyRawHTTPDump(evidence.Meta.Status, inspectRawHTTPStatusFromCode(evidence.Meta.StatusCode))
+		turn.StatusCode = evidence.Meta.StatusCode
+		if evidence.Meta.ResponseBytes > 0 {
+			turn.ResponseBytes = evidence.Meta.ResponseBytes
+		} else if evidence.FileBytes > 0 {
+			turn.ResponseBytes = evidence.FileBytes
+		}
+		if !evidence.Complete {
+			turn.ResponseKind = rawHTTPResponseEvidenceStatus(evidence)
+			turn.Status = turn.ResponseKind
+			if evidence.RawPath != "" {
+				turn.ResponsePath = filepath.ToSlash(evidence.RawPath)
+			}
+			turn.errorText = summarizeRawHTTPResponseEvidenceProblem(evidence)
+			turn.ErrorPreview = trimInspectPreview(turn.errorText)
+			return turn, nil
+		}
+		responsePath = evidence.RawPath
+		body = evidence.Body
+	} else {
+		responsePath = inspectRawHTTPResponsePath(dir)
+		if responsePath != "" {
+			body, err = os.ReadFile(responsePath)
+			if err != nil {
+				return turn, err
+			}
+		}
+	}
 	if responsePath == "" {
 		turn.ResponseKind = "missing"
 		return turn, nil
@@ -246,10 +286,6 @@ func loadInspectRawHTTPTurn(input inspectRawHTTPInput, dir string) (inspectRawHT
 		if info, err := os.Stat(responsePath); err == nil {
 			turn.ResponseBytes = info.Size()
 		}
-	}
-	body, err := os.ReadFile(responsePath)
-	if err != nil {
-		return turn, err
 	}
 	applyInspectRawHTTPResponse(&turn, body)
 	return turn, nil
@@ -425,7 +461,7 @@ func inspectRawHTTPTurnHasError(turn inspectRawHTTPTurn) bool {
 		return true
 	}
 	switch turn.ResponseKind {
-	case "missing", "empty", "non_json":
+	case "missing", "empty", "non_json", "missing_response", "missing_response_meta", "invalid_response_meta", "incomplete_response", "response_transport_error", "capture_write_error", "response_byte_mismatch", "missing_response_sha256", "response_sha256_mismatch":
 		return true
 	}
 	return turn.ErrorPreview != ""
