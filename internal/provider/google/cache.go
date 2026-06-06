@@ -43,6 +43,39 @@ func newCacheManager(client *genai.Client, bus *observe.EventBus) *cacheManager 
 	return &cacheManager{client: client, bus: bus}
 }
 
+func (cm *cacheManager) Close(ctx context.Context) error {
+	observe.TraceCtx(ctx, "google", "cacheManager.Close", "enter")
+	defer observe.TraceCtx(ctx, "google", "cacheManager.Close", "exit")
+	cm.mu.Lock()
+	current := cm.current
+	cm.mu.Unlock()
+	if current == nil {
+		return nil
+	}
+	deleteCtx, cancel := cacheDeleteContext(ctx)
+	defer cancel()
+	if _, err := cm.client.Caches.Delete(deleteCtx, current.name, nil); err != nil {
+		observe.TraceCtx(ctx, "google", "cacheManager.Close", fmt.Sprintf("delete cache (non-fatal): %v", err))
+		return fmt.Errorf("google: delete cache %q: %w", current.name, err)
+	}
+	cm.mu.Lock()
+	if cm.current == current {
+		cm.current = nil
+	}
+	cm.mu.Unlock()
+	return nil
+}
+
+func cacheDeleteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, 10*time.Second)
+}
+
 // getOrCreateCache checks if the stable prefix matches the current cache.
 // Returns the cache resource name if a cache is active, or empty string if
 // caching should be skipped (prefix too small, error creating, etc.).
@@ -82,7 +115,7 @@ func (cm *cacheManager) getOrCreateCache(
 
 	if cm.current != nil {
 		observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", "cache miss, deleting old")
-		deleteCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		deleteCtx, cancel := cacheDeleteContext(context.Background())
 		_, delErr := cm.client.Caches.Delete(deleteCtx, cm.current.name, nil)
 		cancel()
 		if delErr != nil {

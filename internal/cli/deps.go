@@ -421,6 +421,9 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	}()
 
 	compositeCleanup := func() {
+		if deps != nil {
+			reportProviderCleanup(context.Background(), deps.Prov, bus)
+		}
 		if taskReg != nil {
 			taskReg.ShutdownActive(500 * time.Millisecond)
 		}

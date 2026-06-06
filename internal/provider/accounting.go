@@ -59,6 +59,10 @@ func (p *accountingProvider) ContextWindow(modelID string) (int, bool) {
 	return p.next.ContextWindow(modelID)
 }
 
+func (p *accountingProvider) Close(ctx context.Context) error {
+	return Close(ctx, p.next)
+}
+
 func (p *accountingProvider) Complete(ctx context.Context, params RequestParams) (model.Response, error) {
 	resp, err := p.next.Complete(ctx, params)
 	if err != nil {

@@ -3954,6 +3954,10 @@ Do not patch this by adding more PID existence checks or by deleting files more 
 
 Severity: medium
 
+Status: fixed in this worktree. Providers can now opt into a runtime cleanup boundary through `provider.ResourceCleaner`, and accounting wrappers forward that cleanup to the wrapped provider. The Google provider implements `Close` by deleting the current Gemini cache through `cacheManager.Close`; failed deletes leave the current cache pointer intact for a later retry. Engine provider rebind closes the old provider before replacement, `closeCurrentSession` closes the active provider at session end, and dependency cleanup closes the provider before dropping runtime resources.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/provider ./internal/provider/google ./internal/query ./internal/cli ./cmd/pragma`; `git diff --check`; ownership scan for `ResourceCleaner`, `func Close`, `provider.Close`, `reportProviderCleanup`, `cacheManager.Close`, `cacheDeleteContext`, `RebindProvider`, `compositeCleanup`, and `closeCurrentSession`.
+
 Concrete files/functions involved:
 
 - `internal/provider/google/provider.go`: `Provider`, `New`, `Complete`, `Stream`, `applyCache`

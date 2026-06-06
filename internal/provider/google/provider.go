@@ -71,6 +71,13 @@ func (p *Provider) Name() string {
 	return "google"
 }
 
+func (p *Provider) Close(ctx context.Context) error {
+	if p.cache == nil {
+		return nil
+	}
+	return p.cache.Close(ctx)
+}
+
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

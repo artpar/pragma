@@ -759,12 +759,25 @@ func (rt *InteractiveRuntime) closeCurrentSession(ctx context.Context) error {
 		}
 	}
 	endSessionLifecycle(ctx, rt.Deps)
+	reportProviderCleanup(ctx, rt.Deps.Prov, rt.Deps.Bus)
 	if rt.sessionClose != nil {
 		if err := rt.sessionClose(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func reportProviderCleanup(ctx context.Context, prov provider.Provider, bus *observe.EventBus) {
+	if err := provider.Close(ctx, prov); err != nil && bus != nil {
+		bus.Emit(observe.ErrorOccurred{
+			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+			Severity:     "warn",
+			Component:    "provider",
+			ErrorType:    "provider_cleanup_failed",
+			ErrorMessage: err.Error(),
+		})
+	}
 }
 
 func (rt *InteractiveRuntime) clearPendingSessionStartHook() {

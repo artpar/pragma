@@ -149,6 +149,17 @@ func (e *Engine) SetTaskID(id string) {
 func (e *Engine) RebindProvider(prov provider.Provider, modelID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if e.provider != nil && e.provider != prov {
+		if err := provider.Close(context.Background(), e.provider); err != nil && e.bus != nil {
+			e.bus.Emit(observe.ErrorOccurred{
+				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+				Severity:     "warn",
+				Component:    "provider",
+				ErrorType:    "provider_cleanup_failed",
+				ErrorMessage: err.Error(),
+			})
+		}
+	}
 	e.provider = provider.WithAccounting(prov, e.costTracker, e.bus)
 	e.SetModel(modelID)
 }

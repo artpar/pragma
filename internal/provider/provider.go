@@ -21,15 +21,27 @@ type Provider interface {
 	ContextWindow(modelID string) (int, bool)
 }
 
+// ResourceCleaner is implemented by providers that own remote/session resources.
+type ResourceCleaner interface {
+	Close(ctx context.Context) error
+}
+
+func Close(ctx context.Context, prov Provider) error {
+	if cleaner, ok := prov.(ResourceCleaner); ok {
+		return cleaner.Close(ctx)
+	}
+	return nil
+}
+
 // Feature flags that providers may or may not support.
 type Feature string
 
 const (
-	FeaturePrefixCaching  Feature = "prefix_caching"
-	FeatureThinking       Feature = "thinking"
-	FeatureImages         Feature = "images"
-	FeatureToolUse        Feature = "tool_use"
-	FeatureStreaming       Feature = "streaming"
+	FeaturePrefixCaching    Feature = "prefix_caching"
+	FeatureThinking         Feature = "thinking"
+	FeatureImages           Feature = "images"
+	FeatureToolUse          Feature = "tool_use"
+	FeatureStreaming        Feature = "streaming"
 	FeatureStructuredOutput Feature = "structured_output"
 )
 
@@ -47,11 +59,11 @@ type ModelLister interface {
 
 // RequestParams carries all data needed for an LLM request, in internal types.
 type RequestParams struct {
-	Model       string             `json:"model"`
-	MaxTokens   int                `json:"max_tokens"`
-	Messages    []model.Message    `json:"messages"`
-	System      model.SystemPrompt `json:"system"`
-	Tools       []model.ToolDef    `json:"tools,omitempty"`
+	Model          string             `json:"model"`
+	MaxTokens      int                `json:"max_tokens"`
+	Messages       []model.Message    `json:"messages"`
+	System         model.SystemPrompt `json:"system"`
+	Tools          []model.ToolDef    `json:"tools,omitempty"`
 	Temperature    *float64           `json:"temperature,omitempty"`
 	Thinking       *ThinkingConfig    `json:"thinking,omitempty"`
 	ResponseSchema json.RawMessage    `json:"response_schema,omitempty"`
