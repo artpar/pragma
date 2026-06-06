@@ -1,12 +1,10 @@
 package selftrace
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -134,47 +132,39 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		return tool.InvokeResult{Content: "No log file available for this session."}, nil
 	}
 
-	f, err := os.Open(t.LogFilePath)
-	if err != nil {
-		return tool.InvokeResult{Content: fmt.Sprintf("Cannot open log file: %v", err)}, nil
-	}
-	defer f.Close()
-
 	if q.Summary {
-		return t.invokeSummary(ctx, f, q)
+		return t.invokeSummary(ctx, t.LogFilePath, q)
 	}
-	return t.invokeQuery(ctx, f, q)
+	return t.invokeQuery(ctx, t.LogFilePath, q)
 }
 
-func (t *Tool) invokeQuery(ctx context.Context, f *os.File, q *Query) (tool.InvokeResult, error) {
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
+func (t *Tool) invokeQuery(ctx context.Context, logPath string, q *Query) (tool.InvokeResult, error) {
 	var matched int
 	var page []observe.Event
 	startIdx := (q.Page - 1) * q.PageSize
 	endIdx := startIdx + q.PageSize
 
-	for scanner.Scan() {
+	if err := observe.ScanEventLog(logPath, func(line observe.EventLogLine) error {
 		if ctx.Err() != nil {
-			break
+			return ctx.Err()
 		}
-		line := scanner.Bytes()
-
-		if q.Topic != "flow" && q.Kind != "FlowTrace" && isFlowTraceLine(line) {
-			continue
+		if q.Topic != "flow" && q.Kind != "FlowTrace" && isFlowTraceLine(line.Raw) {
+			return nil
 		}
-		ev, err := observe.UnmarshalEvent(line)
+		ev, err := observe.UnmarshalEvent(line.Raw)
 		if err != nil {
-			continue
+			return fmt.Errorf("line %d: unmarshal event: %w", line.Number, err)
 		}
-		if !q.Matches(ev, line) {
-			continue
+		if !q.Matches(ev, line.Raw) {
+			return nil
 		}
 		if matched >= startIdx && matched < endIdx {
 			page = append(page, ev)
 		}
 		matched++
+		return nil
+	}); err != nil {
+		return tool.InvokeResult{}, err
 	}
 
 	if matched == 0 {
@@ -194,25 +184,23 @@ func (t *Tool) invokeQuery(ctx context.Context, f *os.File, q *Query) (tool.Invo
 	return tool.InvokeResult{Content: b.String()}, nil
 }
 
-func (t *Tool) invokeSummary(ctx context.Context, f *os.File, _ *Query) (tool.InvokeResult, error) {
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
+func (t *Tool) invokeSummary(ctx context.Context, logPath string, _ *Query) (tool.InvokeResult, error) {
 	s := &summaryAgg{}
-	for scanner.Scan() {
+	if err := observe.ScanEventLog(logPath, func(line observe.EventLogLine) error {
 		if ctx.Err() != nil {
-			break
+			return ctx.Err()
 		}
-		line := scanner.Bytes()
-
-		if isFlowTraceLine(line) {
-			continue
+		if isFlowTraceLine(line.Raw) {
+			return nil
 		}
-		ev, err := observe.UnmarshalEvent(line)
+		ev, err := observe.UnmarshalEvent(line.Raw)
 		if err != nil {
-			continue
+			return fmt.Errorf("line %d: unmarshal event: %w", line.Number, err)
 		}
 		s.add(ev)
+		return nil
+	}); err != nil {
+		return tool.InvokeResult{}, err
 	}
 
 	return tool.InvokeResult{Content: s.String()}, nil

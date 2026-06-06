@@ -4133,6 +4133,10 @@ Do not patch this by increasing `MaxToolResultsPerMessageChars` or by adding a w
 
 Severity: medium
 
+Status: fixed in this worktree. Observe now owns `ScanEventLog` with the shared 64 MB event-line limit and scanner error reporting, and `LoadEvents` uses that reader. `SelfTrace` now uses `observe.ScanEventLog` for query and summary paths, keeps only formatting/filtering locally, and returns line-numbered unmarshal or scanner errors instead of silently emitting partial results after oversized or malformed log lines.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/observe ./internal/tools/selftrace ./internal/cli ./cmd/pragma`; `git diff --check`; ownership scan for `ScanEventLog`, `EventLogMaxLineBytes`, `EventLogLine`, `LoadEvents`, `bufio.NewScanner`, `scanner.Buffer`, `scanner.Err`, `UnmarshalEvent`, `invokeQuery`, and `invokeSummary`.
+
 Concrete files/functions involved:
 
 - `internal/tools/selftrace/selftrace.go`: `Tool.Invoke`, `invokeQuery`, `invokeSummary`

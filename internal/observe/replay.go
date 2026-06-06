@@ -10,6 +10,13 @@ import (
 	"github.com/artpar/pragma/internal/model"
 )
 
+const EventLogMaxLineBytes = 64 * 1024 * 1024
+
+type EventLogLine struct {
+	Number int
+	Raw    []byte
+}
+
 // ReplayEngine loads and provides access to recorded session data.
 type ReplayEngine struct {
 	events       []Event
@@ -92,9 +99,25 @@ func LoadReplay(path string) (*ReplayEngine, error) {
 // LoadEvents reads events from a JSONL file. If path is a directory,
 // it looks for events.jsonl inside it.
 func LoadEvents(path string) ([]Event, error) {
-	info, err := os.Stat(path)
+	var events []Event
+	err := ScanEventLog(path, func(line EventLogLine) error {
+		event, err := UnmarshalEvent(line.Raw)
+		if err != nil {
+			return fmt.Errorf("line %d: unmarshal event: %w", line.Number, err)
+		}
+		events = append(events, event)
+		return nil
+	})
 	if err != nil {
 		return nil, err
+	}
+	return events, nil
+}
+
+func ScanEventLog(path string, handle func(EventLogLine) error) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
 	}
 	if info.IsDir() {
 		path = filepath.Join(path, "events.jsonl")
@@ -102,24 +125,23 @@ func LoadEvents(path string) ([]Event, error) {
 
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 
-	var events []Event
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 64*1024*1024)
+	scanner.Buffer(make([]byte, 1024*1024), EventLogMaxLineBytes)
+	lineNumber := 0
 	for scanner.Scan() {
-		event, err := UnmarshalEvent(scanner.Bytes())
-		if err != nil {
-			return nil, fmt.Errorf("unmarshal event: %w", err)
+		lineNumber++
+		if err := handle(EventLogLine{Number: lineNumber, Raw: scanner.Bytes()}); err != nil {
+			return err
 		}
-		events = append(events, event)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return fmt.Errorf("scan event log: %w", err)
 	}
-	return events, nil
+	return nil
 }
 
 func (re *ReplayEngine) loadEvents(path string) error {
