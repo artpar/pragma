@@ -59,6 +59,7 @@ type Deps struct {
 	Auditor        *observe.Auditor
 	TokenMonitor   *observe.TokenMonitor
 	LogFilePath    string
+	RecordingPath  string
 	Cwd            string
 	SessionStart   time.Time
 	SessionHeader  session.HeaderData
@@ -66,6 +67,7 @@ type Deps struct {
 	SessionLastIdx int
 	SessionStarted bool
 	Cleanup        func()
+	recorder       *observe.Recorder
 }
 
 // ProviderResolutionOptions lets utility commands share Pragma's provider
@@ -175,18 +177,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	bus.Subscribe(auditor)
 	tokenMon := observe.NewTokenMonitor(bus, 200_000)
 	bus.Subscribe(tokenMon)
-
-	if cfg.Record {
-		observe.GlobalTrace("if: cfg.Record")
-		recorder, recErr := observe.NewRecorder("pragma-recording.jsonl")
-		if recErr != nil {
-			observe.GlobalTrace("if: recErr != nil")
-			observe.GlobalTrace("return: nil, fmt.Errorf(\"create recorder: %w\", recErr)")
-			return nil, fmt.Errorf("create recorder: %w", recErr)
-		}
-		bus.Subscribe(recorder)
-		cleanupFns = append(cleanupFns, func() { recorder.Close() })
-	}
 
 	prov, err := CreateProvider(cfg, bus)
 	if err != nil {
@@ -471,6 +461,10 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 		mcpManager.DisconnectAll()
 		bus.Drain()
+		if deps != nil && deps.recorder != nil {
+			_ = deps.recorder.Close()
+			deps.recorder = nil
+		}
 		for _, fn := range cleanupFns {
 			fn()
 		}
@@ -500,6 +494,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		Auditor:        auditor,
 		TokenMonitor:   tokenMon,
 		LogFilePath:    logFilePath,
+		RecordingPath:  "",
 		Cwd:            cwd,
 		SessionStart:   sessionStart,
 		SessionHeader:  sessionHeader,

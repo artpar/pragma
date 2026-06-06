@@ -667,6 +667,24 @@ What not to do:
 
 Do not add cleanup that deletes empty `pragma-recording.jsonl` after failure. The core bug is that setup owns and truncates a run artifact at a fixed path.
 
+Status:
+
+Resolved in current worktree. `SetupDeps` no longer creates or truncates a fixed recording file. Recording starts from the session lifecycle boundary, immediately before `SessionStarted`, and writes to a unique per-session recording artifact under Pragma home.
+
+Source evidence:
+
+- `internal/cli/deps.go`: removed `observe.NewRecorder("pragma-recording.jsonl")` from dependency setup; `Deps` now tracks `RecordingPath` and the active recorder for cleanup.
+- `internal/cli/run.go`: `beginSessionLifecycle` starts recording through `startSessionRecording` before emitting `SessionStarted`, and now returns recorder creation errors to callers.
+- `internal/cli/run.go`: `sessionRecordingPath` creates `~/.pragma/recordings/<session-id>/<utc-run-timestamp>.jsonl`, avoiding cwd-relative fixed-path truncation and collisions.
+- `internal/cli/run.go`: recording path is printed to stderr when recording starts, so the run-owned artifact location is visible to the caller.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/cli/deps.go internal/cli/run.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/observe ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "NewRecorder\\(|pragma-recording\\.jsonl" internal/cli internal/observe cmd -g'*.go'` shows runtime recorder creation only in `startSessionRecording`; fixed filename references remain only in examples/tests.
+- Contract scan: `rg -n "beginSessionLifecycle\\(" internal/cli -g'*.go'` confirms all lifecycle call sites handle the new error-returning contract.
+
 ## 15. Local Slash Subcommands Start Full Runtime Dependencies Before Running Local Logic
 
 Severity: medium

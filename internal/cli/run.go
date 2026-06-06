@@ -439,8 +439,8 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Engine.ResetFileState(sess.FileStateRecords)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
-	_ = beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
-	return nil
+	_, err = beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
+	return err
 }
 
 func validateResumeWorkDir(activeWorkDir string, sess session.Session) error {
@@ -578,7 +578,12 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 	applyToolFilters(cmd, d.Registry)
 	waitForToolsetMCP(cmd.Context(), d)
 	if d.SessionWriter != nil {
-		_ = beginSessionLifecycle(cmd.Context(), d, "")
+		if _, err := beginSessionLifecycle(cmd.Context(), d, ""); err != nil {
+			if d.Cleanup != nil {
+				d.Cleanup()
+			}
+			return nil, err
+		}
 	}
 
 	compDeps, compactor := BuildCompactionDeps(d)
@@ -1031,7 +1036,7 @@ func hookContextStrings(result hook.AggregatedResult, includeStdout bool) []stri
 
 func startSessionForCurrentConversation(ctx context.Context, d *Deps) (hook.AggregatedResult, error) {
 	if d.SessionWriter != nil {
-		return beginSessionLifecycle(ctx, d, ""), nil
+		return beginSessionLifecycle(ctx, d, "")
 	}
 	header := d.SessionHeader
 	if header.SessionID == "" {
@@ -1048,7 +1053,7 @@ func startSessionForCurrentConversation(ctx context.Context, d *Deps) (hook.Aggr
 	d.SessionWriter = w
 	d.SessionHeader = header
 	d.SessionLastIdx = 0
-	return beginSessionLifecycle(ctx, d, ""), nil
+	return beginSessionLifecycle(ctx, d, "")
 }
 
 func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
@@ -1073,9 +1078,12 @@ func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
 	}
 }
 
-func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) hook.AggregatedResult {
+func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) (hook.AggregatedResult, error) {
 	if d == nil || d.SessionStarted {
-		return hook.AggregatedResult{}
+		return hook.AggregatedResult{}, nil
+	}
+	if err := startSessionRecording(d); err != nil {
+		return hook.AggregatedResult{}, err
 	}
 	sessionID := d.Store.Snapshot().Conversation.ID
 	if d.HookMgr != nil {
@@ -1092,7 +1100,49 @@ func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) hoo
 		hookResult = d.HookMgr.Execute(ctx, hook.SessionStart, hook.HookInput{})
 	}
 	d.SessionStarted = true
-	return hookResult
+	return hookResult, nil
+}
+
+func startSessionRecording(d *Deps) error {
+	if d == nil || !d.Cfg.Record || d.recorder != nil {
+		return nil
+	}
+	path, err := sessionRecordingPath(d)
+	if err != nil {
+		return err
+	}
+	recorder, err := observe.NewRecorder(path)
+	if err != nil {
+		return fmt.Errorf("create recorder: %w", err)
+	}
+	d.Bus.Subscribe(recorder)
+	d.recorder = recorder
+	d.RecordingPath = path
+	fmt.Fprintf(os.Stderr, "Recording events to %s\n", path)
+	return nil
+}
+
+func sessionRecordingPath(d *Deps) (string, error) {
+	sessionID := ""
+	if d != nil && d.Store != nil {
+		sessionID = d.Store.Snapshot().Conversation.ID
+	}
+	if sessionID == "" && d != nil {
+		sessionID = d.SessionHeader.SessionID
+	}
+	if sessionID == "" {
+		sessionID = "unknown-session"
+	}
+	home, err := config.PragmaHome()
+	if err != nil {
+		return "", fmt.Errorf("resolve pragma home: %w", err)
+	}
+	dir := filepath.Join(home, "recordings", sessionID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create recording directory: %w", err)
+	}
+	name := time.Now().UTC().Format("20060102T150405.000000000Z") + ".jsonl"
+	return filepath.Join(dir, name), nil
 }
 
 const sessionEndHookTimeout = 5 * time.Second
