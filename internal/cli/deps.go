@@ -457,6 +457,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		}
 		taskCancel()
 		depsCancel()
+		mcpManager.DisconnectAll()
 		done := make(chan struct{})
 		go func() {
 			depsWG.Wait()
@@ -466,7 +467,6 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 		case <-done:
 		case <-time.After(500 * time.Millisecond):
 		}
-		mcpManager.DisconnectAll()
 		bus.Drain()
 		if deps != nil && deps.recorder != nil {
 			_ = deps.recorder.Close()

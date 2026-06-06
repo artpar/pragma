@@ -1750,6 +1750,24 @@ What not to do:
 
 Do not increase the 500ms timeout or add another delayed `DisconnectAll`. That preserves a race between startup and cleanup instead of making MCP lifecycle transitions atomic inside the manager.
 
+Status:
+
+Resolved in current worktree. MCP connection and tool-registration workers now publish clients and mutate the tool registry only while their manager lifecycle generation is still active. Cleanup cancels runtime work and moves the manager into its stopped/disconnected generation before waiting on background goroutines, so late startup work cannot register stale MCP tools after cleanup has continued.
+
+Source evidence:
+
+- `internal/mcp/manager.go`: added manager-owned `generation` and `stopped` lifecycle state, with `activeGenerationLocked`, `publishConnectedClient`, `recordConnectFailure`, and `markDisconnectedIfActive` as the only publish/failure helpers used by async connect workers.
+- `internal/mcp/manager.go`: `connectAll` captures one generation for each startup run; successful connections publish through `publishConnectedClient`, and ready-tool registration passes the same generation into `registerClientTools`.
+- `internal/mcp/manager.go`: `registerClientTools`, `RegisterTools`, and `ReconnectServer` check the active generation before mutating `registeredTools` or the shared tool registry.
+- `internal/mcp/manager.go`: `DisconnectAll` marks the manager stopped and advances the generation before unregistering tools and disconnecting clients.
+- `internal/cli/deps.go`: cleanup now calls `mcpManager.DisconnectAll()` immediately after cancellation and before waiting on dependency goroutines, establishing the manager-owned shutdown boundary early.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/mcp/manager.go internal/cli/deps.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/mcp ./internal/cli ./internal/tool ./cmd/pragma`; `git diff --check`.
+- Ownership scan: `rg -n "generation|stopped|activeGenerationLocked|publishConnectedClient|recordConnectFailure|markDisconnectedIfActive|registerClientTools\\(|DisconnectAll\\(|ConnectAllAndRegister|depsCancel\\(|depsWG\\.Wait|registry\\.(Register|Unregister)\\(" internal/mcp/manager.go internal/cli/deps.go -g'*.go'` confirmed async publish/register paths are generation-gated and cleanup stops the manager before waiting.
+
 ## 37. `/exit` Has UI-Specific Quit Semantics Instead Of A Runtime Session Command
 
 Severity: medium
