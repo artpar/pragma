@@ -282,6 +282,22 @@ What not to do:
 
 Do not patch the two completion copies in parallel whenever a slash command changes.
 
+Status:
+
+Resolved in current worktree. Slash completion candidate generation is now owned by `internal/slash`. Web and TUI keep only presentation-local adaptation and menu limits.
+
+Source evidence:
+
+- `internal/slash/completion.go`: owns command, alias, orchestration flag, path role, path filtering, fuzzy scoring, replacement construction, and sorting for slash completions.
+- `internal/tui/input.go`: `slashCompletionItems` now adapts `slash.CompletionItems` into the TUI-local presentation type.
+- `internal/web/web.go`: `completionItems` now adapts `slash.CompletionItems` into the web JSON presentation type.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/slash/completion.go internal/tui/input.go internal/web/web.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/slash ./internal/tui ./internal/web ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "orchestrateCompletionItems|pathCompletionItems|flagCompletionItems|fuzzyCompletionScore|isCompletionBoundary|replaceCurrentToken|firstSlashToken|pathCompletionKind|scoredCompletionItem|sortedCompletionItems|endsWithSpace" internal/tui/input.go internal/web/web.go` returned no matches.
+
 ## 7. Cron Job Creation And Cron Execution Are Separate Scheduler Instances With No Live Synchronization
 
 Severity: high
