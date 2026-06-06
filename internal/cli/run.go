@@ -230,6 +230,7 @@ type InteractiveRuntime struct {
 
 type InteractiveRuntimeOptions struct {
 	ConfigureDeps func(*Deps)
+	SetupDeps     SetupDepsOptions
 }
 
 func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan interactive.Event {
@@ -749,7 +750,7 @@ func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, a
 func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.Prompter, asker tool.Asker, opts InteractiveRuntimeOptions) (*InteractiveRuntime, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	d, err := SetupDeps(cmd)
+	d, err := SetupDepsWithOptions(cmd, opts.SetupDeps)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
@@ -972,11 +973,9 @@ func RunStandaloneOrchestration(cmd *cobra.Command, opts StandaloneOrchestration
 	prompter := &permission.NonInteractivePrompter{}
 	asker := &tool.NonInteractiveAsker{}
 	rt, err := BuildInteractiveRuntimeWithOptions(cmd, prompter, asker, InteractiveRuntimeOptions{
+		SetupDeps: SetupDepsOptions{DefaultPermissionMode: permission.ModeBypassPermissions},
 		ConfigureDeps: func(d *Deps) {
 			d.Bus.Subscribe(d.StderrLogger)
-			if !cmd.Flags().Changed("permission-mode") {
-				d.Checker = permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
-			}
 		},
 	})
 	if err != nil {
@@ -1092,7 +1091,7 @@ func RunNonInteractive(cmd *cobra.Command, _ []string) error {
 func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	d, err := SetupDeps(cmd)
+	d, err := SetupDepsWithOptions(cmd, SetupDepsOptions{DefaultPermissionMode: permission.ModeBypassPermissions})
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
@@ -1118,10 +1117,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		endSessionLifecycle(cmd.Context(), d)
 	}()
 
-	if !cmd.Flags().Changed("permission-mode") {
-		observe.GlobalTrace("if: !cmd.Flags().Changed(\"permission-mode\")")
-		d.Checker = permission.NewRuleChecker(nil, permission.ModeBypassPermissions, d.Cwd, d.Bus)
-	}
 	if opts.ConfigureDeps != nil {
 		opts.ConfigureDeps(d)
 	}

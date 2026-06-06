@@ -72,6 +72,10 @@ type Deps struct {
 	recorder       *observe.Recorder
 }
 
+type SetupDepsOptions struct {
+	DefaultPermissionMode permission.PermissionMode
+}
+
 // ProviderResolutionOptions lets utility commands share Pragma's provider
 // selection without constructing the full agent runtime.
 type ProviderResolutionOptions struct {
@@ -91,10 +95,14 @@ type ResolvedProviderConfig struct {
 	ModelExplicit    bool
 }
 
-// SetupDeps creates all shared dependencies from CLI flags and config.
+func SetupDeps(cmd *cobra.Command) (*Deps, error) {
+	return SetupDepsWithOptions(cmd, SetupDepsOptions{})
+}
+
+// SetupDepsWithOptions creates all shared dependencies from CLI flags and config.
 // The prompter and orchestrator are NOT created here — they differ between
 // interactive and non-interactive modes.
-func SetupDeps(cmd *cobra.Command) (*Deps, error) {
+func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	cwd, err := os.Getwd()
@@ -202,6 +210,7 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 
 	permEntries, permMode, _ := config.LoadPermissions(cwd)
 	rules := permission.RulesFromConfigEntries(permEntries)
+	permissionConfigured := len(rules) > 0 || permMode != "" || cfg.PermissionMode != ""
 
 	if cfg.PermissionMode != "" {
 		observe.GlobalTrace("if: cfg.PermissionMode != \"\"")
@@ -210,7 +219,10 @@ func SetupDeps(cmd *cobra.Command) (*Deps, error) {
 	mode := permission.PermissionMode(permMode)
 	if mode == "" {
 		observe.GlobalTrace("if: mode == \"\"")
-		mode = permission.ModeDefault
+		mode = opts.DefaultPermissionMode
+		if mode == "" || permissionConfigured {
+			mode = permission.ModeDefault
+		}
 	}
 
 	switch mode {

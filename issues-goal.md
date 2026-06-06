@@ -3255,6 +3255,10 @@ Do not copy retry loops, malformed-tool handling, or tool execution into `cmd/pr
 
 Severity: high
 
+Status: fixed in this worktree. Non-interactive callers now pass `SetupDepsOptions{DefaultPermissionMode: permission.ModeBypassPermissions}` into dependency construction, and `SetupDepsWithOptions` applies that default only when no permission rules, config/local permission mode, or CLI permission mode exists. The runner-side `!cmd.Flags().Changed("permission-mode")` checker replacement was removed, so configured policies and explicit flag policies now flow through the same resolved `permission.NewRuleChecker` boundary.
+
+Verification: `gofmt -w internal/cli/deps.go internal/cli/run.go`; `go build ./cmd/pragma`; `go vet ./internal/cli ./internal/permission ./cmd/pragma`; `git diff --check`; ownership scan for `SetupDepsWithOptions|SetupDepsOptions|DefaultPermissionMode|!cmd.Flags().Changed\\("permission-mode"\\)|ModeBypassPermissions|NewRuleChecker`.
+
 Concrete files/functions involved:
 
 - `internal/cli/deps.go`: `SetupDeps`, permission loading in `config.LoadPermissions`, `permission.NewRuleChecker`
