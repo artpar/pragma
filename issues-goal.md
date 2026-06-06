@@ -14,10 +14,6 @@ The same distinction applies to tool and subagent artifacts. "Tool result blobs 
 
 Severity: high
 
-Status: fixed in this worktree. Runtime capability scope is now owned by the CLI dependency runtime instead of setup-time `cwd`. `refreshCapabilitiesForWorkDir` resolves the active toolset and MCP config from the active workdir, installs the registry exposure filter, replaces the MCP manager server/tool set, and starts MCP connection/registration under the dependency lifecycle. Query request construction refreshes capabilities before `ToolDefs`, MCP status callbacks refresh before projection, `ToolSearch` pending servers and `ListMcpResourcesTool` refresh before reading MCP state, and worktree/resume transitions notify the same capability owner.
-
-Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/tool ./internal/mcp ./internal/toolset ./internal/cli ./internal/tools/mcp ./internal/tools/toolsearch ./internal/query ./internal/tools/worktree ./cmd/pragma`; `git diff --check`; ownership scan for setup-time/runtime capability split patterns including `toolset.Resolve(cwd)`, `mcp.LoadConfig(cwd)`, `FilterMCPServers`, `SetToolFilter`, `SetRegistryToolFilter`, `ConfigureServers`, `ReplaceServers`, `refreshCapabilitiesForWorkDir`, `ensureCapabilitiesForActiveWorkDir`, `CapabilityWorkDir`, `SetExposureFilter`, `ToolDefs`, `PendingServerNames`, `ListTool{Manager`, `MCPServerStatuses`, and `RefreshCapabilities`.
-
 Concrete files/functions involved:
 
 - `internal/query/loop.go`: `Engine.Run`, `Engine.runLoop`
@@ -3772,6 +3768,10 @@ Do not patch this by appending a one-line "current cwd changed" user message. Th
 ## 83. Project Toolset And MCP Capability Surface Is Frozen At Dependency Setup
 
 Severity: high
+
+Status: fixed in this worktree. Runtime capability scope is now owned by the CLI dependency runtime instead of setup-time `cwd`. `refreshCapabilitiesForWorkDir` resolves the active toolset and MCP config from the active workdir, installs the registry exposure filter, replaces the MCP manager server/tool set, and starts MCP connection/registration under the dependency lifecycle. Query request construction refreshes capabilities before `ToolDefs`, MCP status callbacks refresh before projection, `ToolSearch` pending servers and `ListMcpResourcesTool` refresh before reading MCP state, and worktree/resume transitions notify the same capability owner.
+
+Verification: `gofmt` on changed Go files; `go build ./cmd/pragma`; scoped `go vet ./internal/tool ./internal/mcp ./internal/toolset ./internal/cli ./internal/tools/mcp ./internal/tools/toolsearch ./internal/query ./internal/tools/worktree ./cmd/pragma`; `git diff --check`; ownership scan for setup-time/runtime capability split patterns including `toolset.Resolve(cwd)`, `mcp.LoadConfig(cwd)`, `FilterMCPServers`, `SetToolFilter`, `SetRegistryToolFilter`, `ConfigureServers`, `ReplaceServers`, `refreshCapabilitiesForWorkDir`, `ensureCapabilitiesForActiveWorkDir`, `CapabilityWorkDir`, `SetExposureFilter`, `ToolDefs`, `PendingServerNames`, `ListTool{Manager`, `MCPServerStatuses`, and `RefreshCapabilities`.
 
 Concrete files/functions involved:
 
