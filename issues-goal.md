@@ -950,6 +950,22 @@ What not to do:
 
 Do not add more timing guards around `DrainPendingMessages` or rely on the notify channel being coalesced. The problem is two layers consuming the same task queue.
 
+Status:
+
+Resolved in current worktree. The teammate agent loop is now the single production consumer of `Task.PendingMessages`; the query engine keeps task heartbeat/reaping responsibilities but no longer drains teammate message queues or injects its own teammate-message prompt.
+
+Source evidence:
+
+- `internal/tools/agent/agent.go`: `runTeammate` remains the only production call site for `DrainPendingMessages`, batches pending messages after notify, and passes the joined text as the explicit next engine prompt.
+- `internal/query/loop.go`: removed the engine-side `DrainPendingMessages` block and `"Messages from teammates:"` injection from `Engine.runLoop`.
+- `internal/query/engine.go`: `TaskID`/`SetTaskRegistry` comments now describe heartbeat/reaping ownership instead of pending-message drain ownership.
+
+Verification evidence:
+
+- Non-test verification: `gofmt -w internal/query/loop.go internal/query/engine.go`.
+- Non-test verification: `go build ./cmd/pragma`; `go vet ./internal/query ./internal/tools/agent ./internal/task ./internal/tools/sendmsg ./cmd/pragma`; `git diff --check`.
+- Contract scan: `rg -n "DrainPendingMessages|Messages from teammates|PendingMessages drain|task heartbeat|SetTaskRegistry|SetTaskID" internal/tools/agent internal/query internal/task internal/tools/sendmsg -g'*.go' -g'!*_test.go'` showed the only production queue drain is in `internal/tools/agent/agent.go`.
+
 ## 21. Bash Command Lifecycle Is Duplicated Between Bash Tool And Pragma Loop
 
 Severity: medium

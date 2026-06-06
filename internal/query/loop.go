@@ -112,19 +112,6 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 		if e.taskRegistry != nil && e.config.TaskID != "" {
 			observe.TraceCtx(ctx, "query", "Engine.runLoop", "if: e.taskRegistry != nil && e.config.TaskID != \"\"")
 			e.taskRegistry.Heartbeat(e.config.TaskID)
-			if msgs := e.taskRegistry.DrainPendingMessages(e.config.TaskID); len(msgs) > 0 {
-				observe.TraceCtx(ctx, "query", "Engine.runLoop", fmt.Sprintf("draining %d pending messages", len(msgs)))
-				injectedMsg := model.Message{
-					ID:        model.NewUUID(),
-					Role:      model.RoleUser,
-					Content:   []model.ContentPart{model.TextPart{Text: "Messages from teammates:\n" + strings.Join(msgs, "\n")}},
-					Timestamp: time.Now(),
-				}
-				if err := e.appendConversationMessage(injectedMsg, nil); err != nil {
-					ch <- ErrorEvent{Err: err}
-					return
-				}
-			}
 		}
 
 		snap := e.store.Snapshot()

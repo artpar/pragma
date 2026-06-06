@@ -35,7 +35,7 @@ type EngineConfig struct {
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
 	ResponseSchema            json.RawMessage
-	TaskID                    string // when set with TaskRegistry, enables PendingMessages drain between turns
+	TaskID                    string // when set with TaskRegistry, enables task heartbeat
 	ContentReplacementRecords []model.ContentReplacementRecord
 	FileStateRecords          []tool.FileStateRecord
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
@@ -70,7 +70,7 @@ type Engine struct {
 	// Hooks — nil means no hook manager configured.
 	hookMgr *hook.Manager
 
-	// Task registry — when set with config.TaskID, enables PendingMessages drain.
+	// Task registry — when set with config.TaskID, enables heartbeat for task-owned engines.
 	taskRegistry *task.Registry
 
 	contentReplacementState *toolresult.ContentReplacementState
@@ -129,15 +129,14 @@ func (e *Engine) SetHookManager(mgr *hook.Manager) {
 	e.hookMgr = mgr
 }
 
-// SetTaskRegistry configures the task registry and task ID for PendingMessages drain.
-// Both must be set for the engine to drain pending messages between turns.
+// SetTaskRegistry configures the task registry used for task heartbeat/reaping.
 func (e *Engine) SetTaskRegistry(reg *task.Registry) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	e.taskRegistry = reg
 }
 
-// SetTaskID sets the task ID for PendingMessages drain.
+// SetTaskID sets the task ID for task heartbeat.
 func (e *Engine) SetTaskID(id string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
