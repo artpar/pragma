@@ -87,6 +87,11 @@ func (s *Store) Load(id string) (Session, error) {
 	return s.loadJSONL(jsonlPath)
 }
 
+// LoadFile reads a session directly from a JSONL path using the canonical store parser.
+func (s *Store) LoadFile(path string) (Session, error) {
+	return s.loadJSONL(path)
+}
+
 func (s *Store) loadJSONL(path string) (Session, error) {
 	f, err := os.Open(path)
 	if err != nil {

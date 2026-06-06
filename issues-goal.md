@@ -3079,6 +3079,10 @@ Do not fix this by merely adding `AdvisorModel` to session metadata or `/api/sta
 
 Severity: medium
 
+Status: fixed in this worktree. Added `session.Store.LoadFile` as the canonical path-based JSONL loader and changed replay export to load both session IDs and JSONL paths into `session.Session` before projecting export fields. The replay export local header/message parser was removed, so path-based exports now honor store-owned metadata such as latest model, provider, and workdir.
+
+Verification: `gofmt -w cmd/pragma/replay_export.go internal/session/store.go`; `go build ./cmd/pragma`; `go vet ./cmd/pragma ./internal/session`; `git diff --check`; ownership scan for `bufio|EntryHeader|EntryMessage|loadExportConversationFile|LoadFile|loadJSONL|Store.Load|buildBugHuntCheckpoints|exportConversationFromSession`.
+
 Concrete files/functions involved:
 
 - `cmd/pragma/replay_export.go`: `loadExportConversation`, `loadExportConversationFile`, `buildBugHuntCheckpoints`

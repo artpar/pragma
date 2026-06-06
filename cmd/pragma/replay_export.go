@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -120,17 +119,7 @@ func loadExportConversation(source string) (exportConversation, error) {
 		return exportConversation{}, err
 	}
 	toolResultsDir, _ := store.ToolResultsDir(source)
-	conv := sess.Conversation
-	return exportConversation{
-		id:                  conv.ID,
-		model:               conv.Model,
-		provider:            conv.Provider,
-		workDir:             conv.WorkDir,
-		system:              conv.System,
-		createdAt:           conv.CreatedAt,
-		messages:            conv.Messages,
-		toolResultArtifacts: loadExportToolResultArtifacts(toolResultsDir),
-	}, nil
+	return exportConversationFromSession(sess, loadExportToolResultArtifacts(toolResultsDir)), nil
 }
 
 func loadExportConversationFile(path string) (exportConversation, error) {
@@ -149,50 +138,30 @@ func loadExportConversationFile(path string) (exportConversation, error) {
 			path = filepath.Join(dir, path)
 		}
 	}
-	f, err := os.Open(path)
+	store, err := session.NewStore()
 	if err != nil {
-		return exportConversation{}, fmt.Errorf("open session: %w", err)
+		return exportConversation{}, err
 	}
-	defer f.Close()
+	sess, err := store.LoadFile(path)
+	if err != nil {
+		return exportConversation{}, err
+	}
+	toolResults := loadExportToolResultArtifacts(sessionpath.ToolResultsDir(filepath.Dir(path), sess.Conversation.ID))
+	return exportConversationFromSession(sess, toolResults), nil
+}
 
-	var header session.HeaderData
-	var messages []model.Message
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 64*1024*1024)
-	for scanner.Scan() {
-		if len(scanner.Bytes()) == 0 {
-			continue
-		}
-		var entry session.Entry
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-			continue
-		}
-		switch entry.Kind {
-		case session.EntryHeader:
-			_ = json.Unmarshal(entry.Data, &header)
-		case session.EntryMessage:
-			var msg model.Message
-			if err := json.Unmarshal(entry.Data, &msg); err == nil {
-				messages = append(messages, msg)
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return exportConversation{}, fmt.Errorf("scan session: %w", err)
-	}
-	if header.SessionID == "" {
-		return exportConversation{}, fmt.Errorf("session file has no header: %s", path)
-	}
+func exportConversationFromSession(sess session.Session, artifacts []exportToolResultArtifact) exportConversation {
+	conv := sess.Conversation
 	return exportConversation{
-		id:                  header.SessionID,
-		model:               header.Model,
-		provider:            header.Provider,
-		workDir:             header.WorkDir,
-		system:              header.System,
-		createdAt:           header.CreatedAt,
-		messages:            messages,
-		toolResultArtifacts: loadExportToolResultArtifacts(sessionpath.ToolResultsDir(filepath.Dir(path), header.SessionID)),
-	}, nil
+		id:                  conv.ID,
+		model:               conv.Model,
+		provider:            conv.Provider,
+		workDir:             conv.WorkDir,
+		system:              conv.System,
+		createdAt:           conv.CreatedAt,
+		messages:            conv.Messages,
+		toolResultArtifacts: artifacts,
+	}
 }
 
 func loadExportToolResultArtifacts(dir string) []exportToolResultArtifact {
