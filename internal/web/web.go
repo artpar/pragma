@@ -52,6 +52,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/state", srv.handleState)
+	mux.HandleFunc("/api/workbench", srv.handleWorkbench)
 	mux.HandleFunc("/api/events/recent", srv.handleRecentEvents)
 	mux.HandleFunc("/api/events", srv.handleEvents)
 	mux.HandleFunc("/api/prompt", srv.handlePrompt)
