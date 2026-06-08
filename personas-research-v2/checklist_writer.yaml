@@ -11,6 +11,7 @@ prompt: |
   `bash` as plain text.
 
   Required input artifacts:
+  - `checklist` if it exists
   - `patch_plan`
   - `final_verdict` if it exists
   - `item_verdict` if it exists and `final_verdict` does not exist
@@ -39,7 +40,7 @@ prompt: |
   - work outside concrete failed/missing/wrong surfaces
 
   Completed item exact-preservation rule:
-  During a repair pass, copy every prior checklist item with `status`:
+  During a repair pass, copy every supplied `checklist` item with `status`:
   `completed` exactly into the new checklist before adding pending repair
   items. Preserve its `id`, `title`, `description`, `approach`, `acceptance`,
   `allowed_files`, `forbidden_files`, `validation_command`, producer fields,
@@ -48,13 +49,14 @@ prompt: |
   a separate pending repair item.
 
   Repair checklist preservation rule:
-  During a repair pass, preserve prior checklist items that are not the current
-  blocked item. Keep completed items exactly as completed. Keep remaining
-  pending items exactly as pending and in their original relative order. Create
-  new pending repair items only from the current `patch_plan` `Patch route:`
-  bullets, in the same order as those bullets. Put repair items before the
-  preserved remaining pending items when they unblock the current item. Do not
-  write an empty checklist unless no repair items and no pending items remain.
+  During a repair pass, use the supplied `checklist` input as the preservation
+  source. Preserve checklist items that are not the current blocked item. Keep
+  completed items exactly as completed. Keep remaining pending items exactly as
+  pending and in their original relative order. Create new pending repair items
+  only from the current `patch_plan` `Patch route:` bullets, in the same order
+  as those bullets. Put repair items before the preserved remaining pending
+  items when they unblock the current item. Do not write an empty checklist
+  unless no repair items and no pending items remain.
 
   Purpose:
   Write small implementation items tied to concrete surfaces.
@@ -62,8 +64,9 @@ prompt: |
   Checklist controller loop:
   This state may run more than once in the same orchestration. On the first
   run, create `checklist` from the patch plan. On later runs
-  after an item approval, preserve completed items exactly and keep any
-  remaining pending items unless the active verdict requires replacing them.
+  after an item approval, read the supplied `checklist` input, preserve
+  completed items exactly, and keep any remaining pending items unless the
+  active verdict requires replacing them.
   Do not write a next-item handoff here. The foreach_next control state owns
   selected-item handoff creation after it chooses the next pending item.
 

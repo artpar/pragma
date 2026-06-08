@@ -54,6 +54,9 @@ states:
     task_prompt: none
     artifacts:
       inputs:
+        - id: checklist
+          path: /tmp/pragma/checklist.json
+          description: Existing checklist, when this is a later checklist_writer visit.
         - id: patch_plan
           path: /tmp/pragma/patch-plan.md
           required: true
