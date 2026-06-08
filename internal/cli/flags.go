@@ -24,8 +24,6 @@ func RegisterFlags(cmd *cobra.Command) {
 	pf.Bool("verbose", false, "verbose logging to stderr")
 	pf.Bool("record", false, "record events to file")
 	pf.Int("max-turns", 0, "override default turn limit (0 = use default)")
-	pf.String("context-mode", "", "context mode: chat, state-handoff")
-	pf.String("handoff-schema", "", "handoff schema version for state-handoff mode")
 	pf.Bool("stop-after-tool-exec", false, "experimental: stop after executing one model-requested tool batch")
 	pf.String("allowed-tools", "", "comma-separated list of allowed tool names")
 	pf.String("disallowed-tools", "", "comma-separated list of excluded tool names")
@@ -42,6 +40,5 @@ func RegisterFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolP("continue", "c", false, "resume most recent session in current directory")
 	cmd.Flags().Bool("list-sessions", false, "list saved sessions")
 	cmd.Flags().String("output-schema", "", "JSON Schema for structured output (file path or inline JSON, non-interactive only)")
-	cmd.Flags().String("web-addr", "", "address for native web UI server (default random localhost port)")
 	cmd.MarkFlagsMutuallyExclusive("continue", "resume")
 }

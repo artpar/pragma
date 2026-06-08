@@ -93,7 +93,7 @@ The key comparison is not just pass/fail. A failed experiment is still useful if
 The current repo already has pieces that can support these experiments:
 
 - The Pragma loop is the current benchmark path and can host prompt-only role simulations quickly.
-- The legacy provider tool loop, Agent tool, task tools, worktree tools, state-handoff mode, MCP adapters, and skills are retained and can be reused as implementation mechanisms once a scenario needs real delegation.
+- The Agent tool, task tools, worktree tools, MCP adapters, and skills are retained and can be reused as implementation mechanisms once a scenario needs real delegation.
 - The SWE-bench Pro runner already captures prompts, stderr, raw HTTP, predictions, and evaluator output, which is enough for early experiment scoring.
 
 Do not start by exposing every old tool to the benchmark model. Start with the cheapest orchestration change that can falsify a delegation hypothesis.

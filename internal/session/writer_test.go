@@ -72,13 +72,6 @@ func TestWriter_RoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	handoff := model.NewHandoffState("finish long task")
-	handoff.CurrentFocus = "read loop"
-	handoff.Completed = []string{"loaded latest tool result"}
-	if err := w.WriteHandoffState(handoff); err != nil {
-		t.Fatal(err)
-	}
-
 	meta := MetadataData{
 		CostUSD:   0.005,
 		TurnCount: 2,
@@ -118,16 +111,6 @@ func TestWriter_RoundTrip(t *testing.T) {
 	if sess.TurnCount != 2 {
 		t.Errorf("TurnCount = %d, want 2", sess.TurnCount)
 	}
-	if sess.HandoffState.Goal != handoff.Goal {
-		t.Errorf("HandoffState.Goal = %q, want %q", sess.HandoffState.Goal, handoff.Goal)
-	}
-	if sess.HandoffState.CurrentFocus != handoff.CurrentFocus {
-		t.Errorf("HandoffState.CurrentFocus = %q, want %q", sess.HandoffState.CurrentFocus, handoff.CurrentFocus)
-	}
-	if len(sess.HandoffState.Completed) != 1 || sess.HandoffState.Completed[0] != handoff.Completed[0] {
-		t.Errorf("HandoffState.Completed = %#v, want %#v", sess.HandoffState.Completed, handoff.Completed)
-	}
-
 	// Verify ContentPart discriminators survived
 	msg2 := sess.Conversation.Messages[1]
 	if len(msg2.Content) != 2 {
@@ -298,67 +281,6 @@ func TestWriter_Rewrite(t *testing.T) {
 	}
 	if sess.Summary != "compacted" {
 		t.Errorf("Summary = %q, want compacted", sess.Summary)
-	}
-}
-
-func TestWriter_WebEventsRoundTripAndRewrite(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "web-events.jsonl")
-	received := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
-
-	w, _ := NewWriter(path)
-	header := testHeader()
-	if err := w.WriteHeader(header); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.WriteWebEvent(WebEventData{
-		Sequence:   7,
-		ReceivedAt: received,
-		Type:       "tool_call",
-		DataType:   "query.ToolCallEvent",
-		Data:       json.RawMessage(`{"tool":"Bash","unknown":"visible"}`),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.WriteMetadata(MetadataData{TurnCount: 1, Summary: "with web event"}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := w.Rewrite(RewriteData{
-		Header:   header,
-		Messages: nil,
-		Metadata: MetadataData{TurnCount: 1, Summary: "rewritten"},
-		WebEvents: []WebEventData{{
-			Sequence:   7,
-			ReceivedAt: received,
-			Type:       "tool_call",
-			DataType:   "query.ToolCallEvent",
-			Data:       json.RawMessage(`{"tool":"Bash","unknown":"visible"}`),
-		}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	store := &Store{dir: dir}
-	if err := os.Rename(path, filepath.Join(dir, "test-jsonl-001.jsonl")); err != nil {
-		t.Fatal(err)
-	}
-	sess, err := store.Load("test-jsonl-001")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sess.WebEvents) != 1 {
-		t.Fatalf("web event count: got %d, want 1", len(sess.WebEvents))
-	}
-	event := sess.WebEvents[0]
-	if event.Sequence != 7 || event.Type != "tool_call" || event.DataType != "query.ToolCallEvent" {
-		t.Fatalf("web event identity lost: %#v", event)
-	}
-	if string(event.Data) != `{"tool":"Bash","unknown":"visible"}` {
-		t.Fatalf("web event payload: got %s", event.Data)
 	}
 }
 

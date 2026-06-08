@@ -47,20 +47,6 @@ var SupportedSettings = []SettingDef{
 		Description: "Default permission mode",
 	},
 	{
-		Name:        "context_mode",
-		Type:        "string",
-		Source:      "project",
-		Options:     []string{"chat", "state-handoff"},
-		Description: "Conversation context mode",
-	},
-	{
-		Name:        "handoff_schema",
-		Type:        "string",
-		Source:      "project",
-		Options:     []string{"v1"},
-		Description: "State handoff schema version",
-	},
-	{
 		Name:        "stop_after_tool_exec",
 		Type:        "boolean",
 		Source:      "project",

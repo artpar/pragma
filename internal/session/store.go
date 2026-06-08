@@ -101,14 +101,12 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var header HeaderData
 	var messages []model.Message
 	var meta MetadataData
-	var handoffState model.HandoffState
 	var replacements []model.ContentReplacementRecord
 	var promptHistory []PromptHistoryData
 	var fileStateRecords []tool.FileStateRecord
 	var todos []app.TodoItem
 	var teamContext *app.TeamContext
 	var orchestrationArtifacts []app.OrchestrationArtifact
-	var webEvents []WebEventData
 	var taskResults []TaskResultData
 	hasHeader := false
 
@@ -136,11 +134,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			}
 		case EntryMetadata:
 			json.Unmarshal(entry.Data, &meta) // last one wins
-		case EntryHandoffState:
-			var data HandoffStateData
-			if err := json.Unmarshal(entry.Data, &data); err == nil {
-				handoffState = data.State
-			}
 		case EntryContentReplacement:
 			var data ContentReplacementData
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
@@ -171,11 +164,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				orchestrationArtifacts = data.Artifacts
 			}
-		case EntryWebEvent:
-			var data WebEventData
-			if err := json.Unmarshal(entry.Data, &data); err == nil && data.Type != "" {
-				webEvents = append(webEvents, data)
-			}
 		case EntryTaskResult:
 			var data TaskResultData
 			if err := json.Unmarshal(entry.Data, &data); err == nil && data.TaskID != "" {
@@ -205,7 +193,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 
 	return Session{
 		Conversation:           conv,
-		HandoffState:           handoffState,
 		Summary:                meta.Summary,
 		CostUSD:                meta.CostUSD,
 		TurnCount:              meta.TurnCount,
@@ -218,7 +205,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		Todos:                  todos,
 		TeamContext:            app.CopyTeamContext(teamContext),
 		OrchestrationArtifacts: orchestrationArtifacts,
-		WebEvents:              webEvents,
 		TaskResults:            taskResults,
 		Worktree:               copyWorktreeSession(meta.Worktree),
 	}, nil

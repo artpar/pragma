@@ -29,8 +29,6 @@ type EngineConfig struct {
 	Model                     string
 	MaxTokens                 int
 	MaxTurns                  int // 0 means use DefaultMaxTurns
-	ContextMode               string
-	HandoffSchema             string
 	StopAfterToolExec         bool
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig

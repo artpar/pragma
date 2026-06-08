@@ -129,17 +129,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
 	}
-	applyContextDefaults(&cfg)
-	if cfg.ContextMode != model.ContextModeChat && cfg.ContextMode != model.ContextModeStateHandoff {
-		observe.GlobalTrace("if: cfg.ContextMode != model.ContextModeChat && cfg.ContextMode != model.ContextM...")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid context mode %q\", cfg.ContextMode)")
-		return nil, fmt.Errorf("invalid context mode %q", cfg.ContextMode)
-	}
-	if cfg.HandoffSchema != model.HandoffSchemaV1 {
-		observe.GlobalTrace("if: cfg.HandoffSchema != model.HandoffSchemaV1")
-		observe.GlobalTrace("return: nil, fmt.Errorf(\"invalid handoff schema %q\", cfg.HandoffSchema)")
-		return nil, fmt.Errorf("invalid handoff schema %q", cfg.HandoffSchema)
-	}
 	toolPolicy := toolExposurePolicyFromFlags(cmd)
 
 	bus := observe.NewEventBus(1024)
@@ -241,7 +230,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	var conv model.Conversation
 	var resumedCost float64
 	var resumedTokens model.TokenUsage
-	var resumedHandoffState model.HandoffState
 	var resumedContentReplacements []model.ContentReplacementRecord
 	var resumedFileStateRecords []tool.FileStateRecord
 	var resumedTodos []app.TodoItem
@@ -316,7 +304,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		runtimeCWD = conv.WorkDir
 		resumedCost = sess.CostUSD
 		resumedTokens = sess.TokenUsage
-		resumedHandoffState = sess.HandoffState
 		resumedContentReplacements = sess.ContentReplacements
 		resumedFileStateRecords = sess.FileStateRecords
 		resumedTodos = sess.Todos
@@ -355,7 +342,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 
 	store := app.NewStateStore(app.AppState{
 		Conversation:           conv,
-		HandoffState:           resumedHandoffState,
 		CWD:                    runtimeCWD,
 		Model:                  cfg.Model,
 		Provider:               cfg.Provider,
@@ -388,8 +374,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		Model:                     cfg.Model,
 		MaxTokens:                 cfg.MaxTokens,
 		MaxTurns:                  cfg.MaxTurns,
-		ContextMode:               cfg.ContextMode,
-		HandoffSchema:             cfg.HandoffSchema,
 		StopAfterToolExec:         cfg.StopAfterToolExec,
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
@@ -642,14 +626,6 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"max-turns\")")
 		cfg.MaxTurns, _ = cmd.Flags().GetInt("max-turns")
 	}
-	if cmd.Flags().Changed("context-mode") {
-		observe.GlobalTrace("if: cmd.Flags().Changed(\"context-mode\")")
-		cfg.ContextMode, _ = cmd.Flags().GetString("context-mode")
-	}
-	if cmd.Flags().Changed("handoff-schema") {
-		observe.GlobalTrace("if: cmd.Flags().Changed(\"handoff-schema\")")
-		cfg.HandoffSchema, _ = cmd.Flags().GetString("handoff-schema")
-	}
 	if cmd.Flags().Changed("stop-after-tool-exec") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"stop-after-tool-exec\")")
 		cfg.StopAfterToolExec, _ = cmd.Flags().GetBool("stop-after-tool-exec")
@@ -732,19 +708,6 @@ func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (
 		ProviderExplicit: providerExplicit,
 		ModelExplicit:    modelExplicit,
 	}, nil
-}
-
-func applyContextDefaults(cfg *config.Config) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if cfg.ContextMode == "" {
-		observe.GlobalTrace("if: cfg.ContextMode == \"\"")
-		cfg.ContextMode = model.ContextModeStateHandoff
-	}
-	if cfg.HandoffSchema == "" {
-		observe.GlobalTrace("if: cfg.HandoffSchema == \"\"")
-		cfg.HandoffSchema = model.HandoffSchemaV1
-	}
 }
 
 // CreateProvider creates a provider from config.

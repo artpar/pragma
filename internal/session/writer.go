@@ -26,14 +26,12 @@ type RewriteData struct {
 	Header                 HeaderData
 	Messages               []model.Message
 	Metadata               MetadataData
-	HandoffState           model.HandoffState
 	ContentReplacements    []model.ContentReplacementRecord
 	PromptHistory          []PromptHistoryData
 	FileStateRecords       []tool.FileStateRecord
 	Todos                  []app.TodoItem
 	TeamContext            *app.TeamContext
 	OrchestrationArtifacts []app.OrchestrationArtifact
-	WebEvents              []WebEventData
 	TaskResults            []TaskResultData
 }
 
@@ -132,13 +130,6 @@ func (w *Writer) WriteMetadata(m MetadataData) error {
 	return w.writeEntry(EntryMetadata, m)
 }
 
-func (w *Writer) WriteHandoffState(state model.HandoffState) error {
-	if state.IsZero() {
-		return nil
-	}
-	return w.writeEntry(EntryHandoffState, HandoffStateData{State: state})
-}
-
 func (w *Writer) WriteContentReplacement(records []model.ContentReplacementRecord) error {
 	if len(records) == 0 {
 		return nil
@@ -180,19 +171,6 @@ func (w *Writer) WriteTaskResult(result TaskResultData) error {
 		return nil
 	}
 	return w.writeEntry(EntryTaskResult, result)
-}
-
-func (w *Writer) WriteWebEvent(event WebEventData) error {
-	if event.Type == "" {
-		return nil
-	}
-	if event.ReceivedAt.IsZero() {
-		event.ReceivedAt = time.Now()
-	}
-	if event.Data == nil {
-		event.Data = json.RawMessage("null")
-	}
-	return w.writeEntry(EntryWebEvent, event)
 }
 
 func (w *Writer) writeEntry(kind EntryKind, data any) error {
@@ -256,11 +234,6 @@ func (w *Writer) Rewrite(data RewriteData) error {
 		w.written[msg.ID] = true
 	}
 
-	if !data.HandoffState.IsZero() {
-		if err := w.encodeRewriteEntry(EntryHandoffState, HandoffStateData{State: data.HandoffState}); err != nil {
-			return err
-		}
-	}
 	if len(data.ContentReplacements) > 0 {
 		if err := w.encodeRewriteEntry(EntryContentReplacement, ContentReplacementData{Records: data.ContentReplacements}); err != nil {
 			return err
@@ -296,14 +269,6 @@ func (w *Writer) Rewrite(data RewriteData) error {
 			continue
 		}
 		if err := w.encodeRewriteEntry(EntryTaskResult, result); err != nil {
-			return err
-		}
-	}
-	for _, event := range data.WebEvents {
-		if event.Type == "" {
-			continue
-		}
-		if err := w.encodeRewriteEntry(EntryWebEvent, event); err != nil {
 			return err
 		}
 	}

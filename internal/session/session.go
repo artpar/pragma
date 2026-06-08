@@ -11,7 +11,6 @@ import (
 // Session wraps a Conversation with persistence metadata.
 type Session struct {
 	Conversation           model.Conversation               `json:"conversation"`
-	HandoffState           model.HandoffState               `json:"handoff_state,omitempty"`
 	Summary                string                           `json:"summary,omitempty"`
 	CostUSD                float64                          `json:"cost_usd,omitempty"`
 	TurnCount              int                              `json:"turn_count"`
@@ -24,7 +23,6 @@ type Session struct {
 	Todos                  []app.TodoItem                   `json:"todos,omitempty"`
 	TeamContext            *app.TeamContext                 `json:"team_context,omitempty"`
 	OrchestrationArtifacts []app.OrchestrationArtifact      `json:"orchestration_artifacts,omitempty"`
-	WebEvents              []WebEventData                   `json:"web_events,omitempty"`
 	TaskResults            []TaskResultData                 `json:"task_results,omitempty"`
 	Worktree               *app.WorktreeSession             `json:"worktree,omitempty"`
 }

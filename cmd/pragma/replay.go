@@ -8,12 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/artpar/pragma/internal/cli"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
-	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/provider"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 func replayCmd() *cobra.Command {
@@ -25,15 +21,13 @@ func replayCmd() *cobra.Command {
 Modes:
   --events          Display event stream (read-only, no execution)
   --deterministic   Render recorded API responses (read-only, no tool execution)
-  --until-turn=N    Replay N turns, then switch to live provider (requires --then-live)
-  --then-live       Switch to real provider after --until-turn`,
+  --until-turn=N    Replay N recorded turns`,
 		Args: cobra.ExactArgs(1),
 		RunE: replayRun,
 	}
 	cmd.Flags().Bool("events", false, "display event stream (read-only)")
 	cmd.Flags().Bool("deterministic", false, "render recorded API responses without executing tools")
 	cmd.Flags().Int("until-turn", 0, "replay up to N turns")
-	cmd.Flags().Bool("then-live", false, "switch to live provider after --until-turn")
 	cmd.AddCommand(replayExportCmd())
 	cmd.AddCommand(replayRawHTTPCmd())
 	return cmd
@@ -44,11 +38,6 @@ func replayRun(cmd *cobra.Command, args []string) error {
 	eventsMode, _ := cmd.Flags().GetBool("events")
 	deterministicMode, _ := cmd.Flags().GetBool("deterministic")
 	untilTurn, _ := cmd.Flags().GetInt("until-turn")
-	thenLive, _ := cmd.Flags().GetBool("then-live")
-
-	if thenLive && untilTurn == 0 {
-		return fmt.Errorf("--then-live requires --until-turn=N")
-	}
 
 	engine, err := observe.LoadReplay(dir)
 	if err != nil {
@@ -60,7 +49,7 @@ func replayRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if deterministicMode || untilTurn > 0 {
-		return replayDeterministic(cmd, engine, untilTurn, thenLive)
+		return replayDeterministic(engine, untilTurn)
 	}
 
 	// Default: events mode
@@ -148,23 +137,7 @@ func formatEventDetail(ev observe.Event) string {
 }
 
 // replayDeterministic renders recorded responses without running the live engine.
-func replayDeterministic(cmd *cobra.Command, engine *observe.ReplayEngine, untilTurn int, thenLive bool) error {
-	if !thenLive {
-		return replayRecordedResponses(engine, untilTurn)
-	}
-
-	d, err := cli.SetupDeps(cmd)
-	if err != nil {
-		return err
-	}
-	if d.Cleanup != nil {
-		defer d.Cleanup()
-	}
-
-	if thenLive && untilTurn > 0 {
-		return replayLiveFromCheckpoint(cmd, d, engine, untilTurn+1)
-	}
-
+func replayDeterministic(engine *observe.ReplayEngine, untilTurn int) error {
 	return replayRecordedResponses(engine, untilTurn)
 }
 
@@ -190,46 +163,6 @@ func replayRecordedResponses(engine *observe.ReplayEngine, untilTurn int) error 
 		return fmt.Errorf("recording has no recorded API responses")
 	}
 	return nil
-}
-
-func replayLiveFromCheckpoint(cmd *cobra.Command, d *cli.Deps, engine *observe.ReplayEngine, turn int) error {
-	req, ok := engine.APIRequest(turn)
-	if !ok {
-		return fmt.Errorf("recording lacks request payload for turn %d; rerun with --record after this change to capture exact replay checkpoints", turn)
-	}
-	params := requestParamsFromEvent(req)
-	if cmd.Flags().Changed("model") || cmd.Flags().Changed("provider") {
-		params.Model = d.Cfg.Model
-	}
-	queryEngine, err := cli.RegisterTools(d, &permission.NonInteractivePrompter{}, &tool.NonInteractiveAsker{})
-	if err != nil {
-		return err
-	}
-	return cli.ConsumeEngineEvents(queryEngine.RunFromRequest(cmd.Context(), params), d.Cfg.Verbose)
-}
-
-func requestParamsFromEvent(req observe.APIRequestStarted) provider.RequestParams {
-	system := req.SystemPrompt
-	if len(system.Blocks) == 0 && req.System != "" {
-		system = model.SystemPrompt{Blocks: []model.SystemBlock{{Text: req.System, Cacheable: true}}}
-	}
-	var thinking *provider.ThinkingConfig
-	if req.Thinking != nil {
-		thinking = &provider.ThinkingConfig{
-			Enabled:      req.Thinking.Enabled,
-			BudgetTokens: req.Thinking.BudgetTokens,
-		}
-	}
-	return provider.RequestParams{
-		Model:          req.Model,
-		MaxTokens:      req.MaxTokens,
-		Messages:       req.Messages,
-		System:         system,
-		Tools:          req.Tools,
-		Temperature:    req.Temperature,
-		Thinking:       thinking,
-		ResponseSchema: req.ResponseSchema,
-	}
 }
 
 func printReplayResponse(resp model.Response) error {

@@ -25,6 +25,8 @@ fenced bash code block with one command or one shell script. Do not write prose,
 analysis sections, headings, or bullets outside the bash code block.
 When you are done and want to answer the user, write the final answer directly
 with no fenced bash code block. Do not use a bash block to end the turn.
+When you need to ask the user a question, ask it directly with no fenced bash
+code block. Do not use echo or any other command to ask user questions.
 Use commands, command output, and required task artifacts for reasoning and evidence.
 Format your response as shown in <format_example>.
 
@@ -50,6 +52,7 @@ Current working directory: %s
 
 const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE bash action in triple backticks and no prose outside the code block when you need a shell action. Found %d actions.
 If you want to end the task, write the final answer directly with no fenced bash code block.
+If you need to ask the user a question, ask it directly with no fenced bash code block; do not use echo.
 Else, please format your response exactly as follows:
 
 <response_example>

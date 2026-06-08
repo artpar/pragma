@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/pragma/internal/config"
-	"github.com/artpar/pragma/internal/model"
 )
 
 func TestAutoDetectProvider(t *testing.T) {
@@ -124,8 +123,6 @@ func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
 	RegisterFlags(cmd)
 	if err := cmd.ParseFlags([]string{
 		"--stop-after-tool-exec",
-		"--context-mode", model.ContextModeStateHandoff,
-		"--handoff-schema", model.HandoffSchemaV1,
 		"--toolset", "idea",
 	}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
@@ -137,75 +134,8 @@ func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
 	if !cfg.StopAfterToolExec {
 		t.Fatal("StopAfterToolExec = false, want true")
 	}
-	if cfg.ContextMode != model.ContextModeStateHandoff {
-		t.Fatalf("ContextMode = %q, want %q", cfg.ContextMode, model.ContextModeStateHandoff)
-	}
-	if cfg.HandoffSchema != model.HandoffSchemaV1 {
-		t.Fatalf("HandoffSchema = %q, want %q", cfg.HandoffSchema, model.HandoffSchemaV1)
-	}
 	if cfg.Toolset != "idea" {
 		t.Fatalf("Toolset = %q, want idea", cfg.Toolset)
-	}
-}
-
-func TestRegisterFlagsIncludesNativeWebAddress(t *testing.T) {
-	cmd := &cobra.Command{Use: "pragma"}
-	RegisterFlags(cmd)
-	if err := cmd.ParseFlags([]string{"--web-addr", "127.0.0.1:4817"}); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
-	}
-
-	got, err := cmd.Flags().GetString("web-addr")
-	if err != nil {
-		t.Fatalf("GetString(web-addr): %v", err)
-	}
-	if got != "127.0.0.1:4817" {
-		t.Fatalf("web-addr = %q, want 127.0.0.1:4817", got)
-	}
-}
-
-func TestApplyFlagOverridesStateHandoffDoesNotImplyStopAfterToolExec(t *testing.T) {
-	cmd := &cobra.Command{Use: "pragma"}
-	RegisterFlags(cmd)
-	if err := cmd.ParseFlags([]string{
-		"--context-mode", model.ContextModeStateHandoff,
-		"--handoff-schema", model.HandoffSchemaV1,
-	}); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
-	}
-
-	var cfg config.Config
-	ApplyFlagOverrides(cmd, &cfg)
-
-	if cfg.StopAfterToolExec {
-		t.Fatal("StopAfterToolExec = true, want false unless explicitly requested")
-	}
-}
-
-func TestApplyContextDefaultsUsesStateHandoff(t *testing.T) {
-	var cfg config.Config
-	applyContextDefaults(&cfg)
-
-	if cfg.ContextMode != model.ContextModeStateHandoff {
-		t.Fatalf("ContextMode = %q, want %q", cfg.ContextMode, model.ContextModeStateHandoff)
-	}
-	if cfg.HandoffSchema != model.HandoffSchemaV1 {
-		t.Fatalf("HandoffSchema = %q, want %q", cfg.HandoffSchema, model.HandoffSchemaV1)
-	}
-	if cfg.StopAfterToolExec {
-		t.Fatal("StopAfterToolExec = true, want false by default")
-	}
-}
-
-func TestApplyContextDefaultsPreservesExplicitChatMode(t *testing.T) {
-	cfg := config.Config{ContextMode: model.ContextModeChat}
-	applyContextDefaults(&cfg)
-
-	if cfg.ContextMode != model.ContextModeChat {
-		t.Fatalf("ContextMode = %q, want %q", cfg.ContextMode, model.ContextModeChat)
-	}
-	if cfg.StopAfterToolExec {
-		t.Fatal("StopAfterToolExec = true, want false for explicit chat mode")
 	}
 }
 

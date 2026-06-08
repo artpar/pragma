@@ -28,8 +28,6 @@ type Config struct {
 	Thinking          *ThinkingConfig `json:"thinking,omitempty"`
 	SystemPrompt      string          `json:"system_prompt,omitempty"`
 	MaxTurns          int             `json:"max_turns,omitempty"`
-	ContextMode       string          `json:"context_mode,omitempty"`
-	HandoffSchema     string          `json:"handoff_schema,omitempty"`
 	StopAfterToolExec bool            `json:"stop_after_tool_exec,omitempty"`
 	Verbose           bool            `json:"verbose,omitempty"`
 	Record            bool            `json:"record,omitempty"`
@@ -154,12 +152,6 @@ func merge(base, overlay Config) Config {
 	}
 	if overlay.MaxTurns != 0 {
 		result.MaxTurns = overlay.MaxTurns
-	}
-	if overlay.ContextMode != "" {
-		result.ContextMode = overlay.ContextMode
-	}
-	if overlay.HandoffSchema != "" {
-		result.HandoffSchema = overlay.HandoffSchema
 	}
 	if overlay.StopAfterToolExec {
 		result.StopAfterToolExec = true

@@ -139,8 +139,8 @@ func (p *Provider) nextResponse() (model.Response, bool, error) {
 		observe.GlobalTrace("return: model.Response{}, true, nil")
 		return model.Response{}, true, nil
 	}
-	observe.GlobalTrace("return: model.Response{}, false, fmt.Errorf(\"no recorded API response for turn %d; us...")
-	return model.Response{}, false, fmt.Errorf("no recorded API response for turn %d; use --until-turn=%d --then-live to switch to live provider", p.turn, p.turn-1)
+	observe.GlobalTrace("return: model.Response{}, false, fmt.Errorf(\"no recorded API response for turn %d\")")
+	return model.Response{}, false, fmt.Errorf("no recorded API response for turn %d", p.turn)
 }
 
 // ResponseToChunks converts a model.Response into StreamChunks that the engine

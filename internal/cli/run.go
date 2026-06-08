@@ -38,7 +38,6 @@ import (
 	toolapplypatch "github.com/artpar/pragma/internal/tools/applypatch"
 	toolsynthetic "github.com/artpar/pragma/internal/tools/synthetic"
 	"github.com/artpar/pragma/internal/tui"
-	"github.com/artpar/pragma/internal/web"
 )
 
 // RunDispatcher routes to interactive UI, non-interactive mode, background, or list-sessions.
@@ -593,7 +592,6 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.Model = providerBinding.modelID
 		st.Provider = providerBinding.providerName
 		st.CWD = resumedConv.WorkDir
-		st.HandoffState = sess.HandoffState
 		st.Todos = sess.Todos
 		st.TeamContext = app.CopyTeamContext(sess.TeamContext)
 		st.PromptHistory = promptHistory
@@ -904,73 +902,11 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 	return rt, nil
 }
 
-// RunInteractive launches the browser UI for multi-turn conversation.
+// RunInteractive launches the terminal UI for multi-turn conversation.
 func RunInteractive(cmd *cobra.Command) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	bridge := web.NewBridge()
-	webAddr, _ := cmd.Flags().GetString("web-addr")
-	rt, err := BuildInteractiveRuntime(cmd, bridge, bridge)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: err")
-		return err
-	}
-	defer rt.Cleanup(cmd.Context())
-	return web.Run(cmd.Context(), web.Config{
-		Bridge:         bridge,
-		ParentCtx:      cmd.Context(),
-		RunInput:       rt.RunInput,
-		Resume:         rt.Resume,
-		CloseSession:   rt.CloseSession,
-		Store:          rt.Deps.Store,
-		CostTracker:    rt.Deps.CostTracker,
-		ModelName:      rt.Deps.Cfg.Model,
-		Provider:       rt.Deps.Cfg.Provider,
-		SlashCmds:      rt.SlashCmds,
-		SlashDeps:      rt.SlashDeps,
-		Metrics:        rt.Deps.Metrics,
-		Workspace:      rt.Deps.Cwd,
-		Version:        buildinfo.Version,
-		TaskReg:        rt.Deps.TaskReg,
-		SessionStore:   rt.SlashDeps.SessionStore,
-		EventRecorder:  newSessionWebEventRecorder(rt),
-		SessionStart:   rt.Deps.SessionStart,
-		McpServerNames: connectedMcpNames(rt.Deps.McpManager),
-		WebAddr:        webAddr,
-	})
-}
-
-type sessionWebEventRecorder struct {
-	mu      sync.Mutex
-	rt      *InteractiveRuntime
-	pending []session.WebEventData
-}
-
-const maxPendingWebEvents = 200
-
-func newSessionWebEventRecorder(rt *InteractiveRuntime) func(session.WebEventData) error {
-	recorder := &sessionWebEventRecorder{rt: rt}
-	return recorder.record
-}
-
-func (r *sessionWebEventRecorder) record(event session.WebEventData) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.rt == nil || r.rt.Deps == nil || r.rt.Deps.SessionWriter == nil {
-		r.pending = append(r.pending, event)
-		if len(r.pending) > maxPendingWebEvents {
-			r.pending = r.pending[len(r.pending)-maxPendingWebEvents:]
-		}
-		return nil
-	}
-	for len(r.pending) > 0 {
-		if err := r.rt.Deps.SessionWriter.WriteWebEvent(r.pending[0]); err != nil {
-			return err
-		}
-		r.pending = r.pending[1:]
-	}
-	return r.rt.Deps.SessionWriter.WriteWebEvent(event)
+	return RunTUIInteractive(cmd)
 }
 
 // RunTUIInteractive launches the Bubble Tea TUI using the shared runtime.
@@ -1721,9 +1657,6 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 				return err
 			}
 		}
-		if err := d.SessionWriter.WriteHandoffState(snap.HandoffState); err != nil {
-			return err
-		}
 		if d.Engine != nil {
 			if err := d.SessionWriter.WriteFileState(d.Engine.FileStateRecords()); err != nil {
 				return err
@@ -1806,14 +1739,12 @@ func rewriteCurrentSession(d *Deps) error {
 		Header:                 header,
 		Messages:               snap.Conversation.Messages,
 		Metadata:               sessionMetadataForSnapshot(d, snap),
-		HandoffState:           snap.HandoffState,
 		ContentReplacements:    existing.ContentReplacements,
 		PromptHistory:          existing.PromptHistory,
 		FileStateRecords:       fileStateRecords,
 		Todos:                  snap.Todos,
 		TeamContext:            snap.TeamContext,
 		OrchestrationArtifacts: snap.OrchestrationArtifacts,
-		WebEvents:              existing.WebEvents,
 		TaskResults:            existing.TaskResults,
 	}); err != nil {
 		return err

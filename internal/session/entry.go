@@ -16,7 +16,6 @@ const (
 	EntryHeader                 EntryKind = "header"
 	EntryMessage                EntryKind = "message"
 	EntryMetadata               EntryKind = "metadata"
-	EntryHandoffState           EntryKind = "handoff_state"
 	EntryContentReplacement     EntryKind = "content_replacement"
 	EntryPromptHistory          EntryKind = "prompt_history"
 	EntryFileState              EntryKind = "file_state"
@@ -24,7 +23,6 @@ const (
 	EntryTeamContext            EntryKind = "team_context"
 	EntryTaskResult             EntryKind = "task_result"
 	EntryOrchestrationArtifacts EntryKind = "orchestration_artifacts"
-	EntryWebEvent               EntryKind = "web_event"
 )
 
 // Entry is a single JSONL line in a session file. Discriminated by Kind.
@@ -96,18 +94,6 @@ type TaskResultData struct {
 	TurnCount  int       `json:"turn_count,omitempty"`
 	CreatedAt  time.Time `json:"created_at,omitempty"`
 	UpdatedAt  time.Time `json:"updated_at,omitempty"`
-}
-
-type WebEventData struct {
-	Sequence   int             `json:"sequence"`
-	ReceivedAt time.Time       `json:"received_at"`
-	Type       string          `json:"type"`
-	DataType   string          `json:"data_type"`
-	Data       json.RawMessage `json:"data"`
-}
-
-type HandoffStateData struct {
-	State model.HandoffState `json:"state"`
 }
 
 // MarshalEntry creates a JSONL-ready Entry from typed data.

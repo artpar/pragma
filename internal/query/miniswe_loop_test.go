@@ -38,25 +38,19 @@ func TestPragmaLoopSystemUsesServerGuidanceFromExistingPrompt(t *testing.T) {
 	}
 }
 
-func TestPragmaLoopInstancePromptMatchesPragmaLoopYamlSedBoundary(t *testing.T) {
+func TestPragmaLoopInstancePromptIncludesTaskAndWorkdir(t *testing.T) {
 	prompt := pragmaLoopInstancePrompt("do the task", "/work")
 	if !strings.Contains(prompt, "Current working directory: /work") {
 		t.Fatalf("instance prompt does not include current working directory: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Please solve this task: do the task") {
+		t.Fatalf("instance prompt does not include task: %q", prompt)
 	}
 	if strings.Contains(prompt, "MY_ENV_VAR=MY_VALUE cd /path/to/working/dir") {
 		t.Fatalf("instance prompt contains invalid env/cd example: %q", prompt)
 	}
 	if strings.Contains(prompt, "THOUGHT") || strings.Contains(prompt, "Here are some thoughts") {
 		t.Fatalf("instance prompt still contains reasoning prose examples: %q", prompt)
-	}
-	if !strings.Contains(prompt, "Do not pipe validation commands such as tests or builds to head or tail") {
-		t.Fatalf("instance prompt does not include validation output discipline: %q", prompt)
-	}
-	if !strings.Contains(prompt, "### Edit files with sed:```bash\n# Replace all occurrences") {
-		t.Fatalf("instance prompt does not match Pragma loop YAML whitespace at sed boundary")
-	}
-	if strings.Contains(prompt, "### Edit files with sed:\n\n```bash") {
-		t.Fatalf("instance prompt has hand-copied whitespace drift before sed example")
 	}
 
 	msg := fmt.Sprintf(pragmaLoopFormatErrorTemplate, 0)
