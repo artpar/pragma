@@ -213,6 +213,10 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			}
 			continue
 		}
+		if submitted, _ := pragmaLoopSubmitted(result); submitted {
+			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
+			return
+		}
 		if err := e.appendPragmaLoopUserMessage(formatPragmaLoopObservation(result)); err != nil {
 			ch <- ErrorEvent{Err: err}
 			return
