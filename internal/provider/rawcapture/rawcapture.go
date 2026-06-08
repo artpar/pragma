@@ -55,6 +55,7 @@ type ResponseMeta struct {
 	StatusCode     int    `json:"status_code,omitempty"`
 	StartedAt      string `json:"started_at"`
 	CompletedAt    string `json:"completed_at,omitempty"`
+	DurationMs     int64  `json:"duration_ms,omitempty"`
 	ResponseBytes  int64  `json:"response_bytes,omitempty"`
 	ResponseSHA256 string `json:"response_sha256,omitempty"`
 	Error          string `json:"error,omitempty"`
@@ -142,6 +143,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.base.RoundTrip(req)
 	}
 
+	requestStart := time.Now().UTC()
 	seq := atomic.AddUint64(&t.seq, 1)
 	traceID, _ := req.Context().Value(traceIDKey).(string)
 	spanID, _ := req.Context().Value(spanIDKey).(string)
@@ -162,7 +164,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		Method:        req.Method,
 		URL:           req.URL.String(),
 		Host:          req.Host,
-		StartedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+		StartedAt:     requestStart.Format(time.RFC3339Nano),
 		RequestBytes:  len(body),
 		RequestSHA256: sha256Hex(body),
 		Stream:        detectStream(body),
@@ -170,12 +172,14 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	resp, roundTripErr := t.base.RoundTrip(req)
 	if roundTripErr != nil {
+		completedAt := time.Now().UTC()
 		writeJSON(filepath.Join(captureDir, "response.meta.json"), responseMeta{
 			Sequence:    seq,
 			TraceID:     traceID,
 			SpanID:      spanID,
-			StartedAt:   time.Now().UTC().Format(time.RFC3339Nano),
-			CompletedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			StartedAt:   requestStart.Format(time.RFC3339Nano),
+			CompletedAt: completedAt.Format(time.RFC3339Nano),
+			DurationMs:  completedAt.Sub(requestStart).Milliseconds(),
 			Error:       roundTripErr.Error(),
 		}, 0o600)
 		return nil, roundTripErr
@@ -206,6 +210,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		metaPath: filepath.Join(captureDir, "response.meta.json"),
 		meta:     meta,
 		hash:     sha256.New(),
+		start:    requestStart,
 	}
 	return resp, nil
 }
@@ -239,6 +244,7 @@ type recordingBody struct {
 	metaPath string
 	meta     responseMeta
 	hash     hashWriter
+	start    time.Time
 	bytes    int64
 	writeErr error
 	once     sync.Once
@@ -280,12 +286,14 @@ func (b *recordingBody) Close() error {
 		fileCloseErr := b.file.Close()
 		b.meta.ResponseBytes = b.bytes
 		b.meta.ResponseSHA256 = hex.EncodeToString(b.hash.Sum(nil))
+		completedAt := time.Now().UTC()
+		b.meta.DurationMs = completedAt.Sub(b.start).Milliseconds()
 		if b.writeErr != nil {
 			b.meta.CaptureError = b.writeErr.Error()
 		} else if fileCloseErr != nil {
 			b.meta.CaptureError = fileCloseErr.Error()
 		} else {
-			b.meta.CompletedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			b.meta.CompletedAt = completedAt.Format(time.RFC3339Nano)
 		}
 		writeJSON(b.metaPath, b.meta, 0o600)
 	})

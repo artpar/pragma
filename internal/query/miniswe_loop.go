@@ -119,6 +119,7 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 		return
 	}
 
+	const maxNoActionRetries = 3
 	for turn := 0; turn < maxTurns; turn++ {
 		if err := ctx.Err(); err != nil {
 			ch <- ErrorEvent{Err: fmt.Errorf("context cancelled: %w", model.ErrContextCancelled)}
@@ -146,12 +147,33 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			ResponseSchema: e.config.ResponseSchema,
 		}
 
-		ch <- ModelRequestEvent{Model: resolvedModel, Attempt: 1}
-		response, err := e.completePragmaLoopResponse(ctx, params, ch)
-		if err != nil {
-			ch <- ErrorEvent{Err: err}
-			return
+		var response model.Response
+		var assistantText string
+		var command string
+		var actionCount int
+		for noActionRetries := 0; ; noActionRetries++ {
+			ch <- ModelRequestEvent{Model: resolvedModel, Attempt: noActionRetries + 1}
+			var err error
+			response, err = e.completePragmaLoopResponse(ctx, params, ch)
+			if err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+			assistantText = responseText(response)
+			command, actionCount = extractPragmaLoopCommand(assistantText)
+			if actionCount != 0 || strings.Contains(assistantText, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT") {
+				break
+			}
+			if e.config.RequireStructuredOutput {
+				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
+				return
+			}
+			if noActionRetries >= maxNoActionRetries {
+				ch <- ErrorEvent{Err: fmt.Errorf("model returned no bash action and no completion sentinel after %d retries", maxNoActionRetries)}
+				return
+			}
 		}
+		emitPragmaLoopResponseText(response, ch)
 		ch <- ModelResponseEvent{Model: resolvedModel, StopReason: response.StopReason}
 
 		assistantMsg := model.Message{
@@ -169,13 +191,7 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			e.autoTracker.IncrementTurn()
 		}
 
-		assistantText := responseText(response)
-		command, actionCount := extractPragmaLoopCommand(assistantText)
 		if actionCount == 0 {
-			if e.config.RequireStructuredOutput {
-				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
-				return
-			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
 			return
 		}
@@ -212,11 +228,6 @@ func (e *Engine) completePragmaLoopResponse(ctx context.Context, params provider
 	for attempt := range maxStreamRetries + 1 {
 		response, err := e.provider.Complete(ctx, params)
 		if err == nil {
-			for _, part := range response.Content {
-				if text, ok := part.(model.TextPart); ok && text.Text != "" {
-					ch <- TextEvent{Text: text.Text}
-				}
-			}
 			return response, nil
 		}
 
@@ -252,6 +263,14 @@ func (e *Engine) completePragmaLoopResponse(ctx context.Context, params provider
 	}
 
 	return model.Response{}, errors.New("model request failed")
+}
+
+func emitPragmaLoopResponseText(response model.Response, ch chan<- LoopEvent) {
+	for _, part := range response.Content {
+		if text, ok := part.(model.TextPart); ok && text.Text != "" {
+			ch <- TextEvent{Text: text.Text}
+		}
+	}
 }
 
 func (e *Engine) appendPragmaLoopUserMessage(text string) error {
