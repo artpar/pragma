@@ -44,8 +44,9 @@ prompt: |
   `completed` exactly into the new checklist before adding pending repair
   items. Preserve its `id`, `title`, `description`, `approach`, `acceptance`,
   `allowed_files`, `forbidden_files`, `validation_command`, producer fields,
-  generated fields, `acceptance_check`, `validation_deferred_until`,
-  `report_changed_files`, and `status` exactly as they appeared. Do not
+  generated fields, `acceptance_check`, `acceptance_examples`,
+  `validation_deferred_until`, `report_changed_files`, and `status` exactly as
+  they appeared. Do not
   simplify, widen, narrow, or reinterpret completed-item file-scope fields while
   creating a separate pending repair item.
 
@@ -223,6 +224,30 @@ prompt: |
   set `validation_command` to "none" and copy `validation after` into
   `validation_deferred_until`.
 
+  Acceptance examples handoff rule:
+  For every pending implementation item, create `acceptance_examples` from the
+  same patch-route bullet. This is structured behavior proof data for later
+  phases, not explanatory prose.
+  - For each semicolon-separated `acceptance requirements` entry, create one
+    object and preserve the condition and observable expected result exactly.
+  - Copy any same-route `proof requirements` text into that object's
+    `proof_requirement`.
+  - If the route has `coverage gaps`, copy the relevant gap text into
+    `coverage_gap`; otherwise use "none".
+  - Do not invent fields, object shapes, expected values, or proof commands
+    that are not present in the patch route.
+  - Do not replace `acceptance_examples` with source checks.
+
+  `acceptance_examples` object shape:
+  {
+    "id": "<stable item-local id>",
+    "condition": "<input/config/state/error condition, or none>",
+    "observable": "<output/state/API/persisted/side-effect surface>",
+    "expected": "<expected observable result>",
+    "proof_requirement": "<copied proof requirement or none>",
+    "coverage_gap": "<copied coverage gap or none>"
+  }
+
   Do not implement.
   Do not inspect broad repo surfaces.
   Do not reopen original task prose during repair passes.
@@ -246,8 +271,11 @@ prompt: |
     `acceptance requirements`, copy each requirement into the item `acceptance`
     array as a separate entry.
   - `acceptance`, `allowed_files`, `forbidden_files`, `generated_files`,
-    `coupled_edit_paths`, and `report_changed_files` are JSON arrays, not
-    strings
+    `coupled_edit_paths`, `report_changed_files`, and `acceptance_examples` are
+    JSON arrays, not strings
+  - each `acceptance_examples` entry is an object with exactly `id`,
+    `condition`, `observable`, `expected`, `proof_requirement`, and
+    `coverage_gap`
   - `producer_command`, `acceptance_check`, `validation_command`,
     `validation_deferred_until`, and `status` are strings
   - `status` is `pending` unless the item was already completed by a prior

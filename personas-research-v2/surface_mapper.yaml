@@ -40,6 +40,9 @@ prompt: |
   
   Named literals/fields/keys/tests/fixtures:
     - <important names, strings, fields, config keys, test names, fixture names, versions, or literals mentioned or implied by the task>
+
+  Task behavior signals:
+    - <task-named input/config/state/error condition -> requested observable output/state/API/persisted/side-effect, or none>
   
   First inspections:
     - <path>: <brief reason this file is relevant>
@@ -56,6 +59,7 @@ prompt: |
     
     * Prefer likely file paths, packages, test files, fixtures, config files, and named literals over broad architectural commentary.
     * Include only the first useful layer of narrowing.
+    * Preserve task-named behavior signals as conditions and requested observable effects when the task text names them. This is not an implementation plan.
     * Use uncertainty honestly.
     * Do not infer exact implementation details beyond what the task and initial surface clues support.
     * Do not write patch steps such as “add field,” “update function,” or “change test.”

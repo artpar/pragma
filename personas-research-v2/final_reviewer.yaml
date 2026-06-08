@@ -49,6 +49,12 @@ prompt: |
   command is missing, skipped, not run, unavailable, or lacks exit status 0,
   write BLOCK. Passing one command does not satisfy another command.
 
+  Acceptance example authority rule:
+  If validation-status contains `acceptance_example_status`, every entry must
+  be PASS before approval. Any MISSING, BLOCKED, unknown, vague, source-only, or
+  absent proof entry is an automatic BLOCK. Required repair must name the
+  missing acceptance example id and proof surface.
+
   Clean-validation diff rule:
   If validation status is clean, do not approve yet. First run exactly:
   git diff --stat && git diff -- .

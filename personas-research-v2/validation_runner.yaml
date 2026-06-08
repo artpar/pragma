@@ -25,6 +25,7 @@ prompt: |
   Use completed checklist items as the validation authority. Extract:
   - completed item ids and titles
   - completed item `allowed_files`
+  - completed item `acceptance` and `acceptance_examples`
   - completed item `validation_command`
   - completed item `producer_command`, `producer_evidence`, and
     `generated_files` when present
@@ -61,6 +62,16 @@ prompt: |
   successful validation commands. Do not list a changed file as validated if it
   is unrelated to completed checklist `allowed_files`, `generated_files`, or
   producer evidence.
+
+  Acceptance proof status rule:
+  Copy every completed checklist `acceptance_examples` entry into
+  `acceptance_example_status`. For each entry, record PASS only when the
+  successful validation command or visible changed-file behavior proves that
+  exact condition, observable, and expected result. If the proof is missing,
+  record MISSING with the example id and list the same example under
+  `missing_files_or_surfaces`. Do not mark a behavior example PASS from grep
+  or source-presence alone when its observable is output/state/API/persisted
+  data or side effect.
 
   Producer evidence rule:
   If any completed checklist item has `producer_command`, `generated_files`, or
@@ -107,6 +118,9 @@ prompt: |
 
   missing_files_or_surfaces:
     - <surface or none>
+
+  acceptance_example_status:
+    - <example id>: <PASS or MISSING> - <proof summary>
 
   producer_evidence:
     - <evidence or none>

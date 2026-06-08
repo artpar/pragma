@@ -152,6 +152,16 @@ prompt: |
   reaches an output/state/side effect. If behavior proof is missing, write
   Decision: BLOCK and require proof for the missing acceptance entry.
 
+  Acceptance examples review rule:
+  If current_item has `acceptance_examples`, approval requires the implementer
+  report to account for every example id. Each example's condition, observable,
+  expected result, and proof_requirement must be satisfied by behavior evidence,
+  exact focused validation, or exact acceptance_check evidence. Source checks
+  and structural grep output are not enough for examples whose observable is an
+  output, state mutation, API response, persisted record, or side effect. If an
+  example is missing or only structurally addressed, write Decision: BLOCK and
+  name the missing example id in Required repair.
+
   Do not edit files.
   Do not repair.
   Do not review the whole task.

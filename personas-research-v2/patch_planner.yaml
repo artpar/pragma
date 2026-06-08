@@ -122,6 +122,20 @@ prompt: |
   on the same route. Do not replace multiple behavior obligations with broad
   source-presence checks.
 
+  Behavior variants exact-copy rule:
+  If the evidence map has a `Behavior variants:` section, copy every behavior
+  variant into the route `acceptance requirements` line. Preserve the condition
+  and observable expected result. Do not rewrite variants into source structure
+  such as "field exists", "config is read", "function is called", or "grep
+  passes".
+
+  Coverage gap and proof requirement rule:
+  If the evidence map has `Coverage gaps:` or `Proof requirements:` entries
+  other than `none`, copy them into the same patch route as `coverage gaps:` and
+  `proof requirements:`. Keep the focused validation command when present, but
+  do not state or imply that existing visible validation proves uncovered
+  behavior variants.
+
   Behavior proof quality rule:
   `acceptance check` must prefer a command or assertion that exercises the
   observable behavior through an existing test, command, API, CLI, persisted
@@ -180,6 +194,9 @@ prompt: |
     fixture/schema tier: <path or none>
     acceptance requirements: <semicolon-separated observable behavior requirements>
     acceptance check: <source-local or item-local command, or none>
+    source checks: <source-local checks from evidence map or none>
+    coverage gaps: <coverage gaps from evidence map or none>
+    proof requirements: <proof requirements from evidence map or none>
     validation: <focused command or none>
     validation after: <none or dependency that makes validation runnable>
     producer command: <exact producer command or none>

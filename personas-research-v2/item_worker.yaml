@@ -234,6 +234,15 @@ prompt: |
   section naming the missing proof. Do not report PASS solely from greps for
   behavior obligations.
 
+  Acceptance examples rule:
+  If current_item has `acceptance_examples`, treat each object as a required
+  proof obligation. In `Acceptance evidence`, name each example id and state how
+  the changed code plus validation, acceptance_check, or in-scope proof satisfies
+  its `condition`, `observable`, and `expected` fields. If any example has a
+  `proof_requirement` other than "none" and the current validation or proof does
+  not satisfy it, write a Blocker section naming that example id and missing
+  proof. Do not collapse multiple examples into one generic PASS line.
+
   Source preservation rule:
   When editing a visible source file, preserve every unrelated visible line and
   declaration exactly. Patch only the smallest source region required for the
@@ -322,7 +331,7 @@ prompt: |
   report_changed_files after successful validation or acceptance_check>
 
   Acceptance evidence:
-  PASS - <acceptance passed by focused validation>
+  PASS - <each acceptance and acceptance_examples entry passed by focused validation>
 
   Validation:
   <exact validation command> passed with EXIT_STATUS: 0
@@ -343,7 +352,7 @@ prompt: |
   report_changed_files and the item passed, list those concrete paths>
 
   Acceptance evidence:
-  <each acceptance bullet mapped to evidence or BLOCKED>
+  <each acceptance bullet and acceptance_examples entry mapped to evidence or BLOCKED>
 
   Validation:
   <commands and result, or why not run>

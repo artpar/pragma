@@ -10,14 +10,34 @@ states:
           required: true
           description: Initial map of task-named and likely repository surfaces.
 
-  - id: evidence_mapper
-    persona: evidence_mapper
+  - id: evidence_collector
+    persona: evidence_collector
+    task_prompt: none
     artifacts:
       inputs:
         - id: surface_map
           path: /tmp/pragma/surface-map.md
           required: true
           description: Surface map from the first narrowing phase.
+      outputs:
+        - id: repo_evidence
+          path: /tmp/pragma/repo-evidence.md
+          required: true
+          description: Direct source, test, fixture, code-flow, and validation facts collected from the mapped surfaces.
+
+  - id: behavior_evidence_mapper
+    persona: evidence_mapper
+    task_prompt: none
+    artifacts:
+      inputs:
+        - id: surface_map
+          path: /tmp/pragma/surface-map.md
+          required: true
+          description: Surface map from the first narrowing phase.
+        - id: repo_evidence
+          path: /tmp/pragma/repo-evidence.md
+          required: true
+          description: Direct repository facts collected from mapped surfaces.
       outputs:
         - id: evidence_map
           path: /tmp/pragma/evidence-map.md
@@ -187,9 +207,12 @@ states:
 transitions:
   - event: complete
     from: [surface_mapper]
-    to: evidence_mapper
+    to: evidence_collector
   - event: complete
-    from: [evidence_mapper]
+    from: [evidence_collector]
+    to: behavior_evidence_mapper
+  - event: complete
+    from: [behavior_evidence_mapper]
     to: patch_planner
   - event: complete
     from: [patch_planner]
