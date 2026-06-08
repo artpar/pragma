@@ -260,8 +260,13 @@ func BuildPromptWithArtifactRootChecked(def Definition, state State, personaDef 
 }
 
 func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoot string, strict bool) (model.SystemPrompt, string, error) {
+	completionContract := RenderStateCompletionContract(state)
+	systemText := strings.TrimRight(personaDef.Prompt, "\n") + "\n\n" + query.PragmaLoopSystemPrompt()
+	if completionContract != "" {
+		systemText += "\n\n" + completionContract
+	}
 	system := model.SystemPrompt{Blocks: []model.SystemBlock{{
-		Text:      strings.TrimRight(personaDef.Prompt, "\n") + "\n\n" + query.PragmaLoopSystemPrompt(),
+		Text:      systemText,
 		Cacheable: false,
 	}}}
 
@@ -379,6 +384,39 @@ func RenderArtifactContract(artifacts Artifacts) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func RenderStateCompletionContract(state State) string {
+	if !state.Control.IsZero() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Runtime Completion Contract\n\n")
+	b.WriteString("This orchestration state does not use plain prose final answers.\n")
+	b.WriteString("When this state is complete, respond with exactly one fenced bash block and no prose outside it.\n")
+	requiredOutputs := requiredOutputArtifacts(state.Artifacts.Outputs)
+	if len(requiredOutputs) > 0 {
+		b.WriteString("Before completing, every required output artifact below must exist:\n")
+		for _, artifact := range requiredOutputs {
+			fmt.Fprintf(&b, "- `%s`: `%s`\n", artifact.ID, artifact.Path)
+		}
+		b.WriteString("The completion bash block may write the final required artifact content, or verify already-written artifacts, but it must end with:\n")
+	} else {
+		b.WriteString("After the state-specific work is complete, the completion bash block must end with:\n")
+	}
+	b.WriteString("echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\n")
+	b.WriteString("Do not emit COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only inspection unless the state-specific work is already complete.\n")
+	return b.String()
+}
+
+func requiredOutputArtifacts(outputs []Artifact) []Artifact {
+	required := make([]Artifact, 0, len(outputs))
+	for _, artifact := range outputs {
+		if artifact.Required {
+			required = append(required, artifact)
+		}
+	}
+	return required
 }
 
 func RenderNextForEachContract(def Definition, state State) string {

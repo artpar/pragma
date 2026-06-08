@@ -340,14 +340,6 @@ prompt: |
 
   Do not add extra sections to `implementer_report`.
 
-  Boundary:
-  Once `implementer_report` exists, this state is complete.
-  The final line of the same shell script must be:
-  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
-  Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
-  inspection command. Echo it only when the same shell script has just written
-  `implementer_report`.
-
   Last-mile repeated-search report shape:
   If the latest user message contains `Search state:` with
   `repeated_no_new_information = true`, stop implementation immediately. Do not
@@ -359,7 +351,7 @@ prompt: |
   implementation evidence remains unknown`. The Blocker must mention the repeat
   count and the missing symbol/producer/service named in the latest user
   message. The response must start with ```bash and contain only one fenced bash
-  block ending with echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.
+  block.
 
   Repeated-search precedence table:
   Before applying the normal work method, check visible Search state.

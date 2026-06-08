@@ -127,11 +127,3 @@ prompt: |
 
   Not evidenced:
   - <runtime/proto/generated/middleware/dependency work not proven by evidence>
-
-  Boundary:
-  Once the `evidence_map` output artifact exists, this state is complete.
-  The final line of the same shell script must be:
-  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
-  Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
-  inspection command. Echo it only when the same shell script has just written
-  the `evidence_map` output artifact.

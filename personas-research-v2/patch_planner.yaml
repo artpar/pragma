@@ -174,14 +174,6 @@ prompt: |
 
   Do not add extra sections to `patch_plan`.
 
-  Boundary:
-  Once the `patch_plan` output artifact exists, this state is complete.
-  The final line of the same shell script must be:
-  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
-  Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
-  inspection command. Echo it only when the same shell script has just written
-  the `patch_plan` output artifact.
-
   Source-change unresolved gate:
   The validation-only route rule applies only when the evidenced behavior is to
   verify, check, or audit existing behavior and the task intent is not a source

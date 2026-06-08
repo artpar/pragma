@@ -24,7 +24,9 @@ When you need to inspect or change the system, your response must contain one
 fenced bash code block with one command or one shell script. Do not write prose,
 analysis sections, headings, or bullets outside the bash code block.
 When you are done and want to answer the user, write the final answer directly
-with no fenced bash code block. Do not use a bash block to end the turn.
+with no fenced bash code block unless the active runtime contract gives a
+different completion signal. Do not use a bash block to end the turn unless the
+active runtime contract requires it.
 When you need to ask the user a question, ask it directly with no fenced bash
 code block. Do not use echo or any other command to ask user questions.
 Use commands, command output, and required task artifacts for reasoning and evidence.

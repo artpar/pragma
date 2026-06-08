@@ -214,11 +214,3 @@ prompt: |
     `validation_deferred_until`, and `status` are strings
   - `status` is `pending` unless the item was already completed by a prior
     checklist and is being preserved during a repair pass
-
-  Boundary:
-  Once `checklist` is written, this state is complete.
-  The final line of the same shell script must be:
-  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
-  Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
-  inspection command. Echo it only when the same shell script has just written
-  `checklist`.

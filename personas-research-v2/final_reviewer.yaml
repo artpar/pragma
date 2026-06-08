@@ -130,14 +130,6 @@ prompt: |
   APPROVE
   EOF
 
-  Boundary:
-  Once `final_verdict` exists, this state is complete.
-  The final line of the same shell script must be:
-  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
-  Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
-  inspection command. Echo it only when the same shell script has just written
-  `final_verdict`.
-
   Last-mile incomplete validation gate:
   Before applying the clean-validation diff rule, parse every `Commands run`
   line. If any indexed command says `not run`, `skipped`, `not executed`,
