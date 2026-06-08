@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
@@ -849,15 +850,16 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 		})
 	}
 	slashDeps := slash.Deps{
-		Store:       d.Store,
-		CostTracker: d.CostTracker,
-		Compactor:   compactor,
-		Bus:         d.Bus,
-		SessionSave: sessionSaveFn,
-		ModelName:   d.Cfg.Model,
-		Provider:    d.Cfg.Provider,
-		Cwd:         d.Cwd,
-		TaskReg:     d.TaskReg,
+		Store:          d.Store,
+		CostTracker:    d.CostTracker,
+		Compactor:      compactor,
+		Bus:            d.Bus,
+		SessionSave:    sessionSaveFn,
+		ModelName:      d.Cfg.Model,
+		Provider:       d.Cfg.Provider,
+		Cwd:            d.Cwd,
+		TaskReg:        d.TaskReg,
+		ClipboardWrite: clipboard.WriteAll,
 		ModelLister: func() []string {
 			if ml, ok := d.Prov.(provider.ModelLister); ok {
 				return ml.ListModels()
