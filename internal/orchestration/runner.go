@@ -83,7 +83,6 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 		return
 	}
 
-	handoffPrompt := ""
 	taskPrompt := opts.TaskPrompt
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
@@ -93,18 +92,10 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 			stateTaskPrompt = taskPrompt
 			taskPrompt = ""
 		}
-		event, nextHandoff, err := RunNodeEvents(ctx, ch, engine, projection, opts.PersonaDir, def, state, stateTaskPrompt, handoffPrompt, artifactRoot)
+		event, _, err := RunNodeEvents(ctx, ch, engine, projection, opts.PersonaDir, def, state, stateTaskPrompt, "", artifactRoot)
 		if err != nil {
 			ch <- query.ErrorEvent{Err: err}
 			return
-		}
-		if nextHandoff != "" {
-			emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
-				StateID: state.ID, Event: event, Direction: "runtime",
-			})
-			handoffPrompt = nextHandoff
-		} else if state.Control.IsZero() {
-			handoffPrompt = ""
 		}
 		if err := runtime.FSM.Event(ctx, event); err != nil {
 			ch <- query.ErrorEvent{Err: fmt.Errorf("transition %q from %q: %w", event, stateID, err)}
@@ -163,7 +154,7 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 	}
 	emitOrchestration(ch, bus, projection, query.OrchestrationStateStartedEvent{StateID: state.ID, PersonaID: personaDef.ID})
 
-	output, err := RunStateEvents(ctx, ch, engine, projection, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
+	_, err = RunStateEvents(ctx, ch, engine, projection, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
 	if err != nil {
 		return "", "", fmt.Errorf("state %q failed: %w", state.ID, err)
 	}
@@ -172,7 +163,7 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 	if err != nil {
 		return "", "", fmt.Errorf("select event for state %q: %w", state.ID, err)
 	}
-	return event, strings.TrimSpace(output), nil
+	return event, "", nil
 }
 
 func ControlName(state State) string {
@@ -208,7 +199,10 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 	if len(artifactRoots) > 0 {
 		artifactRoot = artifactRoots[0]
 	}
-	system, prompt := BuildPromptWithArtifactRoot(def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
+	system, prompt, err := BuildPromptWithArtifactRootChecked(def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
+	if err != nil {
+		return "", err
+	}
 
 	var text strings.Builder
 	start := time.Now()
@@ -241,6 +235,15 @@ func BuildPrompt(def Definition, state State, personaDef persona.Definition, tas
 }
 
 func BuildPromptWithArtifactRoot(def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoot string) (model.SystemPrompt, string) {
+	system, prompt, _ := buildPromptWithArtifactRoot(def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot, false)
+	return system, prompt
+}
+
+func BuildPromptWithArtifactRootChecked(def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoot string) (model.SystemPrompt, string, error) {
+	return buildPromptWithArtifactRoot(def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot, true)
+}
+
+func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoot string, strict bool) (model.SystemPrompt, string, error) {
 	system := model.SystemPrompt{Blocks: []model.SystemBlock{{
 		Text:      strings.TrimRight(personaDef.Prompt, "\n") + "\n\n" + query.PragmaLoopSystemPrompt(),
 		Cacheable: false,
@@ -250,7 +253,13 @@ func BuildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	if strings.TrimSpace(taskPrompt) != "" && state.TaskPrompt != TaskPromptNone {
 		fmt.Fprintf(&b, "## Task\n\n%s\n", taskPrompt)
 	} else {
-		if strings.TrimSpace(handoffPrompt) != "" {
+		handoff, err := RenderArtifactHandoff(state.Artifacts, artifactRoot, strict)
+		if err != nil {
+			return system, "", err
+		}
+		if strings.TrimSpace(handoff) != "" {
+			fmt.Fprintf(&b, "## Handoff From Previous Phase\n\n%s\n\n", strings.TrimSpace(handoff))
+		} else if strings.TrimSpace(handoffPrompt) != "" && !strict {
 			fmt.Fprintf(&b, "## Handoff From Previous Phase\n\n%s\n\n", strings.TrimSpace(handoffPrompt))
 		}
 		b.WriteString("## Phase Input\n\nProceed with this phase using the required input artifacts.\n")
@@ -262,7 +271,46 @@ func BuildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 		b.WriteString(contract)
 	}
 
-	return system, b.String()
+	return system, b.String(), nil
+}
+
+func RenderArtifactHandoff(artifacts Artifacts, artifactRoot string, strict bool) (string, error) {
+	if len(artifacts.Inputs) == 0 {
+		return "", nil
+	}
+	var b strings.Builder
+	for _, artifact := range artifacts.Inputs {
+		path := resolveArtifactPath(artifact.Path, artifactRoot)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			if artifact.Required && strict {
+				return "", fmt.Errorf("read required input artifact %q at %q: %w", artifact.ID, path, err)
+			}
+			if artifact.Required || !os.IsNotExist(err) {
+				fmt.Fprintf(&b, "### `%s` (%s)\nPath: `%s`\nUnavailable: %v\n\n", artifact.ID, artifactRequirement(artifact), path, err)
+			}
+			continue
+		}
+		fmt.Fprintf(&b, "### `%s` (%s)\nPath: `%s`\n", artifact.ID, artifactRequirement(artifact), path)
+		if artifact.Description != "" {
+			fmt.Fprintf(&b, "Description: %s\n", artifact.Description)
+		}
+		b.WriteString("Content:\n")
+		b.WriteString(strings.TrimRight(string(content), "\n"))
+		b.WriteString("\n\n")
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
+func resolveArtifactPath(path string, artifactRoot string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	root := artifactRoot
+	if strings.TrimSpace(root) == "" {
+		root = DefaultArtifactRoot
+	}
+	return filepath.Join(root, path)
 }
 
 func RenderArtifactContract(artifacts Artifacts) string {
@@ -291,11 +339,7 @@ func RenderArtifactContract(artifacts Artifacts) string {
 }
 
 func writeArtifactLine(b *strings.Builder, artifact Artifact) {
-	required := "optional"
-	if artifact.Required {
-		required = "required"
-	}
-	fmt.Fprintf(b, "- `%s` (%s): `%s`", artifact.ID, required, artifact.Path)
+	fmt.Fprintf(b, "- `%s` (%s): `%s`", artifact.ID, artifactRequirement(artifact), artifact.Path)
 	if artifact.Description != "" {
 		fmt.Fprintf(b, " - %s", artifact.Description)
 	}
@@ -306,6 +350,13 @@ func writeArtifactLine(b *strings.Builder, artifact Artifact) {
 		fmt.Fprintf(b, " Allowed values: %s.", strings.Join(artifact.AllowedValues, ", "))
 	}
 	b.WriteString("\n")
+}
+
+func artifactRequirement(artifact Artifact) string {
+	if artifact.Required {
+		return "required"
+	}
+	return "optional"
 }
 
 func eventBus(engine *query.Engine) *observe.EventBus {

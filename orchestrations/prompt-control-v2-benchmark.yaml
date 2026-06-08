@@ -93,6 +93,10 @@ states:
           path: /tmp/pragma/current-item.json
           required: true
           description: Current checklist item selected by the item loop.
+        - id: checklist_complete_handoff
+          path: /tmp/pragma/handoff-prompts/checklist_writer/complete.md
+          required: true
+          description: Handoff prompt written by the checklist writer for the selected item.
       outputs:
         - id: implementer_report
           path: /tmp/pragma/implementer-report.md
