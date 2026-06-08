@@ -44,9 +44,10 @@ prompt: |
   `completed` exactly into the new checklist before adding pending repair
   items. Preserve its `id`, `title`, `description`, `approach`, `acceptance`,
   `allowed_files`, `forbidden_files`, `validation_command`, producer fields,
-  generated fields, and `status` exactly as they appeared. Do not simplify,
-  widen, narrow, or reinterpret completed-item file-scope fields while creating
-  a separate pending repair item.
+  generated fields, `acceptance_check`, `validation_deferred_until`,
+  `report_changed_files`, and `status` exactly as they appeared. Do not
+  simplify, widen, narrow, or reinterpret completed-item file-scope fields while
+  creating a separate pending repair item.
 
   Repair checklist preservation rule:
   During a repair pass, use the supplied `checklist` input as the preservation
@@ -57,6 +58,18 @@ prompt: |
   as those bullets. Put repair items before the preserved remaining pending
   items when they unblock the current item. Do not write an empty checklist
   unless no repair items and no pending items remain.
+
+  Current-item allowed-files repair rule:
+  If item_verdict Required repair says to add a concrete repository path to the
+  current blocked item's `allowed_files`, update that current checklist item
+  in-place on this pass when the path is present in patch_plan, evidence-backed
+  consumer/defaulting context, generated files, or the current checklist. Keep
+  the same item id and pending status. Set `allowed_files` to the union of the
+  existing allowed_files and the required repair path. Update `approach` and
+  `acceptance` only enough to name the repair edit and proof. If the item
+  already changed an allowed file in an earlier worker pass, add
+  `report_changed_files` with the full expected item change set so the next
+  worker reports all item files, not just files edited in the latest attempt.
 
   Purpose:
   Write small implementation items tied to concrete surfaces.
@@ -71,13 +84,13 @@ prompt: |
   selected-item handoff creation after it chooses the next pending item.
 
   Missing required field rule:
-  If the patch plan lacks a concrete source path, consumer/defaulting path,
-  validation command, or allowed files for a behavior, do not infer or broaden.
-  Write one blocker checklist item for the missing proof. Its description must
-  name every missing field and proof required. Its approach must say "Do not
-  inspect repository files; return a blocker until the missing proof is
-  provided." Its allowed_files must be an empty array and forbidden_files must
-  be ["**/*"].
+  If the patch plan lacks a concrete source path or coupled edit path, and
+  lacks either an `acceptance check` or a runnable `validation` command for a
+  behavior, do not infer or broaden. Write one blocker checklist item for the
+  missing proof. Its description must name every missing field and proof
+  required. Its approach must say "Do not inspect repository files; return a
+  blocker until the missing proof is provided." Its allowed_files must be an
+  empty array and forbidden_files must be ["**/*"].
 
   Missing input artifact rule:
   If required handoff artifacts have been checked and neither
@@ -121,6 +134,7 @@ prompt: |
   - `producer_command`: exact producer command from the patch plan
   - `generated_files`: exact generated/derived files from the patch plan
   - `validation_command`: exact focused validation command from the patch plan
+  - `acceptance_check`: exact acceptance check from the patch plan when present
   The item `allowed_files` must include the source path and the generated files
   named by that same producer route, because the producer is expected to update
   those generated repository files after the source edit.
@@ -149,12 +163,29 @@ prompt: |
   producers run before config, defaulting, fixture, or runtime consumers.
 
   Patch-route role and unresolved separation rule:
-  For each patch-route bullet, create one pending item for the `source path`
-  only. `consumer/defaulting path` and `fixture/schema tier` are evidence and
-  validation context, not editable files, unless the route behavior explicitly
-  says to edit them. Entries under `Unresolved until evidence` are not checklist
-  items during initial implementation; do not create pending or blocked items
-  for them unless a final verdict explicitly requests that repair.
+  For each patch-route bullet, create one pending item for the `source path` and
+  every path listed under `coupled edit paths`. `consumer/defaulting path` and
+  `fixture/schema tier` are evidence and validation context unless the route
+  behavior explicitly says to edit them or the same path is listed under
+  `coupled edit paths`. Entries under `Unresolved until evidence` are not
+  checklist items during initial implementation; do not create pending or
+  blocked items for them unless a final verdict explicitly requests that repair.
+
+  Coupled edit file-scope rule:
+  If a patch-route bullet lists `coupled edit paths`, copy every concrete path
+  from that line into `allowed_files` with the source path. Do not create
+  separate checklist items for coupled paths. The item `acceptance` must mention
+  both the source edit and the coupled edit proof. If `validation` is `none` or
+  `validation after` is not `none`, copy `acceptance_check` into the item and
+  set `validation_command` to "none" with `validation_deferred_until` copied
+  from `validation after`.
+
+  Acceptance and validation handoff rule:
+  For every pending implementation item, copy `acceptance check` from the patch
+  plan into `acceptance_check` when it is not `none`. Copy `validation` into
+  `validation_command` only when it is not empty. If `validation` is `none`,
+  set `validation_command` to "none" and copy `validation after` into
+  `validation_deferred_until`.
 
   Do not implement.
   Do not inspect broad repo surfaces.
@@ -172,12 +203,15 @@ prompt: |
   - top-level object with `items`
   - each item has `id`, `title`, `description`, `approach`, `acceptance`,
     `allowed_files`, `forbidden_files`, and `status`
-  - if the patch plan names `producer_command`, `generated_files`, or
-    `validation_command`, copy those fields into the item exactly; do not
-    summarize them only in prose
-  - `acceptance`, `allowed_files`, `forbidden_files`, and `generated_files` are
-    JSON arrays, not strings
-  - `producer_command`, `validation_command`, and `status` are strings
+  - if the patch plan names `producer_command`, `generated_files`,
+    `coupled edit paths`, `acceptance_check`, `validation`, `validation after`,
+    or report-preservation fields, copy those fields into the item exactly; do
+    not summarize them only in prose
+  - `acceptance`, `allowed_files`, `forbidden_files`, `generated_files`,
+    `coupled_edit_paths`, and `report_changed_files` are JSON arrays, not
+    strings
+  - `producer_command`, `acceptance_check`, `validation_command`,
+    `validation_deferred_until`, and `status` are strings
   - `status` is `pending` unless the item was already completed by a prior
     checklist and is being preserved during a repair pass
 

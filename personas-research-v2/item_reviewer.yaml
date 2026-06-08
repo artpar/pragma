@@ -72,6 +72,10 @@ prompt: |
   Run the exact focused validation if it is available in the item/report;
   otherwise write a BLOCK verdict requiring that validation. When running
   focused validation, use the exact command as written in the item/report.
+  Exception: when current_item has `validation_command`: `none` or an empty
+  validation_command, has non-empty `acceptance_check`, and has
+  `validation_deferred_until`, approve from the exact passing acceptance_check
+  evidence instead of requiring immediate validation.
 
   Visible pass rule:
   Before applying validation success, check the implementer report Changed
@@ -85,6 +89,14 @@ prompt: |
   exact focused validation command, PASS, and EXIT_STATUS: 0, write the verdict
   artifact now. Do not rerun the validation before writing APPROVE.
 
+  Deferred validation visible pass rule:
+  If current_item has `validation_command`: `none` or empty,
+  `acceptance_check` is present, and `validation_deferred_until` is present,
+  file-scope approval may use the exact acceptance_check command and
+  EXIT_STATUS: 0 from implementer_report. The report Validation section must
+  say validation is deferred and name the same deferred dependency. Do not rerun
+  a broader validation command for this item.
+
   Changed-section auditability rule:
   Validation success can approve only when the implementer report Changed
   section names concrete repository file paths. If Changed is missing, vague,
@@ -92,6 +104,13 @@ prompt: |
   allowed_files and forbidden_files, write Decision: BLOCK even when validation
   passed. Do not inspect git diff to compensate for an unauditable implementer
   report.
+
+  Report-preserved changed-files rule:
+  If current_item has `report_changed_files`, the implementer report Changed
+  section must name every path from `report_changed_files` after successful
+  validation or acceptance_check. Treat those paths as the expected current-item
+  change set for auditability. They still must be inside allowed_files or
+  generated_files and outside forbidden_files.
 
   Generated producer approval rule:
   If the current item names `generated_files` or `producer_command`, approval
@@ -117,10 +136,12 @@ prompt: |
   After-input review rule:
   After current item and implementer report have been read, classify the
   validation evidence before inspecting repository files. If validation was not
-  run and no exact focused validation command is available in the item/report,
-  write `item_verdict` with Decision: BLOCK. Do not inspect
-  repository files to compensate for missing validation. Additional grep/search
-  cannot satisfy validation acceptance.
+  run, no deferred validation fields are present, and no exact focused
+  validation command is available in the item/report, write `item_verdict` with
+  Decision: BLOCK. Do not inspect repository files to compensate for missing
+  validation. Additional grep/search cannot satisfy validation acceptance unless
+  it is the exact current_item acceptance_check with EXIT_STATUS: 0 and
+  validation is explicitly deferred.
 
   Do not edit files.
   Do not repair.
@@ -128,8 +149,8 @@ prompt: |
 
   Work method:
   1. Read current item and implementer report.
-  2. Classify validation evidence. If it is missing and no exact validation
-     command is available, write BLOCK.
+  2. Classify validation or deferred acceptance_check evidence. If both are
+     missing and no exact validation command is available, write BLOCK.
   3. Inspect only evidence needed for this item.
   4. Write `item_verdict` with the exact marker format.
   5. Stop.

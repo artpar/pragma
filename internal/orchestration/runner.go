@@ -415,7 +415,11 @@ func RenderNextForEachContract(def Definition, state State) string {
 	b.WriteString("      \"acceptance\": [\"string\"],\n")
 	b.WriteString("      \"allowed_files\": [\"string\"],\n")
 	b.WriteString("      \"forbidden_files\": [\"string\"],\n")
+	b.WriteString("      \"coupled_edit_paths\": [\"string\"],\n")
+	b.WriteString("      \"acceptance_check\": \"string\",\n")
 	b.WriteString("      \"validation_command\": \"string\",\n")
+	b.WriteString("      \"validation_deferred_until\": \"string\",\n")
+	b.WriteString("      \"report_changed_files\": [\"string\"],\n")
 	fmt.Fprintf(&b, "      \"status\": %q\n", pendingStatus)
 	b.WriteString("    }\n")
 	b.WriteString("  ]\n")
@@ -428,7 +432,9 @@ func RenderNextForEachContract(def Definition, state State) string {
 	if control.HandoffPath != "" {
 		fmt.Fprintf(&b, "- `%s` will write the handoff for the exact selected item, not for future checklist items.\n", next.ID)
 	}
-	b.WriteString("- `acceptance`, `allowed_files`, and `forbidden_files` must be JSON arrays.\n")
+	b.WriteString("- `acceptance`, `allowed_files`, `forbidden_files`, `coupled_edit_paths`, and `report_changed_files` must be JSON arrays.\n")
+	b.WriteString("- Use `validation_command: \"none\"` only when `acceptance_check` is present and `validation_deferred_until` names what later item or surface makes validation runnable.\n")
+	b.WriteString("- Put every path from `coupled_edit_paths` in `allowed_files`; the worker may edit only `allowed_files`.\n")
 	b.WriteString("- Extra item fields are allowed only if they are valid JSON and should be preserved by later controls.\n\n")
 	return b.String()
 }

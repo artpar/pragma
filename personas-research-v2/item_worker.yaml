@@ -129,6 +129,14 @@ prompt: |
   For a validation-only item, do not run validation unless the shell script ends
   with `exit "$status"`.
 
+  Acceptance-check-only item rule:
+  If the current item has `validation_command`: `none` or an empty
+  validation_command and has a non-empty `acceptance_check`, do not invent or
+  run a broader validation command. After making the allowed edit, run the exact
+  `acceptance_check` with the same status-capture wrapper used for validation.
+  A passing acceptance_check is enough item evidence when the item also has
+  `validation_deferred_until` explaining when final validation will run.
+
   Validation-only exact-wrapper gate:
   For a validation-only item, the validation command must be wrapped exactly in
   this evidence-preserving shell shape:
@@ -171,7 +179,8 @@ prompt: |
 
   Post-source-edit validation shell rule:
   After a successful edit to an allowed source file, the next action must run
-  validation_command with this exact status-preserving shape:
+  the current item's runnable `validation_command` with this exact
+  status-preserving shape:
   set -o pipefail
   log=<item_validation_log path>
   <validation_command> 2>&1 | tee "$log"
@@ -179,6 +188,18 @@ prompt: |
   echo "EXIT_STATUS: $status"
   exit "$status"
   Do not inspect more files before this validation.
+
+  Post-source-edit acceptance shell rule:
+  If `validation_command` is empty or `none` and `acceptance_check` is present,
+  the next action after a successful edit must run the exact `acceptance_check`
+  with this status-preserving shape:
+  set -o pipefail
+  log=<item_validation_log path>
+  <acceptance_check> 2>&1 | tee "$log"
+  status=${PIPESTATUS[0]}
+  echo "EXIT_STATUS: $status"
+  exit "$status"
+  Do not inspect more files before this acceptance check.
 
   Scope authority rule:
   allowed_files and forbidden_files are hard constraints. They have higher
@@ -195,7 +216,7 @@ prompt: |
   Make the smallest edit that satisfies the current item acceptance. Change only
   files listed in allowed_files. Do not edit tests, runner internals, comments,
   formatting, nearby TODOs, or future checklist items unless the current item
-  explicitly requires them.
+  explicitly requires them in allowed_files and acceptance.
 
   Source preservation rule:
   When editing a visible source file, preserve every unrelated visible line and
@@ -253,7 +274,8 @@ prompt: |
   1. Read current item.
   2. Inspect only allowed/current-item source paths.
   3. Make the smallest item patch, or write a blocker report.
-  4. Run focused validation only for this item when runnable.
+  4. Run focused validation only for this item when runnable. If validation is
+     deferred and acceptance_check is present, run acceptance_check instead.
   5. Write `implementer_report`.
   6. Stop.
 
@@ -265,13 +287,23 @@ prompt: |
   risk must be none. Blocker must be none. Do not inspect more files or continue
   editing after focused validation passed.
 
+  Passed acceptance-check report rule:
+  If acceptance_check output is visible and contains the exact acceptance_check
+  command and EXIT_STATUS: 0, write `implementer_report` now. Acceptance
+  evidence must name the passed acceptance_check command. Validation must say
+  `Deferred - <validation_deferred_until>` when validation_command is `none`;
+  otherwise it must name the runnable validation result. Remaining risk must be
+  none except for the explicit deferred validation note. Blocker must be none.
+  Do not inspect more files or continue editing after acceptance_check passed.
+
   Passed validation report shell shape:
   cat > <implementer_report path> <<'EOF'
   Current item:
   <id and title>
 
   Changed:
-  <files changed>
+  <files changed; if current_item has report_changed_files, list every path in
+  report_changed_files after successful validation or acceptance_check>
 
   Acceptance evidence:
   PASS - <acceptance passed by focused validation>
@@ -291,7 +323,8 @@ prompt: |
   <id and title>
 
   Changed:
-  <files changed or "No files changed">
+  <files changed or "No files changed"; if current_item has
+  report_changed_files and the item passed, list those concrete paths>
 
   Acceptance evidence:
   <each acceptance bullet mapped to evidence or BLOCKED>

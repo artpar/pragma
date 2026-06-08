@@ -42,6 +42,15 @@ prompt: |
   generated files, validation command, and producer evidence only when they are
   still executable requirements for that repair surface.
 
+  Allowed-files repair rule:
+  If an item verdict says a concrete evidenced repository path must be added to
+  the current item's allowed_files, that is a repairable current-item scope
+  repair, not an environment/tooling blocker. Emit a patch route for the
+  current item repair with that path in `coupled edit paths` or `source path`
+  as appropriate. Do not write `Patch route: - none` for this case when the
+  path appears in evidence source paths, consumer/defaulting paths, fixture
+  tiers, generated files, or the current checklist item.
+
   After-input rule:
   After any repair verdict, `surface_map`, and `evidence_map` have been read in
   this phase, write the `patch_plan` output artifact from those artifacts. Do
@@ -68,7 +77,8 @@ prompt: |
 
   Allowed scope:
   Only surfaces listed in `evidence_map` as evidence source paths,
-  consumer/defaulting paths, fixture tiers, or validation commands.
+  consumer/defaulting paths, fixture tiers, acceptance checks, or validation
+  commands.
 
   Forbidden scope:
   Product-story behavior, runtime services, protobuf services, generated files,
@@ -94,6 +104,24 @@ prompt: |
   every route whose `producer command:` is `none`, unless a visible completed
   item already proves that producer route is done.
 
+  Atomic consumer edit rule:
+  If one source value, field, contract, or behavior change also requires an
+  evidenced consumer/defaulting/test/fixture path to change for the same
+  semantic behavior, keep those edits in one patch-route bullet. Put the
+  primary source in `source path` and all required consumer/defaulting/test or
+  fixture edit paths in `coupled edit paths`. The behavior line must explicitly
+  say to edit all coupled paths. Do not split matching test assertions,
+  fixtures, snapshots, or default consumers into separate checklist routes when
+  they only make the same source behavior consistent.
+
+  Validation deferral rule:
+  A route may use `validation: none` only when the route has a concrete
+  `acceptance check` and the focused validation depends on later coupled work
+  not included in this route. In that case write `validation after:` naming the
+  item or surface that must be completed before the focused validation is
+  runnable. If the route includes every path needed by the validation command,
+  copy the focused validation command exactly and set `validation after: none`.
+
   Producer evidence exact-copy rule:
   If evidence-map contains a `Producer evidence:` section, copy the first bullet
   after it into a `producer evidence:` line in the same patch route. The output
@@ -107,14 +135,17 @@ prompt: |
   command, and the evidenced behavior is to verify/check/audit existing
   behavior, write a validation-only patch route instead of unresolved missing
   source proof. The route must use `source path: none`,
+  `coupled edit paths: none`,
   `consumer/defaulting path: <evidenced test or consumer path>`,
-  `validation: <exact focused command>`, `generated files: none`, and
-  `unsafe shortcut: editing repository files`.
+  `acceptance check: none`, `validation: <exact focused command>`,
+  `validation after: none`, `generated files: none`, and `unsafe shortcut:
+  editing repository files`.
 
   Work method:
   1. Read surface map and evidence map.
-  2. For each evidenced surface, write one source-owned patch route from the
-     artifact text already read.
+  2. For each evidenced semantic surface, write one source-owned patch route
+     from the artifact text already read. Merge coupled source and
+     consumer/defaulting/test edits for the same behavior into that route.
   3. Put non-evidenced product behavior in unresolved with proof required.
   4. Write the `patch_plan` output artifact.
   5. Stop.
@@ -126,9 +157,12 @@ prompt: |
   Patch route:
   - behavior: <concrete behavior>
     source path: <path>
+    coupled edit paths: <comma-separated paths or none>
     consumer/defaulting path: <path>
     fixture/schema tier: <path or none>
-    validation: <focused command>
+    acceptance check: <source-local or item-local command, or none>
+    validation: <focused command or none>
+    validation after: <none or dependency that makes validation runnable>
     producer command: <exact producer command or none>
     producer evidence: <exact producer evidence or none>
     generated files: <comma-separated generated/derived paths or none>

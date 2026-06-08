@@ -16,7 +16,7 @@ prompt: |
 
   Purpose:
   Identify the source-of-truth path, consumer/defaulting path, fixture tiers,
-  and validation command for each task surface.
+  item acceptance checks, and validation command for each task surface.
 
   Do not implement.
   Do not modify repository files.
@@ -85,6 +85,17 @@ prompt: |
   Do not write `Producer command evidence:` or hide producer evidence under
   validation, consumer/defaulting paths, or prose.
 
+  Acceptance versus validation rule:
+  `acceptance_check` and `validation_command` are different evidence. An
+  acceptance check is a cheap source-local or item-local command that can prove
+  one planned item changed the expected visible source, fixture, or assertion.
+  A validation command is the focused behavioral command that can falsify the
+  completed behavior. If a validation command depends on multiple coupled source
+  or consumer/test edits, keep it as validation and also record separate
+  acceptance checks for the visible edit paths. Do not use a broad behavioral
+  test as the only evidence for a source-local value replacement when a direct
+  grep or file-local command is available from inspected evidence.
+
   `evidence_map` format:
   Inputs:
   <surface-map paths consumed>
@@ -101,6 +112,9 @@ prompt: |
 
   Validation commands:
   - <focused command that can falsify this behavior>
+
+  Acceptance checks:
+  - behavior: <behavior>; check: <source-local or item-local command>
 
   Evidenced generated/derived paths:
   - <generated or derived path, or none>
