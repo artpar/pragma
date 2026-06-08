@@ -50,6 +50,7 @@ type inspectRawHTTPTurn struct {
 	ContentPreview   string   `json:"content_preview,omitempty"`
 	ToolCalls        []string `json:"tool_calls,omitempty"`
 	ErrorPreview     string   `json:"error_preview,omitempty"`
+	requestText      string
 	finalUser        string
 	reasoning        string
 	content          string
@@ -62,7 +63,43 @@ func inspectCmd() *cobra.Command {
 		Short: "Inspect captured Pragma artifacts",
 	}
 	cmd.AddCommand(inspectRawHTTPCmd())
+	cmd.AddCommand(inspectPhasesCmd())
 	return cmd
+}
+
+func inspectPhasesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "phases <run-dir|capture-dir|turn-payloads-dir>",
+		Short: "Show turn-to-orchestration-phase correspondence",
+		Args:  cobra.ExactArgs(1),
+		RunE:  inspectPhasesRun,
+	}
+	cmd.Flags().String("format", "markdown", "output format: markdown, json, or tsv")
+	return cmd
+}
+
+func inspectPhasesRun(cmd *cobra.Command, args []string) error {
+	input, err := resolveInspectRawHTTPInput(args[0])
+	if err != nil {
+		return err
+	}
+	turns, err := loadInspectRawHTTPTurns(input)
+	if err != nil {
+		return err
+	}
+
+	report := buildInspectPhaseReport(args[0], input, turns)
+	format, _ := cmd.Flags().GetString("format")
+	switch format {
+	case "", "markdown":
+		return writeInspectPhaseMarkdown(cmd.OutOrStdout(), report)
+	case "json":
+		return writeInspectPhaseJSON(cmd.OutOrStdout(), report)
+	case "tsv":
+		return writeInspectPhaseTSV(cmd.OutOrStdout(), report)
+	default:
+		return fmt.Errorf("unsupported inspect format %q; expected markdown, json, or tsv", format)
+	}
 }
 
 func inspectRawHTTPCmd() *cobra.Command {
@@ -222,6 +259,7 @@ func loadInspectRawHTTPTurn(input inspectRawHTTPInput, dir string) (inspectRawHT
 	turn.Model, _ = req["model"].(string)
 	turn.MessageCount = len(asSlice(req["messages"]))
 	turn.ToolCount = len(asSlice(req["tools"]))
+	turn.requestText = inspectRawHTTPRequestText(req)
 	turn.finalUser = inspectRawHTTPFinalUser(req)
 	turn.FinalUserPreview = trimInspectPreview(turn.finalUser)
 
@@ -409,6 +447,277 @@ func inspectRawHTTPFinalUser(req map[string]any) string {
 		return strings.TrimSpace(readableContent(msg["content"]))
 	}
 	return ""
+}
+
+func inspectRawHTTPRequestText(req map[string]any) string {
+	var parts []string
+	for _, item := range asSlice(req["messages"]) {
+		msg, _ := item.(map[string]any)
+		role, _ := msg["role"].(string)
+		content := strings.TrimSpace(readableContent(msg["content"]))
+		if content == "" {
+			continue
+		}
+		parts = append(parts, role+"\n"+content)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+type inspectPhaseReport struct {
+	Input         string                     `json:"input"`
+	Kind          inspectRawHTTPInputKind    `json:"kind"`
+	Source        string                     `json:"source"`
+	TurnCount     int                        `json:"turn_count"`
+	Ranges        []inspectPhaseRange        `json:"ranges"`
+	ControlEvents []inspectPhaseControlEvent `json:"control_events,omitempty"`
+	Turns         []inspectPhaseTurn         `json:"turns"`
+	Warnings      []string                   `json:"warnings,omitempty"`
+}
+
+type inspectPhaseTurn struct {
+	Turn      string `json:"turn"`
+	Phase     string `json:"phase"`
+	StartedAt string `json:"started_at,omitempty"`
+	Preview   string `json:"preview,omitempty"`
+	Inferred  bool   `json:"inferred,omitempty"`
+}
+
+type inspectPhaseRange struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+	Phase string `json:"phase"`
+	Count int    `json:"count"`
+}
+
+type inspectPhaseControlEvent struct {
+	State      string `json:"state"`
+	Kind       string `json:"kind,omitempty"`
+	Event      string `json:"event,omitempty"`
+	Transition string `json:"transition,omitempty"`
+}
+
+func buildInspectPhaseReport(arg string, input inspectRawHTTPInput, rawTurns []inspectRawHTTPTurn) inspectPhaseReport {
+	report := inspectPhaseReport{
+		Input:     filepath.ToSlash(arg),
+		Kind:      input.Kind,
+		Source:    "artifact_contracts",
+		TurnCount: len(rawTurns),
+	}
+	if stdoutPath := inspectPhaseStdoutPath(arg, input); stdoutPath != "" {
+		report.Source = "artifact_contracts+orchestration_stdout"
+		report.ControlEvents = inspectPhaseControlEvents(stdoutPath)
+	}
+	for _, raw := range rawTurns {
+		phase := inferInspectPhase(raw)
+		if phase == "" {
+			phase = "unknown"
+		}
+		report.Turns = append(report.Turns, inspectPhaseTurn{
+			Turn:      raw.Turn,
+			Phase:     phase,
+			StartedAt: raw.StartedAt,
+			Preview:   firstNonEmptyRawHTTPDump(raw.ContentPreview, raw.ReasoningPreview, raw.FinalUserPreview),
+			Inferred:  true,
+		})
+	}
+	report.Ranges = inspectPhaseRanges(report.Turns)
+	if hasInspectPhase(report.Turns, "unknown") {
+		report.Warnings = append(report.Warnings, "some turns could not be mapped to a phase from their request artifact contract")
+	}
+	return report
+}
+
+func inferInspectPhase(turn inspectRawHTTPTurn) string {
+	text := strings.ToLower(turn.requestText)
+	for _, candidate := range []struct {
+		artifact string
+		phase    string
+	}{
+		{"final_verdict", "final_reviewer"},
+		{"validation_status", "validation_runner"},
+		{"item_verdict", "item_reviewer"},
+		{"implementer_report", "item_worker"},
+		{"checklist", "checklist_writer"},
+		{"patch_plan", "patch_planner"},
+		{"evidence_map", "evidence_mapper"},
+		{"surface_map", "surface_mapper"},
+	} {
+		if inspectPhaseMentionsOutputArtifact(text, candidate.artifact) {
+			return candidate.phase
+		}
+	}
+	for _, candidate := range []string{
+		"surface_mapper",
+		"evidence_mapper",
+		"patch_planner",
+		"checklist_writer",
+		"item_worker",
+		"item_reviewer",
+		"validation_runner",
+		"final_reviewer",
+	} {
+		if strings.Contains(text, "you are `"+candidate+"`") || strings.Contains(text, "you are the "+strings.ReplaceAll(candidate, "_", " ")) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func inspectPhaseMentionsOutputArtifact(text, artifact string) bool {
+	patterns := []string{
+		"deliverable is the `" + artifact + "` output artifact",
+		"write the `" + artifact + "` output artifact",
+		"exactly one file: the `" + artifact + "` output artifact",
+		"the `" + artifact + "` output artifact",
+		"required_artifact = " + artifact,
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(text, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func inspectPhaseRanges(turns []inspectPhaseTurn) []inspectPhaseRange {
+	if len(turns) == 0 {
+		return nil
+	}
+	ranges := []inspectPhaseRange{{
+		Start: turns[0].Turn,
+		End:   turns[0].Turn,
+		Phase: turns[0].Phase,
+		Count: 1,
+	}}
+	for _, turn := range turns[1:] {
+		last := &ranges[len(ranges)-1]
+		if turn.Phase == last.Phase {
+			last.End = turn.Turn
+			last.Count++
+			continue
+		}
+		ranges = append(ranges, inspectPhaseRange{Start: turn.Turn, End: turn.Turn, Phase: turn.Phase, Count: 1})
+	}
+	return ranges
+}
+
+func hasInspectPhase(turns []inspectPhaseTurn, phase string) bool {
+	for _, turn := range turns {
+		if turn.Phase == phase {
+			return true
+		}
+	}
+	return false
+}
+
+func inspectPhaseStdoutPath(arg string, input inspectRawHTTPInput) string {
+	candidates := []string{filepath.Join(arg, "pragma.stdout.log")}
+	if filepath.Base(input.Root) == "raw-http-pragma" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(input.Root), "pragma.stdout.log"))
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func inspectPhaseControlEvents(stdoutPath string) []inspectPhaseControlEvent {
+	body, err := os.ReadFile(stdoutPath)
+	if err != nil {
+		return nil
+	}
+	var events []inspectPhaseControlEvent
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[control: ") && strings.Contains(line, " (") {
+			inner := strings.TrimSuffix(strings.TrimPrefix(line, "[control: "), "]")
+			state, kind, _ := strings.Cut(inner, " (")
+			events = append(events, inspectPhaseControlEvent{
+				State: strings.TrimSpace(state),
+				Kind:  strings.TrimSuffix(strings.TrimSpace(kind), ")"),
+			})
+			continue
+		}
+		if strings.HasPrefix(line, "[control: ") && strings.Contains(line, " emitted ") {
+			inner := strings.TrimSuffix(strings.TrimPrefix(line, "[control: "), "]")
+			state, event, _ := strings.Cut(inner, " emitted ")
+			if len(events) > 0 && events[len(events)-1].State == strings.TrimSpace(state) {
+				events[len(events)-1].Event = strings.TrimSpace(event)
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "[transition: ") {
+			transition := strings.TrimSuffix(strings.TrimPrefix(line, "[transition: "), "]")
+			if len(events) > 0 && events[len(events)-1].Transition == "" {
+				events[len(events)-1].Transition = transition
+			}
+		}
+	}
+	return events
+}
+
+func writeInspectPhaseMarkdown(w io.Writer, report inspectPhaseReport) error {
+	fmt.Fprintln(w, "# Turn Phase Correspondence")
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Input: `%s`\n", report.Input)
+	fmt.Fprintf(w, "Kind: %s\n", report.Kind)
+	fmt.Fprintf(w, "Source: %s\n", report.Source)
+	fmt.Fprintf(w, "Turns: %d\n", report.TurnCount)
+	for _, warning := range report.Warnings {
+		fmt.Fprintf(w, "Warning: %s\n", warning)
+	}
+	fmt.Fprintln(w)
+
+	fmt.Fprintln(w, "## Phase Ranges")
+	fmt.Fprintln(w)
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "RANGE\tPHASE\tTURNS")
+	for _, r := range report.Ranges {
+		fmt.Fprintf(tw, "%s-%s\t%s\t%d\n", r.Start, r.End, r.Phase, r.Count)
+	}
+	tw.Flush()
+
+	if len(report.ControlEvents) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "## Control Events")
+		fmt.Fprintln(w)
+		tw = tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "STATE\tKIND\tEVENT\tTRANSITION")
+		for _, event := range report.ControlEvents {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", event.State, event.Kind, event.Event, event.Transition)
+		}
+		tw.Flush()
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "## Turns")
+	fmt.Fprintln(w)
+	tw = tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "TURN\tPHASE\tTIME\tPREVIEW")
+	for _, turn := range report.Turns {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", turn.Turn, turn.Phase, shortInspectTime(turn.StartedAt), turn.Preview)
+	}
+	return tw.Flush()
+}
+
+func writeInspectPhaseJSON(w io.Writer, report inspectPhaseReport) error {
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w, string(data))
+	return err
+}
+
+func writeInspectPhaseTSV(w io.Writer, report inspectPhaseReport) error {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "turn\tphase\tstarted_at\tpreview")
+	for _, turn := range report.Turns {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", turn.Turn, turn.Phase, turn.StartedAt, turn.Preview)
+	}
+	return tw.Flush()
 }
 
 func inspectRawHTTPStreamToolNames(stream rawHTTPStreamResponse) []string {
