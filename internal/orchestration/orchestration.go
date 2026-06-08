@@ -116,13 +116,19 @@ type ChecklistItem struct {
 }
 
 func (i *ChecklistItem) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if idRaw, ok := raw["id"]; ok {
+		idText := strings.TrimSpace(string(idRaw))
+		if idText != "" && idText != "null" && !strings.HasPrefix(idText, "\"") {
+			return fmt.Errorf("id must be a JSON string, got %s", jsonValueKind(idText))
+		}
+	}
 	type checklistItem ChecklistItem
 	var known checklistItem
 	if err := json.Unmarshal(data, &known); err != nil {
-		return err
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	for _, key := range []string{"id", "title", "description", "acceptance", "status"} {
@@ -529,9 +535,26 @@ func parseDecision(text string) (string, error) {
 }
 
 func readChecklist(path string) (Checklist, error) {
-	var checklist Checklist
-	if err := readJSONFile(path, &checklist); err != nil {
+	raw, err := os.ReadFile(path)
+	if err != nil {
 		return Checklist{}, err
+	}
+	var envelope struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return Checklist{}, fmt.Errorf("parse json %q: %w", path, err)
+	}
+	checklist := Checklist{Items: make([]ChecklistItem, 0, len(envelope.Items))}
+	for idx, rawItem := range envelope.Items {
+		var item ChecklistItem
+		if err := json.Unmarshal(rawItem, &item); err != nil {
+			return Checklist{}, fmt.Errorf("parse json %q: items[%d]: %w", path, idx, err)
+		}
+		if strings.TrimSpace(item.ID) == "" {
+			return Checklist{}, fmt.Errorf("parse json %q: items[%d].id must be a non-empty string", path, idx)
+		}
+		checklist.Items = append(checklist.Items, item)
 	}
 	return checklist, nil
 }
@@ -553,6 +576,25 @@ func readJSONFile(path string, dst any) error {
 		return fmt.Errorf("parse json %q: %w", path, err)
 	}
 	return nil
+}
+
+func jsonValueKind(text string) string {
+	switch {
+	case text == "":
+		return "empty"
+	case strings.HasPrefix(text, "\""):
+		return "string"
+	case strings.HasPrefix(text, "{"):
+		return "object"
+	case strings.HasPrefix(text, "["):
+		return "array"
+	case text == "true" || text == "false":
+		return "boolean"
+	case text == "null":
+		return "null"
+	default:
+		return "number or token"
+	}
 }
 
 func writeJSONFile(path string, value any) error {

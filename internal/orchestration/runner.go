@@ -270,6 +270,12 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 		}
 		b.WriteString(contract)
 	}
+	if contract := RenderNextForEachContract(def, state); contract != "" {
+		if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
+			b.WriteString("\n")
+		}
+		b.WriteString(contract)
+	}
 
 	return system, b.String(), nil
 }
@@ -336,6 +342,79 @@ func RenderArtifactContract(artifacts Artifacts) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func RenderNextForEachContract(def Definition, state State) string {
+	next, ok := nextStateForDefaultEvent(def, state)
+	if !ok || next.Control.ForEachNext == nil {
+		return ""
+	}
+	control := next.Control.ForEachNext
+	pendingStatus := control.PendingStatus
+	if pendingStatus == "" {
+		pendingStatus = "pending"
+	}
+	doneStatus := control.DoneStatus
+	if doneStatus == "" {
+		doneStatus = "approved"
+	}
+	var b strings.Builder
+	b.WriteString("## Output Artifact Shape Required By Next State\n\n")
+	fmt.Fprintf(&b, "The next state is `%s`, a `foreach_next` control state.\n", next.ID)
+	fmt.Fprintf(&b, "It will parse `%s` and write the selected item to `%s`.\n\n", control.ListPath, control.CursorPath)
+	fmt.Fprintf(&b, "Write `%s` as JSON with this exact shape:\n\n", control.ListPath)
+	b.WriteString("```json\n")
+	b.WriteString("{\n")
+	b.WriteString("  \"items\": [\n")
+	b.WriteString("    {\n")
+	b.WriteString("      \"id\": \"stable-string-id\",\n")
+	b.WriteString("      \"title\": \"string\",\n")
+	b.WriteString("      \"description\": \"string\",\n")
+	b.WriteString("      \"approach\": \"string\",\n")
+	b.WriteString("      \"acceptance\": [\"string\"],\n")
+	b.WriteString("      \"allowed_files\": [\"string\"],\n")
+	b.WriteString("      \"forbidden_files\": [\"string\"],\n")
+	b.WriteString("      \"validation_command\": \"string\",\n")
+	fmt.Fprintf(&b, "      \"status\": %q\n", pendingStatus)
+	b.WriteString("    }\n")
+	b.WriteString("  ]\n")
+	b.WriteString("}\n")
+	b.WriteString("```\n\n")
+	b.WriteString("Rules:\n")
+	b.WriteString("- `id` is required and must be a JSON string, never a number.\n")
+	fmt.Fprintf(&b, "- `status` is required and must be `%q` for new items.\n", pendingStatus)
+	fmt.Fprintf(&b, "- When no `%s` items remain, `%s` will write a cursor item with status `%s`.\n", pendingStatus, next.ID, doneStatus)
+	b.WriteString("- `acceptance`, `allowed_files`, and `forbidden_files` must be JSON arrays.\n")
+	b.WriteString("- Extra item fields are allowed only if they are valid JSON and should be preserved by later controls.\n\n")
+	return b.String()
+}
+
+func nextStateForDefaultEvent(def Definition, state State) (State, bool) {
+	event := state.Event.Default
+	if event == "" {
+		event = EventComplete
+	}
+	for _, transition := range def.Transitions {
+		if transition.Event != event || !transitionIncludesFrom(transition, state.ID) {
+			continue
+		}
+		for _, candidate := range def.States {
+			if candidate.ID == transition.To {
+				return candidate, true
+			}
+		}
+		return State{}, false
+	}
+	return State{}, false
+}
+
+func transitionIncludesFrom(transition Transition, stateID string) bool {
+	for _, from := range transition.From {
+		if from == stateID {
+			return true
+		}
+	}
+	return false
 }
 
 func writeArtifactLine(b *strings.Builder, artifact Artifact) {
