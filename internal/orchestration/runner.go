@@ -269,7 +269,7 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	if strings.TrimSpace(taskPrompt) != "" && state.TaskPrompt != TaskPromptNone {
 		fmt.Fprintf(&b, "## Task\n\n%s\n", taskPrompt)
 	} else {
-		handoff, err := RenderArtifactHandoff(state.Artifacts, artifactRoot, strict)
+		handoff, err := RenderArtifactHandoff(state, artifactRoot, strict)
 		if err != nil {
 			return system, "", err
 		}
@@ -296,7 +296,8 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	return system, b.String(), nil
 }
 
-func RenderArtifactHandoff(artifacts Artifacts, artifactRoot string, strict bool) (string, error) {
+func RenderArtifactHandoff(state State, artifactRoot string, strict bool) (string, error) {
+	artifacts := state.Artifacts
 	if len(artifacts.Inputs) == 0 {
 		return "", nil
 	}
@@ -320,8 +321,28 @@ func RenderArtifactHandoff(artifacts Artifacts, artifactRoot string, strict bool
 		b.WriteString("Content:\n")
 		b.WriteString(strings.TrimRight(string(content), "\n"))
 		b.WriteString("\n\n")
+		if artifact.ID == "current_item" && state.Persona == "item_worker" {
+			b.WriteString(renderSourceEditTransport())
+		}
 	}
 	return strings.TrimSpace(b.String()), nil
+}
+
+func renderSourceEditTransport() string {
+	return `### ` + "`source_edit_transport`" + ` (runtime capability)
+The bash environment has ` + "`git apply`" + ` available.
+Use normal bash for inspection commands, validation commands, and runtime artifact writes.
+For multi-line additions or replacements in existing repository source files, use a single bash block containing ` + "`git apply <<'PATCH'`" + ` with a standard unified diff.
+For small exact deletions, a concise checked command is acceptable only when it verifies the exact line content at that location or matches the exact line text before deleting it.
+For ` + "`git apply`" + ` patches:
+- include ` + "`--- a/<path>`" + ` and ` + "`+++ b/<path>`" + `
+- use repository-relative diff paths without container or absolute prefixes. Correct: ` + "`--- a/internal/telemetry/telemetry.go`" + `. Wrong: ` + "`--- a/app/internal/telemetry/telemetry.go`" + ` or ` + "`--- /app/internal/telemetry/telemetry.go`" + `
+- include normal hunk headers with line numbers, such as ` + "`@@ -40,6 +40,10 @@`" + `
+- omit ` + "`index ...`" + ` lines
+- do not use bare ` + "`@@`" + ` hunk headers
+- avoid replacing large blocks with many removed lines followed by many added lines when a smaller focused patch or exact deletion is enough
+
+`
 }
 
 func resolveArtifactPath(path string, artifactRoot string) string {
