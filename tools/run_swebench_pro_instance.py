@@ -24,6 +24,8 @@ DEFAULT_PROTOBUF_RELEASE_API = "https://api.github.com/repos/protocolbuffers/pro
 DEFAULT_PROTOC_GEN_GO_VERSION = "v1.36.6"
 DEFAULT_PROTOC_GEN_GO_GRPC_VERSION = "v1.5.1"
 DEFAULT_GRPC_GATEWAY_VERSION = "v2.29.0"
+DEFAULT_ORCHESTRATION = "/pragma/orchestrations/prompt-control-v2-benchmark.yaml"
+DEFAULT_PERSONA_DIR = "/pragma/personas-research-v2"
 
 
 def display_command(command: list[str]) -> list[str]:
@@ -292,6 +294,35 @@ def prepare_generator_toolchain(repo_root: Path, args: argparse.Namespace) -> Pa
     return toolchain_dir
 
 
+def pragma_extra_args(args: argparse.Namespace) -> list[str]:
+    env_extra_args = shlex.split(os.getenv("PRAGMA_EXTRA_ARGS", ""))
+    if args.direct:
+        return env_extra_args
+
+    if env_extra_args[:2] == ["orchestration", "run"]:
+        raise SystemExit(
+            "PRAGMA_EXTRA_ARGS must not include 'orchestration run'; "
+            "use --orchestration/--persona-dir, or pass --direct for direct-loop runs"
+        )
+
+    orchestration = args.orchestration
+    persona_dir = args.persona_dir
+    return [
+        "orchestration",
+        "run",
+        orchestration,
+        "--persona-dir",
+        persona_dir,
+        *env_extra_args,
+    ]
+
+
+def shell_join_args(args: list[str]) -> str:
+    if not args:
+        return ""
+    return " \\\n  ".join(shlex.quote(arg) for arg in args)
+
+
 def normalize_eval_test_list(value: object) -> str:
     if value is None:
         return "[]"
@@ -443,6 +474,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pull-image", action="store_true", help="pull the selected Docker image before running")
     parser.add_argument("--evaluate", action="store_true", help="run the official local-Docker evaluator after patch generation")
     parser.add_argument("--evaluate-existing", action="store_true", help="evaluate an existing output directory without rerunning Pragma")
+    parser.add_argument(
+        "--orchestration",
+        default=os.getenv("PRAGMA_ORCHESTRATION", DEFAULT_ORCHESTRATION),
+        help="container path to orchestration YAML; defaults to prompt-control v2 benchmark orchestration",
+    )
+    parser.add_argument(
+        "--persona-dir",
+        default=os.getenv("PRAGMA_PERSONA_DIR", DEFAULT_PERSONA_DIR),
+        help="container path to persona YAML directory for orchestration runs",
+    )
+    parser.add_argument(
+        "--direct",
+        action="store_true",
+        default=os.getenv("PRAGMA_DIRECT", "").lower() in {"1", "true", "yes"},
+        help="run the direct Pragma loop instead of the default orchestration run",
+    )
     return parser.parse_args()
 
 
@@ -474,13 +521,30 @@ def main() -> None:
     prompt_path = output_dir / "prompt.txt"
     prompt_path.write_text(prompt, encoding="utf-8")
     metadata_path = output_dir / "metadata.json"
-    metadata_path.write_text(json.dumps({"instance_id": args.instance_id, "image": image, "row": row}, indent=2), encoding="utf-8")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "instance_id": args.instance_id,
+                "image": image,
+                "row": row,
+                "run_mode": "direct" if args.direct else "orchestration",
+                "orchestration": "" if args.direct else args.orchestration,
+                "persona_dir": "" if args.direct else args.persona_dir,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     binary = build_linux_binary(repo_root, output_dir)
     toolchain_dir = prepare_generator_toolchain(repo_root, args) if args.generator_toolchain else None
     print(f"instance_id={args.instance_id}")
     print(f"image={image}")
     print(f"output_dir={output_dir}")
+    print(f"run_mode={'direct' if args.direct else 'orchestration'}")
+    if not args.direct:
+        print(f"orchestration={args.orchestration}")
+        print(f"persona_dir={args.persona_dir}")
     if toolchain_dir is not None:
         print(f"generator_toolchain={toolchain_dir}")
     if args.prepare_only:
@@ -492,7 +556,7 @@ def main() -> None:
     status_path = output_dir / "agent-status.txt"
     raw_http_dir = output_dir / "raw-http-pragma"
     toolchain_preflight_path = output_dir / "toolchain-preflight.log"
-    extra_args = os.getenv("PRAGMA_EXTRA_ARGS", "")
+    extra_args = shell_join_args(pragma_extra_args(args))
     container_script = f"""
 set -u
 cd /app

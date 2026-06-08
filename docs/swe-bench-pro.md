@@ -94,13 +94,21 @@ Default Pragma settings:
 | Model | `$LLM_MODEL`, default `minimaxai/minimax-m2.7` |
 | Base URL | `$LLM_BASE_URL`, then `providers.lilac.base_url`, then `https://api.getlilac.com/v1` |
 | Permission mode | `bypassPermissions` |
-| Context mode | `chat` |
 | Allowed tools | `Bash` |
 | Temperature | `$PRAGMA_TEMPERATURE`, default `0` |
 | Max turns | `$PRAGMA_MAX_TURNS`, default `250` |
 | Agent timeout | `$PRAGMA_AGENT_TIMEOUT`, default `7200` seconds |
 
-Extra Pragma flags can be passed through `PRAGMA_EXTRA_ARGS`.
+The runner defaults to the prompt-control v2 orchestration:
+
+| Setting | Default |
+|---|---|
+| Orchestration | `$PRAGMA_ORCHESTRATION`, default `/pragma/orchestrations/prompt-control-v2-benchmark.yaml` |
+| Persona dir | `$PRAGMA_PERSONA_DIR`, default `/pragma/personas-research-v2` |
+
+Use `--direct` only when intentionally running the non-orchestrated Pragma loop.
+Extra Pragma flags can still be appended through `PRAGMA_EXTRA_ARGS`, but do
+not put `orchestration run` there; use `--orchestration` and `--persona-dir`.
 
 For orchestration runs, the runner mounts the repo-local YAML directories into
 the benchmark container:
@@ -111,26 +119,18 @@ the benchmark container:
 | `personas/` | `/pragma/personas` |
 | `personas-research-v2/` | `/pragma/personas-research-v2` |
 
-Example:
-
-```bash
-PRAGMA_EXTRA_ARGS='orchestration run /pragma/orchestrations/architect-implementer-prosecutor.yaml --persona-dir /pragma/personas' \
-tools/run_swebench_pro_instance.py \
-  --instance-id instance_flipt-io__flipt-507170da0f7f4da330f6732bffdf11c4df7fc192 \
-  --pull-image \
-  --evaluate
-```
-
 To test the prompt-control v2 persona set from scratch on the Flipt Kubernetes
-task, use the v2 orchestration and persona directory:
+task, run the benchmark normally:
 
 ```bash
-PRAGMA_EXTRA_ARGS='orchestration run /pragma/orchestrations/prompt-control-v2-benchmark.yaml --persona-dir /pragma/personas-research-v2' \
 tools/run_swebench_pro_instance.py \
   --instance-id instance_flipt-io__flipt-0fd09def402258834b9d6c0eaa6d3b4ab93b4446 \
   --pull-image \
   --evaluate
 ```
+
+To run a different orchestration/persona set, pass `--orchestration` and
+`--persona-dir`. To intentionally bypass orchestration, pass `--direct`.
 
 ## Outputs
 
