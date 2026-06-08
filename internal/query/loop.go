@@ -136,16 +136,36 @@ func (e *Engine) messagesForRequest(conv model.Conversation) []model.Message {
 	return conv.APIMessages()
 }
 
-func (e *Engine) messagesForRequestChecked(conv model.Conversation) ([]model.Message, error) {
+func (e *Engine) messagesForRequestChecked(conv model.Conversation, startIndexes ...int) ([]model.Message, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	messages := e.messagesForRequest(conv)
+	var messages []model.Message
+	if len(startIndexes) > 0 {
+		messages = e.messagesForRequestFrom(conv, startIndexes[0])
+	} else {
+		messages = e.messagesForRequest(conv)
+	}
 	if err := validateToolResultPairing(messages); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		return nil, err
 	}
 	observe.GlobalTrace("return: messages, nil")
 	return messages, nil
+}
+
+func (e *Engine) messagesForRequestFrom(conv model.Conversation, start int) []model.Message {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if start < 0 {
+		start = 0
+	}
+	if start > len(conv.Messages) {
+		start = len(conv.Messages)
+	}
+	scoped := conv
+	scoped.Messages = conv.Messages[start:]
+	observe.GlobalTrace("return: scoped.APIMessages()")
+	return scoped.APIMessages()
 }
 
 func messageHasToolResult(msg model.Message) bool {

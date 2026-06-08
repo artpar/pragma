@@ -84,10 +84,16 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	}
 
 	handoffPrompt := ""
+	taskPrompt := opts.TaskPrompt
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
-		event, nextHandoff, err := RunNodeEvents(ctx, ch, engine, projection, opts.PersonaDir, def, state, opts.TaskPrompt, handoffPrompt, artifactRoot)
+		stateTaskPrompt := ""
+		if state.Control.IsZero() {
+			stateTaskPrompt = taskPrompt
+			taskPrompt = ""
+		}
+		event, nextHandoff, err := RunNodeEvents(ctx, ch, engine, projection, opts.PersonaDir, def, state, stateTaskPrompt, handoffPrompt, artifactRoot)
 		if err != nil {
 			ch <- query.ErrorEvent{Err: err}
 			return
@@ -241,7 +247,7 @@ func BuildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	}}}
 
 	var b strings.Builder
-	if state.ID == def.Initial && state.TaskPrompt != TaskPromptNone {
+	if strings.TrimSpace(taskPrompt) != "" && state.TaskPrompt != TaskPromptNone {
 		fmt.Fprintf(&b, "## Task\n\n%s\n", taskPrompt)
 	} else {
 		if strings.TrimSpace(handoffPrompt) != "" {

@@ -89,12 +89,13 @@ func (e *Engine) RunPragmaLoopWithSystem(ctx context.Context, system model.Syste
 				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
 			}
 		}()
-		e.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, ch)
+		startIndex := len(e.store.Snapshot().Conversation.Messages)
+		e.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, ch, startIndex)
 	}()
 	return ch
 }
 
-func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, ch chan<- LoopEvent) {
+func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, ch chan<- LoopEvent, messageStartIndexes ...int) {
 	defer func() {
 		e.runStopHook(ch)
 	}()
@@ -130,7 +131,7 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			resolvedModel = snap.Model
 		}
 
-		messagesForQuery, err := e.messagesForRequestChecked(snap.Conversation)
+		messagesForQuery, err := e.messagesForRequestChecked(snap.Conversation, messageStartIndexes...)
 		if err != nil {
 			ch <- ErrorEvent{Err: err}
 			return
