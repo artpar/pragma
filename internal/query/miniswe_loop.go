@@ -18,23 +18,13 @@ import (
 const pragmaLoopSystemPrompt = `Pragma loop mode is a shell-action transport.
 
 Follow the active task and persona instructions. This wrapper only defines how
-to send shell actions.
+to send the next shell action.
 
-When you need to inspect or change the system, respond with exactly one fenced
-bash code block containing one command or one shell script, and no prose outside
-the code block. A fenced bash block is a tool call and will be executed.
-
-When no shell action is needed, or when you are ready to answer the user, respond
-with the final user-facing answer and no fenced bash code block. A response with
-no fenced bash block ends the turn.
-
-Do not emit readiness echo commands. Do not use bash just to print the final
-answer.
-
-Use commands, command output, and required task artifacts for reasoning and
-evidence.
-
-Tool call format:
+Your response must contain one fenced bash code block with one command or one shell script.
+Do not write prose, analysis sections, headings, or bullets outside the bash code block.
+Use commands, command output, and required task artifacts for reasoning and evidence.
+When you have done your part of the persona job ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` to signal finish" + `.
+Format your response as shown in <format_example>.
 
 <format_example>
 ` + "```bash" + `
@@ -56,9 +46,10 @@ Current working directory: %s
 </system_information>
 `
 
-const pragmaLoopFormatErrorTemplate = `Please provide at most one bash action in triple backticks. Found %d actions.
-If you want to answer the user or end the task, write the final answer with no fenced bash block.
-If you need a shell action, format your response exactly as follows and include no prose outside the code block:
+const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE bash action in triple backticks and no prose outside the code block. Found %d actions.
+If you want to end the task, please issue the following command: ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`" + `
+without any other command. YOU HAVE TO PUT IT in triple backticks like any other command.
+Else, please format your response exactly as follows:
 
 <response_example>
 ` + "```bash" + `
@@ -175,15 +166,7 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 
 		assistantText := responseText(response)
 		command, actionCount := extractPragmaLoopCommand(assistantText)
-		if actionCount == 0 {
-			if e.config.RequireStructuredOutput {
-				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
-				return
-			}
-			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
-			return
-		}
-		if actionCount > 1 {
+		if actionCount != 1 {
 			if err := e.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, actionCount)); err != nil {
 				ch <- ErrorEvent{Err: err}
 				return
@@ -198,6 +181,18 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 				return
 			}
 			continue
+		}
+		if submitted, message := pragmaLoopSubmitted(result); submitted {
+			if err := e.appendPragmaLoopUserMessage(message); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+			if e.config.RequireStructuredOutput {
+				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
+				return
+			}
+			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
+			return
 		}
 		if err := e.appendPragmaLoopUserMessage(formatPragmaLoopObservation(result)); err != nil {
 			ch <- ErrorEvent{Err: err}
@@ -402,4 +397,22 @@ func formatPragmaLoopTimeout(command, output string) string {
 The output of the command was:
 %s
 Please try another command and make sure to avoid those requiring interactive input.`, command, body)
+}
+
+func pragmaLoopSubmitted(result pragmaLoopBashResult) (bool, string) {
+	lines := strings.SplitAfter(strings.TrimLeft(result.Output, "\r\n\t "), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
+		return false, ""
+	}
+	first := strings.TrimSpace(lines[0])
+	if first != "MINI_SWE_AGENT_FINAL_OUTPUT" && first != "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" {
+		return false, ""
+	}
+	if result.ReturnCode != 0 {
+		return false, ""
+	}
+	if len(lines) == 1 {
+		return true, ""
+	}
+	return true, strings.Join(lines[1:], "")
 }

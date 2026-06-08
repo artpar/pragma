@@ -19,7 +19,7 @@ go run ./cmd/pragma -p "Explain Go channels" \
 
 ## Status
 
-**Pragma loop baseline** — pragma is runnable. The default query loop follows the Pragma bash transport: one fenced `bash` block is executed as the tool action, and a response with no fenced `bash` block is treated as the final assistant answer.
+**Pragma loop baseline** — pragma is runnable. The default query loop currently follows the Pragma single bash action loop. The older provider tool-calling loop is retained only for comparison and can be enabled with `PRAGMA_LEGACY_TOOL_LOOP=1`.
 
 ## Constraint Decay / SWE Benchmark
 
