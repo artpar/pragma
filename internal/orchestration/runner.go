@@ -84,15 +84,23 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	}
 
 	taskPrompt := opts.TaskPrompt
+	stateEngines := make(map[string]*query.Engine)
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
+		stateEngine := engine
 		stateTaskPrompt := ""
 		if state.Control.IsZero() {
+			var ok bool
+			stateEngine, ok = stateEngines[state.ID]
+			if !ok {
+				stateEngine, _ = engine.ForkFreshConversation()
+				stateEngines[state.ID] = stateEngine
+			}
 			stateTaskPrompt = taskPrompt
 			taskPrompt = ""
 		}
-		event, _, err := RunNodeEvents(ctx, ch, engine, projection, opts.PersonaDir, def, state, stateTaskPrompt, "", artifactRoot)
+		event, _, err := RunNodeEvents(ctx, ch, stateEngine, projection, opts.PersonaDir, def, state, stateTaskPrompt, "", artifactRoot)
 		if err != nil {
 			ch <- query.ErrorEvent{Err: err}
 			return
@@ -145,6 +153,14 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 			return "", "", fmt.Errorf("control state %q failed: %w", state.ID, err)
 		}
 		emitOrchestration(ch, bus, projection, query.OrchestrationControlEvent{StateID: state.ID, Control: control, Event: event})
+		if state.Control.ForEachNext != nil && state.Control.ForEachNext.HandoffPath != "" {
+			emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
+				StateID:   state.ID,
+				Event:     event,
+				Path:      state.Control.ForEachNext.HandoffPath,
+				Direction: "write",
+			})
+		}
 		return event, "", nil
 	}
 
@@ -362,6 +378,10 @@ func RenderNextForEachContract(def Definition, state State) string {
 	b.WriteString("## Output Artifact Shape Required By Next State\n\n")
 	fmt.Fprintf(&b, "The next state is `%s`, a `foreach_next` control state.\n", next.ID)
 	fmt.Fprintf(&b, "It will parse `%s` and write the selected item to `%s`.\n\n", control.ListPath, control.CursorPath)
+	if control.HandoffPath != "" {
+		fmt.Fprintf(&b, "It will also write an immediate selected-item handoff to `%s`.\n", control.HandoffPath)
+		b.WriteString("Do not write a separate generic next-item handoff; the control state owns that handoff after selection.\n\n")
+	}
 	fmt.Fprintf(&b, "Write `%s` as JSON with this exact shape:\n\n", control.ListPath)
 	b.WriteString("```json\n")
 	b.WriteString("{\n")
@@ -384,6 +404,9 @@ func RenderNextForEachContract(def Definition, state State) string {
 	b.WriteString("- `id` is required and must be a JSON string, never a number.\n")
 	fmt.Fprintf(&b, "- `status` is required and must be `%q` for new items.\n", pendingStatus)
 	fmt.Fprintf(&b, "- When no `%s` items remain, `%s` will write a cursor item with status `%s`.\n", pendingStatus, next.ID, doneStatus)
+	if control.HandoffPath != "" {
+		fmt.Fprintf(&b, "- `%s` will write the handoff for the exact selected item, not for future checklist items.\n", next.ID)
+	}
 	b.WriteString("- `acceptance`, `allowed_files`, and `forbidden_files` must be JSON arrays.\n")
 	b.WriteString("- Extra item fields are allowed only if they are valid JSON and should be preserved by later controls.\n\n")
 	return b.String()

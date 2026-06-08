@@ -122,6 +122,62 @@ func NewEngine(
 	return e
 }
 
+// ForkFreshConversation creates an engine for a scoped orchestration/persona
+// state. It shares runtime dependencies with the parent engine but keeps a
+// separate conversation store so revisiting that state preserves only that
+// state's model history.
+func (e *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	snap := e.store.Snapshot()
+	modelID := firstNonEmpty(snap.Model, snap.Conversation.Model, e.config.Model)
+	providerName := firstNonEmpty(snap.Provider, snap.Conversation.Provider)
+	workDir := firstNonEmpty(snap.CWD, snap.Conversation.WorkDir)
+	conversation := model.NewConversation(model.SystemPrompt{}, modelID, providerName, workDir)
+	subStore := app.NewStateStore(app.AppState{
+		Conversation:      conversation,
+		CWD:               workDir,
+		Model:             modelID,
+		Provider:          providerName,
+		MaxTokens:         snap.MaxTokens,
+		Temperature:       snap.Temperature,
+		Thinking:          snap.Thinking,
+		TeamContext:       app.CopyTeamContext(snap.TeamContext),
+		Worktree:          snap.Worktree,
+		ArtifactSessionID: snap.SessionID(),
+	})
+	sub := &Engine{
+		provider:     e.provider,
+		registry:     e.registry,
+		orchestrator: e.orchestrator,
+		store:        subStore,
+		costTracker:  e.costTracker,
+		bus:          e.bus,
+		config:       e.config,
+		fileState:    e.fileState,
+		compactor:    e.compactor,
+		autoTracker:  e.autoTracker,
+		windowConfig: e.windowConfig,
+		hookMgr:      e.hookMgr,
+		taskRegistry: e.taskRegistry,
+		contentReplacementState: toolresult.ReconstructContentReplacementState(
+			conversation.APIMessages(),
+			e.config.ContentReplacementRecords,
+		),
+	}
+	observe.GlobalTrace("return: sub, subStore")
+	return sub, subStore
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 // SetHookManager configures the hook manager for Stop hooks.
 func (e *Engine) SetHookManager(mgr *hook.Manager) {
 	observe.GlobalTrace("enter")

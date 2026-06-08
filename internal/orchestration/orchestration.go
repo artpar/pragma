@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/looplab/fsm"
@@ -58,6 +59,7 @@ func (c Control) IsZero() bool {
 type ForEachNextControl struct {
 	ListPath      string `yaml:"list_path"`
 	CursorPath    string `yaml:"cursor_path"`
+	HandoffPath   string `yaml:"handoff_path,omitempty"`
 	PendingStatus string `yaml:"pending_status,omitempty"`
 	DoneStatus    string `yaml:"done_status,omitempty"`
 	ItemEvent     string `yaml:"item_event"`
@@ -449,12 +451,57 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 		if err := writeJSONFile(control.CursorPath, item); err != nil {
 			return "", err
 		}
+		if control.HandoffPath != "" {
+			if err := writeForEachItemHandoff(control.HandoffPath, item); err != nil {
+				return "", err
+			}
+		}
 		return control.ItemEvent, nil
 	}
 	if err := writeJSONFile(control.CursorPath, ChecklistItem{Status: doneStatus}); err != nil {
 		return "", err
 	}
+	if control.HandoffPath != "" {
+		if err := writeForEachDoneHandoff(control.HandoffPath, doneStatus); err != nil {
+			return "", err
+		}
+	}
 	return control.DoneEvent, nil
+}
+
+func writeForEachItemHandoff(path string, item ChecklistItem) error {
+	raw, err := json.MarshalIndent(item, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal selected item handoff: %w", err)
+	}
+	var b strings.Builder
+	b.WriteString("# Current Item Handoff\n\n")
+	b.WriteString("This handoff is for the immediate next checklist item only.\n")
+	b.WriteString("Do not implement or inspect future checklist items from this handoff.\n\n")
+	b.WriteString("## Selected Item\n\n")
+	b.WriteString("```json\n")
+	b.Write(raw)
+	b.WriteString("\n```\n")
+	return writeTextFile(path, b.String())
+}
+
+func writeForEachDoneHandoff(path string, doneStatus string) error {
+	var b strings.Builder
+	b.WriteString("# Checklist Exhausted Handoff\n\n")
+	fmt.Fprintf(&b, "No pending checklist items remain. The cursor status is `%s`.\n", doneStatus)
+	return writeTextFile(path, b.String())
+}
+
+func writeTextFile(path string, content string) error {
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create directory %q: %w", dir, err)
+		}
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return fmt.Errorf("write %q: %w", path, err)
+	}
+	return nil
 }
 
 func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {

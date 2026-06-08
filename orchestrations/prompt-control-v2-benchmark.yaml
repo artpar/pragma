@@ -69,16 +69,13 @@ states:
           path: /tmp/pragma/checklist.json
           required: true
           description: JSON checklist consumed by the item loop.
-        - id: checklist_complete_handoff
-          path: /tmp/pragma/handoff-prompts/checklist_writer/complete.md
-          required: true
-          description: Handoff prompt for the next selected phase.
 
   - id: next_item
     control:
       foreach_next:
         list_path: /tmp/pragma/checklist.json
         cursor_path: /tmp/pragma/current-item.json
+        handoff_path: /tmp/pragma/handoff-prompts/next_item/current-item.md
         pending_status: pending
         done_status: completed
         item_event: item_available
@@ -93,10 +90,10 @@ states:
           path: /tmp/pragma/current-item.json
           required: true
           description: Current checklist item selected by the item loop.
-        - id: checklist_complete_handoff
-          path: /tmp/pragma/handoff-prompts/checklist_writer/complete.md
+        - id: current_item_handoff
+          path: /tmp/pragma/handoff-prompts/next_item/current-item.md
           required: true
-          description: Handoff prompt written by the checklist writer for the selected item.
+          description: Immediate handoff written by the next_item control for the selected item.
       outputs:
         - id: implementer_report
           path: /tmp/pragma/implementer-report.md

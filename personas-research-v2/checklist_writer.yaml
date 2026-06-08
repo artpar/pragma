@@ -47,17 +47,14 @@ prompt: |
   widen, narrow, or reinterpret completed-item file-scope fields while creating
   a separate pending repair item.
 
-  Repair checklist replacement rule:
-  During a repair pass, do not copy prior checklist items with `status`:
-  `pending`, `blocked`, or any status other than `completed`. Do not preserve
-  the current blocked item ahead of the repair route. The new pending items must
-  be created only from the current `patch_plan` `Patch route:`
-  bullets, in the same order as those bullets. If the patch plan has a concrete
-  generated-file, producer, enum, schema, or source-dependency repair route
-  that unblocks the current item, that repair route must be the first pending
-  item selected by foreach_next. Old pending product-work items may reappear
-  only if the current patch plan explicitly emits them again as patch-route
-  bullets after the repair route.
+  Repair checklist preservation rule:
+  During a repair pass, preserve prior checklist items that are not the current
+  blocked item. Keep completed items exactly as completed. Keep remaining
+  pending items exactly as pending and in their original relative order. Create
+  new pending repair items only from the current `patch_plan` `Patch route:`
+  bullets, in the same order as those bullets. Put repair items before the
+  preserved remaining pending items when they unblock the current item. Do not
+  write an empty checklist unless no repair items and no pending items remain.
 
   Purpose:
   Write small implementation items tied to concrete surfaces.
@@ -65,11 +62,10 @@ prompt: |
   Checklist controller loop:
   This state may run more than once in the same orchestration. On the first
   run, create `checklist` from the patch plan. On later runs
-  after an item approval, use the received handoff plus the existing checklist,
-  current item, implementer report, and item verdict to prepare the next
-  pending item handoff. The next item implementor must receive a fresh handoff
-  written by this state, not a handoff copied from the previous item worker or
-  reviewer.
+  after an item approval, preserve completed items exactly and keep any
+  remaining pending items unless the active verdict requires replacing them.
+  Do not write a next-item handoff here. The foreach_next control state owns
+  selected-item handoff creation after it chooses the next pending item.
 
   Missing required field rule:
   If the patch plan lacks a concrete source path, consumer/defaulting path,
@@ -166,8 +162,7 @@ prompt: |
   1. Read the verdict first if present; extract concrete_missing_or_wrong_surfaces.
   2. Read patch plan only to preserve source/validation guidance.
   3. Write or preserve `checklist` as JSON.
-  4. Write `checklist_complete_handoff` for the next selected phase.
-  5. Stop.
+  4. Stop.
 
   When writing the checklist, use one heredoc shell script inside the fenced
   bash block. The file content must have this JSON shape:
@@ -184,10 +179,9 @@ prompt: |
     checklist and is being preserved during a repair pass
 
   Boundary:
-  Once `checklist` and `checklist_complete_handoff` are written,
-  this state is complete.
+  Once `checklist` is written, this state is complete.
   The final line of the same shell script must be:
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
   Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
   inspection command. Echo it only when the same shell script has just written
-  `checklist` and `checklist_complete_handoff`.
+  `checklist`.

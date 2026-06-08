@@ -22,16 +22,13 @@ states:
           path: /tmp/pragma/play/checklist.json
           required: true
           description: Parade checklist.
-        - id: parade_handoff
-          path: /tmp/pragma/handoff-prompts/parade_master/complete.md
-          required: true
-          description: Handoff prompt for the float artist.
 
   - id: parade_next
     control:
       foreach_next:
         list_path: /tmp/pragma/play/checklist.json
         cursor_path: /tmp/pragma/play/current-item.json
+        handoff_path: /tmp/pragma/handoff-prompts/parade_next/current-item.md
         pending_status: pending
         done_status: completed
         item_event: item_available
@@ -46,10 +43,10 @@ states:
           path: /tmp/pragma/play/current-item.json
           required: true
           description: Current parade item selected by the item loop.
-        - id: parade_handoff
-          path: /tmp/pragma/handoff-prompts/parade_master/complete.md
+        - id: current_item_handoff
+          path: /tmp/pragma/handoff-prompts/parade_next/current-item.md
           required: true
-          description: Handoff prompt written by parade master for the artist.
+          description: Immediate handoff written by the parade_next control for the selected item.
       outputs:
         - id: float_card
           path: /tmp/pragma/play/float-card.md
