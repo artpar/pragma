@@ -109,12 +109,7 @@ func (e *Engine) seedFromRequest(params provider.RequestParams) {
 func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
-	if os.Getenv("PRAGMA_LEGACY_TOOL_LOOP") != "1" {
-		e.runPragmaLoop(ctx, userMessage, ch)
-		return
-	}
-
-	e.runLegacyToolLoop(ctx, &userMessage, ch)
+	e.runPragmaLoop(ctx, userMessage, ch)
 }
 
 func (e *Engine) runLegacyToolLoop(ctx context.Context, initialUserMessage *string, ch chan<- LoopEvent) {
