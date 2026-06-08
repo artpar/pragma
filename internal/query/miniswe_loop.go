@@ -20,10 +20,12 @@ const pragmaLoopSystemPrompt = `Pragma loop mode is a shell-action transport.
 Follow the active task and persona instructions. This wrapper only defines how
 to send the next shell action.
 
-Your response must contain one fenced bash code block with one command or one shell script.
-Do not write prose, analysis sections, headings, or bullets outside the bash code block.
+When you need to inspect or change the system, your response must contain one
+fenced bash code block with one command or one shell script. Do not write prose,
+analysis sections, headings, or bullets outside the bash code block.
+When you are done and want to answer the user, write the final answer directly
+with no fenced bash code block. Do not use a bash block to end the turn.
 Use commands, command output, and required task artifacts for reasoning and evidence.
-When you have done your part of the persona job ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` to signal finish" + `.
 Format your response as shown in <format_example>.
 
 <format_example>
@@ -46,9 +48,8 @@ Current working directory: %s
 </system_information>
 `
 
-const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE bash action in triple backticks and no prose outside the code block. Found %d actions.
-If you want to end the task, please issue the following command: ` + "`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`" + `
-without any other command. YOU HAVE TO PUT IT in triple backticks like any other command.
+const pragmaLoopFormatErrorTemplate = `Please always provide EXACTLY ONE bash action in triple backticks and no prose outside the code block when you need a shell action. Found %d actions.
+If you want to end the task, write the final answer directly with no fenced bash code block.
 Else, please format your response exactly as follows:
 
 <response_example>
@@ -166,7 +167,15 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 
 		assistantText := responseText(response)
 		command, actionCount := extractPragmaLoopCommand(assistantText)
-		if actionCount != 1 {
+		if actionCount == 0 {
+			if e.config.RequireStructuredOutput {
+				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
+				return
+			}
+			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
+			return
+		}
+		if actionCount > 1 {
 			if err := e.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, actionCount)); err != nil {
 				ch <- ErrorEvent{Err: err}
 				return
@@ -181,18 +190,6 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 				return
 			}
 			continue
-		}
-		if submitted, message := pragmaLoopSubmitted(result); submitted {
-			if err := e.appendPragmaLoopUserMessage(message); err != nil {
-				ch <- ErrorEvent{Err: err}
-				return
-			}
-			if e.config.RequireStructuredOutput {
-				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
-				return
-			}
-			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
-			return
 		}
 		if err := e.appendPragmaLoopUserMessage(formatPragmaLoopObservation(result)); err != nil {
 			ch <- ErrorEvent{Err: err}
