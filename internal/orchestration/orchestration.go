@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/looplab/fsm"
 	"gopkg.in/yaml.v3"
@@ -17,21 +18,41 @@ const (
 
 // State is one orchestration node. Execution semantics live outside the graph.
 type State struct {
-	ID         string  `yaml:"id"`
-	Terminal   bool    `yaml:"terminal,omitempty"`
-	Persona    string  `yaml:"persona,omitempty"`
-	TaskPrompt string  `yaml:"task_prompt,omitempty"`
-	Control    Control `yaml:"control,omitempty"`
-	Event      Event   `yaml:"event,omitempty"`
+	ID         string    `yaml:"id"`
+	Terminal   bool      `yaml:"terminal,omitempty"`
+	Persona    string    `yaml:"persona,omitempty"`
+	TaskPrompt string    `yaml:"task_prompt,omitempty"`
+	Artifacts  Artifacts `yaml:"artifacts,omitempty"`
+	Control    Control   `yaml:"control,omitempty"`
+	Event      Event     `yaml:"event,omitempty"`
+}
+
+type Artifacts struct {
+	Inputs  []Artifact `yaml:"inputs,omitempty"`
+	Outputs []Artifact `yaml:"outputs,omitempty"`
+}
+
+func (a Artifacts) IsZero() bool {
+	return len(a.Inputs) == 0 && len(a.Outputs) == 0
+}
+
+type Artifact struct {
+	ID            string   `yaml:"id"`
+	Path          string   `yaml:"path"`
+	Required      bool     `yaml:"required,omitempty"`
+	Description   string   `yaml:"description,omitempty"`
+	Kind          string   `yaml:"kind,omitempty"`
+	AllowedValues []string `yaml:"allowed_values,omitempty"`
 }
 
 type Control struct {
 	ForEachNext     *ForEachNextControl     `yaml:"foreach_next,omitempty"`
 	MarkCurrentItem *MarkCurrentItemControl `yaml:"mark_current_item,omitempty"`
+	ArtifactVerdict *ArtifactVerdictControl `yaml:"artifact_verdict,omitempty"`
 }
 
 func (c Control) IsZero() bool {
-	return c.ForEachNext == nil && c.MarkCurrentItem == nil
+	return c.ForEachNext == nil && c.MarkCurrentItem == nil && c.ArtifactVerdict == nil
 }
 
 type ForEachNextControl struct {
@@ -50,19 +71,16 @@ type MarkCurrentItemControl struct {
 	Event      string `yaml:"event"`
 }
 
+type ArtifactVerdictControl struct {
+	Path         string `yaml:"path"`
+	Approve      string `yaml:"approve,omitempty"`
+	Block        string `yaml:"block,omitempty"`
+	ApproveEvent string `yaml:"approve_event"`
+	BlockEvent   string `yaml:"block_event"`
+}
+
 type Event struct {
-	Default  string         `yaml:"default,omitempty"`
-	FromFile *FileEventRule `yaml:"from_file,omitempty"`
-}
-
-type FileEventRule struct {
-	Path  string      `yaml:"path"`
-	Rules []TextEvent `yaml:"rules"`
-}
-
-type TextEvent struct {
-	Contains string `yaml:"contains"`
-	Event    string `yaml:"event"`
+	Default string `yaml:"default,omitempty"`
 }
 
 type Transition struct {
@@ -261,25 +279,12 @@ func validate(def Definition) (map[string]State, error) {
 		if err := validateStateExecution(def.Name, state); err != nil {
 			return nil, err
 		}
+		if err := validateArtifacts(def.Name, state.ID, state.Artifacts); err != nil {
+			return nil, err
+		}
 		for _, event := range emittedEvents(state) {
 			if !transitionsByStateEvent[state.ID][event] {
 				return nil, fmt.Errorf("orchestration %q state %q can emit event %q but has no matching transition", def.Name, state.ID, event)
-			}
-		}
-		if state.Event.FromFile != nil {
-			if state.Event.FromFile.Path == "" {
-				return nil, fmt.Errorf("orchestration %q state %q file event requires a path", def.Name, state.ID)
-			}
-			if len(state.Event.FromFile.Rules) == 0 {
-				return nil, fmt.Errorf("orchestration %q state %q file event requires at least one rule", def.Name, state.ID)
-			}
-			for _, rule := range state.Event.FromFile.Rules {
-				if rule.Contains == "" {
-					return nil, fmt.Errorf("orchestration %q state %q file event rule requires contains text", def.Name, state.ID)
-				}
-				if rule.Event == "" {
-					return nil, fmt.Errorf("orchestration %q state %q file event rule requires an event", def.Name, state.ID)
-				}
 			}
 		}
 	}
@@ -298,7 +303,7 @@ func validateStateExecution(defName string, state State) error {
 		if state.TaskPrompt != "" {
 			return fmt.Errorf("orchestration %q control state %q cannot define task_prompt", defName, state.ID)
 		}
-		if state.Event.FromFile != nil || state.Event.Default != "" {
+		if state.Event.Default != "" {
 			return fmt.Errorf("orchestration %q control state %q cannot also define event", defName, state.ID)
 		}
 		controls := 0
@@ -314,8 +319,31 @@ func validateStateExecution(defName string, state State) error {
 				return err
 			}
 		}
+		if state.Control.ArtifactVerdict != nil {
+			controls++
+			if err := validateArtifactVerdictControl(defName, state.ID, state.Control.ArtifactVerdict); err != nil {
+				return err
+			}
+		}
 		if controls != 1 {
 			return fmt.Errorf("orchestration %q control state %q must define exactly one control", defName, state.ID)
+		}
+	}
+	return nil
+}
+
+func validateArtifacts(defName, stateID string, artifacts Artifacts) error {
+	for _, artifact := range append(append([]Artifact(nil), artifacts.Inputs...), artifacts.Outputs...) {
+		if artifact.ID == "" {
+			return fmt.Errorf("orchestration %q state %q artifact requires id", defName, stateID)
+		}
+		if artifact.Path == "" {
+			return fmt.Errorf("orchestration %q state %q artifact %q requires path", defName, stateID, artifact.ID)
+		}
+		for _, value := range artifact.AllowedValues {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("orchestration %q state %q artifact %q has empty allowed value", defName, stateID, artifact.ID)
+			}
 		}
 	}
 	return nil
@@ -353,30 +381,33 @@ func validateMarkCurrentItemControl(defName, stateID string, control *MarkCurren
 	return nil
 }
 
+func validateArtifactVerdictControl(defName, stateID string, control *ArtifactVerdictControl) error {
+	if control.Path == "" {
+		return fmt.Errorf("orchestration %q state %q artifact_verdict requires path", defName, stateID)
+	}
+	if control.ApproveEvent == "" {
+		return fmt.Errorf("orchestration %q state %q artifact_verdict requires approve_event", defName, stateID)
+	}
+	if control.BlockEvent == "" {
+		return fmt.Errorf("orchestration %q state %q artifact_verdict requires block_event", defName, stateID)
+	}
+	return nil
+}
+
 func emittedEvents(state State) []string {
-	events := make([]string, 0, 1+len(fileEventRules(state)))
 	if state.Control.ForEachNext != nil {
 		return []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneEvent}
 	}
 	if state.Control.MarkCurrentItem != nil {
 		return []string{state.Control.MarkCurrentItem.Event}
 	}
+	if state.Control.ArtifactVerdict != nil {
+		return []string{state.Control.ArtifactVerdict.ApproveEvent, state.Control.ArtifactVerdict.BlockEvent}
+	}
 	if state.Event.Default != "" {
-		events = append(events, state.Event.Default)
-	} else if state.Event.FromFile == nil {
-		events = append(events, EventComplete)
+		return []string{state.Event.Default}
 	}
-	for _, rule := range fileEventRules(state) {
-		events = append(events, rule.Event)
-	}
-	return events
-}
-
-func fileEventRules(state State) []TextEvent {
-	if state.Event.FromFile == nil {
-		return nil
-	}
-	return state.Event.FromFile.Rules
+	return []string{EventComplete}
 }
 
 func ExecuteControl(state State) (string, error) {
@@ -385,6 +416,8 @@ func ExecuteControl(state State) (string, error) {
 		return executeForEachNext(*state.Control.ForEachNext)
 	case state.Control.MarkCurrentItem != nil:
 		return executeMarkCurrentItem(*state.Control.MarkCurrentItem)
+	case state.Control.ArtifactVerdict != nil:
+		return executeArtifactVerdict(*state.Control.ArtifactVerdict)
 	default:
 		return "", fmt.Errorf("state %q has no control", state.ID)
 	}
@@ -449,6 +482,50 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 		return "", err
 	}
 	return control.Event, nil
+}
+
+func executeArtifactVerdict(control ArtifactVerdictControl) (string, error) {
+	raw, err := os.ReadFile(control.Path)
+	if err != nil {
+		return "", err
+	}
+	decision, err := parseDecision(string(raw))
+	if err != nil {
+		return "", fmt.Errorf("parse verdict %q: %w", control.Path, err)
+	}
+	approve := control.Approve
+	if approve == "" {
+		approve = "APPROVE"
+	}
+	block := control.Block
+	if block == "" {
+		block = "BLOCK"
+	}
+	switch decision {
+	case approve:
+		return control.ApproveEvent, nil
+	case block:
+		return control.BlockEvent, nil
+	default:
+		return "", fmt.Errorf("verdict %q has unsupported decision %q", control.Path, decision)
+	}
+}
+
+func parseDecision(text string) (string, error) {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "Decision:" {
+			continue
+		}
+		for _, candidate := range lines[i+1:] {
+			decision := strings.TrimSpace(candidate)
+			if decision != "" {
+				return decision, nil
+			}
+		}
+		return "", fmt.Errorf("decision marker has no value")
+	}
+	return "", fmt.Errorf("missing Decision: marker")
 }
 
 func readChecklist(path string) (Checklist, error) {

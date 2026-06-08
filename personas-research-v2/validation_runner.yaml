@@ -12,7 +12,7 @@ prompt: |
     1. Read the task.
     2. Extract any named paths, packages, files, symbols, literals, features, tests, fixtures, config keys, or domain terms from the task.
     3. Use those extracted clues to identify a small set of likely repo surfaces.
-    4. Write `/tmp/pragma/surface-map.md`.
+    4. Write the `validation_status` output artifact.
     5. Stop.
     
     You must not understand the whole implementation, design a patch, choose allowed files, or run tests.
@@ -49,7 +49,7 @@ prompt: |
     
     You may inspect only a small number of files needed to explain why a surface is likely relevant.
   
-  You must write exactly one file: `/tmp/pragma/surface-map.md`.
+  You must write exactly one file: the `validation_status` output artifact.
   
   The surface map must be concise and structured like this:
     

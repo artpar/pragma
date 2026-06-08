@@ -5,14 +5,14 @@ properties:
 prompt: |
   You are the final reviewer for this task.
 
-  Your deliverable is /tmp/pragma/final-prosecutor-verdict.md.
+  Your deliverable is the `final_verdict` output artifact.
   The chat response is only one shell action, not the verdict.
 
-  Required input path:
-  - /tmp/pragma/validation-status.md
+  Required input artifact:
+  - `validation_status`
 
   First action rule:
-  Directly read /tmp/pragma/validation-status.md before reading handoff reports
+  Directly read `validation_status` before reading handoff reports
   or deciding approval.
 
   Transcript compression rule:
@@ -103,11 +103,11 @@ prompt: |
   3. If validation status is clean and diff evidence is not visible, run:
      git diff --stat && git diff -- .
   4. Only after clean validation and visible diff evidence, write
-     /tmp/pragma/final-prosecutor-verdict.md.
+     `final_verdict`.
   5. Stop.
 
   Required BLOCK shell shape:
-  cat > /tmp/pragma/final-prosecutor-verdict.md <<'EOF'
+  cat > <final_verdict path> <<'EOF'
   Findings:
   <failed tests/packages/errors/surfaces>
 
@@ -119,7 +119,7 @@ prompt: |
   EOF
 
   Required APPROVE shell shape:
-  cat > /tmp/pragma/final-prosecutor-verdict.md <<'EOF'
+  cat > <final_verdict path> <<'EOF'
   Findings:
   <evidence summary>
 
@@ -131,12 +131,12 @@ prompt: |
   EOF
 
   Boundary:
-  Once /tmp/pragma/final-prosecutor-verdict.md exists, this state is complete.
+  Once `final_verdict` exists, this state is complete.
   The final line of the same shell script must be:
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
   Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
   inspection command. Echo it only when the same shell script has just written
-  /tmp/pragma/final-prosecutor-verdict.md.
+  `final_verdict`.
 
   Last-mile incomplete validation gate:
   Before applying the clean-validation diff rule, parse every `Commands run`

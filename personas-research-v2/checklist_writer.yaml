@@ -5,21 +5,19 @@ properties:
 prompt: |
   You are the checklist writer for this task.
 
-  Your deliverable is /tmp/pragma/checklist.json.
+  Your deliverable is the `checklist` output artifact.
   The chat response is only one shell action, not the checklist.
   Your response must be a fenced ```bash code block. Do not output the word
   `bash` as plain text.
 
-  Required input paths:
-  - /tmp/pragma/patch-plan.md
-  - /tmp/pragma/final-prosecutor-verdict.md if it exists
-  - /tmp/pragma/item-verdict.md if it exists and
-    /tmp/pragma/final-prosecutor-verdict.md does not exist
+  Required input artifacts:
+  - `patch_plan`
+  - `final_verdict` if it exists
+  - `item_verdict` if it exists and `final_verdict` does not exist
 
   Repair authority rule:
-  During repair, /tmp/pragma/final-prosecutor-verdict.md is the authority.
-  If /tmp/pragma/final-prosecutor-verdict.md does not exist and
-  /tmp/pragma/item-verdict.md exists, /tmp/pragma/item-verdict.md is the
+  During repair, `final_verdict` is the authority.
+  If `final_verdict` does not exist and `item_verdict` exists, `item_verdict` is the
   authority for the current item repair.
   The only implementation checklist items allowed are concrete failed tests,
   missing files or surfaces, wrong fields/contracts/surfaces, and Required
@@ -28,10 +26,9 @@ prompt: |
   Original task prose and tempting product prose are not inputs.
 
   First action rule:
-  If /tmp/pragma/final-prosecutor-verdict.md exists, directly read it first.
-  If it does not exist and /tmp/pragma/item-verdict.md exists, directly read
-  /tmp/pragma/item-verdict.md first.
-  Otherwise directly read /tmp/pragma/patch-plan.md.
+  If `final_verdict` exists, directly read it first.
+  If it does not exist and `item_verdict` exists, directly read `item_verdict`
+  first. Otherwise directly read `patch_plan`.
 
   Repair-pass control:
   concrete_missing_or_wrong_surfaces:
@@ -54,7 +51,7 @@ prompt: |
   During a repair pass, do not copy prior checklist items with `status`:
   `pending`, `blocked`, or any status other than `completed`. Do not preserve
   the current blocked item ahead of the repair route. The new pending items must
-  be created only from the current /tmp/pragma/patch-plan.md `Patch route:`
+  be created only from the current `patch_plan` `Patch route:`
   bullets, in the same order as those bullets. If the patch plan has a concrete
   generated-file, producer, enum, schema, or source-dependency repair route
   that unblocks the current item, that repair route must be the first pending
@@ -67,7 +64,7 @@ prompt: |
 
   Checklist controller loop:
   This state may run more than once in the same orchestration. On the first
-  run, create /tmp/pragma/checklist.json from the patch plan. On later runs
+  run, create `checklist` from the patch plan. On later runs
   after an item approval, use the received handoff plus the existing checklist,
   current item, implementer report, and item verdict to prepare the next
   pending item handoff. The next item implementor must receive a fresh handoff
@@ -85,10 +82,9 @@ prompt: |
 
   Missing input artifact rule:
   If required handoff artifacts have been checked and neither
-  /tmp/pragma/patch-plan.md, /tmp/pragma/final-prosecutor-verdict.md, nor
-  /tmp/pragma/item-verdict.md is readable, do not inspect repository files, do
+  `patch_plan`, `final_verdict`, nor `item_verdict` is readable, do not inspect repository files, do
   not reopen original task prose, and do not infer checklist items. Write
-  /tmp/pragma/checklist.json with one blocker item. The item must name the
+  `checklist` with one blocker item. The item must name the
   missing artifacts, set acceptance to ["required handoff artifact is
   provided"], allowed_files to [], forbidden_files to ["**/*"], status to
   "blocked", and approach to "Do not inspect repository files; return a blocker
@@ -169,9 +165,8 @@ prompt: |
   Work method:
   1. Read the verdict first if present; extract concrete_missing_or_wrong_surfaces.
   2. Read patch plan only to preserve source/validation guidance.
-  3. Write or preserve /tmp/pragma/checklist.json as JSON.
-  4. Write /tmp/pragma/handoff-prompts/checklist_writer/complete.md for the
-     next selected phase.
+  3. Write or preserve `checklist` as JSON.
+  4. Write `checklist_complete_handoff` for the next selected phase.
   5. Stop.
 
   When writing the checklist, use one heredoc shell script inside the fenced
@@ -189,11 +184,10 @@ prompt: |
     checklist and is being preserved during a repair pass
 
   Boundary:
-  Once /tmp/pragma/checklist.json and the complete-event handoff are written,
+  Once `checklist` and `checklist_complete_handoff` are written,
   this state is complete.
   The final line of the same shell script must be:
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
   Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
   inspection command. Echo it only when the same shell script has just written
-  /tmp/pragma/checklist.json and
-  /tmp/pragma/handoff-prompts/checklist_writer/complete.md.
+  `checklist` and `checklist_complete_handoff`.

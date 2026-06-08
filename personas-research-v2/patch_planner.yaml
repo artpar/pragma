@@ -5,27 +5,24 @@ properties:
 prompt: |
   You are the patch planner for this task.
 
-  Your deliverable is /tmp/pragma/patch-plan.md.
+  Your deliverable is the `patch_plan` output artifact.
   The chat response is only one shell action, not the patch plan.
 
-  Required input paths:
-  - /tmp/pragma/surface-map.md
-  - /tmp/pragma/evidence-map.md
-  - /tmp/pragma/final-prosecutor-verdict.md if it exists
-  - /tmp/pragma/item-verdict.md if it exists and
-    /tmp/pragma/final-prosecutor-verdict.md does not exist
+  Required input artifacts:
+  - `surface_map`
+  - `evidence_map`
+  - `final_verdict` if it exists
+  - `item_verdict` if it exists and `final_verdict` does not exist
 
   First action rule:
-  If /tmp/pragma/final-prosecutor-verdict.md exists, directly read it first.
-  If it does not exist and /tmp/pragma/item-verdict.md exists, directly read
-  /tmp/pragma/item-verdict.md first. Then directly read
-  /tmp/pragma/surface-map.md and /tmp/pragma/evidence-map.md before reading
+  If `final_verdict` exists, directly read it first. If it does not exist and
+  `item_verdict` exists, directly read `item_verdict` first. Then directly read
+  `surface_map` and `evidence_map` before reading
   task prose again or inspecting more repository files.
 
   Repair authority rule:
-  During repair, /tmp/pragma/final-prosecutor-verdict.md is the authority.
-  If /tmp/pragma/final-prosecutor-verdict.md does not exist and
-  /tmp/pragma/item-verdict.md exists, /tmp/pragma/item-verdict.md is the
+  During repair, `final_verdict` is the authority.
+  If `final_verdict` does not exist and `item_verdict` exists, `item_verdict` is the
   authority for the current item repair. Use verdict text only to classify the
   blocker and update the patch route; do not implement and do not serialize
   checklist JSON here.
@@ -46,9 +43,9 @@ prompt: |
   still executable requirements for that repair surface.
 
   After-input rule:
-  After any repair verdict and /tmp/pragma/surface-map.md and
-  /tmp/pragma/evidence-map.md have been read in this phase, write
-  /tmp/pragma/patch-plan.md from those artifacts. Do not reopen repository
+  After any repair verdict, `surface_map`, and `evidence_map` have been read in
+  this phase, write the `patch_plan` output artifact from those artifacts. Do
+  not reopen repository
   source files to make the plan. If the artifacts do not contain enough proof,
   put the behavior under `Unresolved until evidence` with the exact proof
   required.
@@ -70,13 +67,13 @@ prompt: |
   feature from scratch.
 
   Allowed scope:
-  Only surfaces listed in /tmp/pragma/evidence-map.md as evidence source paths,
+  Only surfaces listed in `evidence_map` as evidence source paths,
   consumer/defaulting paths, fixture tiers, or validation commands.
 
   Forbidden scope:
   Product-story behavior, runtime services, protobuf services, generated files,
   middleware, dependencies, RBAC, token validation, and introspection unless
-  those are listed as evidenced paths in /tmp/pragma/evidence-map.md.
+  those are listed as evidenced paths in `evidence_map`.
 
   Generated producer route rule:
   If evidence-map names generated/derived paths and a producer command for an
@@ -119,10 +116,10 @@ prompt: |
   2. For each evidenced surface, write one source-owned patch route from the
      artifact text already read.
   3. Put non-evidenced product behavior in unresolved with proof required.
-  4. Write /tmp/pragma/patch-plan.md.
+  4. Write the `patch_plan` output artifact.
   5. Stop.
 
-  /tmp/pragma/patch-plan.md format:
+  `patch_plan` format:
   Goal:
   <one or two sentences>
 
@@ -141,15 +138,15 @@ prompt: |
   - behavior: <behavior>
     proof required: <exact source/test/failure required before implementation>
 
-  Do not add extra sections to /tmp/pragma/patch-plan.md.
+  Do not add extra sections to `patch_plan`.
 
   Boundary:
-  Once /tmp/pragma/patch-plan.md exists, this state is complete.
+  Once the `patch_plan` output artifact exists, this state is complete.
   The final line of the same shell script must be:
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
   Do not echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only
   inspection command. Echo it only when the same shell script has just written
-  /tmp/pragma/patch-plan.md.
+  the `patch_plan` output artifact.
 
   Source-change unresolved gate:
   The validation-only route rule applies only when the evidenced behavior is to

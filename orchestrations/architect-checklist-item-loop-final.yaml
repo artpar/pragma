@@ -27,14 +27,12 @@ states:
   - id: item_prosecutor
     persona: item_prosecutor
     task_prompt: none
-    event:
-      from_file:
+  - id: route_item_prosecutor_verdict
+    control:
+      artifact_verdict:
         path: /tmp/pragma/item-prosecutor-verdict.md
-        rules:
-          - contains: "Decision:\nAPPROVE"
-            event: item_approve
-          - contains: "Decision:\nBLOCK"
-            event: item_block
+        approve_event: item_approve
+        block_event: item_block
 
   - id: mark_item_approved
     control:
@@ -50,14 +48,12 @@ states:
 
   - id: final_prosecutor
     persona: final_prosecutor
-    event:
-      from_file:
+  - id: route_final_prosecutor_verdict
+    control:
+      artifact_verdict:
         path: /tmp/pragma/final-prosecutor-verdict.md
-        rules:
-          - contains: "Decision:\nAPPROVE"
-            event: final_approve
-          - contains: "Decision:\nBLOCK"
-            event: final_block
+        approve_event: final_approve
+        block_event: final_block
 
   - id: done
     terminal: true
@@ -81,21 +77,27 @@ transitions:
   - event: complete
     from: [item_implementer]
     to: item_prosecutor
-  - event: item_approve
+  - event: complete
     from: [item_prosecutor]
+    to: route_item_prosecutor_verdict
+  - event: item_approve
+    from: [route_item_prosecutor_verdict]
     to: mark_item_approved
   - event: complete
     from: [mark_item_approved]
     to: next_item
   - event: item_block
-    from: [item_prosecutor]
+    from: [route_item_prosecutor_verdict]
     to: item_repair
   - event: complete
     from: [item_repair]
     to: item_prosecutor
-  - event: final_approve
+  - event: complete
     from: [final_prosecutor]
+    to: route_final_prosecutor_verdict
+  - event: final_approve
+    from: [route_final_prosecutor_verdict]
     to: done
   - event: final_block
-    from: [final_prosecutor]
+    from: [route_final_prosecutor_verdict]
     to: checklist_planner

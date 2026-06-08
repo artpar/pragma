@@ -175,6 +175,8 @@ func ControlName(state State) string {
 		return "foreach_next"
 	case state.Control.MarkCurrentItem != nil:
 		return "mark_current_item"
+	case state.Control.ArtifactVerdict != nil:
+		return "artifact_verdict"
 	default:
 		return "unknown"
 	}
@@ -189,13 +191,10 @@ func LoadPersonaForState(personaDir string, state State) (persona.Definition, er
 }
 
 func SelectStateEvent(state State) (string, error) {
-	if state.Event.FromFile == nil {
-		if state.Event.Default != "" {
-			return state.Event.Default, nil
-		}
-		return EventComplete, nil
+	if state.Event.Default != "" {
+		return state.Event.Default, nil
 	}
-	return "", fmt.Errorf("file-based orchestration event selection is unsupported for state %q; use event.default or a runtime control state", state.ID)
+	return EventComplete, nil
 }
 
 func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, def Definition, state State, personaDef persona.Definition, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, error) {
@@ -250,8 +249,57 @@ func BuildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 		}
 		b.WriteString("## Phase Input\n\nProceed with this phase using the required input artifacts.\n")
 	}
+	if contract := RenderArtifactContract(state.Artifacts); contract != "" {
+		if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
+			b.WriteString("\n")
+		}
+		b.WriteString(contract)
+	}
 
 	return system, b.String()
+}
+
+func RenderArtifactContract(artifacts Artifacts) string {
+	if artifacts.IsZero() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Runtime Artifact Contract\n\n")
+	b.WriteString("These file paths are supplied by the orchestration YAML at runtime. Follow them exactly.\n\n")
+	b.WriteString("When persona instructions mention `<artifact_id path>`, substitute the matching path from this section.\n\n")
+	if len(artifacts.Inputs) > 0 {
+		b.WriteString("Inputs:\n")
+		for _, artifact := range artifacts.Inputs {
+			writeArtifactLine(&b, artifact)
+		}
+		b.WriteString("\n")
+	}
+	if len(artifacts.Outputs) > 0 {
+		b.WriteString("Outputs:\n")
+		for _, artifact := range artifacts.Outputs {
+			writeArtifactLine(&b, artifact)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func writeArtifactLine(b *strings.Builder, artifact Artifact) {
+	required := "optional"
+	if artifact.Required {
+		required = "required"
+	}
+	fmt.Fprintf(b, "- `%s` (%s): `%s`", artifact.ID, required, artifact.Path)
+	if artifact.Description != "" {
+		fmt.Fprintf(b, " - %s", artifact.Description)
+	}
+	if artifact.Kind != "" {
+		fmt.Fprintf(b, " Kind: %s.", artifact.Kind)
+	}
+	if len(artifact.AllowedValues) > 0 {
+		fmt.Fprintf(b, " Allowed values: %s.", strings.Join(artifact.AllowedValues, ", "))
+	}
+	b.WriteString("\n")
 }
 
 func eventBus(engine *query.Engine) *observe.EventBus {

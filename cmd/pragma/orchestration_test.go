@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,59 +16,6 @@ func TestSelectStateEventDefaultsToComplete(t *testing.T) {
 	}
 	if event != orchestration.EventComplete {
 		t.Fatalf("event = %q, want %q", event, orchestration.EventComplete)
-	}
-}
-
-func TestSelectStateEventFromFileRules(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "verdict.md")
-	if err := os.WriteFile(path, []byte("Findings:\nNone\n\nDecision:\nAPPROVE\n"), 0o600); err != nil {
-		t.Fatalf("write verdict: %v", err)
-	}
-
-	event, err := selectStateEvent(orchestration.State{
-		ID: "review",
-		Event: orchestration.Event{
-			FromFile: &orchestration.FileEventRule{
-				Path: path,
-				Rules: []orchestration.TextEvent{
-					{Contains: "Decision:\nAPPROVE", Event: "approve"},
-					{Contains: "Decision:\nBLOCK", Event: "block"},
-				},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("selectStateEvent: %v", err)
-	}
-	if event != "approve" {
-		t.Fatalf("event = %q, want approve", event)
-	}
-}
-
-func TestSelectStateEventUsesLastDecisionVerdict(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "verdict.md")
-	content := "Findings:\nPrevious text said Decision:\nAPPROVE\n\nDecision:\nBLOCK\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write verdict: %v", err)
-	}
-
-	event, err := selectStateEvent(orchestration.State{
-		ID: "review",
-		Event: orchestration.Event{
-			FromFile: &orchestration.FileEventRule{
-				Path: path,
-				Rules: []orchestration.TextEvent{
-					{Contains: "Decision:\nAPPROVE", Event: "approve"},
-					{Contains: "Decision:\nBLOCK", Event: "block"},
-				},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("selectStateEvent: %v", err)
-	}
-	if event != "block" {
-		t.Fatalf("event = %q, want block", event)
 	}
 }
 
@@ -135,8 +81,47 @@ func TestBuildOrchestrationPromptSplitsPersonaSystemAndTaskUser(t *testing.T) {
 	if !strings.Contains(prompt, "## Task\n\nFeature request body\n") {
 		t.Fatalf("user prompt lost task body: %q", prompt)
 	}
-	if !strings.Contains(prompt, `/tmp/pragma/handoff-prompts/surface_mapper/complete.md`) {
-		t.Fatalf("user prompt lost next handoff path: %q", prompt)
+}
+
+func TestBuildOrchestrationPromptInjectsArtifactContract(t *testing.T) {
+	def := orchestration.Definition{
+		Name:    "test",
+		Initial: "item_worker",
+		States: []orchestration.State{
+			{ID: "item_worker"},
+		},
+	}
+	_, prompt := buildOrchestrationPrompt(def, orchestration.State{
+		ID: "item_worker",
+		Artifacts: orchestration.Artifacts{
+			Inputs: []orchestration.Artifact{{
+				ID:          "current_item",
+				Path:        "/tmp/pragma/current-item.json",
+				Required:    true,
+				Description: "Current checklist item.",
+			}},
+			Outputs: []orchestration.Artifact{{
+				ID:            "item_verdict",
+				Path:          "/tmp/pragma/item-verdict.md",
+				Required:      true,
+				Kind:          "verdict",
+				AllowedValues: []string{"APPROVE", "BLOCK"},
+				Description:   "Reviewer decision.",
+			}},
+		},
+	}, persona.Definition{
+		ID:     "item_worker",
+		Prompt: "Use runtime artifacts.",
+	}, "task", "")
+
+	for _, want := range []string{
+		"## Runtime Artifact Contract",
+		"`current_item` (required): `/tmp/pragma/current-item.json` - Current checklist item.",
+		"`item_verdict` (required): `/tmp/pragma/item-verdict.md` - Reviewer decision. Kind: verdict. Allowed values: APPROVE, BLOCK.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q: %q", want, prompt)
+		}
 	}
 }
 
@@ -167,5 +152,12 @@ func TestControlName(t *testing.T) {
 		},
 	}); got != "mark_current_item" {
 		t.Fatalf("controlName mark = %q, want mark_current_item", got)
+	}
+	if got := controlName(orchestration.State{
+		Control: orchestration.Control{
+			ArtifactVerdict: &orchestration.ArtifactVerdictControl{},
+		},
+	}); got != "artifact_verdict" {
+		t.Fatalf("controlName artifact verdict = %q, want artifact_verdict", got)
 	}
 }

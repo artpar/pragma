@@ -21,14 +21,12 @@ states:
   - id: ribbon_judge
     persona: ribbon_judge
     task_prompt: none
-    event:
-      from_file:
+  - id: route_ribbon_verdict
+    control:
+      artifact_verdict:
         path: /tmp/pragma/play/item-verdict.md
-        rules:
-          - contains: "Decision:\nAPPROVE"
-            event: item_approve
-          - contains: "Decision:\nBLOCK"
-            event: item_block
+        approve_event: item_approve
+        block_event: item_block
 
   - id: stamp_float_done
     control:
@@ -58,11 +56,14 @@ transitions:
   - event: complete
     from: [float_artist]
     to: ribbon_judge
-  - event: item_approve
+  - event: complete
     from: [ribbon_judge]
+    to: route_ribbon_verdict
+  - event: item_approve
+    from: [route_ribbon_verdict]
     to: stamp_float_done
   - event: item_block
-    from: [ribbon_judge]
+    from: [route_ribbon_verdict]
     to: parade_master
   - event: complete
     from: [stamp_float_done]

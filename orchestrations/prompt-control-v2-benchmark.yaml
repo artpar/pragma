@@ -3,17 +3,76 @@ initial: surface_mapper
 states:
   - id: surface_mapper
     persona: surface_mapper
+    artifacts:
+      outputs:
+        - id: surface_map
+          path: /tmp/pragma/surface-map.md
+          required: true
+          description: Initial map of task-named and likely repository surfaces.
 
   - id: evidence_mapper
     persona: evidence_mapper
+    artifacts:
+      inputs:
+        - id: surface_map
+          path: /tmp/pragma/surface-map.md
+          required: true
+          description: Surface map from the first narrowing phase.
+      outputs:
+        - id: evidence_map
+          path: /tmp/pragma/evidence-map.md
+          required: true
+          description: Source, consumer, fixture, producer, and validation evidence.
 
   - id: patch_planner
     persona: patch_planner
     task_prompt: none
+    artifacts:
+      inputs:
+        - id: surface_map
+          path: /tmp/pragma/surface-map.md
+          required: true
+          description: Surface map from the first narrowing phase.
+        - id: evidence_map
+          path: /tmp/pragma/evidence-map.md
+          required: true
+          description: Evidence map used as the route authority.
+        - id: final_verdict
+          path: /tmp/pragma/final-prosecutor-verdict.md
+          description: Final reviewer blocker, when a final repair pass is active.
+        - id: item_verdict
+          path: /tmp/pragma/item-verdict.md
+          description: Current item reviewer blocker, when no final verdict exists.
+      outputs:
+        - id: patch_plan
+          path: /tmp/pragma/patch-plan.md
+          required: true
+          description: Bounded patch route derived from evidence and any active verdict.
 
   - id: checklist_writer
     persona: checklist_writer
     task_prompt: none
+    artifacts:
+      inputs:
+        - id: patch_plan
+          path: /tmp/pragma/patch-plan.md
+          required: true
+          description: Patch route to convert into checklist items.
+        - id: final_verdict
+          path: /tmp/pragma/final-prosecutor-verdict.md
+          description: Final reviewer blocker, when a final repair pass is active.
+        - id: item_verdict
+          path: /tmp/pragma/item-verdict.md
+          description: Current item reviewer blocker, when no final verdict exists.
+      outputs:
+        - id: checklist
+          path: /tmp/pragma/checklist.json
+          required: true
+          description: JSON checklist consumed by the item loop.
+        - id: checklist_complete_handoff
+          path: /tmp/pragma/handoff-prompts/checklist_writer/complete.md
+          required: true
+          description: Handoff prompt for the next selected phase.
 
   - id: next_item
     control:
@@ -28,18 +87,48 @@ states:
   - id: item_worker
     persona: item_worker
     task_prompt: none
+    artifacts:
+      inputs:
+        - id: current_item
+          path: /tmp/pragma/current-item.json
+          required: true
+          description: Current checklist item selected by the item loop.
+      outputs:
+        - id: implementer_report
+          path: /tmp/pragma/implementer-report.md
+          required: true
+          description: Worker report with changed files, acceptance evidence, validation, risk, and blocker status.
+        - id: item_validation_log
+          path: /tmp/pragma/item-validation.log
+          description: Focused item validation log when validation is run.
 
   - id: item_reviewer
     persona: item_reviewer
     task_prompt: none
-    event:
-      from_file:
+    artifacts:
+      inputs:
+        - id: current_item
+          path: /tmp/pragma/current-item.json
+          required: true
+          description: Current checklist item under review.
+        - id: implementer_report
+          path: /tmp/pragma/implementer-report.md
+          required: true
+          description: Worker report for the current item.
+      outputs:
+        - id: item_verdict
+          path: /tmp/pragma/item-verdict.md
+          required: true
+          kind: verdict
+          allowed_values: [APPROVE, BLOCK]
+          description: Reviewer verdict for the current checklist item.
+
+  - id: route_item_verdict
+    control:
+      artifact_verdict:
         path: /tmp/pragma/item-verdict.md
-        rules:
-          - contains: "Decision:\nAPPROVE"
-            event: item_approve
-          - contains: "Decision:\nBLOCK"
-            event: item_block
+        approve_event: item_approve
+        block_event: item_block
 
   - id: mark_item_completed
     control:
@@ -52,18 +141,41 @@ states:
   - id: validation_runner
     persona: validation_runner
     task_prompt: none
+    artifacts:
+      inputs:
+        - id: checklist
+          path: /tmp/pragma/checklist.json
+          required: true
+          description: Completed checklist to validate.
+      outputs:
+        - id: validation_status
+          path: /tmp/pragma/validation-status.md
+          required: true
+          description: Focused validation status for final review.
 
   - id: final_reviewer
     persona: final_reviewer
     task_prompt: none
-    event:
-      from_file:
+    artifacts:
+      inputs:
+        - id: validation_status
+          path: /tmp/pragma/validation-status.md
+          required: true
+          description: Validation status from the validation runner.
+      outputs:
+        - id: final_verdict
+          path: /tmp/pragma/final-prosecutor-verdict.md
+          required: true
+          kind: verdict
+          allowed_values: [APPROVE, BLOCK]
+          description: Final reviewer verdict for the full task.
+
+  - id: route_final_verdict
+    control:
+      artifact_verdict:
         path: /tmp/pragma/final-prosecutor-verdict.md
-        rules:
-          - contains: "Decision:\nAPPROVE"
-            event: final_approve
-          - contains: "Decision:\nBLOCK"
-            event: final_block
+        approve_event: final_approve
+        block_event: final_block
 
   - id: done
     terminal: true
@@ -90,21 +202,27 @@ transitions:
   - event: complete
     from: [item_worker]
     to: item_reviewer
-  - event: item_approve
+  - event: complete
     from: [item_reviewer]
+    to: route_item_verdict
+  - event: item_approve
+    from: [route_item_verdict]
     to: mark_item_completed
   - event: complete
     from: [mark_item_completed]
     to: checklist_writer
   - event: item_block
-    from: [item_reviewer]
+    from: [route_item_verdict]
     to: patch_planner
   - event: complete
     from: [validation_runner]
     to: final_reviewer
-  - event: final_approve
+  - event: complete
     from: [final_reviewer]
+    to: route_final_verdict
+  - event: final_approve
+    from: [route_final_verdict]
     to: done
   - event: final_block
-    from: [final_reviewer]
+    from: [route_final_verdict]
     to: patch_planner

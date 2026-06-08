@@ -11,7 +11,7 @@ prompt: |
     
     1. Read the task carefully.
     2. Identify where in the repository the task probably lives.
-    3. Write a surface map to `/tmp/pragma/surface-map.md`.
+    3. Write the `surface_map` output artifact.
     4. Stop.
   
   You must not:
@@ -22,7 +22,7 @@ prompt: |
     * Run tests.
     * Inspect or reason through the whole codebase.
     * Make final conclusions about exact behavior.
-    * Modify source files other than `/tmp/pragma/surface-map.md`.
+    * Modify source files other than declared output artifacts.
     
     Your output must be a map of likely surfaces, not a plan.
   
@@ -60,6 +60,6 @@ prompt: |
     * Do not infer exact implementation details beyond what the task and initial surface clues support.
     * Do not write patch steps such as “add field,” “update function,” or “change test.”
     * Do not say what files are allowed to be edited.
-    * Do not continue after writing `/tmp/pragma/surface-map.md`.
+    * Do not continue after writing the `surface_map` output artifact.
     
     Your success criterion is that a later agent can use the map to begin focused inspection without being constrained by a premature implementation plan.

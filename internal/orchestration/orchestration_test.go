@@ -76,7 +76,9 @@ func TestLoadArchitectImplementerProsecutorYAML(t *testing.T) {
 	for _, event := range []string{
 		EventComplete,
 		EventComplete,
+		EventComplete,
 		"block",
+		EventComplete,
 		EventComplete,
 		"approve",
 	} {
@@ -105,14 +107,18 @@ func TestLoadChecklistLoopYAML(t *testing.T) {
 		EventComplete,
 		"item_available",
 		EventComplete,
+		EventComplete,
 		"item_block",
+		EventComplete,
 		EventComplete,
 		"item_approve",
 		EventComplete,
 		"all_items_done",
+		EventComplete,
 		"final_block",
 		EventComplete,
 		"all_items_done",
+		EventComplete,
 		"final_approve",
 	} {
 		if err := runtime.FSM.Event(context.Background(), event); err != nil {
@@ -121,6 +127,16 @@ func TestLoadChecklistLoopYAML(t *testing.T) {
 	}
 	if got := runtime.FSM.Current(); got != "done" {
 		t.Fatalf("final state = %q, want done", got)
+	}
+}
+
+func TestLoadPromptControlV2BenchmarkYAML(t *testing.T) {
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "prompt-control-v2-benchmark.yaml"))
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	if _, err := NewRuntime(def); err != nil {
+		t.Fatalf("NewRuntime: %v", err)
 	}
 }
 
@@ -196,6 +212,28 @@ func TestNewRuntimeRejectsTaskPromptOnControlState(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected task_prompt on control state to be rejected")
+	}
+}
+
+func TestNewRuntimeRejectsInvalidArtifacts(t *testing.T) {
+	_, err := NewRuntime(Definition{
+		Name:    "bad",
+		Initial: "worker",
+		States: []State{
+			{
+				ID: "worker",
+				Artifacts: Artifacts{
+					Inputs: []Artifact{{ID: "current_item"}},
+				},
+			},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"worker"}, To: "done"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected artifact without path to be rejected")
 	}
 }
 
@@ -408,6 +446,31 @@ func TestExecuteMarkCurrentItemPreservesUnknownChecklistFields(t *testing.T) {
 	}
 	if checklist["items"][1]["status"] != "approved" {
 		t.Fatalf("second item status = %v, want approved", checklist["items"][1]["status"])
+	}
+}
+
+func TestExecuteArtifactVerdictEmitsDecisionEvent(t *testing.T) {
+	dir := t.TempDir()
+	verdictPath := filepath.Join(dir, "verdict.md")
+	if err := os.WriteFile(verdictPath, []byte("Findings:\n- ok\n\nDecision:\nAPPROVE\n"), 0o600); err != nil {
+		t.Fatalf("write verdict: %v", err)
+	}
+
+	event, err := ExecuteControl(State{
+		ID: "route_verdict",
+		Control: Control{
+			ArtifactVerdict: &ArtifactVerdictControl{
+				Path:         verdictPath,
+				ApproveEvent: "approve",
+				BlockEvent:   "block",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteControl: %v", err)
+	}
+	if event != "approve" {
+		t.Fatalf("event = %q, want approve", event)
 	}
 }
 

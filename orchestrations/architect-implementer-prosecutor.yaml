@@ -7,14 +7,12 @@ states:
     persona: implementer
   - id: prosecutor
     persona: prosecutor
-    event:
-      from_file:
+  - id: route_prosecutor_verdict
+    control:
+      artifact_verdict:
         path: /tmp/pragma/prosecutor-verdict.md
-        rules:
-          - contains: "Decision:\nAPPROVE"
-            event: approve
-          - contains: "Decision:\nBLOCK"
-            event: block
+        approve_event: approve
+        block_event: block
   - id: repair
     persona: repair
   - id: done
@@ -26,11 +24,14 @@ transitions:
   - event: complete
     from: [implementer]
     to: prosecutor
-  - event: approve
+  - event: complete
     from: [prosecutor]
+    to: route_prosecutor_verdict
+  - event: approve
+    from: [route_prosecutor_verdict]
     to: done
   - event: block
-    from: [prosecutor]
+    from: [route_prosecutor_verdict]
     to: repair
   - event: complete
     from: [repair]
