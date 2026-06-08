@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -168,8 +171,32 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	return 200_000, false
 }
 
-// lilacClassify classifies errors using HTTP status code string matching.
-var lilacClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
+var lilacStatusClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
+
+func lilacClassify(err error) shared.ErrorClassification {
+	if isRetryableLilacTimeout(err) {
+		return shared.ErrorClassification{
+			Wrapped:   err,
+			Retryable: true,
+			ErrorType: "timeout",
+		}
+	}
+	return lilacStatusClassify(err)
+}
+
+func isRetryableLilacTimeout(err error) bool {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Timeout() {
+		return true
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	return strings.Contains(err.Error(), "Client.Timeout exceeded while awaiting headers")
+}
 
 func (p *Provider) ensureMaxTokens(params *provider.RequestParams) {
 	observe.GlobalTrace("enter")

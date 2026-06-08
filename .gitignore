@@ -41,6 +41,7 @@ plugins/jetbrains-reflective-mcp/gradlew.bat
 pragma-recording.jsonl
 prompt-replay-payloads-*/
 stress-test/
+/artifacts/
 
 # E2E test snapshots
 e2e/snapshots/
