@@ -85,6 +85,15 @@ prompt: |
   those required surfaces are unchanged, write BLOCK. A patch that only changes
   the proof cannot satisfy the task.
 
+  Last-mile behavior-flow rule:
+  When visible diff evidence computes, reads, or constructs a value that is
+  required to affect an output, state mutation, API response, persisted record,
+  or side effect, APPROVE only if the diff or validation status shows that the
+  value is actually assigned, returned, persisted, emitted, or otherwise
+  consumed by that surface. Do not approve from nearby declarations, config
+  reads, grep evidence, or prose saying "wired" when the visible diff does not
+  show the required flow.
+
   Exact event marker:
   The verdict file must contain either:
 

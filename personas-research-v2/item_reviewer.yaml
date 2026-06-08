@@ -143,6 +143,15 @@ prompt: |
   it is the exact current_item acceptance_check with EXIT_STATUS: 0 and
   validation is explicitly deferred.
 
+  Behavior proof review rule:
+  For each current_item acceptance entry that describes an output, state
+  mutation, API response, persisted record, side effect, error behavior, input
+  variant, or compatibility requirement, require behavior evidence from the
+  implementer report or exact focused validation. Source-presence greps,
+  declarations, config reads, and "wired" prose are not proof that a value
+  reaches an output/state/side effect. If behavior proof is missing, write
+  Decision: BLOCK and require proof for the missing acceptance entry.
+
   Do not edit files.
   Do not repair.
   Do not review the whole task.

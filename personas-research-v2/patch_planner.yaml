@@ -114,6 +114,24 @@ prompt: |
   fixtures, snapshots, or default consumers into separate checklist routes when
   they only make the same source behavior consistent.
 
+  Behavior acceptance preservation rule:
+  Coupling edits into one patch route does not couple, delete, or summarize
+  away distinct behavior obligations. When evidence names multiple required
+  input, config, state, error, output, persistence, API, CLI, or compatibility
+  variants, preserve each variant as a separate `acceptance requirements` entry
+  on the same route. Do not replace multiple behavior obligations with broad
+  source-presence checks.
+
+  Behavior proof quality rule:
+  `acceptance check` must prefer a command or assertion that exercises the
+  observable behavior through an existing test, command, API, CLI, persisted
+  state, or output surface. Grep/source-presence checks may support constants,
+  declarations, and simple wiring, but they are not proof that a value reaches
+  an output, state mutation, API response, persisted record, or side effect. If
+  no behavior-exercising check is evidenced, keep the behavior under
+  `acceptance requirements` and state the missing proof in `acceptance check`
+  instead of downgrading the route to grep-only proof.
+
   Validation deferral rule:
   A route may use `validation: none` only when the route has a concrete
   `acceptance check` and the focused validation depends on later coupled work
@@ -160,6 +178,7 @@ prompt: |
     coupled edit paths: <comma-separated paths or none>
     consumer/defaulting path: <path>
     fixture/schema tier: <path or none>
+    acceptance requirements: <semicolon-separated observable behavior requirements>
     acceptance check: <source-local or item-local command, or none>
     validation: <focused command or none>
     validation after: <none or dependency that makes validation runnable>

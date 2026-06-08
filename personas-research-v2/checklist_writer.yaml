@@ -154,6 +154,38 @@ prompt: |
   Put source path, generated files, producer command, and validation command on
   that same item.
 
+  Coupled-item merge rule:
+  You may keep naturally related source, consumer, fixture, test, generated, and
+  validation work in one checklist item. Combining implementation work does not
+  combine, delete, or summarize away acceptance obligations. A checklist item
+  may be broad in implementation scope, but its `acceptance` array must keep
+  every distinct behavior requirement visible as a separate entry.
+
+  Acceptance quality rule:
+  Acceptance entries must describe observable behavior, API/output contract,
+  state transition, persisted data, error behavior, or compatibility
+  requirement. Do not replace behavior acceptance with only source structure
+  such as adding a field, reading config, calling a function, or grepping a
+  string, unless the patch-route behavior is purely structural.
+
+  Input matrix preservation rule:
+  When the patch plan or evidence describes different input, config, state, or
+  error variants, keep each required variant visible in `acceptance`: default or
+  absent cases when specified, each individual enabled/present/error case when
+  specified, combined cases when specified, and unchanged existing behavior when
+  specified.
+
+  Executable check quality rule:
+  Prefer `acceptance_check` and `validation_command` values that exercise the
+  observable behavior through an existing test, command, API, CLI, persisted
+  state, or output surface. Grep/source-presence checks may support constants,
+  declarations, and simple wiring, but they are not proof that a value reaches
+  an output, state mutation, API response, persisted record, or side effect.
+  If a route contains behavior acceptance but only grep/source checks are
+  available, keep the behavior acceptance entries and state the missing behavior
+  proof in `approach` or `acceptance` instead of weakening the item to
+  grep-only acceptance.
+
   Producer-first ordering rule:
   When the patch plan contains any patch-route bullet with `producer command:`
   other than `none`, write those producer checklist items before all
@@ -181,6 +213,10 @@ prompt: |
   from `validation after`.
 
   Acceptance and validation handoff rule:
+  For every pending implementation item, copy `acceptance requirements` from
+  the patch plan into the item `acceptance` array when present. If no
+  `acceptance requirements` line is present, derive acceptance from the route
+  behavior without deleting distinct behavior variants.
   For every pending implementation item, copy `acceptance check` from the patch
   plan into `acceptance_check` when it is not `none`. Copy `validation` into
   `validation_command` only when it is not empty. If `validation` is `none`,
@@ -206,7 +242,9 @@ prompt: |
   - if the patch plan names `producer_command`, `generated_files`,
     `coupled edit paths`, `acceptance_check`, `validation`, `validation after`,
     or report-preservation fields, copy those fields into the item exactly; do
-    not summarize them only in prose
+    not summarize them only in prose. If the patch plan names
+    `acceptance requirements`, copy each requirement into the item `acceptance`
+    array as a separate entry.
   - `acceptance`, `allowed_files`, `forbidden_files`, `generated_files`,
     `coupled_edit_paths`, and `report_changed_files` are JSON arrays, not
     strings

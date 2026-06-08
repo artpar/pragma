@@ -218,6 +218,22 @@ prompt: |
   formatting, nearby TODOs, or future checklist items unless the current item
   explicitly requires them in allowed_files and acceptance.
 
+  Behavior acceptance evidence rule:
+  Treat every entry in current_item `acceptance` as a required behavior
+  obligation, not as optional prose. If an acceptance entry describes an output,
+  state mutation, API response, persisted record, side effect, error behavior,
+  or compatibility requirement, provide evidence that the behavior is satisfied.
+  Source-presence greps prove only that text exists; they do not prove that a
+  computed value reaches an output, state mutation, API response, persisted
+  record, or side effect.
+
+  Behavior proof blocker rule:
+  If the available validation_command and acceptance_check do not exercise a
+  required behavior obligation and you cannot add or run an in-scope behavior
+  proof within allowed_files, write the implementer_report with a Blocker
+  section naming the missing proof. Do not report PASS solely from greps for
+  behavior obligations.
+
   Source preservation rule:
   When editing a visible source file, preserve every unrelated visible line and
   declaration exactly. Patch only the smallest source region required for the
