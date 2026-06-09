@@ -283,7 +283,7 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 		} else if strings.TrimSpace(handoffPrompt) != "" && !strict {
 			fmt.Fprintf(&b, "## Handoff From Previous Phase\n\n%s\n\n", strings.TrimSpace(handoffPrompt))
 		}
-		b.WriteString("## Phase Input\n\nProceed with this phase using the required input artifacts.\n")
+		b.WriteString("## Phase Input\n\nProceed using the input artifact content supplied above. Do not read, search for, or infer filesystem paths for input artifacts.\n")
 	}
 	if contract := RenderArtifactContract(state.Artifacts); contract != "" {
 		if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
@@ -367,15 +367,6 @@ func RenderArtifactContract(artifacts Artifacts) string {
 	}
 	var b strings.Builder
 	b.WriteString("## Runtime Artifact Contract\n\n")
-	b.WriteString("These file paths are supplied by the orchestration YAML at runtime. Follow them exactly.\n\n")
-	b.WriteString("When persona instructions mention `<artifact_id path>`, substitute the matching path from this section.\n\n")
-	if len(artifacts.Inputs) > 0 {
-		b.WriteString("Inputs:\n")
-		for _, artifact := range artifacts.Inputs {
-			writeInputArtifactLine(&b, artifact)
-		}
-		b.WriteString("\n")
-	}
 	if len(artifacts.Outputs) > 0 {
 		b.WriteString("Outputs:\n")
 		for _, artifact := range artifacts.Outputs {
@@ -507,20 +498,6 @@ func transitionIncludesFrom(transition Transition, stateID string) bool {
 
 func writeArtifactLine(b *strings.Builder, artifact Artifact) {
 	fmt.Fprintf(b, "- `%s` (%s): `%s`", artifact.ID, artifactRequirement(artifact), artifact.Path)
-	if artifact.Description != "" {
-		fmt.Fprintf(b, " - %s", artifact.Description)
-	}
-	if artifact.Kind != "" {
-		fmt.Fprintf(b, " Kind: %s.", artifact.Kind)
-	}
-	if len(artifact.AllowedValues) > 0 {
-		fmt.Fprintf(b, " Allowed values: %s.", strings.Join(artifact.AllowedValues, ", "))
-	}
-	b.WriteString("\n")
-}
-
-func writeInputArtifactLine(b *strings.Builder, artifact Artifact) {
-	fmt.Fprintf(b, "- `%s` (%s)", artifact.ID, artifactRequirement(artifact))
 	if artifact.Description != "" {
 		fmt.Fprintf(b, " - %s", artifact.Description)
 	}

@@ -116,11 +116,20 @@ func TestBuildOrchestrationPromptInjectsArtifactContract(t *testing.T) {
 
 	for _, want := range []string{
 		"## Runtime Artifact Contract",
-		"`current_item` (required): `/tmp/pragma/current-item.json` - Current checklist item.",
 		"`item_verdict` (required): `/tmp/pragma/item-verdict.md` - Reviewer decision. Kind: verdict. Allowed values: APPROVE, BLOCK.",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q: %q", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"/tmp/pragma/current-item.json",
+		"These file paths are supplied",
+		"<artifact_id path>",
+		"Inputs:",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("prompt included forbidden input artifact contract text %q: %q", forbidden, prompt)
 		}
 	}
 }

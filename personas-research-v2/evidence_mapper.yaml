@@ -58,10 +58,6 @@ prompt: |
   - a `Proof requirements` entry naming the missing proof.
 
   `evidence_map` format:
-  Inputs:
-  - <surface_map path consumed>
-  - <repo_evidence path consumed>
-
   Evidence source paths:
   - <source path>
 

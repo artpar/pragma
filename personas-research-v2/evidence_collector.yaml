@@ -44,9 +44,6 @@ prompt: |
     visibly exercise those variants.
 
   `repo_evidence` format:
-  Inputs:
-  - <surface_map path consumed>
-
   Inspected source paths:
   - <path>: <direct source facts>
 
