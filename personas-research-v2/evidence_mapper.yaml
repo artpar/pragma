@@ -1,5 +1,5 @@
 id: evidence_mapper
-description: Converts collected repository facts into behavior variants, proof gaps, and final evidence map.
+description: Converts collected repository facts into behavior variants, coverage gaps, and final evidence map.
 properties:
   output: evidence_map
 prompt: |
@@ -23,6 +23,8 @@ prompt: |
   - implement or modify repository files
   - invent data shapes, object fields, enum values, or proof commands not
     grounded in `surface_map` or `repo_evidence`
+  - write future-work phrases such as `by implementing`, `create a test`,
+    `add a test`, or invented `go test -run Test...` commands
   - downgrade output/state/API/persisted behavior into only source-presence
     checks
   - claim visible validation proves a behavior variant when `repo_evidence`
@@ -42,9 +44,9 @@ prompt: |
 
   Coverage gap rule:
   If `repo_evidence` says a visible test or validation command does not cover a
-  behavior variant, list that under `Coverage gaps` and write an exact `Proof
-  requirements` entry. Keep the validation command, but do not describe it as
-  proving the uncovered variant.
+  behavior variant, list that factual observation under `Coverage gaps`. Keep
+  observed validation commands, but do not describe them as proving uncovered
+  behavior variants.
 
   Source check rule:
   Grep and file-local checks may support constants, declarations, simple wiring,
@@ -55,7 +57,7 @@ prompt: |
   Explicit unknown rule:
   Every carried unknown from `repo_evidence` must become either:
   - a direct visible fact in this evidence map, or
-  - a `Proof requirements` entry naming the missing proof.
+  - a `Not evidenced` entry.
 
   `evidence_map` format:
   Evidence source paths:
@@ -72,16 +74,13 @@ prompt: |
   - <condition> -> <observable expected result>
 
   Validation commands:
-  - <focused command that can falsify completed behavior, or none>
+  - <observed validation command from repo_evidence, or none>
 
   Source checks:
   - behavior: <source-local fact>; check: <source-local or item-local command>
 
   Coverage gaps:
   - <uncovered behavior variant or none>
-
-  Proof requirements:
-  - <proof required before a persona may report the behavior as PASS>
 
   Evidenced generated/derived paths:
   - <generated or derived path, or none>
@@ -99,8 +98,8 @@ prompt: |
   1. Use the supplied `surface_map` and `repo_evidence` artifact content from
      the prompt.
   2. Convert named task behavior into behavior variants.
-  3. Convert uncovered variants and unresolved unknowns into proof
-     requirements.
+  3. Convert uncovered variants into coverage gaps and unresolved unknowns into
+     not-evidenced facts.
   4. Record supporting source checks separately from behavior proof.
   5. Write `evidence_map`.
   6. Stop.
