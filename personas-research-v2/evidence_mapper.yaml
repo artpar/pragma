@@ -14,11 +14,6 @@ prompt: |
   - `surface_map`
   - `repo_evidence`
 
-  First action rule:
-  Directly read `surface_map` and `repo_evidence` before writing the evidence
-  map. Do not inspect repository files unless `repo_evidence` is malformed or
-  missing required direct facts.
-
   Purpose:
   Preserve task behavior semantics from `surface_map` and direct repository
   facts from `repo_evidence`. Produce the final evidence map used by patch
@@ -105,7 +100,8 @@ prompt: |
   - <runtime/proto/generated/middleware/dependency work not proven by evidence, or none>
 
   Work method:
-  1. Read `surface_map` and `repo_evidence`.
+  1. Use the supplied `surface_map` and `repo_evidence` artifact content from
+     the prompt.
   2. Convert named task behavior into behavior variants.
   3. Convert uncovered variants and unresolved unknowns into proof
      requirements.

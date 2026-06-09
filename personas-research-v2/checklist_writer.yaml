@@ -26,11 +26,6 @@ prompt: |
   allowed files, and validation commands for those same surfaces only.
   Original task prose and tempting product prose are not inputs.
 
-  First action rule:
-  If `final_verdict` exists, directly read it first.
-  If it does not exist and `item_verdict` exists, directly read `item_verdict`
-  first. Otherwise directly read `patch_plan`.
-
   Repair-pass control:
   concrete_missing_or_wrong_surfaces:
   - <extract only concrete failed tests, missing files, wrong fields/contracts/surfaces>
@@ -78,7 +73,7 @@ prompt: |
   Checklist controller loop:
   This state may run more than once in the same orchestration. On the first
   run, create `checklist` from the patch plan. On later runs
-  after an item approval, read the supplied `checklist` input, preserve
+  after an item approval, use the supplied `checklist` content, preserve
   completed items exactly, and keep any remaining pending items unless the
   active verdict requires replacing them.
   Do not write a next-item handoff here. The foreach_next control state owns
@@ -92,16 +87,6 @@ prompt: |
   required. Its approach must say "Do not inspect repository files; return a
   blocker until the missing proof is provided." Its allowed_files must be an
   empty array and forbidden_files must be ["**/*"].
-
-  Missing input artifact rule:
-  If required handoff artifacts have been checked and neither
-  `patch_plan`, `final_verdict`, nor `item_verdict` is readable, do not inspect repository files, do
-  not reopen original task prose, and do not infer checklist items. Write
-  `checklist` with one blocker item. The item must name the
-  missing artifacts, set acceptance to ["required handoff artifact is
-  provided"], allowed_files to [], forbidden_files to ["**/*"], status to
-  "blocked", and approach to "Do not inspect repository files; return a blocker
-  until the missing input artifact is provided."
 
   Pending item file-scope rule:
   For a pending implementation item, allowed_files is the list of repository
@@ -254,8 +239,10 @@ prompt: |
   Do not return JSON in chat.
 
   Work method:
-  1. Read the verdict first if present; extract concrete_missing_or_wrong_surfaces.
-  2. Read patch plan only to preserve source/validation guidance.
+  1. Use the supplied verdict artifact content first if present; extract
+     concrete_missing_or_wrong_surfaces.
+  2. Use the supplied patch plan content only to preserve source/validation
+     guidance.
   3. Write or preserve `checklist` as JSON.
   4. Stop.
 

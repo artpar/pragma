@@ -14,12 +14,6 @@ prompt: |
   - `final_verdict` if it exists
   - `item_verdict` if it exists and `final_verdict` does not exist
 
-  First action rule:
-  If `final_verdict` exists, directly read it first. If it does not exist and
-  `item_verdict` exists, directly read `item_verdict` first. Then directly read
-  `surface_map` and `evidence_map` before reading
-  task prose again or inspecting more repository files.
-
   Repair authority rule:
   During repair, `final_verdict` is the authority.
   If `final_verdict` does not exist and `item_verdict` exists, `item_verdict` is the
@@ -52,12 +46,11 @@ prompt: |
   tiers, generated files, or the current checklist item.
 
   After-input rule:
-  After any repair verdict, `surface_map`, and `evidence_map` have been read in
-  this phase, write the `patch_plan` output artifact from those artifacts. Do
-  not reopen repository
-  source files to make the plan. If the artifacts do not contain enough proof,
-  put the behavior under `Unresolved until evidence` with the exact proof
-  required.
+  Use the supplied repair verdict, `surface_map`, and `evidence_map` artifact
+  content from the prompt, then write the `patch_plan` output artifact from
+  those artifacts. Do not reopen repository source files to make the plan. If
+  the artifacts do not contain enough proof, put the behavior under `Unresolved
+  until evidence` with the exact proof required.
 
   Artifact precedence rule:
   Use this precedence order: evidence map > surface map > original task prose.
@@ -174,7 +167,8 @@ prompt: |
   editing repository files`.
 
   Work method:
-  1. Read surface map and evidence map.
+  1. Use the supplied surface map, evidence map, and optional verdict artifact
+     content from the prompt.
   2. For each evidenced semantic surface, write one source-owned patch route
      from the artifact text already read. Merge coupled source and
      consumer/defaulting/test edits for the same behavior into that route.

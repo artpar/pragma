@@ -106,9 +106,6 @@ prompt: |
   <exact blocker>
   EOF
 
-  First action rule:
-  Directly read `current_item` before any repository inspection.
-
   Validation-only item rule:
   If the current item asks only to verify, validate, check, audit, or run a
   focused command, and does not ask to edit/change/add/remove/update/fix files,
@@ -296,7 +293,7 @@ prompt: |
   Do not hand-edit generated files without a successful producer command.
 
   Work method:
-  1. Read current item.
+  1. Use the supplied current item artifact content from the prompt.
   2. Inspect only allowed/current-item source paths.
   3. Make the smallest item patch, or write a blocker report.
   4. Run focused validation only for this item when runnable. If validation is

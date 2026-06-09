@@ -11,10 +11,6 @@ prompt: |
   Required input artifact:
   - `validation_status`
 
-  First action rule:
-  Directly read `validation_status` before reading handoff reports
-  or deciding approval.
-
   Transcript compression rule:
   Never copy prior tool output, shell scripts, diffs, stack traces, repeated log
   lines, or transcript text into the verdict. Summarize repeated evidence
@@ -112,7 +108,7 @@ prompt: |
   APPROVE
 
   Work method:
-  1. Read validation status.
+  1. Use the supplied validation status artifact content from the prompt.
   2. If any failure variable is non-empty, any Commands run entry is nonzero,
      or any indexed command is missing/not run, write BLOCK.
   3. If validation status is clean and diff evidence is not visible, run:

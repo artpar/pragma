@@ -13,9 +13,6 @@ prompt: |
   Required input artifact:
   - `surface_map`
 
-  First action rule:
-  Directly read the `surface_map` input artifact before repository inspection.
-
   Purpose:
   Collect direct source, test, fixture, code-flow, and validation facts from the
   surfaces named in `surface_map`. Do not convert those facts into acceptance
@@ -75,7 +72,7 @@ prompt: |
   - <surface from surface_map intentionally not inspected and why, or none>
 
   Work method:
-  1. Read `surface_map`.
+  1. Use the supplied `surface_map` artifact content from the prompt.
   2. Inspect the mapped source, test, fixture, and consumer paths once.
   3. Write `repo_evidence` with direct facts only.
   4. Stop.

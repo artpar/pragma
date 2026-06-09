@@ -315,11 +315,11 @@ func RenderArtifactHandoff(state State, artifactRoot string, strict bool) (strin
 				return "", fmt.Errorf("read required input artifact %q at %q: %w", artifact.ID, path, err)
 			}
 			if artifact.Required || !os.IsNotExist(err) {
-				fmt.Fprintf(&b, "### `%s` (%s)\nPath: `%s`\nUnavailable: %v\n\n", artifact.ID, artifactRequirement(artifact), path, err)
+				fmt.Fprintf(&b, "### `%s` (%s)\nUnavailable: %v\n\n", artifact.ID, artifactRequirement(artifact), err)
 			}
 			continue
 		}
-		fmt.Fprintf(&b, "### `%s` (%s)\nPath: `%s`\n", artifact.ID, artifactRequirement(artifact), path)
+		fmt.Fprintf(&b, "### `%s` (%s)\n", artifact.ID, artifactRequirement(artifact))
 		if artifact.Description != "" {
 			fmt.Fprintf(&b, "Description: %s\n", artifact.Description)
 		}
@@ -372,7 +372,7 @@ func RenderArtifactContract(artifacts Artifacts) string {
 	if len(artifacts.Inputs) > 0 {
 		b.WriteString("Inputs:\n")
 		for _, artifact := range artifacts.Inputs {
-			writeArtifactLine(&b, artifact)
+			writeInputArtifactLine(&b, artifact)
 		}
 		b.WriteString("\n")
 	}
@@ -507,6 +507,20 @@ func transitionIncludesFrom(transition Transition, stateID string) bool {
 
 func writeArtifactLine(b *strings.Builder, artifact Artifact) {
 	fmt.Fprintf(b, "- `%s` (%s): `%s`", artifact.ID, artifactRequirement(artifact), artifact.Path)
+	if artifact.Description != "" {
+		fmt.Fprintf(b, " - %s", artifact.Description)
+	}
+	if artifact.Kind != "" {
+		fmt.Fprintf(b, " Kind: %s.", artifact.Kind)
+	}
+	if len(artifact.AllowedValues) > 0 {
+		fmt.Fprintf(b, " Allowed values: %s.", strings.Join(artifact.AllowedValues, ", "))
+	}
+	b.WriteString("\n")
+}
+
+func writeInputArtifactLine(b *strings.Builder, artifact Artifact) {
+	fmt.Fprintf(b, "- `%s` (%s)", artifact.ID, artifactRequirement(artifact))
 	if artifact.Description != "" {
 		fmt.Fprintf(b, " - %s", artifact.Description)
 	}

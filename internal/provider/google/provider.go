@@ -182,6 +182,18 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	}
 
 	result := responseFromGenai(resp, params.Model, mapper)
+	if result.StopReason == model.StopMalformedToolCall {
+		err := fmt.Errorf("google: model returned MALFORMED_FUNCTION_CALL finish reason")
+		p.bus.Emit(observe.APIRequestFailed{
+			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
+			ErrorType:    "malformed_function_call",
+			ErrorMessage: err.Error(),
+			Retryable:    false,
+			Attempt:      1,
+		})
+		observe.TraceCtx(ctx, "google", "Provider.Complete", "return: model.Response{}, malformed function call")
+		return model.Response{}, err
+	}
 	p.bus.Emit(observe.APIRequestCompleted{
 		EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
 		StopReason:  result.StopReason, Usage: result.Usage,

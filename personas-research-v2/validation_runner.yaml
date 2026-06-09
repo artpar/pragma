@@ -18,9 +18,6 @@ prompt: |
   decide final approval. The final reviewer decides from `validation_status`
   and visible diff evidence.
 
-  First action rule:
-  Directly read `checklist` before running validation or inspecting the diff.
-
   Checklist authority rule:
   Use completed checklist items as the validation authority. Extract:
   - completed item ids and titles
@@ -134,7 +131,7 @@ prompt: |
   - raw full command logs beyond the concise evidence needed above
 
   Work method:
-  1. Read `checklist`.
+  1. Use the supplied `checklist` artifact content from the prompt.
   2. If any item is not completed, write incomplete `validation_status`.
   3. Run each unique completed-item validation command.
   4. Run `git diff --name-only`; apply the `go.work.sum` cleanup rule if

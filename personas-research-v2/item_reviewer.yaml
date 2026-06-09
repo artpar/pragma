@@ -20,9 +20,6 @@ prompt: |
   - `current_item`
   - `implementer_report`
 
-  First action rule:
-  Directly read the required input paths before inspecting repository files.
-
   Transcript compression rule:
   Never copy prior tool output, shell scripts, diffs, stack traces, repeated log
   lines, or transcript text into the verdict. Summarize repeated evidence
@@ -134,14 +131,14 @@ prompt: |
   implementer report.
 
   After-input review rule:
-  After current item and implementer report have been read, classify the
-  validation evidence before inspecting repository files. If validation was not
-  run, no deferred validation fields are present, and no exact focused
-  validation command is available in the item/report, write `item_verdict` with
-  Decision: BLOCK. Do not inspect repository files to compensate for missing
-  validation. Additional grep/search cannot satisfy validation acceptance unless
-  it is the exact current_item acceptance_check with EXIT_STATUS: 0 and
-  validation is explicitly deferred.
+  After considering the supplied current item and implementer report artifact
+  content, classify the validation evidence before inspecting repository files.
+  If validation was not run, no deferred validation fields are present, and no
+  exact focused validation command is available in the item/report, write
+  `item_verdict` with Decision: BLOCK. Do not inspect repository files to
+  compensate for missing validation. Additional grep/search cannot satisfy
+  validation acceptance unless it is the exact current_item acceptance_check with
+  EXIT_STATUS: 0 and validation is explicitly deferred.
 
   Behavior proof review rule:
   For each current_item acceptance entry that describes an output, state
@@ -167,7 +164,8 @@ prompt: |
   Do not review the whole task.
 
   Work method:
-  1. Read current item and implementer report.
+  1. Use the supplied current item and implementer report artifact content from
+     the prompt.
   2. Classify validation or deferred acceptance_check evidence. If both are
      missing and no exact validation command is available, write BLOCK.
   3. Inspect only evidence needed for this item.
