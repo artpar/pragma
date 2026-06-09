@@ -80,6 +80,7 @@ type ThinkingConfig struct {
 // Cheaper than interface boxing for high-frequency channel values.
 type StreamChunk struct {
 	TextDelta              string
+	TextSignatureDelta     string
 	ThinkingDelta          string
 	ThinkingSignatureDelta string
 	ToolCallStart          *model.ToolCallPart

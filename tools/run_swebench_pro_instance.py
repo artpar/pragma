@@ -31,16 +31,28 @@ DEFAULT_PERSONA_DIR = "/pragma/personas-research-v2"
 def display_command(command: list[str]) -> list[str]:
     redacted = command.copy()
     for i, part in enumerate(redacted):
-        if part in {"LLM_API_KEY", "LILAC_API_KEY"} and i + 1 < len(redacted):
+        if part in {"LLM_API_KEY", "LILAC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GROQ_API_KEY"} and i + 1 < len(redacted):
             redacted[i + 1] = "<redacted>"
-        elif part.startswith("LLM_API_KEY=") or part.startswith("LILAC_API_KEY="):
+        elif any(
+            part.startswith(prefix)
+            for prefix in (
+                "LLM_API_KEY=",
+                "LILAC_API_KEY=",
+                "GOOGLE_API_KEY=",
+                "OPENAI_API_KEY=",
+                "ANTHROPIC_API_KEY=",
+                "GROQ_API_KEY=",
+            )
+        ):
             redacted[i] = part.split("=", 1)[0] + "=<redacted>"
     return redacted
 
 
 def run(command: list[str], cwd: Path, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(shlex.quote(part) for part in display_command(command)), flush=True)
-    subprocess.run(command, cwd=cwd, env=env, check=True)
+    result = subprocess.run(command, cwd=cwd, env=env)
+    if result.returncode != 0:
+        raise SystemExit(f"command failed with exit status {result.returncode}")
 
 
 def read_sample(sample_path: Path, instance_id: str) -> dict[str, object]:
@@ -81,12 +93,12 @@ def decode_embedded_json_string_lines(text: str) -> str:
     return "\n".join(lines)
 
 
-def read_pragma_lilac_credentials() -> tuple[str, str]:
+def read_pragma_provider_credentials(provider: str) -> tuple[str, str]:
     credentials_path = Path.home() / ".pragma" / "credentials.yml"
     if not credentials_path.exists():
         return "", ""
     text = credentials_path.read_text(encoding="utf-8")
-    in_lilac = False
+    in_provider = False
     api_key = ""
     base_url = ""
     for raw_line in text.splitlines():
@@ -95,12 +107,12 @@ def read_pragma_lilac_credentials() -> tuple[str, str]:
         if not stripped or stripped.startswith("#"):
             continue
         if not raw_line.startswith((" ", "\t")) and stripped == "providers:":
-            in_lilac = False
+            in_provider = False
             continue
         if raw_line.startswith("  ") and not raw_line.startswith("    "):
-            in_lilac = stripped.rstrip(":") == "lilac"
+            in_provider = stripped.rstrip(":") == provider
             continue
-        if in_lilac and raw_line.startswith("    "):
+        if in_provider and raw_line.startswith("    "):
             key, sep, value = stripped.partition(":")
             if not sep:
                 continue
@@ -110,6 +122,24 @@ def read_pragma_lilac_credentials() -> tuple[str, str]:
             elif key == "base_url":
                 base_url = value
     return api_key, base_url
+
+
+def api_key_env_var(provider: str) -> str:
+    return {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "google": "GOOGLE_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "lilac": "LILAC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+    }.get(provider, "ANTHROPIC_API_KEY")
+
+
+def base_url_env_var(provider: str) -> str:
+    return {
+        "google": "GOOGLE_BASE_URL",
+        "lilac": "LILAC_BASE_URL",
+        "openai": "OPENAI_BASE_URL",
+    }.get(provider, "")
 
 
 def dockerhub_image(row: dict[str, object], dockerhub_username: str) -> str:
@@ -428,6 +458,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-jsonl", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--dockerhub-username", default="jefzda")
+    parser.add_argument("--provider", default=os.getenv("LLM_PROVIDER", "lilac"))
     parser.add_argument("--model", default=os.getenv("LLM_MODEL", "minimaxai/minimax-m2.7"))
     parser.add_argument("--base-url", default=os.getenv("LLM_BASE_URL", ""))
     parser.add_argument("--max-turns", default=os.getenv("PRAGMA_MAX_TURNS", "250"))
@@ -513,9 +544,17 @@ def main() -> None:
         return
 
     row = read_sample(sample_jsonl, args.instance_id)
-    config_api_key, config_base_url = read_pragma_lilac_credentials()
-    api_key = os.getenv("LLM_API_KEY") or os.getenv("LILAC_API_KEY") or config_api_key
-    base_url = args.base_url or config_base_url or "https://api.getlilac.com/v1"
+    config_api_key, config_base_url = read_pragma_provider_credentials(args.provider)
+    provider_api_key_env = api_key_env_var(args.provider)
+    provider_base_url_env = base_url_env_var(args.provider)
+    api_key = os.getenv("LLM_API_KEY") or os.getenv(provider_api_key_env) or config_api_key
+    default_base_url = "https://api.getlilac.com/v1" if args.provider == "lilac" else ""
+    base_url = args.base_url or config_base_url or default_base_url
+    provider_base_url_export = (
+        f'export {shlex.quote(provider_base_url_env)}="$LLM_BASE_URL"'
+        if provider_base_url_env and base_url
+        else "true"
+    )
     image = dockerhub_image(row, args.dockerhub_username)
     prompt = format_problem_statement(row)
     prompt_path = output_dir / "prompt.txt"
@@ -527,6 +566,8 @@ def main() -> None:
                 "instance_id": args.instance_id,
                 "image": image,
                 "row": row,
+                "provider": args.provider,
+                "model": args.model,
                 "run_mode": "direct" if args.direct else "orchestration",
                 "orchestration": "" if args.direct else args.orchestration,
                 "persona_dir": "" if args.direct else args.persona_dir,
@@ -541,6 +582,8 @@ def main() -> None:
     print(f"instance_id={args.instance_id}")
     print(f"image={image}")
     print(f"output_dir={output_dir}")
+    print(f"provider={args.provider}")
+    print(f"model={args.model}")
     print(f"run_mode={'direct' if args.direct else 'orchestration'}")
     if not args.direct:
         print(f"orchestration={args.orchestration}")
@@ -563,8 +606,8 @@ cd /app
 if [ -x /preprocess.sh ]; then /preprocess.sh; fi
 mkdir -p /tmp/pragma-home /pragma-out/raw-http-pragma
 export HOME=/tmp/pragma-home
-export LILAC_API_KEY="$LLM_API_KEY"
-export LILAC_BASE_URL="$LILAC_BASE_URL"
+export {shlex.quote(provider_api_key_env)}="$LLM_API_KEY"
+{provider_base_url_export}
 export PRAGMA_RAW_HTTP_CAPTURE_DIR=/pragma-out/raw-http-pragma
 if [ -d /pragma-toolchain/bin ]; then
   export PATH="/pragma-toolchain/bin:$PATH"
@@ -588,7 +631,7 @@ fi
 cat /pragma-out/toolchain-preflight.log
 set +e
 timeout {shlex.quote(str(args.agent_timeout))} /pragma-bin \\
-  --provider lilac \\
+  --provider {shlex.quote(args.provider)} \\
   --model {shlex.quote(args.model)} \\
   --permission-mode bypassPermissions \\
   --allowed-tools Bash \\
@@ -607,11 +650,13 @@ exit 0
     env_args = [
         "-e",
         f"LLM_API_KEY={api_key}",
-        "-e",
-        f"LILAC_BASE_URL={base_url}",
     ]
+    if base_url:
+        env_args.extend(["-e", f"LLM_BASE_URL={base_url}"])
     if not api_key:
-        raise SystemExit("set LLM_API_KEY or LILAC_API_KEY, or add providers.lilac.api_key to ~/.pragma/credentials.yml")
+        raise SystemExit(
+            f"set LLM_API_KEY or {provider_api_key_env}, or add providers.{args.provider}.api_key to ~/.pragma/credentials.yml"
+        )
     toolchain_mount_args = []
     if toolchain_dir is not None:
         toolchain_mount_args = ["-v", f"{toolchain_dir}:/pragma-toolchain:ro"]

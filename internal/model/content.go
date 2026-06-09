@@ -25,11 +25,14 @@ type ContentPart interface {
 }
 
 // TextPart holds plain text content.
+// Signature is a provider-opaque token that must be echoed back in conversation
+// history when present (e.g., Gemini 3 thought signatures on text parts).
 type TextPart struct {
-	Text string `json:"text"`
+	Text      string `json:"text"`
+	Signature string `json:"signature,omitempty"`
 }
 
-func (TextPart) contentPartSealed() {}
+func (TextPart) contentPartSealed()    {}
 func (TextPart) PartType() ContentType { return ContentText }
 
 // ImagePart holds raw image bytes. Provider adapters encode to base64 or
@@ -39,7 +42,7 @@ type ImagePart struct {
 	Data     []byte `json:"data"`
 }
 
-func (ImagePart) contentPartSealed() {}
+func (ImagePart) contentPartSealed()    {}
 func (ImagePart) PartType() ContentType { return ContentImage }
 
 // DocumentPart holds a document (e.g., PDF) as raw bytes.
@@ -50,7 +53,7 @@ type DocumentPart struct {
 	Data     []byte `json:"data"`
 }
 
-func (DocumentPart) contentPartSealed() {}
+func (DocumentPart) contentPartSealed()    {}
 func (DocumentPart) PartType() ContentType { return ContentDocument }
 
 // ToolCallPart represents the LLM requesting a tool invocation.
@@ -67,7 +70,7 @@ type ToolCallPart struct {
 	Signature string          `json:"signature,omitempty"`
 }
 
-func (ToolCallPart) contentPartSealed() {}
+func (ToolCallPart) contentPartSealed()    {}
 func (ToolCallPart) PartType() ContentType { return ContentToolCall }
 
 // ToolResultPart holds the result of a tool invocation.
@@ -78,7 +81,7 @@ type ToolResultPart struct {
 	IsError    bool   `json:"is_error,omitempty"`
 }
 
-func (ToolResultPart) contentPartSealed() {}
+func (ToolResultPart) contentPartSealed()    {}
 func (ToolResultPart) PartType() ContentType { return ContentToolResult }
 
 // ThinkingPart holds the LLM's reasoning trace (if the provider supports it).
@@ -95,7 +98,7 @@ type ThinkingPart struct {
 	RedactedData string `json:"redacted_data,omitempty"`
 }
 
-func (ThinkingPart) contentPartSealed() {}
+func (ThinkingPart) contentPartSealed()    {}
 func (ThinkingPart) PartType() ContentType { return ContentThinking }
 
 // contentEnvelope wraps a ContentPart with a type discriminator for JSON.

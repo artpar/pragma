@@ -46,10 +46,10 @@ func TestSupportsFeatureStructuredOutput(t *testing.T) {
 	}
 }
 
-func TestSupportsFeaturePrefixCaching(t *testing.T) {
+func TestSupportsFeaturePrefixCachingNotSupported(t *testing.T) {
 	p := &Provider{}
-	if !p.SupportsFeature(provider.FeaturePrefixCaching) {
-		t.Error("expected FeaturePrefixCaching supported")
+	if p.SupportsFeature(provider.FeaturePrefixCaching) {
+		t.Error("expected FeaturePrefixCaching not supported")
 	}
 }
 

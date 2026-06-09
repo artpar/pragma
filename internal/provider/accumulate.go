@@ -11,9 +11,10 @@ import (
 
 // toolAccumulator collects streaming fragments for a single tool call.
 type toolAccumulator struct {
-	id       string
-	name     string
-	inputBuf strings.Builder
+	id        string
+	name      string
+	signature string
+	inputBuf  strings.Builder
 }
 
 // AccumulateStream consumes all chunks from a streaming response channel
@@ -25,6 +26,7 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	var textBuf strings.Builder
+	var textSigBuf strings.Builder
 	var thinkBuf strings.Builder
 	var thinkSigBuf strings.Builder
 	var redactedThinkingParts []model.ThinkingPart
@@ -45,6 +47,10 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 		if chunk.TextDelta != "" {
 			observe.GlobalTrace("if: chunk.TextDelta != \"\"")
 			textBuf.WriteString(chunk.TextDelta)
+		}
+		if chunk.TextSignatureDelta != "" {
+			observe.GlobalTrace("if: chunk.TextSignatureDelta != \"\"")
+			textSigBuf.WriteString(chunk.TextSignatureDelta)
 		}
 		if chunk.ThinkingDelta != "" {
 			observe.GlobalTrace("if: chunk.ThinkingDelta != \"\"")
@@ -70,8 +76,9 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 				return model.Response{}, fmt.Errorf("duplicate tool call ID %q", tc.ID)
 			}
 			acc := &toolAccumulator{
-				id:   tc.ID,
-				name: tc.Name,
+				id:        tc.ID,
+				name:      tc.Name,
+				signature: tc.Signature,
 			}
 			toolCalls[tc.ID] = acc
 			toolOrder = append(toolOrder, tc.ID)
@@ -116,7 +123,7 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 	}
 	if textBuf.Len() > 0 {
 		observe.GlobalTrace("if: textBuf.Len() > 0")
-		parts = append(parts, model.TextPart{Text: textBuf.String()})
+		parts = append(parts, model.TextPart{Text: textBuf.String(), Signature: textSigBuf.String()})
 	}
 	for _, id := range toolOrder {
 		observe.GlobalTrace("range toolOrder")
@@ -132,9 +139,10 @@ func AccumulateStream(chunks <-chan StreamChunk) (model.Response, error) {
 			return model.Response{}, fmt.Errorf("invalid tool input JSON for %q (id=%s): %s", acc.name, acc.id, snippet)
 		}
 		parts = append(parts, model.ToolCallPart{
-			ID:    acc.id,
-			Name:  acc.name,
-			Input: raw,
+			ID:        acc.id,
+			Name:      acc.name,
+			Input:     raw,
+			Signature: acc.signature,
 		})
 	}
 	observe.GlobalTrace("return: model.Response{\n\tModel:\t\tresponseModel,\n\tContent:\tparts,\n\tStopReason:\tstopRea...")

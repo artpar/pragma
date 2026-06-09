@@ -14,6 +14,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
+	"github.com/artpar/pragma/internal/provider/rawcapture"
 	"github.com/artpar/pragma/internal/provider/shared"
 	"google.golang.org/genai"
 )
@@ -41,10 +42,14 @@ func WithBaseURL(_ string) Option {
 func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	client, err := genai.NewClient(context.Background(), &genai.ClientConfig{
+	clientConfig := &genai.ClientConfig{
 		APIKey:  apiKey,
 		Backend: genai.BackendGeminiAPI,
-	})
+	}
+	if client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute); ok {
+		clientConfig.HTTPClient = client
+	}
+	client, err := genai.NewClient(context.Background(), clientConfig)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"google: create client: %w\", err)")
@@ -54,7 +59,6 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		client:     client,
 		bus:        bus,
 		maxRetries: 10,
-		cache:      newCacheManager(client, bus),
 	}
 	for _, opt := range opts {
 		observe.GlobalTrace("range opts")
@@ -84,7 +88,7 @@ func (p *Provider) SupportsFeature(feature provider.Feature) bool {
 	switch feature {
 	case provider.FeatureToolUse, provider.FeatureStreaming,
 		provider.FeatureImages, provider.FeatureThinking,
-		provider.FeatureStructuredOutput, provider.FeaturePrefixCaching:
+		provider.FeatureStructuredOutput:
 		observe.GlobalTrace("case: provider.FeatureToolUse, provider.FeatureStreaming, provider.FeatureImages, p...")
 		return true
 	}
@@ -269,6 +273,9 @@ func (p *Provider) Stream(ctx context.Context, params provider.RequestParams) (<
 						observe.TraceCtx(ctx, "google", "Provider.Stream", "case: part.Text != \"\"")
 						accText.WriteString(part.Text)
 						ch <- provider.StreamChunk{TextDelta: part.Text}
+						if len(part.ThoughtSignature) > 0 {
+							ch <- provider.StreamChunk{TextSignatureDelta: string(part.ThoughtSignature)}
+						}
 					case part.FunctionCall != nil:
 						observe.TraceCtx(ctx, "google", "Provider.Stream", "case: part.FunctionCall != nil")
 						fc := part.FunctionCall
@@ -520,7 +527,11 @@ func messagesToGenai(msgs []model.Message, mappers ...googleToolNameMapper) []*g
 			case model.TextPart:
 				observe.GlobalTrace("typecase: model.TextPart")
 				if part.Text != "" {
-					parts = append(parts, &genai.Part{Text: part.Text})
+					tp := &genai.Part{Text: part.Text}
+					if part.Signature != "" {
+						tp.ThoughtSignature = []byte(part.Signature)
+					}
+					parts = append(parts, tp)
 				}
 			case model.ToolCallPart:
 				observe.GlobalTrace("typecase: model.ToolCallPart")
@@ -826,7 +837,11 @@ func responseFromGenai(resp *genai.GenerateContentResponse, modelName string, ma
 				result.Content = append(result.Content, tp)
 			case part.Text != "":
 				observe.GlobalTrace("case: part.Text != \"\"")
-				result.Content = append(result.Content, model.TextPart{Text: part.Text})
+				tp := model.TextPart{Text: part.Text}
+				if len(part.ThoughtSignature) > 0 {
+					tp.Signature = string(part.ThoughtSignature)
+				}
+				result.Content = append(result.Content, tp)
 			case part.FunctionCall != nil:
 				observe.GlobalTrace("case: part.FunctionCall != nil")
 
