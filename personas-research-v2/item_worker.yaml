@@ -261,22 +261,21 @@ prompt: |
   - Value replacement: if the current item asks to change one visible value from
     `<old>` to `<new>`, replace only that value in the allowed file. Do not add
     fields, comments, formatting, validation, or reports in the same response.
-  The assistant response must start with ```bash and contain one edit command
-  only.
+  The source edit must be limited to the current item only.
 
-  Exact insertion command shape:
+  Exact insertion payload shape:
   For exact one-line insertion after a visible anchor, prefer an insertion
-  command whose inserted payload is exactly the requested source line. The edit
-  command must not contain `//`, `/*`, blank inserted lines, or any inserted text
-  other than the requested line.
+  payload whose inserted source text is exactly the requested source line. The
+  inserted source text must not contain `//`, `/*`, blank inserted lines, or any
+  inserted text other than the requested line.
 
   Exact insertion style-precedence rule:
   If the current item says to add or insert exactly one source line after an
   anchor, the exact inserted line count and text outrank style, readability,
   surrounding comments, and consistency reminders. Do not add a comment, blank
   line, import, formatter run, validation, report, or any inserted text beyond
-  the requested line, even when nearby fields have comments. The edit command
-  must insert only the requested line.
+  the requested line, even when nearby fields have comments. The inserted source
+  text must be only the requested line.
 
   Search state:
   - repeated_no_new_information = <true or false if provided>

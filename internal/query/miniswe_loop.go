@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/shellrun"
+	"github.com/artpar/pragma/internal/tools/applypatch"
 )
 
 const pragmaLoopSystemPrompt = `Pragma loop mode is a shell-action transport.
@@ -354,7 +356,38 @@ type pragmaLoopBashResult struct {
 	Output     string
 }
 
+type pragmaLoopPatchState struct {
+	workDir string
+}
+
+func (s pragmaLoopPatchState) WorkDir() string {
+	return s.workDir
+}
+
 func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool) {
+	if patch, patchWorkDir, ok, err := applypatch.ExtractShellApplyPatch(command); err != nil {
+		return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false
+	} else if ok {
+		applyWorkDir := workDir
+		if patchWorkDir != "" {
+			if filepath.IsAbs(patchWorkDir) {
+				applyWorkDir = patchWorkDir
+			} else {
+				applyWorkDir = filepath.Join(workDir, patchWorkDir)
+			}
+		}
+		result, err := applypatch.ApplyPatchText(ctx, patch, applyWorkDir, pragmaLoopPatchState{workDir: applyWorkDir})
+		if err != nil {
+			return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false
+		}
+		return pragmaLoopBashResult{ReturnCode: 0, Output: result.Content}, false
+	}
+	if reason := pragmaLoopSourceMutationReason(workDir, command); reason != "" {
+		return pragmaLoopBashResult{
+			ReturnCode: 1,
+			Output:     fmt.Sprintf("Bash rejected: %s. Use apply_patch <<'PATCH' for repository source edits; Bash remains available for read-only inspection, validation, and runtime artifact writes.", reason),
+		}, false
+	}
 	result, err := shellrun.Execute(ctx, shellrun.Options{
 		Command:            command,
 		WorkDir:            workDir,
@@ -378,6 +411,138 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 		out.Output += result.Err.Error()
 	}
 	return out, result.TimedOut
+}
+
+func pragmaLoopSourceMutationReason(workDir, command string) string {
+	fields := strings.Fields(command)
+	for i, field := range fields {
+		base := filepath.Base(strings.Trim(field, `"'`))
+		switch base {
+		case "sed", "gsed", "perl":
+			if i+1 < len(fields) && strings.HasPrefix(strings.Trim(fields[i+1], `"'`), "-i") && commandMentionsRepoSourcePath(workDir, strings.Join(fields[i+2:], " ")) {
+				return base + " in-place edits to repository source are blocked"
+			}
+		case "tee":
+			if firstRepoSourcePath(workDir, fields[i+1:]) != "" {
+				return "tee writes to repository source are blocked"
+			}
+		case "python", "python3", "perl5":
+			if commandContainsWriteIntent(command) && commandMentionsRepoSourcePath(workDir, command) {
+				return base + " file-write snippets to repository source are blocked"
+			}
+		}
+	}
+
+	for i, field := range fields {
+		switch field {
+		case ">", ">>":
+			if i+1 < len(fields) && isRepoSourcePath(workDir, cleanShellPathToken(fields[i+1])) {
+				return "shell redirection writes to repository source are blocked"
+			}
+		default:
+			if strings.HasPrefix(field, ">") {
+				path := strings.TrimPrefix(strings.TrimPrefix(field, ">>"), ">")
+				if isRepoSourcePath(workDir, cleanShellPathToken(path)) {
+					return "shell redirection writes to repository source are blocked"
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func commandContainsWriteIntent(command string) bool {
+	lower := strings.ToLower(command)
+	for _, needle := range []string{
+		"write_text(",
+		"write_bytes(",
+		"os.writefile(",
+		"os.remove(",
+		"os.rename(",
+		".write(",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func commandMentionsRepoSourcePath(workDir, command string) bool {
+	for _, field := range strings.Fields(command) {
+		if isRepoSourcePath(workDir, cleanShellPathToken(field)) {
+			return true
+		}
+	}
+	return false
+}
+
+func firstRepoSourcePath(workDir string, fields []string) string {
+	for _, field := range fields {
+		path := cleanShellPathToken(field)
+		if strings.HasPrefix(path, "-") {
+			continue
+		}
+		if isRepoSourcePath(workDir, path) {
+			return path
+		}
+	}
+	return ""
+}
+
+func cleanShellPathToken(token string) string {
+	token = strings.TrimSpace(token)
+	token = strings.Trim(token, `"'`)
+	token = strings.TrimSuffix(token, ";")
+	token = strings.TrimSuffix(token, `\`)
+	return token
+}
+
+func isRepoSourcePath(workDir, path string) bool {
+	if path == "" || strings.HasPrefix(path, "-") || strings.HasPrefix(path, "$") {
+		return false
+	}
+	if strings.HasPrefix(path, "/tmp/pragma/") || path == "/tmp/pragma" {
+		return false
+	}
+	clean := filepath.Clean(path)
+	if filepath.IsAbs(clean) {
+		if workDir == "" {
+			return false
+		}
+		absWorkDir, err := filepath.Abs(workDir)
+		if err != nil {
+			absWorkDir = workDir
+		}
+		rel, err := filepath.Rel(absWorkDir, clean)
+		if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
+			return strings.HasPrefix(clean, "/app/") && looksLikeSourcePath(strings.TrimPrefix(clean, "/app/"))
+		}
+		clean = rel
+	}
+	clean = strings.TrimPrefix(clean, "./")
+	return looksLikeSourcePath(clean)
+}
+
+func looksLikeSourcePath(path string) bool {
+	if path == "" || strings.HasPrefix(path, "..") || strings.Contains(path, "*") {
+		return false
+	}
+	switch filepath.Ext(path) {
+	case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".rs", ".c", ".cc", ".cpp", ".h", ".hpp", ".proto", ".yaml", ".yml", ".json", ".toml", ".md":
+	default:
+		return false
+	}
+	first := path
+	if idx := strings.IndexRune(path, filepath.Separator); idx >= 0 {
+		first = path[:idx]
+	}
+	switch first {
+	case "cmd", "internal", "pkg", "api", "src", "lib", "server", "client", "web", "config", "configs", "tools", "test", "tests":
+		return true
+	default:
+		return !filepath.IsAbs(path) && !strings.HasPrefix(path, "/")
+	}
 }
 
 func formatPragmaLoopObservation(result pragmaLoopBashResult) string {

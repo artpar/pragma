@@ -188,6 +188,90 @@ func TestRunPragmaLoopBashUsesPipefail(t *testing.T) {
 	}
 }
 
+func TestRunPragmaLoopBashRoutesShellApplyPatch(t *testing.T) {
+	dir := t.TempDir()
+	path := "internal/example.go"
+	full := dir + "/" + path
+	if err := os.MkdirAll(dir+"/internal", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("package internal\n\nconst oldValue = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	patchCommand := strings.Join([]string{
+		"apply_patch <<'PATCH'",
+		"*** Begin Patch",
+		"*** Update File: internal/example.go",
+		"@@",
+		" package internal",
+		" ",
+		"-const oldValue = 1",
+		"+const oldValue = 2",
+		"*** End Patch",
+		"PATCH",
+	}, "\n")
+	result, timedOut := runPragmaLoopBash(t.Context(), dir, patchCommand)
+	if timedOut {
+		t.Fatal("command timed out")
+	}
+	if result.ReturnCode != 0 {
+		t.Fatalf("return code = %d, output=%q", result.ReturnCode, result.Output)
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "const oldValue = 2") {
+		t.Fatalf("file was not patched: %q", data)
+	}
+}
+
+func TestRunPragmaLoopBashRejectsDirectRepoSourceMutation(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir+"/internal", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := dir + "/internal/example.go"
+	if err := os.WriteFile(path, []byte("package internal\n\nconst oldValue = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, timedOut := runPragmaLoopBash(t.Context(), dir, `sed -i 's/oldValue/newValue/' internal/example.go`)
+	if timedOut {
+		t.Fatal("command timed out")
+	}
+	if result.ReturnCode == 0 {
+		t.Fatalf("return code = 0, want rejection; output=%q", result.Output)
+	}
+	if !strings.Contains(result.Output, "Use apply_patch") {
+		t.Fatalf("output = %q, want apply_patch guidance", result.Output)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "newValue") {
+		t.Fatalf("direct source mutation was applied: %q", data)
+	}
+}
+
+func TestRunPragmaLoopBashAllowsRuntimeArtifactWrites(t *testing.T) {
+	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), `mkdir -p /tmp/pragma && cat > /tmp/pragma/pragma-loop-artifact-test.txt <<'EOF'
+artifact
+EOF
+cat /tmp/pragma/pragma-loop-artifact-test.txt`)
+	if timedOut {
+		t.Fatal("command timed out")
+	}
+	if result.ReturnCode != 0 {
+		t.Fatalf("return code = %d, output=%q", result.ReturnCode, result.Output)
+	}
+	if !strings.Contains(result.Output, "artifact") {
+		t.Fatalf("output = %q, want artifact content", result.Output)
+	}
+}
+
 func pragmaLoopFieldPath(content, prefix string) string {
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)

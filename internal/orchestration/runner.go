@@ -335,17 +335,33 @@ func RenderArtifactHandoff(state State, artifactRoot string, strict bool) (strin
 
 func renderSourceEditTransport() string {
 	return `### ` + "`source_edit_transport`" + ` (runtime capability)
-The bash environment has ` + "`git apply`" + ` available.
-Use normal bash for inspection commands, validation commands, and runtime artifact writes.
-For multi-line additions or replacements in existing repository source files, use a single bash block containing ` + "`git apply <<'PATCH'`" + ` with a standard unified diff.
-For small exact deletions, a concise checked command is acceptable only when it verifies the exact line content at that location or matches the exact line text before deleting it.
-For ` + "`git apply`" + ` patches:
-- include ` + "`--- a/<path>`" + ` and ` + "`+++ b/<path>`" + `
-- use repository-relative diff paths without container or absolute prefixes. Correct: ` + "`--- a/internal/telemetry/telemetry.go`" + `. Wrong: ` + "`--- a/app/internal/telemetry/telemetry.go`" + ` or ` + "`--- /app/internal/telemetry/telemetry.go`" + `
-- include normal hunk headers with line numbers, such as ` + "`@@ -40,6 +40,10 @@`" + `
-- omit ` + "`index ...`" + ` lines
-- do not use bare ` + "`@@`" + ` hunk headers
-- avoid replacing large blocks with many removed lines followed by many added lines when a smaller focused patch or exact deletion is enough
+Repository source edits in this direct bash-fence runtime must use Pragma's structured patch runner.
+Use normal bash for read-only inspection, validation commands, and runtime artifact writes.
+For repository source mutations, respond with exactly one fenced bash block containing one ` + "`apply_patch`" + ` heredoc and no other shell command:
+
+` + "```bash" + `
+apply_patch <<'PATCH'
+*** Begin Patch
+*** Update File: path/from/repo/root.go
+@@
+ unchanged context line starts with one literal space
+-old line starts with minus
++new line starts with plus
+ another unchanged context line starts with one literal space
+*** End Patch
+PATCH
+` + "```" + `
+
+Patch grammar is strict:
+- The patch body must start with ` + "`*** Begin Patch`" + ` and end with ` + "`*** End Patch`" + `.
+- Use ` + "`*** Update File: <repo-relative path>`" + ` for existing source files.
+- Inside update hunks, every source line must start with exactly one marker character: space for unchanged context, ` + "`-`" + ` for removed lines, or ` + "`+`" + ` for added lines.
+- Do not omit the leading space marker on unchanged context lines.
+- Do not use git/unified-diff headers (` + "`---`" + `, ` + "`+++`" + `, ` + "`index`" + `, or numbered ` + "`@@ -a,b +c,d @@`" + `). Use plain ` + "`@@`" + ` hunk markers.
+- For insertion after a visible anchor, include the anchor as a space-prefixed context line before the ` + "`+`" + ` lines. Do not put ` + "`+`" + ` lines before the anchor.
+- Do not invent comments, blank lines, or helper text beyond the requested source change.
+- Do not use ` + "`git apply`" + `, ` + "`sed`" + `, ` + "`awk`" + `, ` + "`perl`" + `, ` + "`python`" + `, ` + "`cat`" + `, ` + "`tee`" + `, or shell redirection to mutate repository source files.
+- If ` + "`apply_patch`" + ` fails, reread the target range and retry with a smaller ` + "`apply_patch`" + ` hunk; do not switch editing tools.
 
 `
 }
