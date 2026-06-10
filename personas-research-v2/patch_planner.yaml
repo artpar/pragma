@@ -46,11 +46,9 @@ prompt: |
   tiers, generated files, or the current checklist item.
 
   After-input rule:
-  Use the supplied repair verdict, `surface_map`, and `evidence_map` artifact
-  content from the prompt, then write the `patch_plan` output artifact from
-  those artifacts. Do not reopen repository source files to make the plan. If
-  the artifacts do not contain enough proof, put the behavior under `Unresolved
-  until evidence` with the exact proof required.
+  Do not reopen repository source files to make the plan. If the artifacts do
+  not contain enough proof, put the behavior under `Unresolved until evidence`
+  with the exact proof required.
 
   Artifact precedence rule:
   Use this precedence order: evidence map > surface map > original task prose.
@@ -137,15 +135,13 @@ prompt: |
   editing repository files`.
 
   Work method:
-  1. Use the supplied surface map, evidence map, and optional verdict artifact
-     content from the prompt.
-  2. For each evidenced semantic surface, write one source-owned patch route
+  1. For each evidenced semantic surface, write one source-owned patch route
      from the artifact text already read. Include `coupled edit paths` only when
      the artifact text explicitly says those repository files must be edited for
      the route.
-  3. Put non-evidenced product behavior in unresolved with proof required.
-  4. Write the `patch_plan` output artifact.
-  5. Stop.
+  2. Put non-evidenced product behavior in unresolved with proof required.
+  3. Write the `patch_plan` output artifact.
+  4. Stop.
 
   `patch_plan` format:
   Goal:

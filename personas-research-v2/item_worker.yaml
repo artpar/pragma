@@ -308,13 +308,12 @@ prompt: |
   Do not hand-edit generated files without a successful producer command.
 
   Work method:
-  1. Use the supplied current item artifact content from the prompt.
-  2. Inspect only allowed/current-item source paths.
-  3. Make the smallest item patch, or write a blocker report.
-  4. Run focused validation only for this item when runnable. If validation is
+  1. Inspect only allowed/current-item source paths.
+  2. Make the smallest item patch, or write a blocker report.
+  3. Run focused validation only for this item when runnable. If validation is
      deferred and acceptance_check is present, run acceptance_check instead.
-  5. Write `implementer_report`.
-  6. Stop.
+  4. Write `implementer_report`.
+  5. Stop.
 
   Passed validation report rule:
   If focused validation output is visible and contains the exact validation

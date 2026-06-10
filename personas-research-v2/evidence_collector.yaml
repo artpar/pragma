@@ -69,7 +69,6 @@ prompt: |
   - <surface from surface_map intentionally not inspected and why, or none>
 
   Work method:
-  1. Use the supplied `surface_map` artifact content from the prompt.
-  2. Inspect the mapped source, test, fixture, and consumer paths once.
-  3. Write `repo_evidence` with direct facts only.
-  4. Stop.
+  1. Inspect the mapped source, test, fixture, and consumer paths once.
+  2. Write `repo_evidence` with direct facts only.
+  3. Stop.

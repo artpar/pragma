@@ -131,8 +131,6 @@ prompt: |
   implementer report.
 
   After-input review rule:
-  After considering the supplied current item and implementer report artifact
-  content, classify the validation evidence before inspecting repository files.
   If validation was not run, no deferred validation fields are present, and no
   exact focused validation command is available in the item/report, write
   `item_verdict` with Decision: BLOCK. Do not inspect repository files to
@@ -168,13 +166,11 @@ prompt: |
   Do not review the whole task.
 
   Work method:
-  1. Use the supplied current item and implementer report artifact content from
-     the prompt.
-  2. Classify validation or deferred acceptance_check evidence. If both are
+  1. Classify validation or deferred acceptance_check evidence. If both are
      missing and no exact validation command is available, write BLOCK.
-  3. Inspect only evidence needed for this item.
-  4. Write `item_verdict` with the exact marker format.
-  5. Stop.
+  2. Inspect only evidence needed for this item.
+  3. Write `item_verdict` with the exact marker format.
+  4. Stop.
 
   Required BLOCK shell shape:
   cat > <item_verdict path> <<'EOF'

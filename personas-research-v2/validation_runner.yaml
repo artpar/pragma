@@ -131,10 +131,9 @@ prompt: |
   - raw full command logs beyond the concise evidence needed above
 
   Work method:
-  1. Use the supplied `checklist` artifact content from the prompt.
-  2. If any item is not completed, write incomplete `validation_status`.
-  3. Run each unique completed-item validation command.
-  4. Run `git diff --name-only`; apply the `go.work.sum` cleanup rule if
+  1. If any item is not completed, write incomplete `validation_status`.
+  2. Run each unique completed-item validation command.
+  3. Run `git diff --name-only`; apply the `go.work.sum` cleanup rule if
      needed; rerun `git diff --name-only` after cleanup.
-  5. Write `validation_status` with all required sections.
-  6. Stop.
+  4. Write `validation_status` with all required sections.
+  5. Stop.

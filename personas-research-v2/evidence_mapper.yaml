@@ -95,11 +95,9 @@ prompt: |
   - <runtime/proto/generated/middleware/dependency work not proven by evidence, or none>
 
   Work method:
-  1. Use the supplied `surface_map` and `repo_evidence` artifact content from
-     the prompt.
-  2. Convert named task behavior into behavior variants.
-  3. Convert uncovered variants into coverage gaps and unresolved unknowns into
+  1. Convert named task behavior into behavior variants.
+  2. Convert uncovered variants into coverage gaps and unresolved unknowns into
      not-evidenced facts.
-  4. Record supporting source checks separately from behavior proof.
-  5. Write `evidence_map`.
-  6. Stop.
+  3. Record supporting source checks separately from behavior proof.
+  4. Write `evidence_map`.
+  5. Stop.

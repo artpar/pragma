@@ -283,7 +283,6 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 		} else if strings.TrimSpace(handoffPrompt) != "" && !strict {
 			fmt.Fprintf(&b, "## Handoff From Previous Phase\n\n%s\n\n", strings.TrimSpace(handoffPrompt))
 		}
-		b.WriteString("## Phase Input\n\nProceed using the input artifact content supplied above. Do not read, search for, or infer filesystem paths for input artifacts.\n")
 	}
 	if contract := RenderArtifactContract(state.Artifacts); contract != "" {
 		if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
