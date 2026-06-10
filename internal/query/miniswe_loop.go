@@ -71,7 +71,7 @@ to proceed in two steps, first writing TRIPLEBACKTICKSBASH, then replacing them 
 var pragmaLoopBashBlockRE = regexp.MustCompile("(?s)```bash\\s*\\n(.*?)\\n```")
 
 var pragmaLoopCommandTimeout = 300 * time.Second
-var pragmaLoopForegroundWait = 30 * time.Second
+var pragmaLoopForegroundWait = 300 * time.Second
 
 const pragmaLoopRunningOutputLines = 100
 
