@@ -40,6 +40,15 @@ prompt: |
   `Commands run: none` and mark validation incomplete under
   `missing_files_or_surfaces`.
 
+  Nonzero exit honesty rule:
+  Every command recorded under `Commands run` with `EXIT_STATUS` other than `0`
+  must also create a concrete entry under `failed_tests`, `failed_packages`, or
+  `unexpected_errors`. Do not write `failed_tests: none`,
+  `failed_packages: none`, and `unexpected_errors: none` when any recorded
+  command has nonzero exit status. If the failing command output does not name
+  a specific test or package, list the exact command and exit status under
+  `unexpected_errors`.
+
   Diff command rule:
   Run `git diff --name-only` after validation commands. Record the exact
   changed file list under `changed_files`.
@@ -79,6 +88,8 @@ prompt: |
 
   Failure variable rule:
   Use `none` only when the category is clean. Otherwise list concrete entries.
+  A category is not clean when a recorded command relevant to that category has
+  nonzero exit status, even if later commands pass.
   - `failed_tests`: failed test names or `none`
   - `failed_packages`: failed packages or `none`
   - `unexpected_errors`: command errors, dirty unrelated files, generated

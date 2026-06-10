@@ -68,7 +68,10 @@ prompt: |
   worker reports all item files, not just files edited in the latest attempt.
 
   Purpose:
-  Write small implementation items tied to concrete surfaces.
+  Write implementation checklist items that preserve the concrete route
+  contract. Items may be small, but they must not split a producer/carrier/
+  consumer edge into file chores that can pass independently while the route
+  behavior remains broken.
 
   Checklist controller loop:
   This state may run more than once in the same orchestration. On the first
@@ -140,6 +143,26 @@ prompt: |
   Put source path, generated files, producer command, and validation command on
   that same item.
 
+  Contract-edge item preservation rule:
+  If a patch-route bullet has `contract edges` other than `none`, keep that
+  bullet as one checklist item unless the patch plan explicitly says the edge
+  is independently splittable. The checklist item must include a
+  `contract_edges` JSON array copied from the route. Include every concrete
+  repository path that participates in that edge in `allowed_files` when the
+  item is expected to edit it, using the route `source path`, `coupled edit
+  paths`, and any editable `consumer/defaulting path`. Do not create separate
+  items such as "add field", "add method", or "update consumer" when those
+  edits are only correct as one value-flow contract.
+
+  Contract-edge acceptance rule:
+  For every item with `contract_edges`, the `acceptance` array must include
+  the edge itself and the observable compatibility or behavior requirements
+  from the same patch-route bullet. If the edge names a constructor, method
+  signature, public API, persisted field, output value, or error/result pair,
+  preserve that exact contract text in either `acceptance` or
+  `acceptance_examples.expected`. Do not replace edge acceptance with only
+  source structure such as "field exists" or "function is called".
+
   Coupled-item merge rule:
   You may keep naturally related source, consumer, fixture, test, generated, and
   validation work in one checklist item. Combining implementation work does not
@@ -195,9 +218,11 @@ prompt: |
   every path listed under `coupled edit paths`. `consumer/defaulting path` and
   `fixture/schema tier` are evidence and validation context unless the route
   behavior explicitly says to edit them or the same path is listed under
-  `coupled edit paths`. Entries under `Unresolved until evidence` are not
-  checklist items during initial implementation; do not create pending or
-  blocked items for them unless a final verdict explicitly requests that repair.
+  `coupled edit paths`, or the route `contract edges` line shows that the
+  consumer/defaulting path is part of the same editable producer/carrier/
+  consumer edge. Entries under `Unresolved until evidence` are not checklist
+  items during initial implementation; do not create pending or blocked items
+  for them unless a final verdict explicitly requests that repair.
 
   Coupled edit file-scope rule:
   If a patch-route bullet lists `coupled edit paths`, copy every concrete path
@@ -213,6 +238,9 @@ prompt: |
   the patch plan into the item `acceptance` array when present. If no
   `acceptance requirements` line is present, derive acceptance from the route
   behavior without deleting distinct behavior variants.
+  If the patch plan names `contract edges`, copy each edge into
+  `contract_edges` and include each edge as an acceptance entry on the same
+  item.
   For every pending implementation item, copy `acceptance check` from the patch
   plan into `acceptance_check` when it is not `none`. Copy `validation` into
   `validation_command` only when it is not empty. If `validation` is `none`,
@@ -265,13 +293,13 @@ prompt: |
     `allowed_files`, `forbidden_files`, and `status`
   - if the patch plan names `producer_command`, `generated_files`,
     `coupled edit paths`, `acceptance_check`, `validation`, `validation after`,
-    or report-preservation fields, copy those fields into the item exactly; do
-    not summarize them only in prose. If the patch plan names
+    `contract edges`, or report-preservation fields, copy those fields into
+    the item exactly; do not summarize them only in prose. If the patch plan names
     `acceptance requirements`, copy each requirement into the item `acceptance`
     array as a separate entry.
   - `acceptance`, `allowed_files`, `forbidden_files`, `generated_files`,
-    `coupled_edit_paths`, `report_changed_files`, and `acceptance_examples` are
-    JSON arrays, not strings
+    `coupled_edit_paths`, `contract_edges`, `report_changed_files`, and
+    `acceptance_examples` are JSON arrays, not strings
   - each `acceptance_examples` entry is an object with exactly `id`,
     `condition`, `observable`, `expected`, `proof_requirement`, and
     `coverage_gap`

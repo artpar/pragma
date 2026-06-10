@@ -147,6 +147,16 @@ prompt: |
   reaches an output/state/side effect. If behavior proof is missing, write
   Decision: BLOCK and require proof for the missing acceptance entry.
 
+  Contract-edge review rule:
+  If current_item has a non-empty `contract_edges` array, approval requires the
+  implementer report or exact focused validation to show each named producer ->
+  carrier -> consumer edge is satisfied for this item. Source presence, field
+  declarations, method declarations, nearby wiring, or prose such as "wired" is
+  not enough for a value-flow edge. Do not invent requirements outside the
+  current_item; review only the listed contract_edges and the current item's
+  acceptance. If any listed edge is not proven, write Decision: BLOCK and name
+  the missing edge in Required repair.
+
   Acceptance examples review rule:
   If current_item has `acceptance_examples`, approval requires the implementer
   report to account for every example id. Each example's condition, observable,

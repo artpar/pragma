@@ -95,6 +95,27 @@ prompt: |
   every route whose `producer command:` is `none`, unless a visible completed
   item already proves that producer route is done.
 
+  Contract-edge preservation rule:
+  When the task or evidence names an API, constructor, data carrier, generated
+  symbol, persisted field, state value, or output value that must be produced
+  and later consumed, keep that producer/carrier/consumer relationship on one
+  patch-route bullet. Do not reduce the route to independent field or method
+  declarations when the evidenced behavior depends on value flow across those
+  surfaces. The `contract edges` line must name the concrete edge in order,
+  using repository terms from the artifacts, for example:
+  `NewFile version argument -> File.version -> File.Stat FileInfo -> FileInfo.Etag`.
+  If the task names a required signature or constructor compatibility contract,
+  include that exact signature/contract in `acceptance requirements`; do not
+  leave it only in source checks or prose.
+
+  Contract-edge split rule:
+  Split a producer/carrier/consumer edge into separate patch-route bullets only
+  when the artifacts explicitly show that each bullet can be implemented and
+  validated without mutating or invalidating the others. If split bullets still
+  depend on one another, each dependent bullet must copy the same `contract
+  edges` line and list the other required paths under `coupled edit paths` or
+  `consumer/defaulting path` as appropriate.
+
   Behavior acceptance preservation rule:
   Patch routes must not delete or summarize away distinct behavior obligations.
   When evidence names multiple required
@@ -135,10 +156,11 @@ prompt: |
   editing repository files`.
 
   Work method:
-  1. For each evidenced semantic surface, write one source-owned patch route
-     from the artifact text already read. Include `coupled edit paths` only when
-     the artifact text explicitly says those repository files must be edited for
-     the route.
+  1. For each evidenced semantic surface or contract edge, write one
+     source-owned patch route from the artifact text already read. Include
+     `coupled edit paths` when the artifact text says those repository files
+     must be edited for the route, or when they are part of the same
+     producer/carrier/consumer contract edge.
   2. Put non-evidenced product behavior in unresolved with proof required.
   3. Write the `patch_plan` output artifact.
   4. Stop.
@@ -153,6 +175,7 @@ prompt: |
     coupled edit paths: <comma-separated paths or none>
     consumer/defaulting path: <path>
     fixture/schema tier: <path or none>
+    contract edges: <producer -> carrier -> consumer edge, or none>
     acceptance requirements: <semicolon-separated observable behavior requirements>
     acceptance check: <source-local or item-local command, or none>
     source checks: <source-local checks from evidence map or none>
