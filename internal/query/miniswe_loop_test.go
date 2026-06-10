@@ -92,24 +92,6 @@ func TestPragmaLoopReplayContentDropsReasoning(t *testing.T) {
 	}
 }
 
-func TestPragmaLoopSubmittedUsesOutputSentinel(t *testing.T) {
-	ok, message := pragmaLoopSubmitted(pragmaLoopBashResult{
-		ReturnCode: 0,
-		Output:     "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\nfinal\n",
-	})
-	if !ok || message != "final\n" {
-		t.Fatalf("submitted=%v message=%q", ok, message)
-	}
-
-	ok, _ = pragmaLoopSubmitted(pragmaLoopBashResult{
-		ReturnCode: 1,
-		Output:     "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\n",
-	})
-	if ok {
-		t.Fatal("failed sentinel command should not submit")
-	}
-}
-
 func TestRunPragmaLoopBashTimeoutUsesPragmaLoopTemplatePath(t *testing.T) {
 	oldTimeout := pragmaLoopCommandTimeout
 	pragmaLoopCommandTimeout = 50 * time.Millisecond

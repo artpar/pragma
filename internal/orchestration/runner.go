@@ -262,7 +262,8 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 
 	var text strings.Builder
 	start := time.Now()
-	for ev := range engine.RunPragmaLoopWithSystem(ctx, system, prompt) {
+	completionCheck := requiredOutputArtifactCompletionCheck(state, artifactRoot)
+	for ev := range engine.RunPragmaLoopWithSystemCompletionCheck(ctx, system, prompt, completionCheck) {
 		switch e := ev.(type) {
 		case query.TextEvent:
 			text.WriteString(e.Text)
@@ -466,6 +467,26 @@ func requiredOutputArtifacts(outputs []Artifact) []Artifact {
 		}
 	}
 	return required
+}
+
+func requiredOutputArtifactCompletionCheck(state State, artifactRoot string) query.PragmaLoopCompletionCheck {
+	required := requiredOutputArtifacts(state.Artifacts.Outputs)
+	if len(required) == 0 {
+		return nil
+	}
+	return func() (bool, string, error) {
+		var missing []string
+		for _, artifact := range required {
+			path := resolveArtifactPath(artifact.Path, artifactRoot)
+			if _, err := os.Stat(path); err != nil {
+				missing = append(missing, fmt.Sprintf("- `%s`: `%s` (%v)", artifact.ID, path, err))
+			}
+		}
+		if len(missing) == 0 {
+			return true, "", nil
+		}
+		return false, fmt.Sprintf("Completion was rejected because required output artifact(s) are missing:\n%s\n\nRun another fenced bash block that creates or verifies the missing artifact(s), then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again.", strings.Join(missing, "\n")), nil
+	}
 }
 
 func RenderNextForEachContract(def Definition, state State) string {

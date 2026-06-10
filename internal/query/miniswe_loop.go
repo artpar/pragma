@@ -78,13 +78,23 @@ const pragmaLoopRunningOutputLines = 100
 func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	snap := e.store.Snapshot()
 	system := pragmaLoopSystemFromExisting(snap.Conversation.System)
-	e.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), ch)
+	e.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), nil, ch)
 }
 
 // RunPragmaLoopWithSystem runs the shell-action loop with an explicit system
 // prompt and first user message. It is used by orchestration states that need
 // persona instructions to have system-message priority.
 func (e *Engine) RunPragmaLoopWithSystem(ctx context.Context, system model.SystemPrompt, userMessage string) <-chan LoopEvent {
+	return e.RunPragmaLoopWithSystemCompletionCheck(ctx, system, userMessage, nil)
+}
+
+// PragmaLoopCompletionCheck can reject a submitted bash turn and keep the same
+// loop running with a corrective user observation.
+type PragmaLoopCompletionCheck func() (bool, string, error)
+
+// RunPragmaLoopWithSystemCompletionCheck runs the shell-action loop with an
+// optional completion check after a command emits the completion sentinel.
+func (e *Engine) RunPragmaLoopWithSystemCompletionCheck(ctx context.Context, system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck) <-chan LoopEvent {
 	ch := make(chan LoopEvent, 16)
 	go func() {
 		defer close(ch)
@@ -94,12 +104,12 @@ func (e *Engine) RunPragmaLoopWithSystem(ctx context.Context, system model.Syste
 			}
 		}()
 		startIndex := len(e.store.Snapshot().Conversation.Messages)
-		e.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, ch, startIndex)
+		e.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch, startIndex)
 	}()
 	return ch
 }
 
-func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, ch chan<- LoopEvent, messageStartIndexes ...int) {
+func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck, ch chan<- LoopEvent, messageStartIndexes ...int) {
 	defer func() {
 		e.runStopHook(ch)
 	}()
@@ -172,7 +182,7 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			}
 			assistantText = responseText(response)
 			command, actionCount = extractPragmaLoopCommand(assistantText)
-			if actionCount != 0 || strings.Contains(assistantText, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT") {
+			if actionCount != 0 {
 				break
 			}
 			if e.config.RequireStructuredOutput {
@@ -180,7 +190,7 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 				return
 			}
 			if noActionRetries >= maxNoActionRetries {
-				ch <- ErrorEvent{Err: fmt.Errorf("model returned no bash action and no completion sentinel after %d retries", maxNoActionRetries)}
+				ch <- ErrorEvent{Err: fmt.Errorf("model returned no bash action after %d retries", maxNoActionRetries)}
 				return
 			}
 		}
@@ -223,6 +233,23 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			continue
 		}
 		if submitted, _ := pragmaLoopSubmitted(result); submitted {
+			if completionCheck != nil {
+				ok, message, err := completionCheck()
+				if err != nil {
+					ch <- ErrorEvent{Err: err}
+					return
+				}
+				if !ok {
+					if strings.TrimSpace(message) == "" {
+						message = "Completion was rejected because required output artifacts are missing. Create the missing artifacts and echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
+					}
+					if err := e.appendPragmaLoopUserMessage(message); err != nil {
+						ch <- ErrorEvent{Err: err}
+						return
+					}
+					continue
+				}
+			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
 			return
 		}
