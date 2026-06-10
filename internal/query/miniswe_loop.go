@@ -591,19 +591,9 @@ Please try another command and make sure to avoid those requiring interactive in
 }
 
 func pragmaLoopSubmitted(result pragmaLoopBashResult) (bool, string) {
-	lines := strings.SplitAfter(strings.TrimLeft(result.Output, "\r\n\t "), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) == "" {
-		return false, ""
-	}
-	first := strings.TrimSpace(lines[0])
-	if first != "MINI_SWE_AGENT_FINAL_OUTPUT" && first != "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" {
-		return false, ""
-	}
 	if result.ReturnCode != 0 {
 		return false, ""
 	}
-	if len(lines) == 1 {
-		return true, ""
-	}
-	return true, strings.Join(lines[1:], "")
+	return strings.Contains(result.Output, "MINI_SWE_AGENT_FINAL_OUTPUT") ||
+		strings.Contains(result.Output, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"), ""
 }

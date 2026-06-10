@@ -271,6 +271,9 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	}}}
 
 	var b strings.Builder
+	if cwd, err := os.Getwd(); err == nil && strings.TrimSpace(cwd) != "" {
+		fmt.Fprintf(&b, "## Session Context\n\nCurrent working directory: `%s`\n\n", cwd)
+	}
 	if strings.TrimSpace(taskPrompt) != "" && state.TaskPrompt != TaskPromptNone {
 		fmt.Fprintf(&b, "## Task\n\n%s\n", taskPrompt)
 	} else {
