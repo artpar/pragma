@@ -37,12 +37,15 @@ type WorktreeSession struct {
 }
 
 type OrchestrationArtifact struct {
-	StateID   string    `json:"state_id,omitempty"`
-	Event     string    `json:"event,omitempty"`
-	Path      string    `json:"path"`
-	Direction string    `json:"direction,omitempty"`
-	Root      string    `json:"root,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
+	StateID    string    `json:"state_id,omitempty"`
+	From       string    `json:"from,omitempty"`
+	Event      string    `json:"event,omitempty"`
+	To         string    `json:"to,omitempty"`
+	ArtifactID string    `json:"artifact_id,omitempty"`
+	Path       string    `json:"path"`
+	Direction  string    `json:"direction,omitempty"`
+	Root       string    `json:"root,omitempty"`
+	CreatedAt  time.Time `json:"created_at,omitempty"`
 }
 
 // AppState is the full application state.

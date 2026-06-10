@@ -86,6 +86,9 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 
 	taskPrompt := opts.TaskPrompt
 	stateEngines := make(map[string]*query.Engine)
+	var transitionHandoff []Artifact
+	var transitionFrom string
+	var transitionEvent string
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
@@ -101,16 +104,25 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 			stateTaskPrompt = taskPrompt
 			taskPrompt = ""
 		}
-		event, _, err := RunNodeEvents(ctx, ch, stateEngine, projection, opts.PersonaDir, def, state, stateTaskPrompt, "", artifactRoot)
+		event, _, err := runNodeEvents(ctx, ch, stateEngine, projection, opts.PersonaDir, def, state, stateTaskPrompt, "", transitionHandoff, transitionFrom, transitionEvent, artifactRoot)
 		if err != nil {
 			ch <- query.ErrorEvent{Err: err}
+			return
+		}
+		transition, ok := runtime.TransitionFor(stateID, event)
+		if !ok {
+			ch <- query.ErrorEvent{Err: fmt.Errorf("transition %q from %q: no unique transition", event, stateID)}
 			return
 		}
 		if err := runtime.FSM.Event(ctx, event); err != nil {
 			ch <- query.ErrorEvent{Err: fmt.Errorf("transition %q from %q: %w", event, stateID, err)}
 			return
 		}
-		emitOrchestration(ch, bus, projection, query.OrchestrationTransitionEvent{From: stateID, Event: event, To: runtime.FSM.Current()})
+		nextStateID := runtime.FSM.Current()
+		emitOrchestration(ch, bus, projection, query.OrchestrationTransitionEvent{From: stateID, Event: event, To: nextStateID})
+		transitionHandoff = append([]Artifact(nil), transition.Handoff...)
+		transitionFrom = stateID
+		transitionEvent = event
 	}
 
 	emitOrchestration(ch, bus, projection, query.OrchestrationCompletedEvent{Name: def.Name})
@@ -173,6 +185,11 @@ func orchestrationDirs(def Definition, artifactRoot string) []string {
 			addPath(control.Path)
 		}
 	}
+	for _, transition := range def.Transitions {
+		for _, artifact := range transition.Handoff {
+			addPath(artifact.Path)
+		}
+	}
 	out := make([]string, 0, len(dirs))
 	for dir := range dirs {
 		out = append(out, dir)
@@ -182,6 +199,10 @@ func orchestrationDirs(def Definition, artifactRoot string) []string {
 }
 
 func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, string, error) {
+	return runNodeEvents(ctx, ch, engine, projection, personaDir, def, state, taskPrompt, handoffPrompt, nil, "", "", artifactRoots...)
+}
+
+func runNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, transitionHandoff []Artifact, transitionFrom string, transitionEvent string, artifactRoots ...string) (string, string, error) {
 	artifactRoot := DefaultArtifactRoot
 	if len(artifactRoots) > 0 {
 		artifactRoot = artifactRoots[0]
@@ -212,6 +233,24 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 		return "", "", err
 	}
 	emitOrchestration(ch, bus, projection, query.OrchestrationStateStartedEvent{StateID: state.ID, PersonaID: personaDef.ID})
+	transitionHandoffPrompt, readEvents, err := RenderTransitionHandoff(state, transitionHandoff, artifactRoot, true)
+	if err != nil {
+		return "", "", err
+	}
+	for _, read := range readEvents {
+		emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
+			StateID:    state.ID,
+			From:       transitionFrom,
+			Event:      transitionEvent,
+			To:         state.ID,
+			ArtifactID: read.ArtifactID,
+			Path:       read.Path,
+			Direction:  "read",
+		})
+	}
+	if strings.TrimSpace(transitionHandoffPrompt) != "" {
+		handoffPrompt = transitionHandoffPrompt
+	}
 
 	_, err = RunStateEvents(ctx, ch, engine, projection, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
 	if err != nil {
@@ -323,13 +362,7 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	if strings.TrimSpace(taskPrompt) != "" && state.TaskPrompt != TaskPromptNone {
 		fmt.Fprintf(&b, "## Task\n\n%s\n", taskPrompt)
 	} else {
-		handoff, err := RenderArtifactHandoff(state, artifactRoot, strict)
-		if err != nil {
-			return system, "", err
-		}
-		if strings.TrimSpace(handoff) != "" {
-			fmt.Fprintf(&b, "## Handoff From Previous Phase\n\n%s\n\n", strings.TrimSpace(handoff))
-		} else if strings.TrimSpace(handoffPrompt) != "" && !strict {
+		if strings.TrimSpace(handoffPrompt) != "" {
 			fmt.Fprintf(&b, "## Handoff From Previous Phase\n\n%s\n\n", strings.TrimSpace(handoffPrompt))
 		}
 	}
@@ -349,24 +382,30 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	return system, b.String(), nil
 }
 
-func RenderArtifactHandoff(state State, artifactRoot string, strict bool) (string, error) {
-	artifacts := state.Artifacts
-	if len(artifacts.Inputs) == 0 {
-		return "", nil
+type HandoffRead struct {
+	ArtifactID string
+	Path       string
+}
+
+func RenderTransitionHandoff(state State, artifacts []Artifact, artifactRoot string, strict bool) (string, []HandoffRead, error) {
+	if len(artifacts) == 0 {
+		return "", nil, nil
 	}
 	var b strings.Builder
-	for _, artifact := range artifacts.Inputs {
+	reads := make([]HandoffRead, 0, len(artifacts))
+	for _, artifact := range artifacts {
 		path := resolveArtifactPath(artifact.Path, artifactRoot)
 		content, err := os.ReadFile(path)
 		if err != nil {
-			if artifact.Required && strict {
-				return "", fmt.Errorf("read required input artifact %q at %q: %w", artifact.ID, path, err)
+			if strict && (artifact.Required || !os.IsNotExist(err)) {
+				return "", nil, fmt.Errorf("read transition handoff artifact %q at %q: %w", artifact.ID, path, err)
 			}
 			if artifact.Required || !os.IsNotExist(err) {
 				fmt.Fprintf(&b, "### `%s` (%s)\nUnavailable: %v\n\n", artifact.ID, artifactRequirement(artifact), err)
 			}
 			continue
 		}
+		reads = append(reads, HandoffRead{ArtifactID: artifact.ID, Path: path})
 		fmt.Fprintf(&b, "### `%s` (%s)\n", artifact.ID, artifactRequirement(artifact))
 		if artifact.Description != "" {
 			fmt.Fprintf(&b, "Description: %s\n", artifact.Description)
@@ -378,7 +417,7 @@ func RenderArtifactHandoff(state State, artifactRoot string, strict bool) (strin
 			b.WriteString(renderSourceEditTransport())
 		}
 	}
-	return strings.TrimSpace(b.String()), nil
+	return strings.TrimSpace(b.String()), reads, nil
 }
 
 func renderSourceEditTransport() string {
@@ -652,7 +691,10 @@ func emitQueryObserve(ch chan<- query.LoopEvent, bus *observe.EventBus, ev query
 		bus.Emit(observe.OrchestrationHandoff{
 			EventHeader: observe.NewEventHeader("OrchestrationHandoff", "", "", ""),
 			StateID:     e.StateID,
+			From:        e.From,
 			Event:       e.Event,
+			To:          e.To,
+			ArtifactID:  e.ArtifactID,
 			Path:        e.Path,
 			Direction:   e.Direction,
 		})

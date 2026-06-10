@@ -710,10 +710,13 @@ func (OrchestrationTransition) eventSealed() {}
 
 type OrchestrationHandoff struct {
 	EventHeader
-	StateID   string `json:"state_id"`
-	Event     string `json:"event"`
-	Path      string `json:"path"`
-	Direction string `json:"direction"`
+	StateID    string `json:"state_id"`
+	From       string `json:"from,omitempty"`
+	Event      string `json:"event"`
+	To         string `json:"to,omitempty"`
+	ArtifactID string `json:"artifact_id,omitempty"`
+	Path       string `json:"path"`
+	Direction  string `json:"direction"`
 }
 
 func (OrchestrationHandoff) eventSealed() {}

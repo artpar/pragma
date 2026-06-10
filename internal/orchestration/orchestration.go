@@ -93,9 +93,10 @@ type Event struct {
 }
 
 type Transition struct {
-	Event string   `yaml:"event"`
-	From  []string `yaml:"from"`
-	To    string   `yaml:"to"`
+	Event   string     `yaml:"event"`
+	From    []string   `yaml:"from"`
+	To      string     `yaml:"to"`
+	Handoff []Artifact `yaml:"handoff,omitempty"`
 }
 
 type Definition struct {
@@ -106,9 +107,15 @@ type Definition struct {
 }
 
 type Runtime struct {
-	Definition Definition
-	States     map[string]State
-	FSM        *fsm.FSM
+	Definition  Definition
+	States      map[string]State
+	Transitions map[TransitionKey]Transition
+	FSM         *fsm.FSM
+}
+
+type TransitionKey struct {
+	From  string
+	Event string
 }
 
 type Checklist struct {
@@ -194,7 +201,7 @@ func (i ChecklistItem) MarshalJSON() ([]byte, error) {
 }
 
 func NewRuntime(def Definition) (*Runtime, error) {
-	states, err := validate(def)
+	states, transitions, err := validate(def)
 	if err != nil {
 		return nil, err
 	}
@@ -209,10 +216,19 @@ func NewRuntime(def Definition) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		Definition: def,
-		States:     states,
-		FSM:        fsm.NewFSM(def.Initial, events, nil),
+		Definition:  def,
+		States:      states,
+		Transitions: transitions,
+		FSM:         fsm.NewFSM(def.Initial, events, nil),
 	}, nil
+}
+
+func (r *Runtime) TransitionFor(from string, event string) (Transition, bool) {
+	if r == nil {
+		return Transition{}, false
+	}
+	tr, ok := r.Transitions[TransitionKey{From: from, Event: event}]
+	return tr, ok
 }
 
 func LoadDefinitionFile(path string) (Definition, error) {
@@ -224,87 +240,86 @@ func LoadDefinitionFile(path string) (Definition, error) {
 	if err := yaml.Unmarshal(raw, &def); err != nil {
 		return Definition{}, fmt.Errorf("parse orchestration definition %q: %w", path, err)
 	}
-	if _, err := validate(def); err != nil {
+	if _, _, err := validate(def); err != nil {
 		return Definition{}, err
 	}
 	return def, nil
 }
 
-func validate(def Definition) (map[string]State, error) {
+func validate(def Definition) (map[string]State, map[TransitionKey]Transition, error) {
 	if def.Name == "" {
-		return nil, fmt.Errorf("orchestration definition requires a name")
+		return nil, nil, fmt.Errorf("orchestration definition requires a name")
 	}
 	if def.Initial == "" {
-		return nil, fmt.Errorf("orchestration %q requires an initial state", def.Name)
+		return nil, nil, fmt.Errorf("orchestration %q requires an initial state", def.Name)
 	}
 
 	states := make(map[string]State, len(def.States))
 	for _, state := range def.States {
 		if state.ID == "" {
-			return nil, fmt.Errorf("orchestration %q has a state with empty id", def.Name)
+			return nil, nil, fmt.Errorf("orchestration %q has a state with empty id", def.Name)
 		}
 		if _, exists := states[state.ID]; exists {
-			return nil, fmt.Errorf("orchestration %q has duplicate state %q", def.Name, state.ID)
+			return nil, nil, fmt.Errorf("orchestration %q has duplicate state %q", def.Name, state.ID)
 		}
 		states[state.ID] = state
 	}
 
 	if _, ok := states[def.Initial]; !ok {
-		return nil, fmt.Errorf("orchestration %q initial state %q is not defined", def.Name, def.Initial)
+		return nil, nil, fmt.Errorf("orchestration %q initial state %q is not defined", def.Name, def.Initial)
 	}
 
+	transitions := make(map[TransitionKey]Transition)
 	for _, tr := range def.Transitions {
 		if tr.Event == "" {
-			return nil, fmt.Errorf("orchestration %q has a transition with empty event", def.Name)
+			return nil, nil, fmt.Errorf("orchestration %q has a transition with empty event", def.Name)
 		}
 		if len(tr.From) == 0 {
-			return nil, fmt.Errorf("orchestration %q transition %q has no source states", def.Name, tr.Event)
+			return nil, nil, fmt.Errorf("orchestration %q transition %q has no source states", def.Name, tr.Event)
 		}
 		if _, ok := states[tr.To]; !ok {
-			return nil, fmt.Errorf("orchestration %q transition %q targets unknown state %q", def.Name, tr.Event, tr.To)
+			return nil, nil, fmt.Errorf("orchestration %q transition %q targets unknown state %q", def.Name, tr.Event, tr.To)
+		}
+		if err := validateArtifactList(def.Name, fmt.Sprintf("transition %s to %s", tr.Event, tr.To), tr.Handoff); err != nil {
+			return nil, nil, err
 		}
 		for _, from := range tr.From {
 			state, ok := states[from]
 			if !ok {
-				return nil, fmt.Errorf("orchestration %q transition %q references unknown source state %q", def.Name, tr.Event, from)
+				return nil, nil, fmt.Errorf("orchestration %q transition %q references unknown source state %q", def.Name, tr.Event, from)
 			}
 			if state.Terminal {
-				return nil, fmt.Errorf("orchestration %q terminal state %q cannot be a transition source", def.Name, from)
+				return nil, nil, fmt.Errorf("orchestration %q terminal state %q cannot be a transition source", def.Name, from)
 			}
-		}
-	}
-
-	transitionsByStateEvent := make(map[string]map[string]bool)
-	for _, tr := range def.Transitions {
-		for _, from := range tr.From {
-			if _, ok := transitionsByStateEvent[from]; !ok {
-				transitionsByStateEvent[from] = make(map[string]bool)
+			key := TransitionKey{From: from, Event: tr.Event}
+			if _, exists := transitions[key]; exists {
+				return nil, nil, fmt.Errorf("orchestration %q has duplicate transition for state %q event %q", def.Name, from, tr.Event)
 			}
-			transitionsByStateEvent[from][tr.Event] = true
+			transitions[key] = tr
 		}
 	}
 
 	for _, state := range states {
 		if state.Terminal {
 			if !state.Control.IsZero() {
-				return nil, fmt.Errorf("orchestration %q terminal state %q cannot have control", def.Name, state.ID)
+				return nil, nil, fmt.Errorf("orchestration %q terminal state %q cannot have control", def.Name, state.ID)
 			}
 			continue
 		}
 		if err := validateStateExecution(def.Name, state); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := validateArtifacts(def.Name, state.ID, state.Artifacts); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, event := range emittedEvents(state) {
-			if !transitionsByStateEvent[state.ID][event] {
-				return nil, fmt.Errorf("orchestration %q state %q can emit event %q but has no matching transition", def.Name, state.ID, event)
+			if _, ok := transitions[TransitionKey{From: state.ID, Event: event}]; !ok {
+				return nil, nil, fmt.Errorf("orchestration %q state %q can emit event %q but has no matching transition", def.Name, state.ID, event)
 			}
 		}
 	}
 
-	return states, nil
+	return states, transitions, nil
 }
 
 func validateStateExecution(defName string, state State) error {
@@ -354,16 +369,20 @@ func validateStateExecution(defName string, state State) error {
 }
 
 func validateArtifacts(defName, stateID string, artifacts Artifacts) error {
-	for _, artifact := range append(append([]Artifact(nil), artifacts.Inputs...), artifacts.Outputs...) {
+	return validateArtifactList(defName, "state "+stateID, append(append([]Artifact(nil), artifacts.Inputs...), artifacts.Outputs...))
+}
+
+func validateArtifactList(defName, owner string, artifacts []Artifact) error {
+	for _, artifact := range artifacts {
 		if artifact.ID == "" {
-			return fmt.Errorf("orchestration %q state %q artifact requires id", defName, stateID)
+			return fmt.Errorf("orchestration %q %s artifact requires id", defName, owner)
 		}
 		if artifact.Path == "" {
-			return fmt.Errorf("orchestration %q state %q artifact %q requires path", defName, stateID, artifact.ID)
+			return fmt.Errorf("orchestration %q %s artifact %q requires path", defName, owner, artifact.ID)
 		}
 		for _, value := range artifact.AllowedValues {
 			if strings.TrimSpace(value) == "" {
-				return fmt.Errorf("orchestration %q state %q artifact %q has empty allowed value", defName, stateID, artifact.ID)
+				return fmt.Errorf("orchestration %q %s artifact %q has empty allowed value", defName, owner, artifact.ID)
 			}
 		}
 	}

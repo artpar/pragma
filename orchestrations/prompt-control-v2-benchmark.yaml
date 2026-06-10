@@ -14,11 +14,6 @@ states:
     persona: evidence_collector
     task_prompt: none
     artifacts:
-      inputs:
-        - id: surface_map
-          path: /tmp/pragma/surface-map.md
-          required: true
-          description: Surface map from the first narrowing phase.
       outputs:
         - id: repo_evidence
           path: /tmp/pragma/repo-evidence.md
@@ -29,15 +24,6 @@ states:
     persona: evidence_mapper
     task_prompt: none
     artifacts:
-      inputs:
-        - id: surface_map
-          path: /tmp/pragma/surface-map.md
-          required: true
-          description: Surface map from the first narrowing phase.
-        - id: repo_evidence
-          path: /tmp/pragma/repo-evidence.md
-          required: true
-          description: Direct repository facts collected from mapped surfaces.
       outputs:
         - id: evidence_map
           path: /tmp/pragma/evidence-map.md
@@ -48,24 +34,6 @@ states:
     persona: patch_planner
     task_prompt: none
     artifacts:
-      inputs:
-        - id: surface_map
-          path: /tmp/pragma/surface-map.md
-          required: true
-          description: Surface map from the first narrowing phase.
-        - id: evidence_map
-          path: /tmp/pragma/evidence-map.md
-          required: true
-          description: Evidence map used as the route authority.
-        - id: final_verdict
-          path: /tmp/pragma/final-prosecutor-verdict.md
-          description: Final reviewer blocker, when a final repair pass is active.
-        - id: item_verdict
-          path: /tmp/pragma/item-verdict.md
-          description: Current item reviewer blocker, when no final verdict exists.
-        - id: item_block_classification
-          path: /tmp/pragma/item-block-classification.json
-          description: Classified item-block ambiguity or repair direction, when an item block has been routed.
       outputs:
         - id: patch_plan
           path: /tmp/pragma/patch-plan.md
@@ -76,23 +44,6 @@ states:
     persona: checklist_writer
     task_prompt: none
     artifacts:
-      inputs:
-        - id: checklist
-          path: /tmp/pragma/checklist.json
-          description: Existing checklist, when this is a later checklist_writer visit.
-        - id: patch_plan
-          path: /tmp/pragma/patch-plan.md
-          required: true
-          description: Patch route to convert into checklist items.
-        - id: final_verdict
-          path: /tmp/pragma/final-prosecutor-verdict.md
-          description: Final reviewer blocker, when a final repair pass is active.
-        - id: item_verdict
-          path: /tmp/pragma/item-verdict.md
-          description: Current item reviewer blocker, when no final verdict exists.
-        - id: item_block_classification
-          path: /tmp/pragma/item-block-classification.json
-          description: Classified item-block ambiguity or repair direction, when checklist repair is active.
       outputs:
         - id: checklist
           path: /tmp/pragma/checklist.json
@@ -114,15 +65,6 @@ states:
     persona: item_worker
     task_prompt: none
     artifacts:
-      inputs:
-        - id: current_item
-          path: /tmp/pragma/current-item.json
-          required: true
-          description: Current checklist item selected by the item loop.
-        - id: current_item_handoff
-          path: /tmp/pragma/handoff-prompts/next_item/current-item.md
-          required: true
-          description: Immediate handoff written by the next_item control for the selected item.
       outputs:
         - id: implementer_report
           path: /tmp/pragma/implementer-report.md
@@ -136,15 +78,6 @@ states:
     persona: item_reviewer
     task_prompt: none
     artifacts:
-      inputs:
-        - id: current_item
-          path: /tmp/pragma/current-item.json
-          required: true
-          description: Current checklist item under review.
-        - id: implementer_report
-          path: /tmp/pragma/implementer-report.md
-          required: true
-          description: Worker report for the current item.
       outputs:
         - id: item_verdict
           path: /tmp/pragma/item-verdict.md
@@ -164,28 +97,6 @@ states:
     persona: item_block_router
     task_prompt: none
     artifacts:
-      inputs:
-        - id: current_item
-          path: /tmp/pragma/current-item.json
-          required: true
-          description: Current checklist item that was blocked.
-        - id: implementer_report
-          path: /tmp/pragma/implementer-report.md
-          required: true
-          description: Worker report that led to the block.
-        - id: item_verdict
-          path: /tmp/pragma/item-verdict.md
-          required: true
-          description: Reviewer blocker to classify.
-        - id: checklist
-          path: /tmp/pragma/checklist.json
-          description: Existing checklist containing the current item.
-        - id: patch_plan
-          path: /tmp/pragma/patch-plan.md
-          description: Current patch route, when available.
-        - id: evidence_map
-          path: /tmp/pragma/evidence-map.md
-          description: Evidence map, when available for source ownership classification.
       outputs:
         - id: item_block_classification
           path: /tmp/pragma/item-block-classification.json
@@ -217,11 +128,6 @@ states:
     persona: validation_runner
     task_prompt: none
     artifacts:
-      inputs:
-        - id: checklist
-          path: /tmp/pragma/checklist.json
-          required: true
-          description: Completed checklist to validate.
       outputs:
         - id: validation_status
           path: /tmp/pragma/validation-status.md
@@ -232,11 +138,6 @@ states:
     persona: final_reviewer
     task_prompt: none
     artifacts:
-      inputs:
-        - id: validation_status
-          path: /tmp/pragma/validation-status.md
-          required: true
-          description: Validation status from the validation runner.
       outputs:
         - id: final_verdict
           path: /tmp/pragma/final-prosecutor-verdict.md
@@ -259,27 +160,87 @@ transitions:
   - event: complete
     from: [surface_mapper]
     to: evidence_collector
+    handoff:
+      - id: surface_map
+        path: /tmp/pragma/surface-map.md
+        required: true
+        description: Surface map from the first narrowing phase.
   - event: complete
     from: [evidence_collector]
     to: behavior_evidence_mapper
+    handoff:
+      - id: surface_map
+        path: /tmp/pragma/surface-map.md
+        required: true
+        description: Surface map from the first narrowing phase.
+      - id: repo_evidence
+        path: /tmp/pragma/repo-evidence.md
+        required: true
+        description: Direct repository facts collected from mapped surfaces.
   - event: complete
     from: [behavior_evidence_mapper]
     to: patch_planner
+    handoff:
+      - id: surface_map
+        path: /tmp/pragma/surface-map.md
+        required: true
+        description: Surface map from the first narrowing phase.
+      - id: evidence_map
+        path: /tmp/pragma/evidence-map.md
+        required: true
+        description: Evidence map used as the route authority.
   - event: complete
     from: [patch_planner]
     to: checklist_writer
+    handoff:
+      - id: patch_plan
+        path: /tmp/pragma/patch-plan.md
+        required: true
+        description: Patch route to convert into checklist items.
+      - id: final_verdict
+        path: /tmp/pragma/final-prosecutor-verdict.md
+        description: Final reviewer blocker, when a final repair pass is active.
+      - id: item_verdict
+        path: /tmp/pragma/item-verdict.md
+        description: Current item reviewer blocker, when no final verdict exists.
+      - id: item_block_classification
+        path: /tmp/pragma/item-block-classification.json
+        description: Classified item-block ambiguity or repair direction, when an item block has been routed.
   - event: complete
     from: [checklist_writer]
     to: next_item
   - event: item_available
     from: [next_item]
     to: item_worker
+    handoff:
+      - id: current_item
+        path: /tmp/pragma/current-item.json
+        required: true
+        description: Current checklist item selected by the item loop.
+      - id: current_item_handoff
+        path: /tmp/pragma/handoff-prompts/next_item/current-item.md
+        required: true
+        description: Immediate handoff written by the next_item control for the selected item.
   - event: all_items_done
     from: [next_item]
     to: validation_runner
+    handoff:
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        required: true
+        description: Completed checklist to validate.
   - event: complete
     from: [item_worker]
     to: item_reviewer
+    handoff:
+      - id: current_item
+        path: /tmp/pragma/current-item.json
+        required: true
+        description: Current checklist item under review.
+      - id: implementer_report
+        path: /tmp/pragma/implementer-report.md
+        required: true
+        description: Worker report for the current item.
   - event: complete
     from: [item_reviewer]
     to: route_item_verdict
@@ -289,27 +250,137 @@ transitions:
   - event: item_block
     from: [route_item_verdict]
     to: item_block_router
+    handoff:
+      - id: current_item
+        path: /tmp/pragma/current-item.json
+        required: true
+        description: Current checklist item that was blocked.
+      - id: implementer_report
+        path: /tmp/pragma/implementer-report.md
+        required: true
+        description: Worker report that led to the block.
+      - id: item_verdict
+        path: /tmp/pragma/item-verdict.md
+        required: true
+        description: Reviewer blocker to classify.
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        description: Existing checklist containing the current item.
+      - id: patch_plan
+        path: /tmp/pragma/patch-plan.md
+        description: Current patch route, when available.
+      - id: evidence_map
+        path: /tmp/pragma/evidence-map.md
+        description: Evidence map, when available for source ownership classification.
   - event: complete
     from: [item_block_router]
     to: route_item_block_classification
   - event: repair_patch_plan
     from: [route_item_block_classification]
     to: patch_planner
+    handoff:
+      - id: surface_map
+        path: /tmp/pragma/surface-map.md
+        required: true
+        description: Surface map from the first narrowing phase.
+      - id: evidence_map
+        path: /tmp/pragma/evidence-map.md
+        required: true
+        description: Evidence map used as the route authority.
+      - id: item_verdict
+        path: /tmp/pragma/item-verdict.md
+        required: true
+        description: Current item reviewer blocker.
+      - id: item_block_classification
+        path: /tmp/pragma/item-block-classification.json
+        required: true
+        description: Classified item-block repair direction.
   - event: repair_checklist_scope
     from: [route_item_block_classification]
     to: checklist_writer
+    handoff:
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        description: Existing checklist to repair.
+      - id: patch_plan
+        path: /tmp/pragma/patch-plan.md
+        required: true
+        description: Patch route for checklist repair.
+      - id: current_item
+        path: /tmp/pragma/current-item.json
+        required: true
+        description: Current checklist item whose scope needs repair.
+      - id: item_verdict
+        path: /tmp/pragma/item-verdict.md
+        required: true
+        description: Current item reviewer blocker.
+      - id: item_block_classification
+        path: /tmp/pragma/item-block-classification.json
+        required: true
+        description: Classified checklist repair context.
   - event: redo_item_worker
     from: [route_item_block_classification]
     to: item_worker
+    handoff:
+      - id: current_item
+        path: /tmp/pragma/current-item.json
+        required: true
+        description: Current checklist item selected by the item loop.
+      - id: current_item_handoff
+        path: /tmp/pragma/handoff-prompts/next_item/current-item.md
+        required: true
+        description: Immediate handoff written by the next_item control for the selected item.
+      - id: implementer_report
+        path: /tmp/pragma/implementer-report.md
+        required: true
+        description: Previous worker report for the retry.
+      - id: item_verdict
+        path: /tmp/pragma/item-verdict.md
+        required: true
+        description: Reviewer blocker for the retry.
+      - id: item_block_classification
+        path: /tmp/pragma/item-block-classification.json
+        required: true
+        description: Classified retry direction for the worker.
   - event: unresolved_ambiguity
     from: [route_item_block_classification]
     to: patch_planner
+    handoff:
+      - id: surface_map
+        path: /tmp/pragma/surface-map.md
+        required: true
+        description: Surface map from the first narrowing phase.
+      - id: evidence_map
+        path: /tmp/pragma/evidence-map.md
+        required: true
+        description: Evidence map used as the route authority.
+      - id: item_verdict
+        path: /tmp/pragma/item-verdict.md
+        required: true
+        description: Current item reviewer blocker.
+      - id: item_block_classification
+        path: /tmp/pragma/item-block-classification.json
+        required: true
+        description: Unresolved ambiguity classification.
   - event: complete
     from: [mark_item_completed]
     to: checklist_writer
+    handoff:
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        description: Existing checklist after marking the current item complete.
+      - id: patch_plan
+        path: /tmp/pragma/patch-plan.md
+        required: true
+        description: Current patch route for remaining checklist work.
   - event: complete
     from: [validation_runner]
     to: final_reviewer
+    handoff:
+      - id: validation_status
+        path: /tmp/pragma/validation-status.md
+        required: true
+        description: Validation status from the validation runner.
   - event: complete
     from: [final_reviewer]
     to: route_final_verdict
@@ -319,3 +390,16 @@ transitions:
   - event: final_block
     from: [route_final_verdict]
     to: patch_planner
+    handoff:
+      - id: surface_map
+        path: /tmp/pragma/surface-map.md
+        required: true
+        description: Surface map from the first narrowing phase.
+      - id: evidence_map
+        path: /tmp/pragma/evidence-map.md
+        required: true
+        description: Evidence map used as the route authority.
+      - id: final_verdict
+        path: /tmp/pragma/final-prosecutor-verdict.md
+        required: true
+        description: Final reviewer blocker for the repair pass.

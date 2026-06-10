@@ -180,10 +180,13 @@ func (OrchestrationTransitionEvent) loopEventSealed() {}
 
 // OrchestrationHandoffEvent records a handoff prompt path read/write.
 type OrchestrationHandoffEvent struct {
-	StateID   string
-	Event     string
-	Path      string
-	Direction string
+	StateID    string
+	From       string
+	Event      string
+	To         string
+	ArtifactID string
+	Path       string
+	Direction  string
 }
 
 func (OrchestrationHandoffEvent) loopEventSealed() {}
@@ -230,10 +233,13 @@ type OrchestrationTransitionSnapshot struct {
 }
 
 type OrchestrationHandoffSnapshot struct {
-	StateID   string `json:"state_id"`
-	Event     string `json:"event"`
-	Path      string `json:"path"`
-	Direction string `json:"direction"`
+	StateID    string `json:"state_id"`
+	From       string `json:"from,omitempty"`
+	Event      string `json:"event"`
+	To         string `json:"to,omitempty"`
+	ArtifactID string `json:"artifact_id,omitempty"`
+	Path       string `json:"path"`
+	Direction  string `json:"direction"`
 }
 
 // AgentProgressEvent carries intermediate agent execution progress.

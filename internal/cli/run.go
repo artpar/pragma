@@ -483,12 +483,15 @@ func (rt *InteractiveRuntime) recordOrchestrationArtifact(root string, ev query.
 		return nil
 	}
 	artifact := app.OrchestrationArtifact{
-		StateID:   ev.StateID,
-		Event:     ev.Event,
-		Path:      filepath.Clean(ev.Path),
-		Direction: ev.Direction,
-		Root:      cleanNonEmptyPath(root),
-		CreatedAt: time.Now(),
+		StateID:    ev.StateID,
+		From:       ev.From,
+		Event:      ev.Event,
+		To:         ev.To,
+		ArtifactID: ev.ArtifactID,
+		Path:       filepath.Clean(ev.Path),
+		Direction:  ev.Direction,
+		Root:       cleanNonEmptyPath(root),
+		CreatedAt:  time.Now(),
 	}
 	rt.Deps.Store.Update(func(st *app.AppState) {
 		st.OrchestrationArtifacts = upsertOrchestrationArtifact(st.OrchestrationArtifacts, artifact)
@@ -503,7 +506,10 @@ func upsertOrchestrationArtifact(artifacts []app.OrchestrationArtifact, artifact
 	for i := range artifacts {
 		if artifacts[i].Path == artifact.Path &&
 			artifacts[i].StateID == artifact.StateID &&
+			artifacts[i].From == artifact.From &&
 			artifacts[i].Event == artifact.Event &&
+			artifacts[i].To == artifact.To &&
+			artifacts[i].ArtifactID == artifact.ArtifactID &&
 			artifacts[i].Direction == artifact.Direction {
 			artifacts[i] = artifact
 			return artifacts

@@ -56,7 +56,13 @@ func (p *Projection) Apply(ev query.LoopEvent, now time.Time) (query.Orchestrati
 	case query.OrchestrationHandoffEvent:
 		p.ensure()
 		p.snapshot.Handoffs = append(p.snapshot.Handoffs, query.OrchestrationHandoffSnapshot{
-			StateID: e.StateID, Event: e.Event, Path: e.Path, Direction: e.Direction,
+			StateID:    e.StateID,
+			From:       e.From,
+			Event:      e.Event,
+			To:         e.To,
+			ArtifactID: e.ArtifactID,
+			Path:       e.Path,
+			Direction:  e.Direction,
 		})
 	case query.OrchestrationCompletedEvent:
 		p.ensure()

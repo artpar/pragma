@@ -5,7 +5,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/artpar/pragma/internal/persona"
+	"github.com/artpar/pragma/internal/query"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestNewRuntimeUsesLooplabFSM(t *testing.T) {
@@ -140,6 +146,119 @@ func TestLoadPromptControlV2BenchmarkYAML(t *testing.T) {
 	}
 }
 
+func TestLoadEveryActiveOrchestrationYAML(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("..", "..", "orchestrations", "*.yaml"))
+	if err != nil {
+		t.Fatalf("glob orchestration definitions: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("expected active orchestration definitions")
+	}
+	for _, path := range paths {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			def, err := LoadDefinitionFile(path)
+			if err != nil {
+				t.Fatalf("LoadDefinitionFile: %v", err)
+			}
+			if _, err := NewRuntime(def); err != nil {
+				t.Fatalf("NewRuntime: %v", err)
+			}
+		})
+	}
+}
+
+func TestTransitionHandoffUnmarshalAndValidation(t *testing.T) {
+	var def Definition
+	raw := []byte(`
+name: handoff-test
+initial: first
+states:
+  - id: first
+  - id: second
+  - id: done
+    terminal: true
+transitions:
+  - event: complete
+    from: [first]
+    to: second
+    handoff:
+      - id: first_report
+        path: report.md
+        required: true
+        allowed_values: [APPROVE]
+  - event: complete
+    from: [second]
+    to: done
+`)
+	if err := yaml.Unmarshal(raw, &def); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	runtime, err := NewRuntime(def)
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	tr, ok := runtime.TransitionFor("first", EventComplete)
+	if !ok {
+		t.Fatal("expected transition lookup")
+	}
+	if len(tr.Handoff) != 1 || tr.Handoff[0].ID != "first_report" || !tr.Handoff[0].Required {
+		t.Fatalf("handoff = %#v", tr.Handoff)
+	}
+
+	def.Transitions[0].Handoff[0].AllowedValues = []string{" "}
+	if _, err := NewRuntime(def); err == nil {
+		t.Fatal("expected empty allowed transition handoff value to be rejected")
+	}
+}
+
+func TestNewRuntimeRejectsDuplicateTransitionKey(t *testing.T) {
+	_, err := NewRuntime(Definition{
+		Name:    "bad",
+		Initial: "source",
+		States: []State{
+			{ID: "source"},
+			{ID: "one"},
+			{ID: "two"},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"source"}, To: "one"},
+			{Event: EventComplete, From: []string{"source"}, To: "two"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate transition key to be rejected")
+	}
+}
+
+func TestTransitionLookupUsesSourceStateAndEvent(t *testing.T) {
+	runtime, err := NewRuntime(Definition{
+		Name:    "lookup",
+		Initial: "a",
+		States: []State{
+			{ID: "a", Event: Event{Default: "go"}},
+			{ID: "b", Event: Event{Default: "go"}},
+			{ID: "shared"},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: "go", From: []string{"a"}, To: "shared", Handoff: []Artifact{{ID: "from_a", Path: "a.md"}}},
+			{Event: "go", From: []string{"b"}, To: "shared", Handoff: []Artifact{{ID: "from_b", Path: "b.md"}}},
+			{Event: EventComplete, From: []string{"shared"}, To: "done"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	tr, ok := runtime.TransitionFor("a", "go")
+	if !ok || len(tr.Handoff) != 1 || tr.Handoff[0].ID != "from_a" {
+		t.Fatalf("lookup a/go = %#v, %v", tr, ok)
+	}
+	tr, ok = runtime.TransitionFor("b", "go")
+	if !ok || len(tr.Handoff) != 1 || tr.Handoff[0].ID != "from_b" {
+		t.Fatalf("lookup b/go = %#v, %v", tr, ok)
+	}
+}
+
 func TestNewRuntimeRejectsPersonaControlState(t *testing.T) {
 	_, err := NewRuntime(Definition{
 		Name:    "bad",
@@ -235,6 +354,143 @@ func TestNewRuntimeRejectsInvalidArtifacts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected artifact without path to be rejected")
 	}
+}
+
+func TestRequiredTransitionHandoffFailsBeforeModelCall(t *testing.T) {
+	dir := t.TempDir()
+	personaDir := filepath.Join(dir, "personas")
+	if err := os.MkdirAll(personaDir, 0o755); err != nil {
+		t.Fatalf("mkdir persona dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(personaDir, "worker.yaml"), []byte("id: worker\nprompt: Worker prompt\n"), 0o600); err != nil {
+		t.Fatalf("write persona: %v", err)
+	}
+	ch := make(chan query.LoopEvent, 8)
+	state := State{ID: "worker", Persona: "worker"}
+	_, _, err := runNodeEvents(context.Background(), ch, nil, NewProjection(), personaDir, Definition{Name: "test"}, state, "", "", []Artifact{
+		{ID: "missing", Path: "missing.md", Required: true},
+	}, "source", EventComplete, dir)
+	if err == nil {
+		t.Fatal("expected missing required handoff to fail")
+	}
+	if !strings.Contains(err.Error(), "read transition handoff artifact") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestOptionalTransitionHandoffMissingIsOmitted(t *testing.T) {
+	handoff, reads, err := RenderTransitionHandoff(State{ID: "worker"}, []Artifact{
+		{ID: "optional_context", Path: "does-not-exist.md"},
+	}, t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("RenderTransitionHandoff: %v", err)
+	}
+	if handoff != "" {
+		t.Fatalf("handoff = %q, want empty", handoff)
+	}
+	if len(reads) != 0 {
+		t.Fatalf("reads = %#v, want none", reads)
+	}
+}
+
+func TestPromptDoesNotRenderDestinationStateInputs(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "stale.md"), []byte("STALE_DESTINATION_INPUT"), 0o600); err != nil {
+		t.Fatalf("write stale artifact: %v", err)
+	}
+	_, prompt, err := BuildPromptWithArtifactRootChecked(
+		Definition{Name: "test"},
+		State{
+			ID: "worker",
+			Artifacts: Artifacts{Inputs: []Artifact{{
+				ID:       "stale",
+				Path:     "stale.md",
+				Required: true,
+			}}},
+		},
+		testPersona("worker"),
+		"",
+		"",
+		dir,
+	)
+	if err != nil {
+		t.Fatalf("BuildPromptWithArtifactRootChecked: %v", err)
+	}
+	if strings.Contains(prompt, "STALE_DESTINATION_INPUT") || strings.Contains(prompt, "## Handoff From Previous Phase") {
+		t.Fatalf("prompt rendered destination input handoff:\n%s", prompt)
+	}
+}
+
+func TestRequiredOutputCompletionCheckStillEnforcesOutputs(t *testing.T) {
+	dir := t.TempDir()
+	state := State{
+		ID: "worker",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:       "report",
+			Path:     "report.md",
+			Required: true,
+		}}},
+	}
+	check := requiredOutputArtifactCompletionCheck(state, dir)
+	if check == nil {
+		t.Fatal("expected completion check")
+	}
+	ok, guidance, err := check()
+	if err != nil {
+		t.Fatalf("completion check: %v", err)
+	}
+	if ok || !strings.Contains(guidance, "report.md") {
+		t.Fatalf("ok=%v guidance=%q, want missing report guidance", ok, guidance)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "report.md"), []byte("done"), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	ok, guidance, err = check()
+	if err != nil {
+		t.Fatalf("completion check after write: %v", err)
+	}
+	if !ok || guidance != "" {
+		t.Fatalf("ok=%v guidance=%q, want success", ok, guidance)
+	}
+}
+
+func TestPromptControlV2TransitionHandoffBranchPrompts(t *testing.T) {
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "prompt-control-v2-benchmark.yaml"))
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	def = relativizeDefinitionArtifactPaths(def)
+	runtime, err := NewRuntime(def)
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	dir := t.TempDir()
+	writeText(t, dir, "current-item.json", `{"id":"item-001","status":"pending"}`)
+	writeText(t, dir, "handoff-prompts/next_item/current-item.md", "CURRENT_ITEM_HANDOFF")
+	writeText(t, dir, "implementer-report.md", "IMPLEMENTER_REPORT")
+	writeText(t, dir, "item-verdict.md", "ITEM_VERDICT")
+	writeText(t, dir, "item-block-classification.json", `{"decision":"redo_item_worker","marker":"ITEM_BLOCK_CLASSIFICATION"}`)
+	writeText(t, dir, "checklist.json", `{"items":[{"id":"item-001","status":"completed"}]}`)
+	writeText(t, dir, "patch-plan.md", "PATCH_PLAN")
+
+	firstWorker := branchPrompt(t, runtime, "next_item", "item_available", "item_worker", dir)
+	requireContains(t, firstWorker, "current_item")
+	requireContains(t, firstWorker, "CURRENT_ITEM_HANDOFF")
+	requireNotContains(t, firstWorker, "ITEM_BLOCK_CLASSIFICATION")
+
+	retryWorker := branchPrompt(t, runtime, "route_item_block_classification", "redo_item_worker", "item_worker", dir)
+	requireContains(t, retryWorker, "ITEM_BLOCK_CLASSIFICATION")
+	requireContains(t, retryWorker, "ITEM_VERDICT")
+	requireContains(t, retryWorker, "IMPLEMENTER_REPORT")
+
+	normalChecklist := branchPrompt(t, runtime, "mark_item_completed", EventComplete, "checklist_writer", dir)
+	requireContains(t, normalChecklist, "PATCH_PLAN")
+	requireNotContains(t, normalChecklist, "ITEM_BLOCK_CLASSIFICATION")
+
+	repairChecklist := branchPrompt(t, runtime, "route_item_block_classification", "repair_checklist_scope", "checklist_writer", dir)
+	requireContains(t, repairChecklist, "ITEM_BLOCK_CLASSIFICATION")
+	requireContains(t, repairChecklist, "ITEM_VERDICT")
+	requireContains(t, repairChecklist, "PATCH_PLAN")
 }
 
 func TestExecuteForEachNextWritesFirstPendingItem(t *testing.T) {
@@ -498,5 +754,93 @@ func readTestJSON(t *testing.T, path string, value any) {
 	}
 	if err := json.Unmarshal(raw, value); err != nil {
 		t.Fatalf("unmarshal %s: %v", path, err)
+	}
+}
+
+func testPersona(id string) persona.Definition {
+	return persona.Definition{ID: id, Prompt: "Persona prompt"}
+}
+
+func writeText(t *testing.T, root string, rel string, content string) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func relativizeDefinitionArtifactPaths(def Definition) Definition {
+	rel := func(path string) string {
+		return strings.TrimPrefix(path, "/tmp/pragma/")
+	}
+	for stateIdx := range def.States {
+		for inputIdx := range def.States[stateIdx].Artifacts.Inputs {
+			def.States[stateIdx].Artifacts.Inputs[inputIdx].Path = rel(def.States[stateIdx].Artifacts.Inputs[inputIdx].Path)
+		}
+		for outputIdx := range def.States[stateIdx].Artifacts.Outputs {
+			def.States[stateIdx].Artifacts.Outputs[outputIdx].Path = rel(def.States[stateIdx].Artifacts.Outputs[outputIdx].Path)
+		}
+		if control := def.States[stateIdx].Control.ForEachNext; control != nil {
+			control.ListPath = rel(control.ListPath)
+			control.CursorPath = rel(control.CursorPath)
+			control.HandoffPath = rel(control.HandoffPath)
+		}
+		if control := def.States[stateIdx].Control.MarkCurrentItem; control != nil {
+			control.ListPath = rel(control.ListPath)
+			control.CursorPath = rel(control.CursorPath)
+		}
+		if control := def.States[stateIdx].Control.ArtifactVerdict; control != nil {
+			control.Path = rel(control.Path)
+		}
+		if control := def.States[stateIdx].Control.ArtifactDecision; control != nil {
+			control.Path = rel(control.Path)
+		}
+	}
+	for transitionIdx := range def.Transitions {
+		for handoffIdx := range def.Transitions[transitionIdx].Handoff {
+			def.Transitions[transitionIdx].Handoff[handoffIdx].Path = rel(def.Transitions[transitionIdx].Handoff[handoffIdx].Path)
+		}
+	}
+	return def
+}
+
+func branchPrompt(t *testing.T, runtime *Runtime, from string, event string, to string, artifactRoot string) string {
+	t.Helper()
+	tr, ok := runtime.TransitionFor(from, event)
+	if !ok {
+		t.Fatalf("missing transition %s --%s", from, event)
+	}
+	if tr.To != to {
+		t.Fatalf("transition %s --%s--> %s, want %s", from, event, tr.To, to)
+	}
+	state, ok := runtime.States[to]
+	if !ok {
+		t.Fatalf("missing state %s", to)
+	}
+	handoff, _, err := RenderTransitionHandoff(state, tr.Handoff, artifactRoot, true)
+	if err != nil {
+		t.Fatalf("RenderTransitionHandoff %s --%s--> %s: %v", from, event, to, err)
+	}
+	_, prompt, err := BuildPromptWithArtifactRootChecked(runtime.Definition, state, testPersona(firstNonEmpty(state.Persona, state.ID)), "", handoff, artifactRoot)
+	if err != nil {
+		t.Fatalf("BuildPromptWithArtifactRootChecked %s: %v", to, err)
+	}
+	return prompt
+}
+
+func requireContains(t *testing.T, text string, needle string) {
+	t.Helper()
+	if !strings.Contains(text, needle) {
+		t.Fatalf("expected prompt to contain %q:\n%s", needle, text)
+	}
+}
+
+func requireNotContains(t *testing.T, text string, needle string) {
+	t.Helper()
+	if strings.Contains(text, needle) {
+		t.Fatalf("expected prompt not to contain %q:\n%s", needle, text)
 	}
 }

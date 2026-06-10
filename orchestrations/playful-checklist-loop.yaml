@@ -4,19 +4,6 @@ states:
   - id: parade_master
     persona: parade_master
     artifacts:
-      inputs:
-        - id: checklist
-          path: /tmp/pragma/play/checklist.json
-          description: Existing parade checklist, when this is a later visit.
-        - id: current_item
-          path: /tmp/pragma/play/current-item.json
-          description: Current parade item, when returning from the item loop.
-        - id: float_card
-          path: /tmp/pragma/play/float-card.md
-          description: Float artist card from the previous item, when present.
-        - id: ribbon_note
-          path: /tmp/pragma/handoff-prompts/ribbon_judge/item_approve.md
-          description: Ribbon judge note for parade master, when present.
       outputs:
         - id: checklist
           path: /tmp/pragma/play/checklist.json
@@ -38,15 +25,6 @@ states:
     persona: float_artist
     task_prompt: none
     artifacts:
-      inputs:
-        - id: current_item
-          path: /tmp/pragma/play/current-item.json
-          required: true
-          description: Current parade item selected by the item loop.
-        - id: current_item_handoff
-          path: /tmp/pragma/handoff-prompts/parade_next/current-item.md
-          required: true
-          description: Immediate handoff written by the parade_next control for the selected item.
       outputs:
         - id: float_card
           path: /tmp/pragma/play/float-card.md
@@ -57,15 +35,6 @@ states:
     persona: ribbon_judge
     task_prompt: none
     artifacts:
-      inputs:
-        - id: current_item
-          path: /tmp/pragma/play/current-item.json
-          required: true
-          description: Current parade item under review.
-        - id: float_card
-          path: /tmp/pragma/play/float-card.md
-          required: true
-          description: Float artist card for the current item.
       outputs:
         - id: item_verdict
           path: /tmp/pragma/play/item-verdict.md
@@ -95,11 +64,6 @@ states:
     persona: finale_announcer
     task_prompt: none
     artifacts:
-      inputs:
-        - id: checklist
-          path: /tmp/pragma/play/checklist.json
-          required: true
-          description: Completed parade checklist.
       outputs:
         - id: parade_finale
           path: /tmp/pragma/play/finale.md
@@ -116,12 +80,35 @@ transitions:
   - event: item_available
     from: [parade_next]
     to: float_artist
+    handoff:
+      - id: current_item
+        path: /tmp/pragma/play/current-item.json
+        required: true
+        description: Current parade item selected by the item loop.
+      - id: current_item_handoff
+        path: /tmp/pragma/handoff-prompts/parade_next/current-item.md
+        required: true
+        description: Immediate handoff written by the parade_next control for the selected item.
   - event: all_items_done
     from: [parade_next]
     to: finale_announcer
+    handoff:
+      - id: checklist
+        path: /tmp/pragma/play/checklist.json
+        required: true
+        description: Completed parade checklist.
   - event: complete
     from: [float_artist]
     to: ribbon_judge
+    handoff:
+      - id: current_item
+        path: /tmp/pragma/play/current-item.json
+        required: true
+        description: Current parade item under review.
+      - id: float_card
+        path: /tmp/pragma/play/float-card.md
+        required: true
+        description: Float artist card for the current item.
   - event: complete
     from: [ribbon_judge]
     to: route_ribbon_verdict
@@ -131,9 +118,35 @@ transitions:
   - event: item_block
     from: [route_ribbon_verdict]
     to: parade_master
+    handoff:
+      - id: current_item
+        path: /tmp/pragma/play/current-item.json
+        required: true
+        description: Current parade item that was blocked.
+      - id: float_card
+        path: /tmp/pragma/play/float-card.md
+        required: true
+        description: Float artist card from the blocked item.
+      - id: item_verdict
+        path: /tmp/pragma/play/item-verdict.md
+        required: true
+        description: Ribbon judge blocker for the parade master.
   - event: complete
     from: [stamp_float_done]
     to: parade_master
+    handoff:
+      - id: checklist
+        path: /tmp/pragma/play/checklist.json
+        description: Existing parade checklist after stamping the item complete.
+      - id: current_item
+        path: /tmp/pragma/play/current-item.json
+        description: Current parade item after completion.
+      - id: float_card
+        path: /tmp/pragma/play/float-card.md
+        description: Float artist card from the previous item.
+      - id: ribbon_note
+        path: /tmp/pragma/handoff-prompts/ribbon_judge/item_approve.md
+        description: Ribbon judge note for parade master, when present.
   - event: complete
     from: [finale_announcer]
     to: done
