@@ -156,8 +156,12 @@ prompt: |
   exact focused validation, or exact acceptance_check evidence. Source checks
   and structural grep output are not enough for examples whose observable is an
   output, state mutation, API response, persisted record, or side effect. If an
-  example is missing or only structurally addressed, write Decision: BLOCK and
-  name the missing example id in Required repair.
+  example's `expected` contains an exact literal, format, tag, signature, or
+  error/result pair, the implementer report must show evidence for that exact
+  expected value. A passing validation command or weaker proof such as
+  "non-empty", "present", "quoted", or "no error" is not enough for an exact
+  expected value. If an example is missing or only structurally addressed, write
+  Decision: BLOCK and name the missing example id in Required repair.
 
   Do not edit files.
   Do not repair.

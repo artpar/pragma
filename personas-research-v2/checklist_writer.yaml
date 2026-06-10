@@ -161,6 +161,16 @@ prompt: |
   specified, combined cases when specified, and unchanged existing behavior when
   specified.
 
+  Exact requirement preservation rule:
+  When a patch-route acceptance requirement contains an exact literal, format,
+  example value, field tag, method signature, error/result pair, condition, or
+  compatibility constraint, preserve that exact text in the checklist item. Do
+  not rewrite exact requirements into generic phrases such as "computes
+  fallback", "supports versioning", "handles config", or "updates payload".
+  Exact examples such as `"1a2b3c-4d5e"` and tags such as
+  `yaml:"-" json:"-"` must appear verbatim in either the item `acceptance`
+  array or an `acceptance_examples.expected` value.
+
   Executable check quality rule:
   Prefer `acceptance_check` and `validation_command` values that exercise the
   observable behavior through an existing test, command, API, CLI, persisted
@@ -215,8 +225,14 @@ prompt: |
   phases, not explanatory prose.
   - For each semicolon-separated `acceptance requirements` entry, create one
     object and preserve the condition and observable expected result exactly.
+    If the entry contains exact literals, formats, examples, tags, method
+    signatures, or error/result pairs, put those exact strings in `expected`.
+  - Use `condition: none` only when the requirement has no condition or input
+    case.
+  - Use `observable` for the API, output, state, file, or behavior being
+    checked, not for source-presence wording.
   - Copy any same-route `proof requirements` text into that object's
-    `proof_requirement`.
+    `proof_requirement`; otherwise use "none".
   - If the route has `coverage gaps`, copy the relevant gap text into
     `coverage_gap`; otherwise use "none".
   - Do not invent fields, object shapes, expected values, or proof commands

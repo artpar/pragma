@@ -97,19 +97,9 @@ prompt: |
   every route whose `producer command:` is `none`, unless a visible completed
   item already proves that producer route is done.
 
-  Atomic consumer edit rule:
-  If one source value, field, contract, or behavior change also requires an
-  evidenced consumer/defaulting/test/fixture path to change for the same
-  semantic behavior, keep those edits in one patch-route bullet. Put the
-  primary source in `source path` and all required consumer/defaulting/test or
-  fixture edit paths in `coupled edit paths`. The behavior line must explicitly
-  say to edit all coupled paths. Do not split matching test assertions,
-  fixtures, snapshots, or default consumers into separate checklist routes when
-  they only make the same source behavior consistent.
-
   Behavior acceptance preservation rule:
-  Coupling edits into one patch route does not couple, delete, or summarize
-  away distinct behavior obligations. When evidence names multiple required
+  Patch routes must not delete or summarize away distinct behavior obligations.
+  When evidence names multiple required
   input, config, state, error, output, persistence, API, CLI, or compatibility
   variants, preserve each variant as a separate `acceptance requirements` entry
   on the same route. Do not replace multiple behavior obligations with broad
@@ -122,30 +112,10 @@ prompt: |
   such as "field exists", "config is read", "function is called", or "grep
   passes".
 
-  Coverage gap and proof requirement rule:
-  If the evidence map has `Coverage gaps:` or `Proof requirements:` entries
-  other than `none`, copy them into the same patch route as `coverage gaps:` and
-  `proof requirements:`. Keep the focused validation command when present, but
-  do not state or imply that existing visible validation proves uncovered
-  behavior variants.
-
-  Behavior proof quality rule:
-  `acceptance check` must prefer a command or assertion that exercises the
-  observable behavior through an existing test, command, API, CLI, persisted
-  state, or output surface. Grep/source-presence checks may support constants,
-  declarations, and simple wiring, but they are not proof that a value reaches
-  an output, state mutation, API response, persisted record, or side effect. If
-  no behavior-exercising check is evidenced, keep the behavior under
-  `acceptance requirements` and state the missing proof in `acceptance check`
-  instead of downgrading the route to grep-only proof.
-
-  Validation deferral rule:
-  A route may use `validation: none` only when the route has a concrete
-  `acceptance check` and the focused validation depends on later coupled work
-  not included in this route. In that case write `validation after:` naming the
-  item or surface that must be completed before the focused validation is
-  runnable. If the route includes every path needed by the validation command,
-  copy the focused validation command exactly and set `validation after: none`.
+  Validation exact-copy rule:
+  Copy validation commands only when they appear under `Validation commands:` in
+  the evidence map or under an authority verdict. Do not invent validation
+  commands, subtest names, grep checks, or acceptance commands.
 
   Producer evidence exact-copy rule:
   If evidence-map contains a `Producer evidence:` section, copy the first bullet
@@ -161,8 +131,8 @@ prompt: |
   behavior, write a validation-only patch route instead of unresolved missing
   source proof. The route must use `source path: none`,
   `coupled edit paths: none`,
-  `consumer/defaulting path: <evidenced test or consumer path>`,
-  `acceptance check: none`, `validation: <exact focused command>`,
+  `consumer/defaulting path: <evidenced consumer path>`,
+  `acceptance check: none`, `validation: <exact validation command>`,
   `validation after: none`, `generated files: none`, and `unsafe shortcut:
   editing repository files`.
 
@@ -170,8 +140,9 @@ prompt: |
   1. Use the supplied surface map, evidence map, and optional verdict artifact
      content from the prompt.
   2. For each evidenced semantic surface, write one source-owned patch route
-     from the artifact text already read. Merge coupled source and
-     consumer/defaulting/test edits for the same behavior into that route.
+     from the artifact text already read. Include `coupled edit paths` only when
+     the artifact text explicitly says those repository files must be edited for
+     the route.
   3. Put non-evidenced product behavior in unresolved with proof required.
   4. Write the `patch_plan` output artifact.
   5. Stop.
@@ -189,9 +160,7 @@ prompt: |
     acceptance requirements: <semicolon-separated observable behavior requirements>
     acceptance check: <source-local or item-local command, or none>
     source checks: <source-local checks from evidence map or none>
-    coverage gaps: <coverage gaps from evidence map or none>
-    proof requirements: <proof requirements from evidence map or none>
-    validation: <focused command or none>
+    validation: <exact validation command from evidence map or none>
     validation after: <none or dependency that makes validation runnable>
     producer command: <exact producer command or none>
     producer evidence: <exact producer evidence or none>
@@ -200,7 +169,7 @@ prompt: |
 
   Unresolved until evidence:
   - behavior: <behavior>
-    proof required: <exact source/test/failure required before implementation>
+    proof required: <exact proof required before implementation>
 
   Do not add extra sections to `patch_plan`.
 
@@ -211,7 +180,7 @@ prompt: |
   modify, update, or set a source/default value, and the evidence map says the
   source edit path or source/defaulting evidence is missing/not evidenced, do
   not create a validation-only, verification, audit, check, or pre-validation
-  route from a consumer/test path. This gate outranks later reminders that say
+  route from a consumer path. This gate outranks later reminders that say
   the known validation command can verify, check, or audit the behavior. Write
   `Patch route:` with exactly `- none`, and put the requested source change
   under `Unresolved until evidence`. For the `proof required:` line, copy the

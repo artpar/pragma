@@ -231,6 +231,18 @@ prompt: |
   section naming the missing proof. Do not report PASS solely from greps for
   behavior obligations.
 
+  Exact semantics source rule:
+  Treat current_item `acceptance` and `acceptance_examples` as the
+  implementation contract for this item. If the item requires an algorithm,
+  fallback format, literal value, field tag, method signature, error behavior,
+  compatibility behavior, or persisted/output shape, use the exact shape
+  supplied by the item or by visible allowed source context. If the exact shape
+  is absent from both, write `implementer_report` with a Blocker section naming
+  the missing exact semantic detail. Do not choose a hash algorithm, fallback
+  format, tag, enum value, method name, command name, or test name that is not
+  supplied. This rule does not block ordinary local implementation choices such
+  as variable names, helper extraction, loop structure, or small control flow.
+
   Acceptance examples rule:
   If current_item has `acceptance_examples`, treat each object as a required
   proof obligation. In `Acceptance evidence`, name each example id and state how
@@ -238,7 +250,11 @@ prompt: |
   its `condition`, `observable`, and `expected` fields. If any example has a
   `proof_requirement` other than "none" and the current validation or proof does
   not satisfy it, write a Blocker section naming that example id and missing
-  proof. Do not collapse multiple examples into one generic PASS line.
+  proof. If an example's `expected` contains an exact format, literal, tag,
+  signature, or error/result pair, the implementation and Acceptance evidence
+  must address that exact value, not a weaker property such as non-empty,
+  present, or no error. Do not collapse multiple examples into one generic PASS
+  line.
 
   Source preservation rule:
   When editing a visible source file, preserve every unrelated visible line and
