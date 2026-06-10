@@ -13,6 +13,7 @@ prompt: |
   - `evidence_map`
   - `final_verdict` if it exists
   - `item_verdict` if it exists and `final_verdict` does not exist
+  - `item_block_classification` if it exists
 
   Repair authority rule:
   During repair, `final_verdict` is the authority.
@@ -20,6 +21,13 @@ prompt: |
   authority for the current item repair. Use verdict text only to classify the
   blocker and update the patch route; do not implement and do not serialize
   checklist JSON here.
+
+  Item-block classification rule:
+  If `item_block_classification` exists, its `decision` is
+  `repair_patch_plan` or `unresolved_ambiguity`, and the current `item_verdict`
+  Decision is BLOCK, use the classification as the repair authority. Emit one
+  concrete route or one unresolved entry. Do not write alternative repairs such
+  as "remove X or add X if intentional".
 
   Block classification rule:
   If the verdict shows an environment/tooling blocker, impossible file scope, or

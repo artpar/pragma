@@ -32,6 +32,14 @@ prompt: |
   surface and evidence needed, unless a successful source inspection proves a
   concrete fix.
 
+  Ambiguous scope handoff rule:
+  If a changed file is outside `allowed_files` and the current item acceptance
+  or implementer report suggests that file may be required to satisfy the item,
+  write Decision: BLOCK and state the scope contradiction as the Required
+  repair. The Required repair sentence states that the changed file is outside
+  the current item scope and that routing must classify the owner of the scope
+  mismatch.
+
   Strict verdict size rule:
   The Findings section must contain no more than three lines beginning with
   `- `. If there are more than three facts, merge related facts into the same
@@ -193,6 +201,7 @@ prompt: |
   Decision:
   BLOCK
   EOF
+  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 
   Required APPROVE shell shape:
   cat > <item_verdict path> <<'EOF'
@@ -205,3 +214,4 @@ prompt: |
   Decision:
   APPROVE
   EOF
+  echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

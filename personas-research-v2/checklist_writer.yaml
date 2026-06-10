@@ -15,6 +15,7 @@ prompt: |
   - `patch_plan`
   - `final_verdict` if it exists
   - `item_verdict` if it exists and `final_verdict` does not exist
+  - `item_block_classification` if it exists
 
   Repair authority rule:
   During repair, `final_verdict` is the authority.
@@ -33,6 +34,22 @@ prompt: |
   forbidden_scope:
   - original task prose not named by a concrete blocker
   - work outside concrete failed/missing/wrong surfaces
+
+  Classified item-block rule:
+  If `item_block_classification` exists, its `current_item_id` matches a pending
+  checklist item, and the current `item_verdict` Decision is BLOCK, use the
+  classification as the repair authority for that blocked item.
+  - For `decision`: `repair_checklist_scope`, update the existing checklist item
+    in place. Do not create a new repair item. Set `allowed_files` to the union
+    of the existing `allowed_files` and `required_allowed_files`; remove those
+    paths from `forbidden_files`; keep the same item id and pending status.
+  - The updated item `approach` must name the scope repair and preserve the
+    item's acceptance obligations. Do not rewrite acceptance into checklist
+    configuration work.
+  - The updated item must not use `allowed_files: []` or
+    `forbidden_files: ["**/*"]`.
+  - Ignore stale `item_block_classification` when `item_verdict` is absent, does
+    not contain Decision: BLOCK, or names a different current item.
 
   Completed item exact-preservation rule:
   During a repair pass, copy every supplied `checklist` item with `status`:
@@ -85,11 +102,11 @@ prompt: |
   Missing required field rule:
   If the patch plan lacks a concrete source path or coupled edit path, and
   lacks either an `acceptance check` or a runnable `validation` command for a
-  behavior, do not infer or broaden. Write one blocker checklist item for the
-  missing proof. Its description must name every missing field and proof
-  required. Its approach must say "Do not inspect repository files; return a
-  blocker until the missing proof is provided." Its allowed_files must be an
-  empty array and forbidden_files must be ["**/*"].
+  behavior, do not infer or broaden. During an item repair pass, do not create
+  a worker checklist item with `allowed_files: []` and
+  `forbidden_files: ["**/*"]`; preserve the existing checklist and let the
+  router/planner classify unresolved ambiguity. On the initial checklist pass,
+  write only implementation items that have concrete editable paths.
 
   Pending item file-scope rule:
   For a pending implementation item, allowed_files is the list of repository

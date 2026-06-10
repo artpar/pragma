@@ -63,6 +63,9 @@ states:
         - id: item_verdict
           path: /tmp/pragma/item-verdict.md
           description: Current item reviewer blocker, when no final verdict exists.
+        - id: item_block_classification
+          path: /tmp/pragma/item-block-classification.json
+          description: Classified item-block ambiguity or repair direction, when an item block has been routed.
       outputs:
         - id: patch_plan
           path: /tmp/pragma/patch-plan.md
@@ -87,6 +90,9 @@ states:
         - id: item_verdict
           path: /tmp/pragma/item-verdict.md
           description: Current item reviewer blocker, when no final verdict exists.
+        - id: item_block_classification
+          path: /tmp/pragma/item-block-classification.json
+          description: Classified item-block ambiguity or repair direction, when checklist repair is active.
       outputs:
         - id: checklist
           path: /tmp/pragma/checklist.json
@@ -153,6 +159,51 @@ states:
         path: /tmp/pragma/item-verdict.md
         approve_event: item_approve
         block_event: item_block
+
+  - id: item_block_router
+    persona: item_block_router
+    task_prompt: none
+    artifacts:
+      inputs:
+        - id: current_item
+          path: /tmp/pragma/current-item.json
+          required: true
+          description: Current checklist item that was blocked.
+        - id: implementer_report
+          path: /tmp/pragma/implementer-report.md
+          required: true
+          description: Worker report that led to the block.
+        - id: item_verdict
+          path: /tmp/pragma/item-verdict.md
+          required: true
+          description: Reviewer blocker to classify.
+        - id: checklist
+          path: /tmp/pragma/checklist.json
+          description: Existing checklist containing the current item.
+        - id: patch_plan
+          path: /tmp/pragma/patch-plan.md
+          description: Current patch route, when available.
+        - id: evidence_map
+          path: /tmp/pragma/evidence-map.md
+          description: Evidence map, when available for source ownership classification.
+      outputs:
+        - id: item_block_classification
+          path: /tmp/pragma/item-block-classification.json
+          required: true
+          kind: decision
+          allowed_values: [repair_patch_plan, repair_checklist_scope, redo_item_worker, unresolved_ambiguity]
+          description: Machine-readable classification of the item block.
+
+  - id: route_item_block_classification
+    control:
+      artifact_decision:
+        path: /tmp/pragma/item-block-classification.json
+        field: decision
+        events:
+          repair_patch_plan: repair_patch_plan
+          repair_checklist_scope: repair_checklist_scope
+          redo_item_worker: redo_item_worker
+          unresolved_ambiguity: unresolved_ambiguity
 
   - id: mark_item_completed
     control:
@@ -235,12 +286,27 @@ transitions:
   - event: item_approve
     from: [route_item_verdict]
     to: mark_item_completed
+  - event: item_block
+    from: [route_item_verdict]
+    to: item_block_router
+  - event: complete
+    from: [item_block_router]
+    to: route_item_block_classification
+  - event: repair_patch_plan
+    from: [route_item_block_classification]
+    to: patch_planner
+  - event: repair_checklist_scope
+    from: [route_item_block_classification]
+    to: checklist_writer
+  - event: redo_item_worker
+    from: [route_item_block_classification]
+    to: item_worker
+  - event: unresolved_ambiguity
+    from: [route_item_block_classification]
+    to: patch_planner
   - event: complete
     from: [mark_item_completed]
     to: checklist_writer
-  - event: item_block
-    from: [route_item_verdict]
-    to: patch_planner
   - event: complete
     from: [validation_runner]
     to: final_reviewer

@@ -47,13 +47,14 @@ type Artifact struct {
 }
 
 type Control struct {
-	ForEachNext     *ForEachNextControl     `yaml:"foreach_next,omitempty"`
-	MarkCurrentItem *MarkCurrentItemControl `yaml:"mark_current_item,omitempty"`
-	ArtifactVerdict *ArtifactVerdictControl `yaml:"artifact_verdict,omitempty"`
+	ForEachNext      *ForEachNextControl      `yaml:"foreach_next,omitempty"`
+	MarkCurrentItem  *MarkCurrentItemControl  `yaml:"mark_current_item,omitempty"`
+	ArtifactVerdict  *ArtifactVerdictControl  `yaml:"artifact_verdict,omitempty"`
+	ArtifactDecision *ArtifactDecisionControl `yaml:"artifact_decision,omitempty"`
 }
 
 func (c Control) IsZero() bool {
-	return c.ForEachNext == nil && c.MarkCurrentItem == nil && c.ArtifactVerdict == nil
+	return c.ForEachNext == nil && c.MarkCurrentItem == nil && c.ArtifactVerdict == nil && c.ArtifactDecision == nil
 }
 
 type ForEachNextControl struct {
@@ -79,6 +80,12 @@ type ArtifactVerdictControl struct {
 	Block        string `yaml:"block,omitempty"`
 	ApproveEvent string `yaml:"approve_event"`
 	BlockEvent   string `yaml:"block_event"`
+}
+
+type ArtifactDecisionControl struct {
+	Path   string            `yaml:"path"`
+	Field  string            `yaml:"field,omitempty"`
+	Events map[string]string `yaml:"events"`
 }
 
 type Event struct {
@@ -333,6 +340,12 @@ func validateStateExecution(defName string, state State) error {
 				return err
 			}
 		}
+		if state.Control.ArtifactDecision != nil {
+			controls++
+			if err := validateArtifactDecisionControl(defName, state.ID, state.Control.ArtifactDecision); err != nil {
+				return err
+			}
+		}
 		if controls != 1 {
 			return fmt.Errorf("orchestration %q control state %q must define exactly one control", defName, state.ID)
 		}
@@ -402,6 +415,24 @@ func validateArtifactVerdictControl(defName, stateID string, control *ArtifactVe
 	return nil
 }
 
+func validateArtifactDecisionControl(defName, stateID string, control *ArtifactDecisionControl) error {
+	if control.Path == "" {
+		return fmt.Errorf("orchestration %q state %q artifact_decision requires path", defName, stateID)
+	}
+	if len(control.Events) == 0 {
+		return fmt.Errorf("orchestration %q state %q artifact_decision requires events", defName, stateID)
+	}
+	for decision, event := range control.Events {
+		if strings.TrimSpace(decision) == "" {
+			return fmt.Errorf("orchestration %q state %q artifact_decision has empty decision", defName, stateID)
+		}
+		if strings.TrimSpace(event) == "" {
+			return fmt.Errorf("orchestration %q state %q artifact_decision decision %q has empty event", defName, stateID, decision)
+		}
+	}
+	return nil
+}
+
 func emittedEvents(state State) []string {
 	if state.Control.ForEachNext != nil {
 		return []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneEvent}
@@ -411,6 +442,13 @@ func emittedEvents(state State) []string {
 	}
 	if state.Control.ArtifactVerdict != nil {
 		return []string{state.Control.ArtifactVerdict.ApproveEvent, state.Control.ArtifactVerdict.BlockEvent}
+	}
+	if state.Control.ArtifactDecision != nil {
+		events := make([]string, 0, len(state.Control.ArtifactDecision.Events))
+		for _, event := range state.Control.ArtifactDecision.Events {
+			events = append(events, event)
+		}
+		return events
 	}
 	if state.Event.Default != "" {
 		return []string{state.Event.Default}
@@ -426,6 +464,8 @@ func ExecuteControl(state State) (string, error) {
 		return executeMarkCurrentItem(*state.Control.MarkCurrentItem)
 	case state.Control.ArtifactVerdict != nil:
 		return executeArtifactVerdict(*state.Control.ArtifactVerdict)
+	case state.Control.ArtifactDecision != nil:
+		return executeArtifactDecision(*state.Control.ArtifactDecision)
 	default:
 		return "", fmt.Errorf("state %q has no control", state.ID)
 	}
@@ -562,6 +602,45 @@ func executeArtifactVerdict(control ArtifactVerdictControl) (string, error) {
 	default:
 		return "", fmt.Errorf("verdict %q has unsupported decision %q", control.Path, decision)
 	}
+}
+
+func executeArtifactDecision(control ArtifactDecisionControl) (string, error) {
+	raw, err := os.ReadFile(control.Path)
+	if err != nil {
+		return "", err
+	}
+	decision, err := parseJSONDecision(raw, control.Field)
+	if err != nil {
+		return "", fmt.Errorf("parse decision %q: %w", control.Path, err)
+	}
+	event, ok := control.Events[decision]
+	if !ok {
+		return "", fmt.Errorf("decision %q has unsupported value %q", control.Path, decision)
+	}
+	return event, nil
+}
+
+func parseJSONDecision(raw []byte, field string) (string, error) {
+	if strings.TrimSpace(field) == "" {
+		field = "decision"
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return "", fmt.Errorf("parse json: %w", err)
+	}
+	value, ok := doc[field]
+	if !ok {
+		return "", fmt.Errorf("missing %q field", field)
+	}
+	var decision string
+	if err := json.Unmarshal(value, &decision); err != nil {
+		return "", fmt.Errorf("%q field must be a string", field)
+	}
+	decision = strings.TrimSpace(decision)
+	if decision == "" {
+		return "", fmt.Errorf("%q field is empty", field)
+	}
+	return decision, nil
 }
 
 func parseDecision(text string) (string, error) {

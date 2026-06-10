@@ -169,6 +169,9 @@ func orchestrationDirs(def Definition, artifactRoot string) []string {
 		if control := state.Control.ArtifactVerdict; control != nil {
 			addPath(control.Path)
 		}
+		if control := state.Control.ArtifactDecision; control != nil {
+			addPath(control.Path)
+		}
 	}
 	out := make([]string, 0, len(dirs))
 	for dir := range dirs {
@@ -230,6 +233,8 @@ func ControlName(state State) string {
 		return "mark_current_item"
 	case state.Control.ArtifactVerdict != nil:
 		return "artifact_verdict"
+	case state.Control.ArtifactDecision != nil:
+		return "artifact_decision"
 	default:
 		return "unknown"
 	}
