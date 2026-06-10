@@ -163,6 +163,13 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 				ch <- ErrorEvent{Err: err}
 				return
 			}
+			if pragmaLoopHasToolCall(response.Content) {
+				if noActionRetries >= maxNoActionRetries {
+					ch <- ErrorEvent{Err: fmt.Errorf("model returned native tool call in Pragma bash loop after %d retries", maxNoActionRetries)}
+					return
+				}
+				continue
+			}
 			assistantText = responseText(response)
 			command, actionCount = extractPragmaLoopCommand(assistantText)
 			if actionCount != 0 || strings.Contains(assistantText, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT") {
@@ -338,9 +345,21 @@ func pragmaLoopReplayContent(content []model.ContentPart) []model.ContentPart {
 		if _, ok := part.(model.ThinkingPart); ok {
 			continue
 		}
+		if _, ok := part.(model.ToolCallPart); ok {
+			continue
+		}
 		out = append(out, part)
 	}
 	return out
+}
+
+func pragmaLoopHasToolCall(content []model.ContentPart) bool {
+	for _, part := range content {
+		if _, ok := part.(model.ToolCallPart); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func extractPragmaLoopCommand(text string) (string, int) {
@@ -395,6 +414,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 		ForegroundWait:     pragmaLoopForegroundWait,
 		BaseDirName:        "pragma-loop-bash",
 		UsePipefail:        true,
+		UseErrexit:         true,
 		RunningOutputLines: pragmaLoopRunningOutputLines,
 	})
 	if err != nil {

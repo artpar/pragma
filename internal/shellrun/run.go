@@ -21,6 +21,7 @@ type Options struct {
 	Background         bool
 	BaseDirName        string
 	UsePipefail        bool
+	UseErrexit         bool
 	RunningOutputLines int
 }
 
@@ -134,8 +135,11 @@ func startBackground(opts Options, files Files) (Result, error) {
 func startCommand(ctx context.Context, opts Options, files Files) (*exec.Cmd, *os.File, error) {
 	command := opts.Command
 	args := []string{"-c", commandForShellRun(command, opts.Background)}
+	if opts.UseErrexit {
+		args = append([]string{"-e"}, args...)
+	}
 	if opts.UsePipefail {
-		args = []string{"-o", "pipefail", "-c", commandForShellRun(command, opts.Background)}
+		args = append([]string{"-o", "pipefail"}, args...)
 	}
 	cmd := exec.CommandContext(ctx, "bash", args...)
 	cmd.Dir = opts.WorkDir

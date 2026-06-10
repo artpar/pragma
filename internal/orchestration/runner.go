@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -127,15 +128,54 @@ func EnsureRunDirs(def Definition, artifactRoots ...string) error {
 	if strings.TrimSpace(artifactRoot) == "" {
 		artifactRoot = DefaultArtifactRoot
 	}
-	for _, dir := range []string{
-		artifactRoot,
-		filepath.Join(artifactRoot, "processes"),
-	} {
+	for _, dir := range orchestrationDirs(def, artifactRoot) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create orchestration directory %q: %w", dir, err)
 		}
 	}
 	return nil
+}
+
+func orchestrationDirs(def Definition, artifactRoot string) []string {
+	dirs := map[string]bool{
+		artifactRoot:                             true,
+		filepath.Join(artifactRoot, "processes"): true,
+	}
+	addPath := func(path string) {
+		if strings.TrimSpace(path) == "" {
+			return
+		}
+		dir := filepath.Dir(resolveArtifactPath(path, artifactRoot))
+		if dir != "." && dir != "" {
+			dirs[dir] = true
+		}
+	}
+	for _, state := range def.States {
+		for _, artifact := range state.Artifacts.Inputs {
+			addPath(artifact.Path)
+		}
+		for _, artifact := range state.Artifacts.Outputs {
+			addPath(artifact.Path)
+		}
+		if control := state.Control.ForEachNext; control != nil {
+			addPath(control.ListPath)
+			addPath(control.CursorPath)
+			addPath(control.HandoffPath)
+		}
+		if control := state.Control.MarkCurrentItem; control != nil {
+			addPath(control.ListPath)
+			addPath(control.CursorPath)
+		}
+		if control := state.Control.ArtifactVerdict; control != nil {
+			addPath(control.Path)
+		}
+	}
+	out := make([]string, 0, len(dirs))
+	for dir := range dirs {
+		out = append(out, dir)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, artifactRoots ...string) (string, string, error) {

@@ -332,6 +332,9 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 		Stream:            params.Stream,
 		StreamOptions:     params.StreamOptions,
 	}
+	if len(reqBody.Tools) == 0 && reqBody.ToolChoice == nil {
+		reqBody.ToolChoice = "none"
+	}
 
 	var body bytes.Buffer
 	enc := json.NewEncoder(&body)
