@@ -202,6 +202,9 @@ transitions:
     from: [patch_planner]
     to: checklist_writer
     handoff:
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        description: Existing checklist, when this is a later checklist_writer visit.
       - id: patch_plan
         path: /tmp/pragma/patch-plan.md
         required: true
@@ -291,6 +294,10 @@ transitions:
     from: [route_item_block_classification]
     to: patch_planner
     handoff:
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        required: true
+        description: Existing checklist to preserve while repairing the patch plan.
       - id: surface_map
         path: /tmp/pragma/surface-map.md
         required: true
@@ -358,6 +365,10 @@ transitions:
     from: [route_item_block_classification]
     to: patch_planner
     handoff:
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        required: true
+        description: Existing checklist to preserve while resolving item ambiguity.
       - id: surface_map
         path: /tmp/pragma/surface-map.md
         required: true
@@ -403,6 +414,10 @@ transitions:
     from: [route_final_verdict]
     to: patch_planner
     handoff:
+      - id: checklist
+        path: /tmp/pragma/checklist.json
+        required: true
+        description: Existing completed checklist to preserve during final repair.
       - id: surface_map
         path: /tmp/pragma/surface-map.md
         required: true

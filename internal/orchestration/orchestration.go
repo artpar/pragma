@@ -371,6 +371,11 @@ func validate(def Definition) (map[string]State, map[TransitionKey]Transition, e
 			transitions[key] = tr
 		}
 	}
+	if err := validateDefinitionSpecificInvariants(def.Name, transitions); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, nil, err")
+		return nil, nil, err
+	}
 
 	for _, state := range states {
 		observe.GlobalTrace("range states")
@@ -551,6 +556,74 @@ func validateArtifactList(defName, owner string, artifacts []Artifact) error {
 	}
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+func validateDefinitionSpecificInvariants(defName string, transitions map[TransitionKey]Transition) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if defName != "prompt-control-v2-benchmark" {
+		observe.GlobalTrace("if: defName != \"prompt-control-v2-benchmark\"")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	if err := requireTransitionHandoff(defName, transitions, "patch_planner", EventComplete, "checklist_writer", "checklist", false); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
+		return err
+	}
+	for _, required := range []struct {
+		from  string
+		event string
+		to    string
+	}{
+		{from: "route_item_block_classification", event: "repair_patch_plan", to: "patch_planner"},
+		{from: "route_item_block_classification", event: "unresolved_ambiguity", to: "patch_planner"},
+		{from: "route_final_verdict", event: "final_block", to: "patch_planner"},
+	} {
+		observe.GlobalTrace("range required")
+		if err := requireTransitionHandoff(defName, transitions, required.from, required.event, required.to, "checklist", true); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: err")
+			return err
+		}
+	}
+	observe.GlobalTrace("return: nil")
+	return nil
+}
+
+func requireTransitionHandoff(defName string, transitions map[TransitionKey]Transition, from string, event string, to string, artifactID string, required bool) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	tr, ok := transitions[TransitionKey{From: from, Event: event}]
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	if tr.To != to {
+		observe.GlobalTrace("if: tr.To != to")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	for _, artifact := range tr.Handoff {
+		observe.GlobalTrace("range tr.Handoff")
+		if artifact.ID != artifactID {
+			observe.GlobalTrace("if: artifact.ID != artifactID")
+			continue
+		}
+		if required && !artifact.Required {
+			observe.GlobalTrace("if: required && !artifact.Required")
+			return fmt.Errorf("orchestration %q transition %s --%s--> %s must hand off required artifact %q", defName, from, event, to, artifactID)
+		}
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	if required {
+		observe.GlobalTrace("if: required")
+		return fmt.Errorf("orchestration %q transition %s --%s--> %s must hand off required artifact %q", defName, from, event, to, artifactID)
+	}
+	observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q transition %s --%s--> %s must hand off artifact %q\", ...")
+	return fmt.Errorf("orchestration %q transition %s --%s--> %s must hand off artifact %q", defName, from, event, to, artifactID)
 }
 
 func validateForEachNextControl(defName, stateID string, control *ForEachNextControl) error {
