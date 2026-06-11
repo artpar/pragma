@@ -96,8 +96,9 @@ prompt: |
   after an item approval, use the supplied `checklist` content, preserve
   completed items exactly, and keep any remaining pending items unless the
   active verdict requires replacing them.
-  Do not write a next-item handoff here. The foreach_next control state owns
-  selected-item handoff creation after it chooses the next pending item.
+  Do not write a next-item handoff here. The foreach_next control state chooses
+  the next pending item, then the next_item persona writes the selected-item
+  handoff from that current item.
 
   Missing required field rule:
   If the patch plan lacks a concrete source path or coupled edit path, and
