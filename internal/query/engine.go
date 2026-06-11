@@ -235,15 +235,19 @@ func (engine *Engine) EventBus() *observe.EventBus {
 	return engine.bus
 }
 
-func (engine *Engine) appendConversationMessage(msg model.Message, mutate func(*app.AppState)) error {
+func (engine *Engine) setConversationSystemPrompt(system model.SystemPrompt) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	engine.store.Update(func(s *app.AppState) {
+		s.Conversation.System = system
+	})
+}
+
+func (engine *Engine) appendConversationMessage(msg model.Message) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	engine.store.Update(func(s *app.AppState) {
 		s.Conversation.Append(msg)
-		if mutate != nil {
-			observe.GlobalTrace("if: mutate != nil")
-			mutate(s)
-		}
 	})
 	engine.emitMessageAppended(msg)
 	observe.GlobalTrace("return: engine.checkpointSession()")
@@ -273,14 +277,14 @@ func (engine *Engine) AppendHookContext(source string, contexts []string) error 
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
-	observe.GlobalTrace("return: engine.appendConversationMessage(model.Message{\n\tID:\t\tmodel.NewUUID(),\n\tRole:\t\tmod...")
+	observe.GlobalTrace("return: engine.appendConversationMessage(model.Message{...})")
 	return engine.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
 		Content:   []model.ContentPart{model.TextPart{Text: text}},
 		Timestamp: time.Now(),
 		Flags:     model.MessageFlags{IsInternal: true},
-	}, nil)
+	})
 }
 
 func formatHookContext(source string, contexts []string) string {

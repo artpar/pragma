@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
@@ -175,6 +174,7 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 	}()
 
 	run := engine.newPragmaLoopRunConfig(system, userMessage, completionCheck, messageStartIndexes...)
+	engine.setConversationSystemPrompt(run.System)
 
 	if err := engine.appendPragmaLoopInitialUserMessage(run); err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
@@ -283,11 +283,8 @@ func (engine *Engine) appendPragmaLoopInitialUserMessage(run pragmaLoopRunConfig
 		Content:   []model.ContentPart{model.TextPart{Text: run.UserMessage}},
 		Timestamp: time.Now(),
 	}
-	observe.GlobalTrace("return: engine.appendConversationMessage(userMsg, func(s *app.AppState) {...})")
-	observe.GlobalTrace("return: engine.appendConversationMessage(userMsg, func(s *app.AppState) {\n\ts.Conversation....")
-	return engine.appendConversationMessage(userMsg, func(s *app.AppState) {
-		s.Conversation.System = run.System
-	})
+	observe.GlobalTrace("return: engine.appendConversationMessage(userMsg)")
+	return engine.appendConversationMessage(userMsg)
 }
 
 func (engine *Engine) buildPragmaLoopTurnRequest(run pragmaLoopRunConfig) (pragmaLoopTurnRequest, string, error) {
@@ -405,8 +402,8 @@ func (engine *Engine) appendPragmaLoopAssistantTurn(turn pragmaLoopAssistantTurn
 		Content:   turn.ReplayContent,
 		Timestamp: time.Now(),
 	}
-	observe.GlobalTrace("return: engine.appendConversationMessage(assistantMsg, nil)")
-	return engine.appendConversationMessage(assistantMsg, nil)
+	observe.GlobalTrace("return: engine.appendConversationMessage(assistantMsg)")
+	return engine.appendConversationMessage(assistantMsg)
 }
 
 func executePragmaLoopCommand(ctx context.Context, workDir, command string) pragmaLoopCommandResult {
@@ -546,8 +543,8 @@ func (engine *Engine) appendPragmaLoopUserMessage(text string) error {
 		Content:   []model.ContentPart{model.TextPart{Text: text}},
 		Timestamp: time.Now(),
 	}
-	observe.GlobalTrace("return: engine.appendConversationMessage(msg, nil)")
-	return engine.appendConversationMessage(msg, nil)
+	observe.GlobalTrace("return: engine.appendConversationMessage(msg)")
+	return engine.appendConversationMessage(msg)
 }
 
 func pragmaLoopInstancePrompt(task, cwd string) string {
