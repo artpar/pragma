@@ -503,12 +503,27 @@ func buildInspectPhaseReport(arg string, input inspectRawHTTPInput, rawTurns []i
 		Source:    "artifact_contracts",
 		TurnCount: len(rawTurns),
 	}
+	stdoutBody := ""
+	var stdoutMarkers []inspectPhaseStdoutMarker
 	if stdoutPath := inspectPhaseStdoutPath(arg, input); stdoutPath != "" {
-		report.Source = "artifact_contracts+orchestration_stdout"
+		report.Source = "orchestration_stdout+request_prompts"
 		report.ControlEvents = inspectPhaseControlEvents(stdoutPath)
+		stdoutBody = readInspectPhaseStdout(stdoutPath)
+		stdoutMarkers = inspectPhaseStdoutMarkers(stdoutBody)
 	}
+	stdoutCursor := 0
 	for _, raw := range rawTurns {
-		phase := inferInspectPhase(raw)
+		phase := ""
+		if stdoutBody != "" && len(stdoutMarkers) > 0 {
+			var ok bool
+			phase, stdoutCursor, ok = inferInspectPhaseFromStdout(raw, stdoutBody, stdoutMarkers, stdoutCursor)
+			if !ok {
+				phase = ""
+			}
+		}
+		if phase == "" {
+			phase = inferInspectPhaseFromRequest(raw)
+		}
 		if phase == "" {
 			phase = "unknown"
 		}
@@ -522,61 +537,105 @@ func buildInspectPhaseReport(arg string, input inspectRawHTTPInput, rawTurns []i
 	}
 	report.Ranges = inspectPhaseRanges(report.Turns)
 	if hasInspectPhase(report.Turns, "unknown") {
-		report.Warnings = append(report.Warnings, "some turns could not be mapped to a phase from their request artifact contract")
+		report.Warnings = append(report.Warnings, "some turns could not be mapped to an orchestration state from stdout or request prompts")
 	}
 	return report
 }
 
-func inferInspectPhase(turn inspectRawHTTPTurn) string {
-	text := strings.ToLower(turn.requestText)
-	for _, candidate := range []struct {
-		artifact string
-		phase    string
-	}{
-		{"final_verdict", "final_reviewer"},
-		{"validation_status", "validation_runner"},
-		{"item_verdict", "item_reviewer"},
-		{"implementer_report", "item_worker"},
-		{"checklist", "checklist_writer"},
-		{"patch_plan", "patch_planner"},
-		{"evidence_map", "evidence_mapper"},
-		{"surface_map", "surface_mapper"},
-	} {
-		if inspectPhaseMentionsOutputArtifact(text, candidate.artifact) {
-			return candidate.phase
-		}
+type inspectPhaseStdoutMarker struct {
+	Offset int
+	Phase  string
+}
+
+func readInspectPhaseStdout(path string) string {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return ""
 	}
-	for _, candidate := range []string{
-		"surface_mapper",
-		"evidence_mapper",
-		"patch_planner",
-		"checklist_writer",
-		"item_worker",
-		"item_reviewer",
-		"validation_runner",
-		"final_reviewer",
-	} {
-		if strings.Contains(text, "you are `"+candidate+"`") || strings.Contains(text, "you are the "+strings.ReplaceAll(candidate, "_", " ")) {
+	return string(body)
+}
+
+func inspectPhaseStdoutMarkers(body string) []inspectPhaseStdoutMarker {
+	var markers []inspectPhaseStdoutMarker
+	offset := 0
+	for _, line := range strings.SplitAfter(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[orchestration: ") && strings.Contains(trimmed, " persona=") {
+			inner := strings.TrimSuffix(strings.TrimPrefix(trimmed, "[orchestration: "), "]")
+			state := strings.Fields(inner)
+			if len(state) > 0 {
+				markers = append(markers, inspectPhaseStdoutMarker{Offset: offset, Phase: state[0]})
+			}
+		}
+		offset += len(line)
+	}
+	return markers
+}
+
+func inferInspectPhaseFromStdout(turn inspectRawHTTPTurn, body string, markers []inspectPhaseStdoutMarker, cursor int) (string, int, bool) {
+	needle := inspectPhaseStdoutNeedle(turn)
+	if needle == "" || cursor >= len(body) {
+		return "", cursor, false
+	}
+	relative := strings.Index(body[cursor:], needle)
+	if relative < 0 {
+		relative = strings.Index(body, needle)
+		if relative < 0 {
+			return "", cursor, false
+		}
+	} else {
+		relative += cursor
+	}
+	phase := inspectPhaseAtStdoutOffset(markers, relative)
+	if phase == "" {
+		return "", cursor, false
+	}
+	return phase, relative + len(needle), true
+}
+
+func inspectPhaseStdoutNeedle(turn inspectRawHTTPTurn) string {
+	for _, candidate := range []string{turn.content, turn.reasoning, turn.ContentPreview, turn.ReasoningPreview} {
+		candidate = strings.TrimSpace(candidate)
+		if len(candidate) >= 16 {
 			return candidate
 		}
 	}
 	return ""
 }
 
-func inspectPhaseMentionsOutputArtifact(text, artifact string) bool {
-	patterns := []string{
-		"deliverable is the `" + artifact + "` output artifact",
-		"write the `" + artifact + "` output artifact",
-		"exactly one file: the `" + artifact + "` output artifact",
-		"the `" + artifact + "` output artifact",
-		"required_artifact = " + artifact,
-	}
-	for _, pattern := range patterns {
-		if strings.Contains(text, pattern) {
-			return true
+func inspectPhaseAtStdoutOffset(markers []inspectPhaseStdoutMarker, offset int) string {
+	phase := ""
+	for _, marker := range markers {
+		if marker.Offset > offset {
+			break
 		}
+		phase = marker.Phase
 	}
-	return false
+	return phase
+}
+
+func inferInspectPhaseFromRequest(turn inspectRawHTTPTurn) string {
+	text := turn.requestText
+	if phase := inspectPhasePromptRole(text, "You are `", "`"); phase != "" {
+		return phase
+	}
+	if phase := inspectPhasePromptRole(text, "You are the ", "\n"); phase != "" {
+		return strings.ReplaceAll(strings.Trim(strings.TrimSuffix(phase, "."), " "), " ", "_")
+	}
+	return ""
+}
+
+func inspectPhasePromptRole(text, prefix, suffix string) string {
+	start := strings.Index(text, prefix)
+	if start < 0 {
+		return ""
+	}
+	start += len(prefix)
+	end := strings.Index(text[start:], suffix)
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(text[start : start+end])
 }
 
 func inspectPhaseRanges(turns []inspectPhaseTurn) []inspectPhaseRange {
