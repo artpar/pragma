@@ -161,6 +161,34 @@ func TestExtractShellApplyPatchRejectsMixedCommands(t *testing.T) {
 	}
 }
 
+func TestExtractShellApplyPatchIgnoresApplyPatchInNonPatchHeredoc(t *testing.T) {
+	tests := []string{
+		"cat > /tmp/pragma/implementer-report.md <<'EOF'\nBlocker:\napply_patch failed earlier\nEOF",
+		"cat > /tmp/pragma/implementer-report.md <<'EOF'\nBlocker:\napplypatch failed earlier\nEOF",
+		"cd /tmp && cat > /tmp/pragma/implementer-report.md <<'EOF'\nBlocker:\napply_patch failed earlier\nEOF",
+	}
+
+	for _, command := range tests {
+		patch, workDir, ok, err := ExtractShellApplyPatch(command)
+		if err != nil {
+			t.Fatalf("ExtractShellApplyPatch(%q) error = %v", command, err)
+		}
+		if ok {
+			t.Fatalf("ExtractShellApplyPatch(%q) ok = true, patch=%q workDir=%q", command, patch, workDir)
+		}
+	}
+}
+
+func TestExtractShellApplyPatchRejectsTrailingExecutableCommand(t *testing.T) {
+	_, _, ok, err := ExtractShellApplyPatch("apply_patch <<'EOF'\n*** Begin Patch\n*** End Patch\nEOF\necho after")
+	if err == nil {
+		t.Fatal("expected trailing executable command to fail")
+	}
+	if ok {
+		t.Fatal("trailing command should not be ok")
+	}
+}
+
 func TestExtractShellApplyPatch(t *testing.T) {
 	patch, workDir, ok, err := ExtractShellApplyPatch("cd subdir && apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: x.txt\n+x\n*** End Patch\nEOF")
 	if err != nil {

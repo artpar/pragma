@@ -582,13 +582,22 @@ func ExtractShellApplyPatch(command string) (patch string, workDir string, ok bo
 		observe.GlobalTrace("return: \"\", \"\", false, nil")
 		return "", "", false, nil
 	}
-	if strings.HasPrefix(trimmed, "cd ") {
-		observe.GlobalTrace("if: strings.HasPrefix(trimmed, \"cd \")")
+
+	executable := stripShellHeredocBodies(trimmed)
+	if !containsExecutableApplyPatch(executable) {
+		observe.GlobalTrace("if: !containsExecutableApplyPatch(executable)")
+		observe.GlobalTrace("return: \"\", \"\", false, nil")
+		return "", "", false, nil
+	}
+
+	patchCommand := trimmed
+	if first, ok := firstShellWord(patchCommand); ok && first == "cd" {
+		observe.GlobalTrace("if: first == \"cd\"")
 		dirPart, rest, found := strings.Cut(strings.TrimPrefix(trimmed, "cd "), "&&")
 		if !found {
 			observe.GlobalTrace("if: !found")
-			observe.GlobalTrace("return: \"\", \"\", false, fmt.Errorf(\"cd before apply_patch must be followed by && apply...")
-			return "", "", false, fmt.Errorf("cd before apply_patch must be followed by && apply_patch")
+			observe.GlobalTrace("return: \"\", \"\", false, fmt.Errorf(\"mixed shell apply_patch commands are not allowed; ...")
+			return "", "", false, fmt.Errorf("mixed shell apply_patch commands are not allowed; use the ApplyPatch tool or a single apply_patch heredoc")
 		}
 		dir, parseErr := parseShellPath(dirPart)
 		if parseErr != nil {
@@ -597,19 +606,14 @@ func ExtractShellApplyPatch(command string) (patch string, workDir string, ok bo
 			return "", "", false, parseErr
 		}
 		workDir = dir
-		trimmed = strings.TrimSpace(rest)
+		patchCommand = strings.TrimSpace(rest)
 	}
-	if !strings.HasPrefix(trimmed, "apply_patch") && !strings.HasPrefix(trimmed, "applypatch") {
-		observe.GlobalTrace("if: !strings.HasPrefix(trimmed, \"apply_patch\") && !strings.HasPrefix(trimmed, \"ap...")
-		if strings.Contains(trimmed, "apply_patch") || strings.Contains(trimmed, "applypatch") {
-			observe.GlobalTrace("if: strings.Contains(trimmed, \"apply_patch\") || strings.Contains(trimmed, \"applyp...")
-			observe.GlobalTrace("return: \"\", \"\", false, fmt.Errorf(\"mixed shell apply_patch commands are not allowed; ...")
-			return "", "", false, fmt.Errorf("mixed shell apply_patch commands are not allowed; use the ApplyPatch tool or a single apply_patch heredoc")
-		}
-		observe.GlobalTrace("return: \"\", \"\", false, nil")
-		return "", "", false, nil
+	if first, ok := firstShellWord(patchCommand); !ok || (first != "apply_patch" && first != "applypatch") {
+		observe.GlobalTrace("if: first shell word is not apply_patch/applypatch")
+		observe.GlobalTrace("return: \"\", \"\", false, fmt.Errorf(\"mixed shell apply_patch commands are not allowed; ...")
+		return "", "", false, fmt.Errorf("mixed shell apply_patch commands are not allowed; use the ApplyPatch tool or a single apply_patch heredoc")
 	}
-	body, parseErr := extractHeredoc(trimmed)
+	body, parseErr := extractHeredoc(patchCommand)
 	if parseErr != nil {
 		observe.GlobalTrace("if: parseErr != nil")
 		observe.GlobalTrace("return: \"\", \"\", false, parseErr")
@@ -617,6 +621,207 @@ func ExtractShellApplyPatch(command string) (patch string, workDir string, ok bo
 	}
 	observe.GlobalTrace("return: body, workDir, true, nil")
 	return body, workDir, true, nil
+}
+
+type shellHeredoc struct {
+	delimiter string
+	stripTabs bool
+}
+
+func stripShellHeredocBodies(command string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	lines := strings.Split(command, "\n")
+	executable := make([]string, 0, len(lines))
+	var heredocs []shellHeredoc
+	for _, line := range lines {
+		if len(heredocs) > 0 {
+			if shellHeredocEnds(line, heredocs[0]) {
+				heredocs = heredocs[1:]
+			}
+			continue
+		}
+		executable = append(executable, line)
+		heredocs = append(heredocs, extractShellHeredocs(line)...)
+	}
+	observe.GlobalTrace("return: strings.Join(executable, \"\\n\")")
+	return strings.Join(executable, "\n")
+}
+
+func shellHeredocEnds(line string, heredoc shellHeredoc) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if heredoc.stripTabs {
+		line = strings.TrimLeft(line, "\t")
+	}
+	observe.GlobalTrace("return: line == heredoc.delimiter")
+	return line == heredoc.delimiter
+}
+
+func extractShellHeredocs(line string) []shellHeredoc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var heredocs []shellHeredoc
+	var inSingle, inDouble, escaped bool
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			escaped = true
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if inSingle || inDouble {
+			continue
+		}
+		if ch == '#' {
+			break
+		}
+		if ch != '<' || i+1 >= len(line) || line[i+1] != '<' {
+			continue
+		}
+		pos := i + 2
+		stripTabs := false
+		if pos < len(line) && line[pos] == '-' {
+			stripTabs = true
+			pos++
+		}
+		delimiter, next, ok := readShellWord(line, pos)
+		if ok {
+			heredocs = append(heredocs, shellHeredoc{
+				delimiter: delimiter,
+				stripTabs: stripTabs,
+			})
+			i = next - 1
+		}
+	}
+	observe.GlobalTrace("return: heredocs")
+	return heredocs
+}
+
+func containsExecutableApplyPatch(command string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for _, segment := range splitShellCommandSegments(command) {
+		word, ok := firstShellWord(segment)
+		if ok && (word == "apply_patch" || word == "applypatch") {
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
+}
+
+func splitShellCommandSegments(command string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var segments []string
+	start := 0
+	var inSingle, inDouble, escaped bool
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			escaped = true
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if inSingle || inDouble {
+			continue
+		}
+		if ch == ';' || ch == '\n' || ch == '&' || ch == '|' {
+			if segment := strings.TrimSpace(command[start:i]); segment != "" {
+				segments = append(segments, segment)
+			}
+			start = i + 1
+		}
+	}
+	if segment := strings.TrimSpace(command[start:]); segment != "" {
+		segments = append(segments, segment)
+	}
+	observe.GlobalTrace("return: segments")
+	return segments
+}
+
+func firstShellWord(command string) (string, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	word, _, ok := readShellWord(command, 0)
+	observe.GlobalTrace("return: word, ok")
+	return word, ok
+}
+
+func readShellWord(line string, pos int) (string, int, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for pos < len(line) && (line[pos] == ' ' || line[pos] == '\t') {
+		pos++
+	}
+	var b strings.Builder
+	var inSingle, inDouble, escaped bool
+	for pos < len(line) {
+		ch := line[pos]
+		if escaped {
+			b.WriteByte(ch)
+			escaped = false
+			pos++
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			escaped = true
+			pos++
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			pos++
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			pos++
+			continue
+		}
+		if !inSingle && !inDouble && isShellWordTerminator(ch) {
+			break
+		}
+		b.WriteByte(ch)
+		pos++
+	}
+	if b.Len() == 0 || inSingle || inDouble || escaped {
+		observe.GlobalTrace("return: \"\", pos, false")
+		return "", pos, false
+	}
+	observe.GlobalTrace("return: b.String(), pos, true")
+	return b.String(), pos, true
+}
+
+func isShellWordTerminator(ch byte) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ch == ' ' || ch == '\\t' || strings.ContainsRune(\";|&<>()\", rune(ch))")
+	return ch == ' ' || ch == '\t' || strings.ContainsRune(";|&<>()", rune(ch))
 }
 
 func extractHeredoc(command string) (string, error) {

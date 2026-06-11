@@ -194,6 +194,126 @@ cat /tmp/pragma/pragma-loop-artifact-test.txt`)
 	}
 }
 
+func TestExtractPragmaLoopCommandKeepsNestedMarkdownFenceInHeredoc(t *testing.T) {
+	text := strings.Join([]string{
+		"```bash",
+		"cat > /tmp/pragma/handoff-prompts/next_item/current-item.md <<'EOF'",
+		"# Current Item Handoff",
+		"",
+		"## Selected Item JSON",
+		"```json",
+		"{",
+		`  "id": "kubernetes-config-struct"`,
+		"}",
+		"```",
+		"EOF",
+		"echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT",
+		"```",
+	}, "\n")
+
+	command, count := extractPragmaLoopCommand(text)
+	if count != 1 {
+		t.Fatalf("count = %d, want 1; command=%q", count, command)
+	}
+	if !strings.Contains(command, "```json") {
+		t.Fatalf("command lost nested json fence: %q", command)
+	}
+	if !strings.Contains(command, "\n```\nEOF\n") {
+		t.Fatalf("command lost heredoc closing content: %q", command)
+	}
+	if !strings.Contains(command, "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT") {
+		t.Fatalf("command lost completion marker: %q", command)
+	}
+}
+
+func TestExtractPragmaLoopCommandParserCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		text      string
+		wantCount int
+		want      string
+	}{
+		{
+			name: "simple bash block",
+			text: strings.Join([]string{
+				"```bash",
+				"echo ok",
+				"```",
+			}, "\n"),
+			wantCount: 1,
+			want:      "echo ok",
+		},
+		{
+			name: "multiple bash blocks rejected by count",
+			text: strings.Join([]string{
+				"```bash",
+				"echo one",
+				"```",
+				"```bash",
+				"echo two",
+				"```",
+			}, "\n"),
+			wantCount: 2,
+		},
+		{
+			name: "double quoted heredoc delimiter",
+			text: strings.Join([]string{
+				"```bash",
+				`cat <<"JSON"`,
+				"```json",
+				"{}",
+				"```",
+				"JSON",
+				"echo done",
+				"```",
+			}, "\n"),
+			wantCount: 1,
+			want: strings.Join([]string{
+				`cat <<"JSON"`,
+				"```json",
+				"{}",
+				"```",
+				"JSON",
+				"echo done",
+			}, "\n"),
+		},
+		{
+			name: "tab stripping heredoc delimiter",
+			text: strings.Join([]string{
+				"```bash",
+				"cat <<-EOF",
+				"```json",
+				"{}",
+				"```",
+				"\tEOF",
+				"echo done",
+				"```",
+			}, "\n"),
+			wantCount: 1,
+			want: strings.Join([]string{
+				"cat <<-EOF",
+				"```json",
+				"{}",
+				"```",
+				"\tEOF",
+				"echo done",
+			}, "\n"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			command, count := extractPragmaLoopCommand(tt.text)
+			if count != tt.wantCount {
+				t.Fatalf("count = %d, want %d; command=%q", count, tt.wantCount, command)
+			}
+			if tt.want != "" && command != tt.want {
+				t.Fatalf("command = %q, want %q", command, tt.want)
+			}
+		})
+	}
+}
+
 func pragmaLoopFieldPath(content, prefix string) string {
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -70,8 +69,6 @@ Else, please format your response exactly as follows:
 
 Note: In rare cases, if you need to reference a similar format in your command, you might have
 to proceed in two steps, first writing TRIPLEBACKTICKSBASH, then replacing them with ` + "```bash" + `.`
-
-var pragmaLoopBashBlockRE = regexp.MustCompile("(?s)```bash\\s*\\n(.*?)\\n```")
 
 var pragmaLoopCommandTimeout = 300 * time.Second
 var pragmaLoopForegroundWait = 300 * time.Second
@@ -630,14 +627,169 @@ func pragmaLoopHasToolCall(content []model.ContentPart) bool {
 func extractPragmaLoopCommand(text string) (string, int) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	matches := pragmaLoopBashBlockRE.FindAllStringSubmatch(text, -1)
+	matches := extractPragmaLoopBashBlocks(text)
 	if len(matches) != 1 {
 		observe.GlobalTrace("if: len(matches) != 1")
 		observe.GlobalTrace("return: \"\", len(matches)")
 		return "", len(matches)
 	}
-	observe.GlobalTrace("return: strings.TrimSpace(matches[0][1]), 1")
-	return strings.TrimSpace(matches[0][1]), 1
+	observe.GlobalTrace("return: strings.TrimSpace(matches[0]), 1")
+	return strings.TrimSpace(matches[0]), 1
+}
+
+type pragmaLoopHeredoc struct {
+	delimiter string
+	stripTabs bool
+}
+
+func extractPragmaLoopBashBlocks(text string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	lines := strings.Split(text, "\n")
+	var blocks []string
+	for i := 0; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "```bash" {
+			continue
+		}
+
+		start := i + 1
+		var heredocs []pragmaLoopHeredoc
+		for j := start; j < len(lines); j++ {
+			line := lines[j]
+			if len(heredocs) > 0 {
+				if pragmaLoopHeredocEnds(line, heredocs[0]) {
+					heredocs = heredocs[1:]
+				}
+				continue
+			}
+
+			if strings.TrimSpace(line) == "```" {
+				blocks = append(blocks, strings.Join(lines[start:j], "\n"))
+				i = j
+				break
+			}
+
+			heredocs = append(heredocs, extractPragmaLoopHeredocs(line)...)
+		}
+	}
+	observe.GlobalTrace("return: blocks")
+	return blocks
+}
+
+func pragmaLoopHeredocEnds(line string, heredoc pragmaLoopHeredoc) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if heredoc.stripTabs {
+		line = strings.TrimLeft(line, "\t")
+	}
+	observe.GlobalTrace("return: line == heredoc.delimiter")
+	return line == heredoc.delimiter
+}
+
+func extractPragmaLoopHeredocs(line string) []pragmaLoopHeredoc {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var heredocs []pragmaLoopHeredoc
+	var inSingle, inDouble, escaped bool
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			escaped = true
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if inSingle || inDouble {
+			continue
+		}
+		if ch == '#' {
+			break
+		}
+		if ch != '<' || i+1 >= len(line) || line[i+1] != '<' {
+			continue
+		}
+
+		pos := i + 2
+		stripTabs := false
+		if pos < len(line) && line[pos] == '-' {
+			stripTabs = true
+			pos++
+		}
+		delimiter, next, ok := readPragmaLoopShellWord(line, pos)
+		if ok {
+			heredocs = append(heredocs, pragmaLoopHeredoc{
+				delimiter: delimiter,
+				stripTabs: stripTabs,
+			})
+			i = next - 1
+		}
+	}
+	observe.GlobalTrace("return: heredocs")
+	return heredocs
+}
+
+func readPragmaLoopShellWord(line string, pos int) (string, int, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for pos < len(line) && (line[pos] == ' ' || line[pos] == '\t') {
+		pos++
+	}
+
+	var b strings.Builder
+	var inSingle, inDouble, escaped bool
+	for pos < len(line) {
+		ch := line[pos]
+		if escaped {
+			b.WriteByte(ch)
+			escaped = false
+			pos++
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			escaped = true
+			pos++
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			pos++
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			pos++
+			continue
+		}
+		if !inSingle && !inDouble && isPragmaLoopShellWordTerminator(ch) {
+			break
+		}
+		b.WriteByte(ch)
+		pos++
+	}
+
+	if b.Len() == 0 || inSingle || inDouble || escaped {
+		observe.GlobalTrace("return: \"\", pos, false")
+		return "", pos, false
+	}
+	observe.GlobalTrace("return: b.String(), pos, true")
+	return b.String(), pos, true
+}
+
+func isPragmaLoopShellWordTerminator(ch byte) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ch == ' ' || ch == '\\t' || strings.ContainsRune(\";|&<>()\", rune(ch))")
+	return ch == ' ' || ch == '\t' || strings.ContainsRune(";|&<>()", rune(ch))
 }
 
 type pragmaLoopBashResult struct {
@@ -926,7 +1078,8 @@ func formatPragmaLoopObservation(result pragmaLoopBashResult) string {
 <warning>
 The output of your last command was too long.
 Please try a different command that produces less output.
-If you're inspecting a file, use a narrower file-reading command such as nl with sed.
+If you're inspecting a file for patch context, use unnumbered sed -n '<start>,<end>p' path/to/file.
+Do not use nl -ba output as patch context because its first column is display-only line numbers.
 If you're using grep or find and it produced too much output, use a more selective search pattern.
 Do not pipe validation commands such as tests or builds to head or tail as proof of success.
 For large validation output, redirect full output to a log, preserve rc=$?, print useful log lines, and exit with the original rc.
