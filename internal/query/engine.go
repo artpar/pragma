@@ -104,11 +104,11 @@ func NewEngine(
 // state. It shares runtime dependencies with the parent engine but keeps a
 // separate conversation store so revisiting that state preserves only that
 // state's model history.
-func (e *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
+func (engine *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	snap := e.store.Snapshot()
-	modelID := firstNonEmpty(snap.Model, snap.Conversation.Model, e.config.Model)
+	snap := engine.store.Snapshot()
+	modelID := firstNonEmpty(snap.Model, snap.Conversation.Model, engine.config.Model)
 	providerName := firstNonEmpty(snap.Provider, snap.Conversation.Provider)
 	workDir := firstNonEmpty(snap.CWD, snap.Conversation.WorkDir)
 	conversation := model.NewConversation(model.SystemPrompt{}, modelID, providerName, workDir)
@@ -124,18 +124,18 @@ func (e *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 		ArtifactSessionID: snap.SessionID(),
 	})
 	sub := &Engine{
-		provider:     e.provider,
+		provider:     engine.provider,
 		store:        subStore,
-		costTracker:  e.costTracker,
-		bus:          e.bus,
-		config:       e.config,
-		compactor:    e.compactor,
-		autoTracker:  e.autoTracker,
-		windowConfig: e.windowConfig,
-		hookMgr:      e.hookMgr,
+		costTracker:  engine.costTracker,
+		bus:          engine.bus,
+		config:       engine.config,
+		compactor:    engine.compactor,
+		autoTracker:  engine.autoTracker,
+		windowConfig: engine.windowConfig,
+		hookMgr:      engine.hookMgr,
 		contentReplacementState: toolresult.ReconstructContentReplacementState(
 			conversation.APIMessages(),
-			e.config.ContentReplacementRecords,
+			engine.config.ContentReplacementRecords,
 		),
 	}
 	observe.GlobalTrace("return: sub, subStore")
@@ -158,21 +158,21 @@ func firstNonEmpty(values ...string) string {
 }
 
 // SetHookManager configures the hook manager for Stop hooks.
-func (e *Engine) SetHookManager(mgr *hook.Manager) {
+func (engine *Engine) SetHookManager(mgr *hook.Manager) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	e.hookMgr = mgr
+	engine.hookMgr = mgr
 }
 
 // RebindProvider switches the engine to a new provider/model runtime.
-func (e *Engine) RebindProvider(prov provider.Provider, modelID string) {
+func (engine *Engine) RebindProvider(prov provider.Provider, modelID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if e.provider != nil && e.provider != prov {
-		observe.GlobalTrace("if: e.provider != nil && e.provider != prov")
-		if err := provider.Close(context.Background(), e.provider); err != nil && e.bus != nil {
-			observe.GlobalTrace("if: err != nil && e.bus != nil")
-			e.bus.Emit(observe.ErrorOccurred{
+	if engine.provider != nil && engine.provider != prov {
+		observe.GlobalTrace("if: engine.provider != nil && engine.provider != prov")
+		if err := provider.Close(context.Background(), engine.provider); err != nil && engine.bus != nil {
+			observe.GlobalTrace("if: err != nil && engine.bus != nil")
+			engine.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 				Severity:     "warn",
 				Component:    "provider",
@@ -181,90 +181,90 @@ func (e *Engine) RebindProvider(prov provider.Provider, modelID string) {
 			})
 		}
 	}
-	e.provider = provider.WithAccounting(prov, e.costTracker, e.bus)
-	e.SetModel(modelID)
+	engine.provider = provider.WithAccounting(prov, engine.costTracker, engine.bus)
+	engine.SetModel(modelID)
 }
 
 // SetModel updates the engine's fallback model for execution paths that do not
 // have an AppState model override.
-func (e *Engine) SetModel(modelID string) {
+func (engine *Engine) SetModel(modelID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if modelID != "" {
 		observe.GlobalTrace("if: modelID != \"\"")
-		e.config.Model = modelID
+		engine.config.Model = modelID
 	}
 }
 
 // SetCompaction configures auto-compaction after engine creation.
 // Useful when the engine is created before compaction deps are ready.
-func (e *Engine) SetCompaction(deps CompactionDeps) {
+func (engine *Engine) SetCompaction(deps CompactionDeps) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	e.compactor = deps.Compactor
-	e.autoTracker = deps.AutoTracker
-	e.windowConfig = deps.WindowConfig
+	engine.compactor = deps.Compactor
+	engine.autoTracker = deps.AutoTracker
+	engine.windowConfig = deps.WindowConfig
 }
 
-func (e *Engine) SetSessionCheckpoint(checkpoint func() error) {
+func (engine *Engine) SetSessionCheckpoint(checkpoint func() error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	e.config.SessionCheckpoint = checkpoint
+	engine.config.SessionCheckpoint = checkpoint
 }
 
 // ResetSessionState rebuilds read-time replacement tracking after the active
 // conversation/session changes.
-func (e *Engine) ResetSessionState(contentReplacementRecords []model.ContentReplacementRecord) {
+func (engine *Engine) ResetSessionState(contentReplacementRecords []model.ContentReplacementRecord) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	e.resetContentReplacementState(contentReplacementRecords)
+	engine.resetContentReplacementState(contentReplacementRecords)
 }
 
-func (e *Engine) resetContentReplacementState(records []model.ContentReplacementRecord) {
+func (engine *Engine) resetContentReplacementState(records []model.ContentReplacementRecord) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	snap := e.store.Snapshot()
-	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), records)
+	snap := engine.store.Snapshot()
+	engine.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), records)
 }
 
 // EventBus returns the engine's durable event bus.
-func (e *Engine) EventBus() *observe.EventBus {
+func (engine *Engine) EventBus() *observe.EventBus {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: e.bus")
-	return e.bus
+	observe.GlobalTrace("return: engine.bus")
+	return engine.bus
 }
 
-func (e *Engine) appendConversationMessage(msg model.Message, mutate func(*app.AppState)) error {
+func (engine *Engine) appendConversationMessage(msg model.Message, mutate func(*app.AppState)) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	e.store.Update(func(s *app.AppState) {
+	engine.store.Update(func(s *app.AppState) {
 		s.Conversation.Append(msg)
 		if mutate != nil {
 			observe.GlobalTrace("if: mutate != nil")
 			mutate(s)
 		}
 	})
-	e.emitMessageAppended(msg)
-	observe.GlobalTrace("return: e.checkpointSession()")
-	return e.checkpointSession()
+	engine.emitMessageAppended(msg)
+	observe.GlobalTrace("return: engine.checkpointSession()")
+	return engine.checkpointSession()
 }
 
-func (e *Engine) checkpointSession() error {
+func (engine *Engine) checkpointSession() error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if e.config.SessionCheckpoint == nil {
-		observe.GlobalTrace("if: e.config.SessionCheckpoint == nil")
+	if engine.config.SessionCheckpoint == nil {
+		observe.GlobalTrace("if: engine.config.SessionCheckpoint == nil")
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
-	observe.GlobalTrace("return: e.config.SessionCheckpoint()")
-	return e.config.SessionCheckpoint()
+	observe.GlobalTrace("return: engine.config.SessionCheckpoint()")
+	return engine.config.SessionCheckpoint()
 }
 
 // AppendHookContext appends hook-produced context as an internal user message
 // so the next provider request can see it without exposing it as assistant text.
-func (e *Engine) AppendHookContext(source string, contexts []string) error {
+func (engine *Engine) AppendHookContext(source string, contexts []string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	text := formatHookContext(source, contexts)
@@ -273,8 +273,8 @@ func (e *Engine) AppendHookContext(source string, contexts []string) error {
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
-	observe.GlobalTrace("return: e.appendConversationMessage(model.Message{\n\tID:\t\tmodel.NewUUID(),\n\tRole:\t\tmod...")
-	return e.appendConversationMessage(model.Message{
+	observe.GlobalTrace("return: engine.appendConversationMessage(model.Message{\n\tID:\t\tmodel.NewUUID(),\n\tRole:\t\tmod...")
+	return engine.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
 		Content:   []model.ContentPart{model.TextPart{Text: text}},
@@ -307,14 +307,14 @@ func formatHookContext(source string, contexts []string) string {
 	return "Hook context from " + source + ":\n" + strings.Join(cleaned, "\n\n")
 }
 
-func (e *Engine) emitMessageAppended(msg model.Message) {
+func (engine *Engine) emitMessageAppended(msg model.Message) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if e.bus == nil {
-		observe.GlobalTrace("if: e.bus == nil")
+	if engine.bus == nil {
+		observe.GlobalTrace("if: engine.bus == nil")
 		return
 	}
-	e.bus.Emit(observe.MessageAppended{
+	engine.bus.Emit(observe.MessageAppended{
 		EventHeader:   observe.NewEventHeader("MessageAppended", "", observe.NewSpanID(), ""),
 		MessageID:     msg.ID,
 		Role:          string(msg.Role),

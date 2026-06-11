@@ -14,7 +14,7 @@ import (
 // Run starts the agentic loop in a goroutine and returns a channel of LoopEvents.
 // The channel is closed when the loop finishes.
 // Implements SPEC.md §6.1.
-func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
+func (engine *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 	observe.TraceCtx(ctx, "query", "Engine.Run", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.Run", "exit")
 	ch := make(chan LoopEvent, 16)
@@ -26,37 +26,37 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
 			}
 		}()
-		e.runPragmaLoop(ctx, userMessage, ch)
+		engine.runPragmaLoop(ctx, userMessage, ch)
 	}()
 	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
 	return ch
 }
 
-func (e *Engine) runStopHook(ch chan<- LoopEvent) {
+func (engine *Engine) runStopHook(ch chan<- LoopEvent) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if e.hookMgr == nil {
-		observe.GlobalTrace("if: e.hookMgr == nil")
+	if engine.hookMgr == nil {
+		observe.GlobalTrace("if: engine.hookMgr == nil")
 		return
 	}
 	hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer hookCancel()
-	result := e.hookMgr.ExecuteInWorkDir(hookCtx, hook.Stop, hook.HookInput{}, e.store.Snapshot().CWD)
+	result := engine.hookMgr.ExecuteInWorkDir(hookCtx, hook.Stop, hook.HookInput{}, engine.store.Snapshot().CWD)
 	if result.Blocked {
 		observe.GlobalTrace("if: result.Blocked")
 		ch <- ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", result.BlockMsg)}
 	}
 }
 
-func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemPrompt {
+func (engine *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemPrompt {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if e.config.MCPServerStatuses == nil {
-		observe.GlobalTrace("if: e.config.MCPServerStatuses == nil")
+	if engine.config.MCPServerStatuses == nil {
+		observe.GlobalTrace("if: engine.config.MCPServerStatuses == nil")
 		observe.GlobalTrace("return: system")
 		return system
 	}
-	statuses := e.config.MCPServerStatuses()
+	statuses := engine.config.MCPServerStatuses()
 	if len(statuses) == 0 {
 		observe.GlobalTrace("if: len(statuses) == 0")
 		observe.GlobalTrace("return: system")
@@ -88,7 +88,7 @@ func (e *Engine) systemWithMCPStatus(system model.SystemPrompt) model.SystemProm
 	return model.SystemPrompt{Blocks: blocks}
 }
 
-func (e *Engine) systemWithPatchGuidance(system model.SystemPrompt, tools []model.ToolDef) model.SystemPrompt {
+func (engine *Engine) systemWithPatchGuidance(system model.SystemPrompt, tools []model.ToolDef) model.SystemPrompt {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !toolDefsContain(tools, "apply_patch") {
@@ -123,7 +123,7 @@ func toolDefsContain(tools []model.ToolDef, name string) bool {
 	return false
 }
 
-func (e *Engine) messagesForRequestChecked(conv model.Conversation, startIndexes ...int) ([]model.Message, error) {
+func (engine *Engine) messagesForRequestChecked(conv model.Conversation, startIndexes ...int) ([]model.Message, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	start := 0
@@ -133,7 +133,7 @@ func (e *Engine) messagesForRequestChecked(conv model.Conversation, startIndexes
 	} else {
 		observe.GlobalTrace("else: len(startIndexes) > 0")
 	}
-	messages := e.messagesForRequestFrom(conv, start)
+	messages := engine.messagesForRequestFrom(conv, start)
 	if err := validateToolResultPairing(messages); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
@@ -143,7 +143,7 @@ func (e *Engine) messagesForRequestChecked(conv model.Conversation, startIndexes
 	return messages, nil
 }
 
-func (e *Engine) messagesForRequestFrom(conv model.Conversation, start int) []model.Message {
+func (engine *Engine) messagesForRequestFrom(conv model.Conversation, start int) []model.Message {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if start < 0 {
