@@ -123,24 +123,17 @@ func toolDefsContain(tools []model.ToolDef, name string) bool {
 	return false
 }
 
-func (e *Engine) messagesForRequest(conv model.Conversation) []model.Message {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: conv.APIMessages()")
-	return conv.APIMessages()
-}
-
 func (e *Engine) messagesForRequestChecked(conv model.Conversation, startIndexes ...int) ([]model.Message, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	var messages []model.Message
+	start := 0
 	if len(startIndexes) > 0 {
 		observe.GlobalTrace("if: len(startIndexes) > 0")
-		messages = e.messagesForRequestFrom(conv, startIndexes[0])
+		start = startIndexes[0]
 	} else {
 		observe.GlobalTrace("else: len(startIndexes) > 0")
-		messages = e.messagesForRequest(conv)
 	}
+	messages := e.messagesForRequestFrom(conv, start)
 	if err := validateToolResultPairing(messages); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, err")
