@@ -69,8 +69,10 @@ type ForEachNextControl struct {
 	HandoffPath   string `yaml:"handoff_path,omitempty"`
 	PendingStatus string `yaml:"pending_status,omitempty"`
 	DoneStatus    string `yaml:"done_status,omitempty"`
+	BlockedStatus string `yaml:"blocked_status,omitempty"`
 	ItemEvent     string `yaml:"item_event"`
 	DoneEvent     string `yaml:"done_event"`
+	BlockedEvent  string `yaml:"blocked_event,omitempty"`
 }
 
 type MarkCurrentItemControl struct {
@@ -134,6 +136,8 @@ type ChecklistItem struct {
 	Description string   `json:"description,omitempty"`
 	Acceptance  []string `json:"acceptance,omitempty"`
 	Status      string   `json:"status"`
+	BlockedBy   []string `json:"blocked_by,omitempty"`
+	BlockReason string   `json:"block_reason,omitempty"`
 	Extra       map[string]json.RawMessage
 }
 
@@ -153,7 +157,7 @@ func (i *ChecklistItem) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &known); err != nil {
 		return err
 	}
-	for _, key := range []string{"id", "title", "description", "acceptance", "status"} {
+	for _, key := range []string{"id", "title", "description", "acceptance", "status", "blocked_by", "block_reason"} {
 		delete(raw, key)
 	}
 	*i = ChecklistItem(known)
@@ -197,6 +201,20 @@ func (i ChecklistItem) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 		fields["acceptance"] = raw
+	}
+	if i.BlockedBy != nil {
+		raw, err := json.Marshal(i.BlockedBy)
+		if err != nil {
+			return nil, err
+		}
+		fields["blocked_by"] = raw
+	}
+	if i.BlockReason != "" {
+		raw, err := json.Marshal(i.BlockReason)
+		if err != nil {
+			return nil, err
+		}
+		fields["block_reason"] = raw
 	}
 	raw, err := json.Marshal(i.Status)
 	if err != nil {
@@ -558,6 +576,9 @@ func validateForEachNextControl(defName, stateID string, control *ForEachNextCon
 		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next requires done_event\", defN...")
 		return fmt.Errorf("orchestration %q state %q foreach_next requires done_event", defName, stateID)
 	}
+	if control.BlockedEvent != "" && strings.TrimSpace(control.BlockedEvent) == "" {
+		return fmt.Errorf("orchestration %q state %q foreach_next has blank blocked_event", defName, stateID)
+	}
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -646,8 +667,11 @@ func emittedEvents(state State) []string {
 	defer observe.GlobalTrace("exit")
 	if state.Control.ForEachNext != nil {
 		observe.GlobalTrace("if: state.Control.ForEachNext != nil")
-		observe.GlobalTrace("return: []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneE...")
-		return []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneEvent}
+		events := []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneEvent}
+		if state.Control.ForEachNext.BlockedEvent != "" {
+			events = append(events, state.Control.ForEachNext.BlockedEvent)
+		}
+		return events
 	}
 	if state.Control.MarkCurrentItem != nil {
 		observe.GlobalTrace("if: state.Control.MarkCurrentItem != nil")
@@ -719,8 +743,21 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 		observe.GlobalTrace("if: doneStatus == \"\"")
 		doneStatus = "approved"
 	}
+	blockedStatus := control.BlockedStatus
+	if blockedStatus == "" {
+		blockedStatus = "blocked"
+	}
+	if normalizeChecklistDependencies(&checklist, pendingStatus, blockedStatus) {
+		if err := writeJSONFile(control.ListPath, checklist); err != nil {
+			return "", err
+		}
+	}
+	hasBlocked := false
 	for _, item := range checklist.Items {
 		observe.GlobalTrace("range checklist.Items")
+		if item.Status == blockedStatus {
+			hasBlocked = true
+		}
 		if item.Status != pendingStatus {
 			observe.GlobalTrace("if: item.Status != pendingStatus")
 			continue
@@ -732,6 +769,16 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 		}
 		observe.GlobalTrace("return: control.ItemEvent, nil")
 		return control.ItemEvent, nil
+	}
+	if hasBlocked && control.BlockedEvent != "" {
+		blockedCursor := ChecklistItem{
+			Status:      blockedStatus,
+			BlockReason: "no pending checklist items remain; blocked checklist items are waiting on prerequisites",
+		}
+		if err := writeJSONFile(control.CursorPath, blockedCursor); err != nil {
+			return "", err
+		}
+		return control.BlockedEvent, nil
 	}
 	if err := writeJSONFile(control.CursorPath, ChecklistItem{Status: doneStatus}); err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -768,6 +815,8 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 		if checklist.Items[i].ID == current.ID {
 			observe.GlobalTrace("if: checklist.Items[i].ID == current.ID")
 			checklist.Items[i].Status = control.Status
+			checklist.Items[i].BlockedBy = nil
+			checklist.Items[i].BlockReason = ""
 			found = true
 			break
 		}
@@ -777,6 +826,7 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"current item %q not found in checklist %q\", current.ID, contr...")
 		return "", fmt.Errorf("current item %q not found in checklist %q", current.ID, control.ListPath)
 	}
+	unblockDependents(&checklist, current.ID)
 	if err := writeJSONFile(control.ListPath, checklist); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", err")
@@ -790,6 +840,108 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 	}
 	observe.GlobalTrace("return: control.Event, nil")
 	return control.Event, nil
+}
+
+func normalizeChecklistDependencies(checklist *Checklist, pendingStatus, blockedStatus string) bool {
+	ids := make(map[string]bool, len(checklist.Items))
+	for _, item := range checklist.Items {
+		ids[item.ID] = true
+	}
+	changed := false
+	for idx := range checklist.Items {
+		item := &checklist.Items[idx]
+		if len(item.BlockedBy) > 0 {
+			normalized := normalizeBlockedBy(item.BlockedBy, item.ID, ids)
+			if !sameStringSlice(item.BlockedBy, normalized) {
+				item.BlockedBy = normalized
+				changed = true
+			}
+			if len(item.BlockedBy) > 0 && item.Status != blockedStatus {
+				item.Status = blockedStatus
+				changed = true
+			}
+			continue
+		}
+		deferredUntil := checklistItemStringExtra(item, "validation_deferred_until")
+		if ids[deferredUntil] && deferredUntil != item.ID {
+			item.BlockedBy = []string{deferredUntil}
+			item.Status = blockedStatus
+			if item.BlockReason == "" {
+				item.BlockReason = fmt.Sprintf("validation deferred until checklist item %q completes", deferredUntil)
+			}
+			changed = true
+			continue
+		}
+		if item.Status == blockedStatus && item.BlockReason == "" {
+			item.BlockReason = "blocked without a structured prerequisite"
+			changed = true
+		}
+	}
+	return changed
+}
+
+func unblockDependents(checklist *Checklist, completedID string) {
+	for idx := range checklist.Items {
+		item := &checklist.Items[idx]
+		if len(item.BlockedBy) == 0 {
+			continue
+		}
+		remaining := make([]string, 0, len(item.BlockedBy))
+		for _, blockedBy := range item.BlockedBy {
+			if blockedBy != completedID {
+				remaining = append(remaining, blockedBy)
+			}
+		}
+		if len(remaining) == len(item.BlockedBy) {
+			continue
+		}
+		item.BlockedBy = remaining
+		if len(item.BlockedBy) == 0 && item.Status == "blocked" {
+			item.Status = "pending"
+			item.BlockReason = ""
+		}
+	}
+}
+
+func normalizeBlockedBy(values []string, self string, ids map[string]bool) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || value == self || !ids[value] || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func checklistItemStringExtra(item *ChecklistItem, key string) string {
+	if item == nil || item.Extra == nil {
+		return ""
+	}
+	raw, ok := item.Extra[key]
+	if !ok {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for idx := range a {
+		if a[idx] != b[idx] {
+			return false
+		}
+	}
+	return true
 }
 
 func executeArtifactVerdict(control ArtifactVerdictControl) (string, error) {

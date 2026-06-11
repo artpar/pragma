@@ -100,6 +100,21 @@ prompt: |
   the next pending item, then the next_item persona writes the selected-item
   handoff from that current item.
 
+  Checklist lifecycle boundary:
+  `status` is the runnable selector boundary for the next state.
+  - `pending`: runnable now; foreach_next may select it immediately.
+  - `blocked`: unfinished but not runnable because another checklist item or
+    prerequisite must complete first.
+  - `completed`: done and preserved from a prior checklist pass.
+  If an item cannot satisfy acceptance until another checklist item completes,
+  set `status` to `blocked`, set `blocked_by` to the exact prerequisite item
+  id array, and set `block_reason` to the concrete blocker. Do not encode
+  blockedness only in `approach` or `validation_deferred_until`.
+  Infrastructure approval is not completion: if an item was approved only
+  because the worker correctly identified an infrastructure prerequisite, but
+  validation remains deferred or blocked, the item is `blocked`, not
+  `completed`.
+
   Missing required field rule:
   If the patch plan lacks a concrete source path or coupled edit path, and
   lacks either an `acceptance check` or a runnable `validation` command for a
@@ -316,12 +331,17 @@ prompt: |
     `acceptance requirements`, copy each requirement into the item `acceptance`
     array as a separate entry.
   - `acceptance`, `allowed_files`, `forbidden_files`, `generated_files`,
-    `coupled_edit_paths`, `contract_edges`, `report_changed_files`, and
-    `acceptance_examples` are JSON arrays, not strings
+    `coupled_edit_paths`, `contract_edges`, `report_changed_files`,
+    `blocked_by`, and `acceptance_examples` are JSON arrays, not strings
   - each `acceptance_examples` entry is an object with exactly `id`,
     `condition`, `observable`, `expected`, `proof_requirement`, and
     `coverage_gap`
   - `producer_command`, `acceptance_check`, `validation_command`,
-    `validation_deferred_until`, and `status` are strings
-  - `status` is `pending` unless the item was already completed by a prior
-    checklist and is being preserved during a repair pass
+    `validation_deferred_until`, `block_reason`, and `status` are strings
+  - `status` is `pending` only for items runnable immediately by the next
+    worker
+  - `status` is `blocked` for unfinished items that require another checklist
+    item or prerequisite first; include `blocked_by` when the prerequisite is
+    a checklist item
+  - `status` is `completed` only when the item was already completed by a
+    prior checklist and is being preserved during a repair pass

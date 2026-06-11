@@ -64,9 +64,11 @@ states:
         cursor_path: /tmp/pragma/current-item.json
         handoff_path: /tmp/pragma/handoff-prompts/next_item/current-item.md
         pending_status: pending
+        blocked_status: blocked
         done_status: completed
         item_event: item_available
         done_event: all_items_done
+        blocked_event: items_blocked
 
   - id: item_worker
     persona: item_worker
@@ -236,6 +238,9 @@ transitions:
         path: /tmp/pragma/checklist.json
         required: true
         description: Completed checklist to validate.
+  - event: items_blocked
+    from: [next_item]
+    to: done
   - event: complete
     from: [item_worker]
     to: item_reviewer

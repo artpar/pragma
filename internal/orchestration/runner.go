@@ -798,6 +798,10 @@ func RenderNextForEachContract(def Definition, state State) string {
 		observe.GlobalTrace("if: doneStatus == \"\"")
 		doneStatus = "approved"
 	}
+	blockedStatus := control.BlockedStatus
+	if blockedStatus == "" {
+		blockedStatus = "blocked"
+	}
 	var b strings.Builder
 	b.WriteString("## Output Artifact Shape Required By Next State\n\n")
 	fmt.Fprintf(&b, "The next state is `%s`, a `foreach_next` control state.\n", next.ID)
@@ -824,6 +828,8 @@ func RenderNextForEachContract(def Definition, state State) string {
 	b.WriteString("      \"validation_command\": \"string\",\n")
 	b.WriteString("      \"validation_deferred_until\": \"string\",\n")
 	b.WriteString("      \"report_changed_files\": [\"string\"],\n")
+	b.WriteString("      \"blocked_by\": [\"item-id\"],\n")
+	b.WriteString("      \"block_reason\": \"string\",\n")
 	fmt.Fprintf(&b, "      \"status\": %q\n", pendingStatus)
 	b.WriteString("    }\n")
 	b.WriteString("  ]\n")
@@ -831,14 +837,20 @@ func RenderNextForEachContract(def Definition, state State) string {
 	b.WriteString("```\n\n")
 	b.WriteString("Rules:\n")
 	b.WriteString("- `id` is required and must be a JSON string, never a number.\n")
-	fmt.Fprintf(&b, "- `status` is required and must be `%q` for new items.\n", pendingStatus)
-	fmt.Fprintf(&b, "- When no `%s` items remain, `%s` will write a cursor item with status `%s`.\n", pendingStatus, next.ID, doneStatus)
+	fmt.Fprintf(&b, "- `status` is required and must be `%q`, `%q`, or `%q`.\n", pendingStatus, blockedStatus, doneStatus)
+	fmt.Fprintf(&b, "- Use `%s` only for items runnable immediately by the next worker.\n", pendingStatus)
+	fmt.Fprintf(&b, "- Use `%s` with `blocked_by` for unfinished items that depend on another checklist item before they can run.\n", blockedStatus)
+	fmt.Fprintf(&b, "- When no `%s` items remain and no `%s` items remain, `%s` will write a cursor item with status `%s`.\n", pendingStatus, blockedStatus, next.ID, doneStatus)
+	if control.BlockedEvent != "" {
+		fmt.Fprintf(&b, "- When no `%s` items remain but `%s` items remain, `%s` emits `%s`.\n", pendingStatus, blockedStatus, next.ID, control.BlockedEvent)
+	}
 	if control.HandoffPath != "" {
 		observe.GlobalTrace("if: control.HandoffPath != \"\"")
 		fmt.Fprintf(&b, "- `%s` will select the item and its `%s` persona will write the handoff for that exact selected item, not for future checklist items.\n", next.ID, next.Persona)
 	}
-	b.WriteString("- `acceptance`, `allowed_files`, `forbidden_files`, `coupled_edit_paths`, and `report_changed_files` must be JSON arrays.\n")
-	b.WriteString("- Use `validation_command: \"none\"` only when `acceptance_check` is present and `validation_deferred_until` names what later item or surface makes validation runnable.\n")
+	b.WriteString("- `acceptance`, `allowed_files`, `forbidden_files`, `coupled_edit_paths`, `report_changed_files`, and `blocked_by` must be JSON arrays.\n")
+	b.WriteString("- If `validation_deferred_until` names another checklist item id, set `blocked_by` to that id and use blocked status instead of pending.\n")
+	b.WriteString("- Use `validation_command: \"none\"` only when `acceptance_check` is present or `validation_deferred_until` names what later item or surface makes validation runnable.\n")
 	b.WriteString("- Put every path from `coupled_edit_paths` in `allowed_files`; the worker may edit only `allowed_files`.\n")
 	b.WriteString("- Extra item fields are allowed only if they are valid JSON and should be preserved by later controls.\n\n")
 	observe.GlobalTrace("return: b.String()")
