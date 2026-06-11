@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/artpar/pragma/internal/cli"
@@ -15,6 +17,7 @@ func orchestrationCmd() *cobra.Command {
 		Short: "Run orchestration state machines",
 	}
 	cmd.AddCommand(orchestrationRunCmd())
+	cmd.AddCommand(orchestrationVisualizeCmd())
 	return cmd
 }
 
@@ -38,6 +41,40 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 		PersonaDir:     personaDir,
 		Prompt:         taskPrompt,
 	})
+}
+
+func orchestrationVisualizeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "visualize <orchestration.yaml>",
+		Short: "Print an ASCII orchestration graph",
+		Args:  cobra.ExactArgs(1),
+		RunE:  visualizeOrchestration,
+	}
+	cmd.Flags().String("persona-dir", "personas", "Directory containing persona YAML files")
+	cmd.Flags().String("details", orchestration.VisualizationDetailsCompact, "detail level: compact or full")
+	cmd.Flags().Bool("no-personas", false, "Do not load persona definitions")
+	return cmd
+}
+
+func visualizeOrchestration(cmd *cobra.Command, args []string) error {
+	personaDir, _ := cmd.Flags().GetString("persona-dir")
+	details, _ := cmd.Flags().GetString("details")
+	noPersonas, _ := cmd.Flags().GetBool("no-personas")
+
+	def, err := orchestration.LoadDefinitionFile(args[0])
+	if err != nil {
+		return err
+	}
+	out, err := orchestration.RenderVisualization(def, orchestration.VisualizationOptions{
+		PersonaDir:  personaDir,
+		Details:     details,
+		LoadPersona: !noPersonas,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprint(cmd.OutOrStdout(), out)
+	return err
 }
 
 func controlName(state orchestration.State) string {
