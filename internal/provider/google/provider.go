@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/pragma/internal/debug"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
@@ -116,12 +115,10 @@ func (p *Provider) CountTokens(ctx context.Context, params provider.RequestParam
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "if: err != nil")
-		debug.Log("Google CountTokens error: %v", err)
 		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "if: err != nil")
 		observe.TraceCtx(ctx, "google", "Provider.CountTokens", "return: 0, fmt.Errorf(\"google: count tokens: %w\", err)")
 		return 0, fmt.Errorf("google: count tokens: %w", err)
 	}
-	debug.Log("Google CountTokens result for %s: %d", params.Model, resp.TotalTokens)
 	observe.TraceCtx(ctx, "google", "Provider.CountTokens", fmt.Sprintf("return: %d", resp.TotalTokens))
 	observe.TraceCtx(ctx, "google", "Provider.CountTokens", "return: int(resp.TotalTokens), nil")
 	return int(resp.TotalTokens), nil

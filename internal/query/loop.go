@@ -11,10 +11,6 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-// continuationPrompt is sent when the model returns StopPauseTurn,
-// indicating it wants to continue but hit a turn-level limit.
-const continuationPrompt = "Please continue."
-
 // Run starts the agentic loop in a goroutine and returns a channel of LoopEvents.
 // The channel is closed when the loop finishes.
 // Implements SPEC.md §6.1.
@@ -30,16 +26,10 @@ func (e *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEvent {
 				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
 			}
 		}()
-		e.runLoop(ctx, userMessage, ch)
+		e.runPragmaLoop(ctx, userMessage, ch)
 	}()
 	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
 	return ch
-}
-
-func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
-	observe.TraceCtx(ctx, "query", "Engine.runLoop", "enter")
-	defer observe.TraceCtx(ctx, "query", "Engine.runLoop", "exit")
-	e.runPragmaLoop(ctx, userMessage, ch)
 }
 
 func (e *Engine) runStopHook(ch chan<- LoopEvent) {
