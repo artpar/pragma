@@ -86,7 +86,6 @@ The command layer should stay thin. Most runtime construction belongs to
 | `internal/cli/deps.go` | `Deps` | Shared runtime object graph: config, credentials, provider, bus, checker, state store, engine, MCP manager, cron scheduler, hook manager, metrics, session writer, and cleanup. |
 | `internal/cli/deps.go` | `SetupDepsWithOptions` | Main dependency injection root. Loads config/credentials, resolves provider, initializes observe subscribers, permissions, hooks, sessions/resume state, state store, cron, MCP manager, and cleanup. |
 | `internal/cli/deps.go` | `CreateProvider` | Factory for `anthropic`, `openai`, `google`, `google-vertex`, `groq`, and `lilac` providers. |
-| `internal/cli/deps.go` | `buildRuntimeSystemPrompt` | Builds the runtime system prompt from override text or `internal/sysprompt.Builder`. |
 | `internal/cli/tools.go` | `RegisterTools` | Creates `query.Engine`. |
 | `internal/cli/subcommands.go` | `RegisterSubcommands`, `RunPromptCommand`, `RunLocalCommand` | Exposes slash commands as regular Cobra subcommands where applicable. |
 
@@ -247,12 +246,11 @@ so each state keeps scoped history.
 | `internal/mcp/manager.go` | `Manager` | Owns MCP clients, statuses, generation, configured servers, reconnection, and registered names. |
 | `internal/mcp/manager.go` | `ConfigureServers`, `ReplaceServers`, `DisconnectAll`, `ServerStatuses`, `WaitForRegisteredTools` | MCP connection and registry integration. |
 
-## Config, System Prompt, Hooks
+## Config, Hooks, Runtime Services
 
 | Package | Key types/methods | Responsibility |
 | --- | --- | --- |
 | `internal/config` | `Config`, `Load`, `LoadPermissions`, `Credentials`, `PragmaHome`, `SessionsDir`, settings path helpers | Reads global/project/local settings, credentials, permissions, toolsets, and path conventions under `~/.pragma` and project `.pragma`. |
-| `internal/sysprompt` | `Builder`, `Builder.Build`, `LoadAgentMD`, `DetectEnv`, git helpers | Builds system prompt blocks from static prompt, environment, git state, AGENT.md files, and skills. |
 | `internal/hook` | `Manager`, `Execute`, `ExecuteInWorkDir`, `LoadHooks`, `ExecCommand` | Loads and executes hooks for events such as user prompt submit, pre/post tool use, and stop. |
 | `internal/cron` | `Scheduler`, `Job`, `Create`, `Delete`, `List`, `Start`, `Store` | Scheduled prompt/job management. |
 | `internal/compact` | `Service`, `Compact`, `AutoTracker`, token/window helpers | Manual and automatic conversation compaction. |

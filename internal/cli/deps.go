@@ -16,6 +16,7 @@ import (
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/cron"
+	"github.com/artpar/pragma/internal/gitutil"
 	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
@@ -30,42 +31,40 @@ import (
 	oaiprov "github.com/artpar/pragma/internal/provider/openai"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
-	"github.com/artpar/pragma/internal/sysprompt"
 )
 
 // Deps holds all shared dependencies created by SetupDeps.
 type Deps struct {
-	Cfg                    config.Config
-	Creds                  config.Credentials
-	Bus                    *observe.EventBus
-	StderrLogger           *observe.Logger
-	Prov                   provider.Provider
-	Checker                permission.Checker
-	Store                  *app.StateStore
-	Engine                 *query.Engine
-	CostTracker            *model.CostTracker
-	EngineCfg              query.EngineConfig
-	McpManager             *mcp.Manager
-	CapabilityWorkDir      string
-	capabilityMu           sync.Mutex
-	capabilityContext      context.Context
-	capabilityWG           *sync.WaitGroup
-	CronSched              *cron.Scheduler
-	HookMgr                *hook.Manager
-	Metrics                *observe.Metrics
-	Auditor                *observe.Auditor
-	TokenMonitor           *observe.TokenMonitor
-	LogFilePath            string
-	RecordingPath          string
-	Cwd                    string
-	StartedAt              time.Time
-	SessionHeader          session.HeaderData
-	SessionWriter          *session.Writer
-	SessionLastIdx         int
-	ModelSwitcher          func(string) error
-	SystemPromptForWorkDir func(string) model.SystemPrompt
-	Cleanup                func()
-	recorder               *observe.Recorder
+	Cfg               config.Config
+	Creds             config.Credentials
+	Bus               *observe.EventBus
+	StderrLogger      *observe.Logger
+	Prov              provider.Provider
+	Checker           permission.Checker
+	Store             *app.StateStore
+	Engine            *query.Engine
+	CostTracker       *model.CostTracker
+	EngineCfg         query.EngineConfig
+	McpManager        *mcp.Manager
+	CapabilityWorkDir string
+	capabilityMu      sync.Mutex
+	capabilityContext context.Context
+	capabilityWG      *sync.WaitGroup
+	CronSched         *cron.Scheduler
+	HookMgr           *hook.Manager
+	Metrics           *observe.Metrics
+	Auditor           *observe.Auditor
+	TokenMonitor      *observe.TokenMonitor
+	LogFilePath       string
+	RecordingPath     string
+	Cwd               string
+	StartedAt         time.Time
+	SessionHeader     session.HeaderData
+	SessionWriter     *session.Writer
+	SessionLastIdx    int
+	ModelSwitcher     func(string) error
+	Cleanup           func()
+	recorder          *observe.Recorder
 }
 
 type SetupDepsOptions struct {
@@ -235,9 +234,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	var sessionHeader session.HeaderData
 	var sessionLastIdx int
 	runtimeCWD := cwd
-	systemPromptForWorkDir := func(workDir string) model.SystemPrompt {
-		return buildRuntimeSystemPrompt(cmd, cfg, bus, workDir)
-	}
 	resumeID, _ := cmd.Flags().GetString("resume")
 
 	continueFlag, _ := cmd.Flags().GetBool("continue")
@@ -313,18 +309,16 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		sessionLastIdx = len(conv.Messages)
 	} else {
 		observe.GlobalTrace("else: resumeID != \"\"")
-		sysPrompt := systemPromptForWorkDir(cwd)
-		conv = model.NewConversation(sysPrompt, cfg.Model, cfg.Provider, cwd)
+		conv = model.NewConversation(model.SystemPrompt{}, cfg.Model, cfg.Provider, cwd)
 		sessionStart = conv.CreatedAt
 		sessionHeader = session.HeaderData{
-			SessionID:      conv.ID,
-			Model:          cfg.Model,
-			Provider:       cfg.Provider,
-			WorkDir:        cwd,
-			GitRemote:      sysprompt.GitRemoteURL(cwd),
-			SystemOverride: cfg.SystemPrompt,
-			CreatedAt:      conv.CreatedAt,
-			System:         sysPrompt,
+			SessionID: conv.ID,
+			Model:     cfg.Model,
+			Provider:  cfg.Provider,
+			WorkDir:   cwd,
+			GitRemote: gitutil.RemoteURL(cwd),
+			CreatedAt: conv.CreatedAt,
+			System:    conv.System,
 		}
 	}
 
@@ -414,34 +408,33 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	observe.GlobalTrace("return: &Deps{\n\tCfg:\t\tcfg,\n\tCreds:\t\tcreds,\n\tBus:\t\tbus,\n\tStderrLogger:\tlogger,\n\tProv:\t...")
 
 	deps = &Deps{
-		Cfg:                    cfg,
-		Creds:                  creds,
-		Bus:                    bus,
-		StderrLogger:           logger,
-		Prov:                   prov,
-		Checker:                checker,
-		Store:                  store,
-		Engine:                 nil,
-		CostTracker:            costTracker,
-		EngineCfg:              engineCfg,
-		McpManager:             mcpManager,
-		CapabilityWorkDir:      "",
-		capabilityContext:      depsCtx,
-		capabilityWG:           &depsWG,
-		CronSched:              cronSched,
-		HookMgr:                hookMgr,
-		Metrics:                metrics,
-		Auditor:                auditor,
-		TokenMonitor:           tokenMon,
-		LogFilePath:            logFilePath,
-		RecordingPath:          "",
-		Cwd:                    cwd,
-		StartedAt:              sessionStart,
-		SessionHeader:          sessionHeader,
-		SessionWriter:          sessionWriter,
-		SessionLastIdx:         sessionLastIdx,
-		Cleanup:                compositeCleanup,
-		SystemPromptForWorkDir: systemPromptForWorkDir,
+		Cfg:               cfg,
+		Creds:             creds,
+		Bus:               bus,
+		StderrLogger:      logger,
+		Prov:              prov,
+		Checker:           checker,
+		Store:             store,
+		Engine:            nil,
+		CostTracker:       costTracker,
+		EngineCfg:         engineCfg,
+		McpManager:        mcpManager,
+		CapabilityWorkDir: "",
+		capabilityContext: depsCtx,
+		capabilityWG:      &depsWG,
+		CronSched:         cronSched,
+		HookMgr:           hookMgr,
+		Metrics:           metrics,
+		Auditor:           auditor,
+		TokenMonitor:      tokenMon,
+		LogFilePath:       logFilePath,
+		RecordingPath:     "",
+		Cwd:               cwd,
+		StartedAt:         sessionStart,
+		SessionHeader:     sessionHeader,
+		SessionWriter:     sessionWriter,
+		SessionLastIdx:    sessionLastIdx,
+		Cleanup:           compositeCleanup,
 	}
 	if err := refreshCapabilitiesForWorkDir(cmd.Context(), deps, activeCapabilityWorkDir(deps)); err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -467,30 +460,6 @@ func contentReplacementRecorder(deps func() *Deps) func([]model.ContentReplaceme
 	}
 }
 
-func buildRuntimeSystemPrompt(cmd *cobra.Command, cfg config.Config, bus *observe.EventBus, workDir string) model.SystemPrompt {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	var sysPrompt model.SystemPrompt
-	if cfg.SystemPrompt != "" {
-		observe.GlobalTrace("if: cfg.SystemPrompt != \"\"")
-		sysPrompt = model.SystemPrompt{
-			Blocks: []model.SystemBlock{{Text: cfg.SystemPrompt, Cacheable: true}},
-		}
-	} else {
-		observe.GlobalTrace("else: cfg.SystemPrompt != \"\"")
-		builder := sysprompt.New(workDir, cfg.Model, bus)
-		sysPrompt = builder.Build()
-	}
-
-	appendPrompt, _ := cmd.Flags().GetString("append-system-prompt")
-	if appendPrompt != "" {
-		observe.GlobalTrace("if: appendPrompt != \"\"")
-		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
-	}
-	observe.GlobalTrace("return: sysPrompt")
-	return sysPrompt
-}
-
 // ApplyFlagOverrides applies CLI flag values to the config.
 func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	observe.GlobalTrace("enter")
@@ -506,10 +475,6 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("api-key") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"api-key\")")
 		cfg.APIKey, _ = cmd.Flags().GetString("api-key")
-	}
-	if cmd.Flags().Changed("system-prompt") {
-		observe.GlobalTrace("if: cmd.Flags().Changed(\"system-prompt\")")
-		cfg.SystemPrompt, _ = cmd.Flags().GetString("system-prompt")
 	}
 	if cmd.Flags().Changed("max-tokens") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"max-tokens\")")

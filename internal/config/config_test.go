@@ -205,14 +205,13 @@ func TestLoad_MalformedJSON(t *testing.T) {
 func TestJSONRoundTrip(t *testing.T) {
 	temp := 0.5
 	original := Config{
-		Model:        "test-model",
-		Provider:     "anthropic",
-		MaxTokens:    8192,
-		Temperature:  &temp,
-		Thinking:     &ThinkingConfig{Enabled: true, BudgetTokens: 10000},
-		SystemPrompt: "You are helpful.",
-		Verbose:      true,
-		Record:       true,
+		Model:       "test-model",
+		Provider:    "anthropic",
+		MaxTokens:   8192,
+		Temperature: &temp,
+		Thinking:    &ThinkingConfig{Enabled: true, BudgetTokens: 10000},
+		Verbose:     true,
+		Record:      true,
 	}
 
 	data, err := json.Marshal(original)
@@ -239,9 +238,6 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 	if restored.Thinking == nil || restored.Thinking.Enabled != original.Thinking.Enabled || restored.Thinking.BudgetTokens != original.Thinking.BudgetTokens {
 		t.Errorf("Thinking = %+v, want %+v", restored.Thinking, original.Thinking)
-	}
-	if restored.SystemPrompt != original.SystemPrompt {
-		t.Errorf("SystemPrompt = %q, want %q", restored.SystemPrompt, original.SystemPrompt)
 	}
 	if restored.Verbose != original.Verbose {
 		t.Errorf("Verbose = %v, want %v", restored.Verbose, original.Verbose)
@@ -308,15 +304,14 @@ func TestMerge_AllFields(t *testing.T) {
 	temp := 0.5
 	base := Config{}
 	overlay := Config{
-		Model:        "m",
-		Provider:     "p",
-		APIKey:       "k",
-		MaxTokens:    100,
-		Temperature:  &temp,
-		Thinking:     &ThinkingConfig{Enabled: true, BudgetTokens: 5000},
-		SystemPrompt: "sys",
-		Verbose:      true,
-		Record:       true,
+		Model:       "m",
+		Provider:    "p",
+		APIKey:      "k",
+		MaxTokens:   100,
+		Temperature: &temp,
+		Thinking:    &ThinkingConfig{Enabled: true, BudgetTokens: 5000},
+		Verbose:     true,
+		Record:      true,
 	}
 
 	got := merge(base, overlay)
@@ -337,9 +332,6 @@ func TestMerge_AllFields(t *testing.T) {
 	}
 	if got.Thinking == nil || !got.Thinking.Enabled {
 		t.Errorf("Thinking = %v", got.Thinking)
-	}
-	if got.SystemPrompt != "sys" {
-		t.Errorf("SystemPrompt = %q", got.SystemPrompt)
 	}
 	if !got.Verbose {
 		t.Error("Verbose = false")

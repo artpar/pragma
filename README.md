@@ -12,7 +12,6 @@ go run ./cmd/pragma -p "What is 2+2?"
 # With options
 go run ./cmd/pragma -p "Explain Go channels" \
   --model claude-haiku-4-5-20251001 \
-  --system-prompt "Be concise" \
   --max-tokens 200 \
   --verbose
 ```
@@ -102,7 +101,6 @@ Add `--evaluate` to run the official local-Docker evaluator on the generated pat
 | `--model` | Model name (default: claude-sonnet-4-20250514) |
 | `--provider` | Provider name (default: anthropic) |
 | `--api-key` | API key (or set `ANTHROPIC_API_KEY` env var) |
-| `--system-prompt` | System prompt override |
 | `--max-tokens` | Max output tokens (default: 16384) |
 | `--temperature` | Sampling temperature (0.0–1.0) |
 | `--thinking` | Enable extended thinking |

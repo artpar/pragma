@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/artpar/pragma/internal/app"
-	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
@@ -151,18 +150,6 @@ func runtimeSkillCatalog(d *Deps) skill.Catalog {
 	})
 	observe.GlobalTrace("return: catalog")
 	return catalog
-}
-
-func runtimeSystemPromptForDeps(d *Deps) func(string) model.SystemPrompt {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: func(workDir string) model.SystemPrompt {\n\tif d == nil || d.SystemPromptForWo...")
-	return func(workDir string) model.SystemPrompt {
-		if d == nil || d.SystemPromptForWorkDir == nil {
-			return model.SystemPrompt{}
-		}
-		return d.SystemPromptForWorkDir(workDir)
-	}
 }
 
 func runtimeCapabilitiesForDeps(d *Deps) func(context.Context, string) {

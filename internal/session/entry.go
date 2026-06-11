@@ -28,14 +28,13 @@ type Entry struct {
 
 // HeaderData is the session-level metadata written as the first JSONL line.
 type HeaderData struct {
-	SessionID      string             `json:"session_id"`
-	Model          string             `json:"model"`
-	Provider       string             `json:"provider"`
-	WorkDir        string             `json:"work_dir"`
-	GitRemote      string             `json:"git_remote,omitempty"`
-	SystemOverride string             `json:"system_override,omitempty"`
-	CreatedAt      time.Time          `json:"created_at"`
-	System         model.SystemPrompt `json:"system"`
+	SessionID string             `json:"session_id"`
+	Model     string             `json:"model"`
+	Provider  string             `json:"provider"`
+	WorkDir   string             `json:"work_dir"`
+	GitRemote string             `json:"git_remote,omitempty"`
+	CreatedAt time.Time          `json:"created_at"`
+	System    model.SystemPrompt `json:"system"`
 }
 
 // MetadataData carries mutable session counters, appended after each turn.

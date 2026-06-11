@@ -56,7 +56,6 @@ internal/
   app/                ← AppState (TodoItem, PlanMode, TeamContext) + StateStore (references model/)
   tui/                ← Bubbletea TUI (permission dialog, ask dialog, streaming display)
   config/             ← Settings + merge + path resolution (~/.pragma/)
-  sysprompt/          ← System prompt builder (AGENT.md loading, env detection, skill listing)
   session/            ← Session persistence (save/load/list to ~/.pragma/sessions/)
   task/               ← Background tasks
   skill/              ← Skill type, disk loader, frontmatter parsing, arg substitution

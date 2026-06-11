@@ -141,12 +141,6 @@ func eventDetail(event Event) string {
 		return fmt.Sprintf("server=%s tools=%d", e.ServerName, e.ToolCount)
 	case MCPServerFailed:
 		return fmt.Sprintf("server=%s err=%s", e.ServerName, e.ErrorMessage)
-	case AgentMDLoaded:
-		return fmt.Sprintf("path=%s scope=%s bytes=%d", e.Path, e.Scope, e.Bytes)
-	case AgentMDNotFound:
-		return fmt.Sprintf("path=%s scope=%s", e.Path, e.Scope)
-	case SystemPromptBuilt:
-		return fmt.Sprintf("blocks=%d bytes=%d", e.BlockCount, e.TotalBytes)
 	case SubAgentSpawned:
 		return fmt.Sprintf("agent=%s model=%s", e.AgentName, e.Model)
 	case SubAgentCompleted:
@@ -194,11 +188,10 @@ func eventLevel(kind string) Level {
 		"ToolPermissionChecked", "ToolPermissionPromptStarted", "ToolPermissionPrompted",
 		"AskPromptRequested", "AskPromptResolved", "AskPromptCancelled",
 		"PermissionRuleMatched", "SlashCommandExecuted",
-		"AgentMDLoaded", "SystemPromptBuilt",
 		"BriefMessageSent", "McpOAuthCompleted":
 		return LevelInfo
 	case "APIRetryScheduled", "CompactionStarted", "CompactionCompleted",
-		"MCPHealthCheck", "PermissionEscalated", "AgentMDNotFound",
+		"MCPHealthCheck", "PermissionEscalated",
 		"McpOAuthStarted":
 		return LevelWarn
 	case "APIRequestFailed", "ToolExecutionFailed", "CompactionFailed",
@@ -241,8 +234,6 @@ func eventTopic(kind string) string {
 		return "permission"
 	case "ErrorOccurred":
 		return "error"
-	case "AgentMDLoaded", "AgentMDNotFound", "SystemPromptBuilt":
-		return "sysprompt"
 	case "BriefMessageSent":
 		return "brief"
 	case "FlowTrace":

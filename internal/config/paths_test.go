@@ -32,20 +32,6 @@ func TestSessionsDir(t *testing.T) {
 	}
 }
 
-func TestGlobalAgentMDPath(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	path, err := GlobalAgentMDPath()
-	if err != nil {
-		t.Fatalf("GlobalAgentMDPath: %v", err)
-	}
-	expected := filepath.Join(dir, ".pragma", "AGENT.md")
-	if path != expected {
-		t.Errorf("GlobalAgentMDPath = %q, want %q", path, expected)
-	}
-}
-
 func TestProjectPaths(t *testing.T) {
 	workDir := "/tmp/myproject"
 
@@ -56,8 +42,6 @@ func TestProjectPaths(t *testing.T) {
 	}{
 		{"ProjectSettingsPath", ProjectSettingsPath, filepath.Join(workDir, ".pragma", "settings.json")},
 		{"LocalSettingsPath", LocalSettingsPath, filepath.Join(workDir, ".pragma", "settings.local.json")},
-		{"ProjectAgentMDPath", ProjectAgentMDPath, filepath.Join(workDir, ".pragma", "AGENT.md")},
-		{"LocalAgentMDPath", LocalAgentMDPath, filepath.Join(workDir, ".pragma", "AGENT.local.md")},
 	}
 
 	for _, tt := range tests {

@@ -52,25 +52,6 @@ func SessionsDir() (string, error) {
 	return filepath.Join(dir, "sessions"), nil
 }
 
-// GlobalAgentMDPath returns ~/.pragma/AGENT.md.
-func GlobalAgentMDPath() (string, error) {
-	dir, err := PragmaHome()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "AGENT.md"), nil
-}
-
-// ProjectAgentMDPath returns <workDir>/.pragma/AGENT.md.
-func ProjectAgentMDPath(workDir string) string {
-	return filepath.Join(workDir, ".pragma", "AGENT.md")
-}
-
-// LocalAgentMDPath returns <workDir>/.pragma/AGENT.local.md.
-func LocalAgentMDPath(workDir string) string {
-	return filepath.Join(workDir, ".pragma", "AGENT.local.md")
-}
-
 // MCPConfigPath returns <workDir>/.pragma/mcp.json.
 func MCPConfigPath(workDir string) string {
 	return filepath.Join(workDir, ".pragma", "mcp.json")

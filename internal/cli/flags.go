@@ -30,8 +30,6 @@ func RegisterFlags(cmd *cobra.Command) {
 
 	// Local flags — root command only (interactive/non-interactive dispatch)
 	cmd.Flags().StringP("prompt", "p", "", "prompt to send (non-interactive mode)")
-	cmd.Flags().String("system-prompt", "", "system prompt")
-	cmd.Flags().String("append-system-prompt", "", "append to default system prompt")
 	cmd.Flags().String("resume", "", "resume session by ID")
 	cmd.Flags().BoolP("continue", "c", false, "resume most recent session in current directory")
 	cmd.Flags().Bool("list-sessions", false, "list saved sessions")

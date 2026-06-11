@@ -22,6 +22,7 @@ import (
 	"github.com/artpar/pragma/internal/buildinfo"
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/config"
+	"github.com/artpar/pragma/internal/gitutil"
 	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/mcp"
@@ -33,7 +34,6 @@ import (
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/slash"
-	"github.com/artpar/pragma/internal/sysprompt"
 	"github.com/artpar/pragma/internal/tui"
 )
 
@@ -130,8 +130,6 @@ func RunBackground(cmd *cobra.Command) error {
 	addStringFlag("provider")
 	addStringFlag("model")
 	addStringFlag("api-key")
-	addStringFlag("system-prompt")
-	addStringFlag("append-system-prompt")
 	addStringFlag("permission-mode")
 	addStringFlag("context-mode")
 	addStringFlag("handoff-schema")
@@ -1594,14 +1592,13 @@ func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
 	}
 	observe.GlobalTrace("return: session.HeaderData{\n\tSessionID:\tsnap.Conversation.ID,\n\tModel:\t\tmodelID,\n\tProv...")
 	return session.HeaderData{
-		SessionID:      snap.Conversation.ID,
-		Model:          modelID,
-		Provider:       providerName,
-		WorkDir:        d.Cwd,
-		GitRemote:      sysprompt.GitRemoteURL(d.Cwd),
-		SystemOverride: d.Cfg.SystemPrompt,
-		CreatedAt:      snap.Conversation.CreatedAt,
-		System:         snap.Conversation.System,
+		SessionID: snap.Conversation.ID,
+		Model:     modelID,
+		Provider:  providerName,
+		WorkDir:   d.Cwd,
+		GitRemote: gitutil.RemoteURL(d.Cwd),
+		CreatedAt: snap.Conversation.CreatedAt,
+		System:    snap.Conversation.System,
 	}
 }
 
@@ -1772,8 +1769,9 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 		ctxWindow = cw
 	}
 
-	snap := d.Store.Snapshot()
-	sysTokEst := compact.EstimateSystemPromptTokens(snap.Conversation.System)
+	sysTokEst := compact.EstimateSystemPromptTokens(model.SystemPrompt{
+		Blocks: []model.SystemBlock{{Text: query.PragmaLoopSystemPrompt()}},
+	})
 	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 
 	return query.CompactionDeps{

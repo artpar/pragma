@@ -172,7 +172,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		CostUSD:                meta.CostUSD,
 		TurnCount:              meta.TurnCount,
 		TokenUsage:             meta.TokenUsage,
-		SystemOverride:         header.SystemOverride,
 		GitRemote:              header.GitRemote,
 		ContentReplacements:    replacements,
 		PromptHistory:          promptHistory,
