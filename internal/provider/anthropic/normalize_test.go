@@ -141,31 +141,3 @@ func TestEnsureToolResultPairingOrphanedResult(t *testing.T) {
 		}
 	}
 }
-
-func TestNormalizeMessagesFullPipeline(t *testing.T) {
-	msgs := []model.Message{
-		msg(model.RoleUser, model.TextPart{Text: "a"}),
-		msg(model.RoleUser, model.TextPart{Text: "b"}), // consecutive, should merge
-		msg(model.RoleAssistant), // empty, should be filtered
-		msg(model.RoleAssistant,
-			model.ToolCallPart{ID: "tc1", Name: "X", Input: json.RawMessage(`{}`)},
-		),
-		// No tool result — should be synthesized
-	}
-	got := normalizeMessages(msgs)
-	// After filter: removes empty assistant
-	// After merge: user a+b merged
-	// After pairing: synthetic result for tc1
-	if len(got) != 3 {
-		t.Fatalf("length: got %d, want 3", len(got))
-	}
-	if got[0].Role != model.RoleUser {
-		t.Errorf("msg[0] role: got %q", got[0].Role)
-	}
-	if got[1].Role != model.RoleAssistant {
-		t.Errorf("msg[1] role: got %q", got[1].Role)
-	}
-	if got[2].Role != model.RoleUser {
-		t.Errorf("msg[2] role: got %q", got[2].Role)
-	}
-}

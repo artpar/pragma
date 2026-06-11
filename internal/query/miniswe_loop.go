@@ -79,6 +79,61 @@ var pragmaLoopForegroundWait = 300 * time.Second
 
 const pragmaLoopRunningOutputLines = 100
 
+const pragmaLoopMaxNoActionRetries = 3
+
+type pragmaLoopRunConfig struct {
+	System              model.SystemPrompt
+	UserMessage         string
+	CompletionCheck     PragmaLoopCompletionCheck
+	MessageStartIndexes []int
+	MaxTurns            int
+}
+
+type pragmaLoopTurnRequest struct {
+	Model  string
+	Params provider.RequestParams
+}
+
+type pragmaLoopActionKind int
+
+const (
+	pragmaLoopActionFinal pragmaLoopActionKind = iota
+	pragmaLoopActionBash
+	pragmaLoopActionInvalid
+	pragmaLoopActionNativeToolCall
+)
+
+type pragmaLoopAction struct {
+	Kind  pragmaLoopActionKind
+	Count int
+	Bash  string
+}
+
+type pragmaLoopAssistantTurn struct {
+	Response      model.Response
+	Text          string
+	ReplayContent []model.ContentPart
+	Action        pragmaLoopAction
+}
+
+type pragmaLoopCommandResult struct {
+	Command   string
+	Result    pragmaLoopBashResult
+	TimedOut  bool
+	Submitted bool
+}
+
+type pragmaLoopObservation struct {
+	Text     string
+	Complete bool
+}
+
+type pragmaLoopCommandPolicy struct{}
+
+type pragmaLoopCommandRejection struct {
+	Reason string
+}
+
 func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "exit")
@@ -119,29 +174,15 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 		e.runStopHook(ch)
 	}()
 
-	maxTurns := e.config.MaxTurns
-	if maxTurns <= 0 {
-		observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: maxTurns <= 0")
-		maxTurns = 300
-	}
+	run := e.newPragmaLoopRunConfig(system, userMessage, completionCheck, messageStartIndexes...)
 
-	snap := e.store.Snapshot()
-	userMsg := model.Message{
-		ID:        model.NewUUID(),
-		Role:      model.RoleUser,
-		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
-		Timestamp: time.Now(),
-	}
-	if err := e.appendConversationMessage(userMsg, func(s *app.AppState) {
-		s.Conversation.System = system
-	}); err != nil {
+	if err := e.appendPragmaLoopInitialUserMessage(run); err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 		ch <- ErrorEvent{Err: err}
 		return
 	}
 
-	const maxNoActionRetries = 3
-	for turn := 0; turn < maxTurns; turn++ {
+	for turn := 0; turn < run.MaxTurns; turn++ {
 		observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "for: turn < maxTurns")
 		if err := ctx.Err(); err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
@@ -149,74 +190,23 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			return
 		}
 
-		snap = e.store.Snapshot()
-		resolvedModel := e.config.Model
-		if snap.Model != "" {
-			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: snap.Model != \"\"")
-			resolvedModel = snap.Model
-		}
-
-		messagesForQuery, err := e.messagesForRequestChecked(snap.Conversation, messageStartIndexes...)
+		request, workDir, err := e.buildPragmaLoopTurnRequest(run)
 		if err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
 		}
-		params := provider.RequestParams{
-			Model:          resolvedModel,
-			MaxTokens:      e.config.MaxTokens,
-			Messages:       messagesForQuery,
-			System:         system,
-			Temperature:    e.config.Temperature,
-			Thinking:       e.config.Thinking,
-			ResponseSchema: e.config.ResponseSchema,
-		}
 
-		var response model.Response
-		var assistantText string
-		var command string
-		var actionCount int
-		for noActionRetries := 0; ; noActionRetries++ {
-			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "for: true")
-			ch <- ModelRequestEvent{Model: resolvedModel, Attempt: noActionRetries + 1}
-			var err error
-			response, err = e.completePragmaLoopResponse(ctx, params, ch)
-			if err != nil {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
-				ch <- ErrorEvent{Err: err}
-				return
-			}
-			if pragmaLoopHasToolCall(response.Content) {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: pragmaLoopHasToolCall(response.Content)")
-				if noActionRetries >= maxNoActionRetries {
-					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: noActionRetries >= maxNoActionRetries")
-					ch <- ErrorEvent{Err: fmt.Errorf("model returned native tool call in Pragma bash loop after %d retries", maxNoActionRetries)}
-					return
-				}
-				continue
-			}
-			assistantText = responseText(response)
-			command, actionCount = extractPragmaLoopCommand(assistantText)
-			if actionCount != 0 {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: actionCount != 0")
-				break
-			}
-			if noActionRetries >= maxNoActionRetries {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: noActionRetries >= maxNoActionRetries")
-				ch <- ErrorEvent{Err: fmt.Errorf("model returned no bash action after %d retries", maxNoActionRetries)}
-				return
-			}
+		assistantTurn, err := e.completePragmaLoopAssistantTurn(ctx, request, ch)
+		if err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
+			ch <- ErrorEvent{Err: err}
+			return
 		}
-		emitPragmaLoopResponseText(response, ch)
-		ch <- ModelResponseEvent{Model: resolvedModel, StopReason: response.StopReason}
+		emitPragmaLoopResponseText(assistantTurn.Response, ch)
+		ch <- ModelResponseEvent{Model: request.Model, StopReason: assistantTurn.Response.StopReason}
 
-		assistantMsg := model.Message{
-			ID:        model.NewUUID(),
-			Role:      model.RoleAssistant,
-			Content:   pragmaLoopReplayContent(response.Content),
-			Timestamp: time.Now(),
-		}
-		if err := e.appendConversationMessage(assistantMsg, nil); err != nil {
+		if err := e.appendPragmaLoopAssistantTurn(assistantTurn); err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
@@ -227,14 +217,14 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			e.autoTracker.IncrementTurn()
 		}
 
-		if actionCount == 0 {
+		if assistantTurn.Action.Kind == pragmaLoopActionFinal {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: actionCount == 0")
-			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
+			ch <- TurnCompleteEvent{Response: assistantTurn.Response, StopReason: model.StopEndTurn}
 			return
 		}
-		if actionCount > 1 {
+		if assistantTurn.Action.Kind == pragmaLoopActionInvalid {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: actionCount > 1")
-			if err := e.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, actionCount)); err != nil {
+			if err := e.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, assistantTurn.Action.Count)); err != nil {
 				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 				ch <- ErrorEvent{Err: err}
 				return
@@ -242,51 +232,237 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			continue
 		}
 
-		result, timedOut := runPragmaLoopBash(ctx, snap.CWD, command)
-		if timedOut {
-			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: timedOut")
-			if err := e.appendPragmaLoopUserMessage(formatPragmaLoopTimeout(command, result.Output)); err != nil {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
-				ch <- ErrorEvent{Err: err}
-				return
-			}
-			continue
-		}
-		if submitted, _ := pragmaLoopSubmitted(result); submitted {
+		commandResult := executePragmaLoopCommand(ctx, workDir, assistantTurn.Action.Bash)
+		obs, err := commandResult.Observation(run.CompletionCheck)
+		if err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: submitted")
-			if completionCheck != nil {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: completionCheck != nil")
-				ok, message, err := completionCheck()
-				if err != nil {
-					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
-					ch <- ErrorEvent{Err: err}
-					return
-				}
-				if !ok {
-					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: !ok")
-					if strings.TrimSpace(message) == "" {
-						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: strings.TrimSpace(message) == \"\"")
-						message = "Completion was rejected because required output artifacts are missing. Create the missing artifacts and echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
-					}
-					if err := e.appendPragmaLoopUserMessage(message); err != nil {
-						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
-						ch <- ErrorEvent{Err: err}
-						return
-					}
-					continue
-				}
-			}
-			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
+			ch <- ErrorEvent{Err: err}
 			return
 		}
-		if err := e.appendPragmaLoopUserMessage(formatPragmaLoopObservation(result)); err != nil {
+		if obs.Complete {
+			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: obs.Complete")
+			ch <- TurnCompleteEvent{Response: assistantTurn.Response, StopReason: model.StopEndTurn}
+			return
+		}
+		if err := e.appendPragmaLoopUserMessage(obs.Text); err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
 		}
 	}
 
-	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", maxTurns)}
+	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", run.MaxTurns)}
+}
+
+func (e *Engine) newPragmaLoopRunConfig(system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck, messageStartIndexes ...int) pragmaLoopRunConfig {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	maxTurns := e.config.MaxTurns
+	if maxTurns <= 0 {
+		observe.GlobalTrace("if: maxTurns <= 0")
+		maxTurns = 300
+	}
+	indexes := append([]int(nil), messageStartIndexes...)
+	observe.GlobalTrace("return: pragmaLoopRunConfig")
+	observe.GlobalTrace("return: pragmaLoopRunConfig{\n\tSystem:\t\t\tsystem,\n\tUserMessage:\t\tuserMessage,\n\tCompleti...")
+	return pragmaLoopRunConfig{
+		System:              system,
+		UserMessage:         userMessage,
+		CompletionCheck:     completionCheck,
+		MessageStartIndexes: indexes,
+		MaxTurns:            maxTurns,
+	}
+}
+
+func (e *Engine) appendPragmaLoopInitialUserMessage(run pragmaLoopRunConfig) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	userMsg := model.Message{
+		ID:        model.NewUUID(),
+		Role:      model.RoleUser,
+		Content:   []model.ContentPart{model.TextPart{Text: run.UserMessage}},
+		Timestamp: time.Now(),
+	}
+	observe.GlobalTrace("return: e.appendConversationMessage(userMsg, func(s *app.AppState) {...})")
+	observe.GlobalTrace("return: e.appendConversationMessage(userMsg, func(s *app.AppState) {\n\ts.Conversation....")
+	return e.appendConversationMessage(userMsg, func(s *app.AppState) {
+		s.Conversation.System = run.System
+	})
+}
+
+func (e *Engine) buildPragmaLoopTurnRequest(run pragmaLoopRunConfig) (pragmaLoopTurnRequest, string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	snap := e.store.Snapshot()
+	resolvedModel := e.config.Model
+	if snap.Model != "" {
+		observe.GlobalTrace("if: snap.Model != \"\"")
+		resolvedModel = snap.Model
+	}
+
+	messagesForQuery, err := e.messagesForRequestChecked(snap.Conversation, run.MessageStartIndexes...)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: pragmaLoopTurnRequest{}, \"\", err")
+		return pragmaLoopTurnRequest{}, "", err
+	}
+	params := provider.RequestParams{
+		Model:          resolvedModel,
+		MaxTokens:      e.config.MaxTokens,
+		Messages:       messagesForQuery,
+		System:         run.System,
+		Temperature:    e.config.Temperature,
+		Thinking:       e.config.Thinking,
+		ResponseSchema: e.config.ResponseSchema,
+	}
+	observe.GlobalTrace("return: pragmaLoopTurnRequest, snap.CWD, nil")
+	observe.GlobalTrace("return: pragmaLoopTurnRequest{\n\tModel:\tresolvedModel,\n\tParams:\tparams,\n}, snap.CWD, nil")
+	return pragmaLoopTurnRequest{
+		Model:  resolvedModel,
+		Params: params,
+	}, snap.CWD, nil
+}
+
+func (e *Engine) completePragmaLoopAssistantTurn(ctx context.Context, request pragmaLoopTurnRequest, ch chan<- LoopEvent) (pragmaLoopAssistantTurn, error) {
+	observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "exit")
+	for noActionRetries := 0; ; noActionRetries++ {
+		observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "for: true")
+		ch <- ModelRequestEvent{Model: request.Model, Attempt: noActionRetries + 1}
+		response, err := e.completePragmaLoopResponse(ctx, request.Params, ch)
+		if err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "if: err != nil")
+			observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "return: pragmaLoopAssistantTurn{}, err")
+			return pragmaLoopAssistantTurn{}, err
+		}
+
+		turn := classifyPragmaLoopAssistantTurn(response)
+		switch turn.Action.Kind {
+		case pragmaLoopActionNativeToolCall:
+			observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "case: pragmaLoopActionNativeToolCall")
+			if noActionRetries >= pragmaLoopMaxNoActionRetries {
+				observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "return: pragmaLoopAssistantTurn{}, fmt.Errorf(\"model returned native tool call in Pra...")
+				return pragmaLoopAssistantTurn{}, fmt.Errorf("model returned native tool call in Pragma bash loop after %d retries", pragmaLoopMaxNoActionRetries)
+			}
+		case pragmaLoopActionFinal:
+			observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "case: pragmaLoopActionFinal")
+			if noActionRetries >= pragmaLoopMaxNoActionRetries {
+				observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "return: pragmaLoopAssistantTurn{}, fmt.Errorf(\"model returned no bash action after %d...")
+				return pragmaLoopAssistantTurn{}, fmt.Errorf("model returned no bash action after %d retries", pragmaLoopMaxNoActionRetries)
+			}
+		default:
+			observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "default")
+			return turn, nil
+		}
+	}
+}
+
+func classifyPragmaLoopAssistantTurn(response model.Response) pragmaLoopAssistantTurn {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	text := responseText(response)
+	action := classifyPragmaLoopAction(response.Content, text)
+	observe.GlobalTrace("return: pragmaLoopAssistantTurn")
+	observe.GlobalTrace("return: pragmaLoopAssistantTurn{\n\tResponse:\tresponse,\n\tText:\t\ttext,\n\tReplayContent:\tp...")
+	return pragmaLoopAssistantTurn{
+		Response:      response,
+		Text:          text,
+		ReplayContent: pragmaLoopReplayContent(response.Content),
+		Action:        action,
+	}
+}
+
+func classifyPragmaLoopAction(content []model.ContentPart, text string) pragmaLoopAction {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if pragmaLoopHasToolCall(content) {
+		observe.GlobalTrace("if: pragmaLoopHasToolCall(content)")
+		observe.GlobalTrace("return: pragmaLoopAction{Kind: pragmaLoopActionNativeToolCall}")
+		return pragmaLoopAction{Kind: pragmaLoopActionNativeToolCall}
+	}
+	command, actionCount := extractPragmaLoopCommand(text)
+	if actionCount == 0 {
+		observe.GlobalTrace("if: actionCount == 0")
+		observe.GlobalTrace("return: pragmaLoopAction{Kind: pragmaLoopActionFinal}")
+		return pragmaLoopAction{Kind: pragmaLoopActionFinal}
+	}
+	if actionCount > 1 {
+		observe.GlobalTrace("if: actionCount > 1")
+		observe.GlobalTrace("return: pragmaLoopAction{Kind: pragmaLoopActionInvalid, Count: actionCount}")
+		return pragmaLoopAction{Kind: pragmaLoopActionInvalid, Count: actionCount}
+	}
+	observe.GlobalTrace("return: pragmaLoopAction{Kind: pragmaLoopActionBash}")
+	observe.GlobalTrace("return: pragmaLoopAction{Kind: pragmaLoopActionBash, Count: actionCount, Bash: command}")
+	return pragmaLoopAction{Kind: pragmaLoopActionBash, Count: actionCount, Bash: command}
+}
+
+func (e *Engine) appendPragmaLoopAssistantTurn(turn pragmaLoopAssistantTurn) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	assistantMsg := model.Message{
+		ID:        model.NewUUID(),
+		Role:      model.RoleAssistant,
+		Content:   turn.ReplayContent,
+		Timestamp: time.Now(),
+	}
+	observe.GlobalTrace("return: e.appendConversationMessage(assistantMsg, nil)")
+	return e.appendConversationMessage(assistantMsg, nil)
+}
+
+func executePragmaLoopCommand(ctx context.Context, workDir, command string) pragmaLoopCommandResult {
+	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "enter")
+	defer observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "exit")
+	result, timedOut := runPragmaLoopBash(ctx, workDir, command)
+	submitted := false
+	if !timedOut {
+		observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "if: !timedOut")
+		submitted, _ = pragmaLoopSubmitted(result)
+	}
+	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult")
+	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult{\n\tCommand:\tcommand,\n\tResult:\t\tresult,\n\tTimedOut:\ttime...")
+	return pragmaLoopCommandResult{
+		Command:   command,
+		Result:    result,
+		TimedOut:  timedOut,
+		Submitted: submitted,
+	}
+}
+
+func (result pragmaLoopCommandResult) Observation(completionCheck PragmaLoopCompletionCheck) (pragmaLoopObservation, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if result.TimedOut {
+		observe.GlobalTrace("if: result.TimedOut")
+		observe.GlobalTrace("return: pragmaLoopObservation{Text: formatPragmaLoopTimeout(result.Command, result.Re...")
+		return pragmaLoopObservation{Text: formatPragmaLoopTimeout(result.Command, result.Result.Output)}, nil
+	}
+	if !result.Submitted {
+		observe.GlobalTrace("if: !result.Submitted")
+		observe.GlobalTrace("return: pragmaLoopObservation{Text: formatPragmaLoopObservation(result.Result)}, nil")
+		return pragmaLoopObservation{Text: formatPragmaLoopObservation(result.Result)}, nil
+	}
+	if completionCheck == nil {
+		observe.GlobalTrace("if: completionCheck == nil")
+		observe.GlobalTrace("return: pragmaLoopObservation{Complete: true}, nil")
+		return pragmaLoopObservation{Complete: true}, nil
+	}
+	ok, message, err := completionCheck()
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: pragmaLoopObservation{}, err")
+		return pragmaLoopObservation{}, err
+	}
+	if ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: pragmaLoopObservation{Complete: true}, nil")
+		return pragmaLoopObservation{Complete: true}, nil
+	}
+	if strings.TrimSpace(message) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(message) == \"\"")
+		message = "Completion was rejected because required output artifacts are missing. Create the missing artifacts and echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
+	}
+	observe.GlobalTrace("return: pragmaLoopObservation{Text: message}, nil")
+	return pragmaLoopObservation{Text: message}, nil
 }
 
 func (e *Engine) completePragmaLoopResponse(ctx context.Context, params provider.RequestParams, ch chan<- LoopEvent) (model.Response, error) {
@@ -495,12 +671,12 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 		}
 		return pragmaLoopBashResult{ReturnCode: 0, Output: result.Content}, false
 	}
-	if reason := pragmaLoopSourceMutationReason(workDir, command); reason != "" {
+	if rejection := (pragmaLoopCommandPolicy{}).Evaluate(workDir, command); rejection.Reason != "" {
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "if: reason != \"\"")
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: pragmaLoopBashResult{\n\tReturnCode:\t1,\n\tOutput:\t\tfmt.Sprintf(\"Bash rejected: %...")
 		return pragmaLoopBashResult{
 			ReturnCode: 1,
-			Output:     fmt.Sprintf("Bash rejected: %s. Use apply_patch <<'PATCH' for repository source edits; Bash remains available for read-only inspection, validation, and runtime artifact writes.", reason),
+			Output:     fmt.Sprintf("Bash rejected: %s. Use apply_patch <<'PATCH' for repository source edits; Bash remains available for read-only inspection, validation, and runtime artifact writes.", rejection.Reason),
 		}, false
 	}
 	result, err := shellrun.Execute(ctx, shellrun.Options{
@@ -532,6 +708,19 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	}
 	observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: out, result.TimedOut")
 	return out, result.TimedOut
+}
+
+func (pragmaLoopCommandPolicy) Evaluate(workDir, command string) pragmaLoopCommandRejection {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	reason := pragmaLoopSourceMutationReason(workDir, command)
+	if reason == "" {
+		observe.GlobalTrace("if: reason == \"\"")
+		observe.GlobalTrace("return: pragmaLoopCommandRejection{}")
+		return pragmaLoopCommandRejection{}
+	}
+	observe.GlobalTrace("return: pragmaLoopCommandRejection{Reason: reason}")
+	return pragmaLoopCommandRejection{Reason: reason}
 }
 
 func pragmaLoopSourceMutationReason(workDir, command string) string {

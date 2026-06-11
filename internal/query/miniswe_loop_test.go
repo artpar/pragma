@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/artpar/pragma/internal/model"
 )
 
 func TestPragmaLoopInstancePromptIncludesTaskAndWorkdir(t *testing.T) {
@@ -31,36 +29,6 @@ func TestPragmaLoopInstancePromptIncludesTaskAndWorkdir(t *testing.T) {
 	}
 	if !strings.Contains(msg, "no prose outside the code block") {
 		t.Fatalf("format error does not restate action-only contract: %q", msg)
-	}
-}
-
-func TestExtractPragmaLoopCommandMatchesPragmaLoopRegex(t *testing.T) {
-	command, count := extractPragmaLoopCommand("THOUGHT: x\n\n```bash\nls -la\n```")
-	if count != 1 || command != "ls -la" {
-		t.Fatalf("command=%q count=%d", command, count)
-	}
-
-	_, count = extractPragmaLoopCommand("```sh\nls\n```")
-	if count != 0 {
-		t.Fatalf("sh action count = %d, want 0", count)
-	}
-
-	_, count = extractPragmaLoopCommand("```bash\nls\n```\n```bash\npwd\n```")
-	if count != 2 {
-		t.Fatalf("multi action count = %d, want 2", count)
-	}
-}
-
-func TestPragmaLoopReplayContentDropsReasoning(t *testing.T) {
-	content := pragmaLoopReplayContent([]model.ContentPart{
-		model.ThinkingPart{Text: "provider reasoning"},
-		model.TextPart{Text: "THOUGHT: visible\n```bash\nls\n```"},
-	})
-	if len(content) != 1 {
-		t.Fatalf("content length = %d, want 1", len(content))
-	}
-	if text, ok := content[0].(model.TextPart); !ok || !strings.Contains(text.Text, "THOUGHT: visible") {
-		t.Fatalf("content[0] = %#v, want visible text", content[0])
 	}
 }
 

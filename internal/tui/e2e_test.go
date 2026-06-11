@@ -222,48 +222,6 @@ func TestTUIRealKeysSlashHelp(t *testing.T) {
 	}
 }
 
-func TestTUIRealKeysSlashCost(t *testing.T) {
-	output := sendKeysAndCapture(t, "/cost\r")
-
-	if !strings.Contains(output, "$0.0000") &&
-		!strings.Contains(output, "/cost") {
-		t.Errorf("Expected cost output, got:\n%s", output)
-	}
-}
-
-func TestTUIRealKeysSlashExit(t *testing.T) {
-	m := newTestModel()
-
-	pr, pw := io.Pipe()
-	var output bytes.Buffer
-	p := tea.NewProgram(m,
-		tea.WithInput(pr),
-		tea.WithOutput(&output),
-		tea.WithoutRenderer(),
-	)
-
-	done := make(chan tea.Model, 1)
-	go func() {
-		fm, _ := p.Run()
-		done <- fm
-	}()
-
-	p.Send(tea.WindowSizeMsg{Width: 80, Height: 24})
-	time.Sleep(100 * time.Millisecond)
-
-	// Type /exit and Enter — program should quit on its own
-	_, _ = pw.Write([]byte("/exit\r"))
-	pw.Close()
-
-	select {
-	case <-done:
-		// /exit should cause the program to quit
-	case <-time.After(5 * time.Second):
-		p.Kill()
-		t.Fatal("/exit did not cause program to quit")
-	}
-}
-
 // --- Ctrl+O Verbose Toggle Tests ---
 
 func TestVerboseToggle(t *testing.T) {

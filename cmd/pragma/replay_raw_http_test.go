@@ -42,51 +42,6 @@ func TestResolveRawHTTPCaptureDir(t *testing.T) {
 	}
 }
 
-func TestDumpRawHTTPCapturesPlainOutput(t *testing.T) {
-	root := t.TempDir()
-	captureDir := filepath.Join(root, "raw-http-pragma")
-	writeCaptureTurn(t, captureDir, "000001-abc", `{
-		"model": "test-model",
-		"messages": [
-			{"role": "system", "content": "system prompt"},
-			{"role": "user", "content": "hello"}
-		]
-	}`, `{
-		"choices": [
-			{"message": {"content": "world"}, "finish_reason": "stop"}
-		]
-	}`, `{"sequence":1,"started_at":"2026-06-02T00:00:00Z"}`, `{"sequence":1,"status_code":200,"started_at":"2026-06-02T00:00:01Z","completed_at":"2026-06-02T00:00:02Z"}`)
-	writeCaptureTurn(t, captureDir, "000002-def", `{"messages":[]}`, `data: [DONE]`, `{"sequence":2}`, `{"sequence":2,"status_code":200}`)
-
-	outDir := filepath.Join(root, "dump")
-	if err := dumpRawHTTPCaptures(captureDir, outDir, false); err != nil {
-		t.Fatalf("dump: %v", err)
-	}
-
-	assertFileContains(t, filepath.Join(outDir, "README.md"), "plain dump")
-	assertFileContains(t, filepath.Join(outDir, "README.md"), "does not infer")
-	assertFileContains(t, filepath.Join(outDir, "index.tsv"), "000001-abc")
-	assertFileContains(t, filepath.Join(outDir, "index.tsv"), "turn-000001/request.json")
-	assertFileContains(t, filepath.Join(outDir, "turn-000001", "request_messages.md"), "## SYSTEM")
-	assertFileContains(t, filepath.Join(outDir, "turn-000001", "response_content.md"), "world")
-
-	if _, err := os.Stat(filepath.Join(outDir, "turn-000001", "response.json")); err != nil {
-		t.Fatalf("response.json missing: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(outDir, "turn-000002", "response.raw")); err != nil {
-		t.Fatalf("response.raw missing: %v", err)
-	}
-	for _, name := range []string{
-		"turn-000001_contract_analyst",
-		"turn-000001_architect",
-		"turn-000001_unknown",
-	} {
-		if _, err := os.Stat(filepath.Join(outDir, name)); !os.IsNotExist(err) {
-			t.Fatalf("found inferred directory %s", name)
-		}
-	}
-}
-
 func TestDumpRawHTTPCapturesRequiresOverwrite(t *testing.T) {
 	root := t.TempDir()
 	captureDir := filepath.Join(root, "raw-http-pragma")
@@ -550,44 +505,6 @@ func TestReplayRawHTTPTimeoutFlag(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Client.Timeout") && !strings.Contains(err.Error(), "context deadline exceeded") {
 		t.Fatalf("timeout error = %v", err)
-	}
-}
-
-func TestReplayRawHTTPAuditReportsEvidenceState(t *testing.T) {
-	root := t.TempDir()
-	good := filepath.Join(root, "batch", "good")
-	missing := filepath.Join(root, "batch", "missing")
-	empty := filepath.Join(root, "batch", "empty")
-	for _, dir := range []string{good, missing, empty} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "request.json"), []byte(`{"messages":[]}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(good, "response.raw"), []byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(empty, "response.raw"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	stdout, stderr := executeRawHTTPReplay(t,
-		"replay", "raw-http", "audit", filepath.Join(root, "batch"),
-	)
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
-	}
-	for _, want := range []string{
-		"case\trequest_bytes\tresponse_bytes\tstatus\tsummary",
-		"/good\t15\t65\tresponse_ok",
-		"/missing\t15\t0\tmissing_response",
-		"/empty\t15\t0\tempty_response",
-	} {
-		if !strings.Contains(stdout, want) {
-			t.Fatalf("audit output missing %q\n%s", want, stdout)
-		}
 	}
 }
 

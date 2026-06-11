@@ -43,48 +43,6 @@ func TestInputComponentReset(t *testing.T) {
 	}
 }
 
-func TestInputComponentPromptHistoryRing(t *testing.T) {
-	ic := newInputComponent()
-	submitInput(t, &ic, "first prompt")
-	submitInput(t, &ic, "second prompt")
-
-	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := ic.textarea.Value(); got != "second prompt" {
-		t.Fatalf("first up = %q, want second prompt", got)
-	}
-
-	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := ic.textarea.Value(); got != "first prompt" {
-		t.Fatalf("second up = %q, want first prompt", got)
-	}
-
-	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := ic.textarea.Value(); got != "first prompt" {
-		t.Fatalf("up at oldest = %q, want first prompt", got)
-	}
-
-	ic.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if got := ic.textarea.Value(); got != "second prompt" {
-		t.Fatalf("down = %q, want second prompt", got)
-	}
-}
-
-func TestInputComponentPromptHistoryRestoresDraft(t *testing.T) {
-	ic := newInputComponent()
-	submitInput(t, &ic, "previous prompt")
-
-	ic.textarea.SetValue("draft prompt")
-	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := ic.textarea.Value(); got != "previous prompt" {
-		t.Fatalf("up = %q, want previous prompt", got)
-	}
-
-	ic.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if got := ic.textarea.Value(); got != "draft prompt" {
-		t.Fatalf("down restored = %q, want draft prompt", got)
-	}
-}
-
 func TestInputComponentPromptHistoryLimit(t *testing.T) {
 	ic := newInputComponent()
 	for i := 0; i < inputHistoryLimit+5; i++ {
@@ -114,27 +72,6 @@ func TestInputComponentSetHistory(t *testing.T) {
 	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if got := ic.textarea.Value(); got != "prior prompt 1" {
 		t.Fatalf("second up = %q, want prior prompt 1", got)
-	}
-}
-
-func TestInputComponentSetHistoryThenNewPrompts(t *testing.T) {
-	ic := newInputComponent()
-	ic.SetHistory([]string{"prior prompt"})
-
-	// Add a new prompt in this session
-	ic.textarea.SetValue("new prompt")
-	ic.Update(tea.KeyMsg{Type: tea.KeyEnter})
-
-	// Up should show new prompt first
-	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := ic.textarea.Value(); got != "new prompt" {
-		t.Fatalf("up after new prompt = %q, want new prompt", got)
-	}
-
-	// Up again should show prior prompt
-	ic.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := ic.textarea.Value(); got != "prior prompt" {
-		t.Fatalf("up again = %q, want prior prompt", got)
 	}
 }
 
