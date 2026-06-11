@@ -3,15 +3,12 @@ package query
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/hook"
-	"github.com/artpar/pragma/internal/lifecycle"
-	"github.com/artpar/pragma/internal/lifecycle/bridge"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
@@ -336,104 +333,4 @@ func messageContentTypes(parts []model.ContentPart) []string {
 	}
 	observe.GlobalTrace("return: types")
 	return types
-}
-
-// RunGraph executes a lifecycle graph using the engine's own provider. Returns
-// a channel of LoopEvents, same as Run().
-func (e *Engine) RunGraph(ctx context.Context, graph *lifecycle.Graph, prompt string) <-chan LoopEvent {
-	observe.TraceCtx(ctx, "query", "Engine.RunGraph", "enter")
-	defer observe.TraceCtx(ctx, "query", "Engine.RunGraph", "exit")
-	ch := make(chan LoopEvent, 16)
-	go func() {
-		defer close(ch)
-		defer func() {
-			if r := recover(); r != nil {
-				observe.TraceCtx(ctx, "query", "Engine.RunGraph", "if: r != nil")
-				ch <- ErrorEvent{Err: fmt.Errorf("graph execution panic: %v", r)}
-			}
-		}()
-		e.runGraph(ctx, graph, prompt, ch)
-	}()
-	observe.TraceCtx(ctx, "query", "Engine.RunGraph", "return: ch")
-	return ch
-}
-
-func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt string, ch chan<- LoopEvent) {
-	observe.TraceCtx(ctx, "query", "Engine.runGraph", "enter")
-	defer observe.TraceCtx(ctx, "query", "Engine.runGraph", "exit")
-
-	snap := e.store.Snapshot()
-	resolvedModel := e.config.Model
-	if snap.Model != "" {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: snap.Model != \"\"")
-		resolvedModel = snap.Model
-	}
-	runner := bridge.NewRunner(graph, bridge.NewRunnerConfig(
-		snap.Conversation.System,
-		resolvedModel,
-		e.config.MaxTokens,
-		nil,
-		e.bus,
-	))
-
-	var result bridge.RunResult
-	for runEv := range runner.Stream(ctx, prompt) {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "range events")
-		progress := runEv.Progress
-		ch <- lifecycleProgressEvent(progress)
-		if progress.Status == "completed" {
-			observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: progress.Status == \"completed\"")
-			result = runEv.Result
-		}
-	}
-
-	if err := e.appendLifecycleMessages(result.State); err != nil {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: err != nil")
-		ch <- ErrorEvent{Err: err}
-		return
-	}
-
-	if result.Err != nil {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: result.Err != nil")
-		ch <- ErrorEvent{Err: fmt.Errorf("lifecycle graph: %w", result.Err)}
-		return
-	}
-
-	if result.AssistantText != "" {
-		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: result.AssistantText != \"\"")
-		ch <- TextEvent{Text: result.AssistantText}
-	}
-	ch <- TurnCompleteEvent{Response: result.Response, StopReason: result.StopReason}
-}
-
-func lifecycleProgressEvent(progress bridge.ProgressEvent) LifecycleProgressEvent {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: LifecycleProgressEvent{\n\tStep:\t\tprogress.Step,\n\tNode:\t\tprogress.Node,\n\tNodes:...")
-	return LifecycleProgressEvent{
-		Step:     progress.Step,
-		Node:     progress.Node,
-		Nodes:    progress.Nodes,
-		Status:   progress.Status,
-		Duration: progress.Duration,
-		Error:    progress.Error,
-		FromNode: progress.FromNode,
-		ToNode:   progress.ToNode,
-		RouteKey: progress.RouteKey,
-	}
-}
-
-func (e *Engine) appendLifecycleMessages(state lifecycle.State) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	for _, msg := range bridge.Messages(state) {
-		observe.GlobalTrace("range bridge.Messages(state)")
-		if err := e.appendConversationMessage(msg, nil); err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: err")
-			return err
-		}
-	}
-	observe.GlobalTrace("return: nil")
-	return nil
 }

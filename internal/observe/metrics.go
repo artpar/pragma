@@ -2,7 +2,6 @@ package observe
 
 import (
 	"sync"
-	"time"
 
 	"github.com/artpar/pragma/internal/model"
 )
@@ -20,8 +19,6 @@ type Metrics struct {
 	apiErrors         int
 	apiTotalLatencyMs int64
 	compactions       int
-	sessionStart      time.Time
-	sessionDurationMs int64
 }
 
 // ToolStat holds per-tool execution statistics.
@@ -43,7 +40,6 @@ type MetricsSnapshot struct {
 	APIErrorCount     int
 	AvgAPILatencyMs   int64
 	Compactions       int
-	SessionDurationMs int64
 	ToolStats         map[string]ToolStat
 }
 
@@ -77,8 +73,6 @@ func (m *Metrics) Reset(seed MetricsSeed) {
 	m.apiErrors = 0
 	m.apiTotalLatencyMs = 0
 	m.compactions = 0
-	m.sessionStart = time.Time{}
-	m.sessionDurationMs = 0
 }
 
 func (m *Metrics) HandleEvent(event Event) {
@@ -111,14 +105,6 @@ func (m *Metrics) HandleEvent(event Event) {
 		m.compactions++
 	case UserTurnAccepted:
 		m.turnCount++
-	case SessionStarted:
-		m.sessionStart = e.EventTimestamp()
-	case SessionEnded:
-		if e.DurationMs > 0 {
-			m.sessionDurationMs = e.DurationMs
-		} else if !m.sessionStart.IsZero() {
-			m.sessionDurationMs = e.EventTimestamp().Sub(m.sessionStart).Milliseconds()
-		}
 	}
 }
 
@@ -138,13 +124,6 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 	var avgLatency int64
 	if m.apiCalls > 0 {
 		avgLatency = m.apiTotalLatencyMs / int64(m.apiCalls)
-	}
-
-	var sessionMs int64
-	if m.sessionDurationMs > 0 {
-		sessionMs = m.sessionDurationMs
-	} else if !m.sessionStart.IsZero() {
-		sessionMs = time.Since(m.sessionStart).Milliseconds()
 	}
 
 	toolStats := make(map[string]ToolStat, len(m.toolCalls))
@@ -171,7 +150,6 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		APIErrorCount:     m.apiErrors,
 		AvgAPILatencyMs:   avgLatency,
 		Compactions:       m.compactions,
-		SessionDurationMs: sessionMs,
 		ToolStats:         toolStats,
 	}
 }

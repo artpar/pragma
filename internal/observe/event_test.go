@@ -48,13 +48,6 @@ func TestEventJSONRoundTrip(t *testing.T) {
 			Source:      "localSettings",
 			WasExecuted: true,
 		},
-		SessionEnded{
-			EventHeader:  NewEventHeader("SessionEnded", "t1", "s5", ""),
-			SessionID:    "sess-1",
-			DurationMs:   60000,
-			TurnCount:    5,
-			TotalCostUSD: 0.05,
-		},
 	}
 
 	for _, event := range events {

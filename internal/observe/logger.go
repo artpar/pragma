@@ -151,8 +151,6 @@ func eventDetail(event Event) string {
 		return fmt.Sprintf("agent=%s model=%s", e.AgentName, e.Model)
 	case SubAgentCompleted:
 		return fmt.Sprintf("id=%s turns=%d dur=%dms", e.SubAgentID, e.TurnCount, e.DurationMs)
-	case SessionStarted:
-		return fmt.Sprintf("id=%s", e.SessionID)
 	case SessionSaved:
 		return fmt.Sprintf("id=%s msgs=%d", e.SessionID, e.MessageCount)
 	case FlowTrace:
@@ -190,7 +188,7 @@ func eventLevel(kind string) Level {
 		"MCPServerConnecting", "MCPToolCallStarted":
 		return LevelDebug
 	case "ToolExecutionCompleted", "APIRequestCompleted", "MessageAppended", "UserTurnAccepted",
-		"ConversationStarted", "SessionStarted", "SessionSaved", "SessionEnded",
+		"ConversationStarted", "SessionSaved",
 		"MCPServerConnected", "MCPToolCallCompleted", "SubAgentSpawned",
 		"SubAgentCompleted", "ToolBatchStarted", "ToolBatchCompleted",
 		"ToolPermissionChecked", "ToolPermissionPromptStarted", "ToolPermissionPrompted",
@@ -235,7 +233,7 @@ func eventTopic(kind string) string {
 		"MCPServerFailed", "MCPToolCallStarted", "MCPToolCallCompleted",
 		"MCPHealthCheck", "McpOAuthStarted", "McpOAuthCompleted":
 		return "mcp"
-	case "SessionStarted", "SessionSaved", "SessionEnded":
+	case "SessionSaved":
 		return "session"
 	case "SubAgentSpawned", "SubAgentCompleted", "SubAgentFailed":
 		return "agent"

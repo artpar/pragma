@@ -90,29 +90,3 @@ func TestMetricsConcurrentSnapshot(t *testing.T) {
 		t.Errorf("APICallCount: got %d, want 50", snap.APICallCount)
 	}
 }
-
-func TestMetricsSessionDuration(t *testing.T) {
-	m := NewMetrics(MetricsSeed{})
-
-	m.HandleEvent(SessionStarted{
-		EventHeader: NewEventHeader("SessionStarted", "t1", "s1", ""),
-		SessionID:   "sess-1",
-	})
-
-	// Snapshot while session is active — should compute live duration
-	snap := m.Snapshot()
-	if snap.SessionDurationMs < 0 {
-		t.Errorf("SessionDurationMs should be >= 0, got %d", snap.SessionDurationMs)
-	}
-
-	m.HandleEvent(SessionEnded{
-		EventHeader: NewEventHeader("SessionEnded", "t1", "s2", ""),
-		SessionID:   "sess-1",
-		DurationMs:  5000,
-	})
-
-	snap = m.Snapshot()
-	if snap.SessionDurationMs <= 0 {
-		t.Errorf("SessionDurationMs should be > 0 after session ended, got %d", snap.SessionDurationMs)
-	}
-}

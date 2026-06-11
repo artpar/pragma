@@ -103,7 +103,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var replacements []model.ContentReplacementRecord
 	var promptHistory []PromptHistoryData
 	var orchestrationArtifacts []app.OrchestrationArtifact
-	var taskResults []TaskResultData
 	hasHeader := false
 
 	scanner := newJSONLScanner(f)
@@ -145,11 +144,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				orchestrationArtifacts = data.Artifacts
 			}
-		case EntryTaskResult:
-			var data TaskResultData
-			if err := json.Unmarshal(entry.Data, &data); err == nil && data.TaskID != "" {
-				taskResults = append(taskResults, data)
-			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -183,7 +177,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		ContentReplacements:    replacements,
 		PromptHistory:          promptHistory,
 		OrchestrationArtifacts: orchestrationArtifacts,
-		TaskResults:            taskResults,
 		Worktree:               copyWorktreeSession(meta.Worktree),
 	}, nil
 }

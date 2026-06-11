@@ -13,8 +13,6 @@ const (
 	PostToolUse      Event = "PostToolUse"
 	Stop             Event = "Stop"
 	UserPromptSubmit Event = "UserPromptSubmit"
-	SessionStart     Event = "SessionStart"
-	SessionEnd       Event = "SessionEnd"
 )
 
 // Command is a single hook command from settings.json.
@@ -97,5 +95,5 @@ type AggregatedResult struct {
 	Blocked  bool     // any hook returned exit 2
 	BlockMsg string   // stderr from the blocking hook
 	Feedback []string // additionalContext values from all hooks
-	Stdout   string   // stdout from hooks (for SessionStart → shown to model)
+	Stdout   string   // stdout from hooks
 }

@@ -32,15 +32,14 @@ type ServerStatusInfo struct {
 
 // Manager handles multiple MCP server connections.
 type Manager struct {
-	clients      map[string]*Client
-	configs      map[string]ServerConfig // stored for reconnection
-	statuses     map[string]string
-	lastErrors   map[string]string
-	mu           sync.RWMutex
-	bus          *observe.EventBus
-	lifecycleCtx context.Context
-	generation   uint64
-	stopped      bool
+	clients    map[string]*Client
+	configs    map[string]ServerConfig // stored for reconnection
+	statuses   map[string]string
+	lastErrors map[string]string
+	mu         sync.RWMutex
+	bus        *observe.EventBus
+	generation uint64
+	stopped    bool
 }
 
 // NewManager creates a Manager.
@@ -50,40 +49,12 @@ func NewManager(bus *observe.EventBus) *Manager {
 	observe.GlobalTrace("return: &Manager{\n\tclients:\t\tmake(map[string]*Client),\n\tconfigs:\t\tmake(map[string]Ser...")
 	observe.GlobalTrace("return: &Manager{\n\tclients:\tmake(map[string]*Client),\n\tconfigs:\tmake(map[string]Serve...")
 	return &Manager{
-		clients:      make(map[string]*Client),
-		configs:      make(map[string]ServerConfig),
-		statuses:     make(map[string]string),
-		lastErrors:   make(map[string]string),
-		bus:          bus,
-		lifecycleCtx: context.Background(),
+		clients:    make(map[string]*Client),
+		configs:    make(map[string]ServerConfig),
+		statuses:   make(map[string]string),
+		lastErrors: make(map[string]string),
+		bus:        bus,
 	}
-}
-
-// SetLifecycleContext scopes manager-owned async work such as OAuth callbacks.
-func (m *Manager) SetLifecycleContext(ctx context.Context) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if ctx == nil {
-		observe.GlobalTrace("if: ctx == nil")
-		ctx = context.Background()
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.lifecycleCtx = ctx
-}
-
-func (m *Manager) LifecycleContext() context.Context {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.lifecycleCtx == nil {
-		observe.GlobalTrace("if: m.lifecycleCtx == nil")
-		observe.GlobalTrace("return: context.Background()")
-		return context.Background()
-	}
-	observe.GlobalTrace("return: m.lifecycleCtx")
-	return m.lifecycleCtx
 }
 
 // ConfigureServers records MCP servers and marks them pending without opening

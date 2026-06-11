@@ -82,10 +82,6 @@ func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd
 		rendered := m.mdRenderer.Render(result.DisplayText)
 		m.outputSegs = appendText(m.outputSegs, rendered+"\n\n")
 	}
-	if result.OpenTeams {
-		observe.GlobalTrace("if: result.OpenTeams")
-		m.teams.Show(m.taskReg)
-	}
 	if result.OpenModelPicker {
 		observe.GlobalTrace("if: result.OpenModelPicker")
 		var models []string
@@ -314,25 +310,6 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.outputSegs = m.flushStreamBuf()
 		m.outputSegs = appendText(m.outputSegs, "\n[orchestration: done]\n")
 		m.toolbar.SetStatus("streaming...")
-		m.viewport.SetContent(m.viewportContent())
-		m.viewport.GotoBottom()
-
-	case query.LifecycleProgressEvent:
-		observe.GlobalTrace("typecase: query.LifecycleProgressEvent")
-		m.closeActiveGroup()
-		m.outputSegs = m.flushStreamBuf()
-		m.updateLifecycleProgress(e)
-
-		switch e.Status {
-		case "step_started":
-			if len(e.Nodes) > 0 {
-				m.toolbar.SetStatus(fmt.Sprintf("lifecycle: step %d — %s", e.Step, strings.Join(e.Nodes, ", ")))
-			}
-		case "node_completed":
-			m.toolbar.SetStatus(fmt.Sprintf("lifecycle: %s completed", e.Node))
-		case "completed":
-			m.toolbar.SetStatus("streaming...")
-		}
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 
@@ -573,14 +550,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			observe.GlobalTrace("else: m.streaming")
 			m.toolbar.SetStatus("ready")
 		}
-	}
-
-	if m.teams.active && msg.Type != tea.KeyCtrlC {
-		observe.GlobalTrace("if: m.teams.active && msg.Type != tea.KeyCtrlC")
-		m.teams.Update(msg)
-		m.viewport.SetContent(m.viewportContent())
-		observe.GlobalTrace("return: m, nil")
-		return m, nil
 	}
 
 	if m.modelDlg.active && msg.Type != tea.KeyCtrlC {

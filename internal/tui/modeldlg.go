@@ -32,7 +32,6 @@ var (
 
 // modelDialog is an interactive overlay for selecting a model.
 // Activated by /model or /models slash command with no arguments.
-// Follows the teamsDialog/askDialog pattern.
 type modelDialog struct {
 	active   bool
 	models   []string

@@ -29,7 +29,6 @@ type toolbar struct {
 	contextSize       int
 	latestContextFill int       // latest request's actual context window fill
 	startTime         time.Time // session start for elapsed display
-	teammateCount     int       // number of running teammates
 }
 
 func newToolbar(modelName, provider, workspace string, startTime time.Time) toolbar {
@@ -80,12 +79,6 @@ func (t toolbar) View(width int) string {
 
 		tokenStyled := t.styleTokenStr(tokenStr, pct)
 		left += tokenStyled
-	}
-
-	if t.teammateCount > 0 {
-		observe.GlobalTrace("if: t.teammateCount > 0")
-		tmStyle := lipgloss.NewStyle().Faint(true)
-		left += tmStyle.Render(fmt.Sprintf(" · %d teammates", t.teammateCount))
 	}
 
 	right := fmt.Sprintf(" %s ", t.status)

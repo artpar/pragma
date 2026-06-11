@@ -28,7 +28,6 @@ type RewriteData struct {
 	ContentReplacements    []model.ContentReplacementRecord
 	PromptHistory          []PromptHistoryData
 	OrchestrationArtifacts []app.OrchestrationArtifact
-	TaskResults            []TaskResultData
 }
 
 // NewWriter creates a new session JSONL file at path.
@@ -150,13 +149,6 @@ func (w *Writer) WriteOrchestrationArtifacts(artifacts []app.OrchestrationArtifa
 	return w.writeEntry(EntryOrchestrationArtifacts, OrchestrationArtifactsData{Artifacts: artifacts})
 }
 
-func (w *Writer) WriteTaskResult(result TaskResultData) error {
-	if result.TaskID == "" {
-		return nil
-	}
-	return w.writeEntry(EntryTaskResult, result)
-}
-
 func (w *Writer) writeEntry(kind EntryKind, data any) error {
 	entry, err := MarshalEntry(kind, data)
 	if err != nil {
@@ -233,15 +225,6 @@ func (w *Writer) Rewrite(data RewriteData) error {
 			return err
 		}
 	}
-	for _, result := range data.TaskResults {
-		if result.TaskID == "" {
-			continue
-		}
-		if err := w.encodeRewriteEntry(EntryTaskResult, result); err != nil {
-			return err
-		}
-	}
-
 	// Write metadata
 	metaEntry, err := MarshalEntry(EntryMetadata, data.Metadata)
 	if err != nil {

@@ -274,20 +274,8 @@ func UnmarshalEvent(data []byte) (Event, error) {
 		}
 		event = e
 	// Session events
-	case "SessionStarted":
-		var e SessionStarted
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
 	case "SessionSaved":
 		var e SessionSaved
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "SessionEnded":
-		var e SessionEnded
 		if err := json.Unmarshal(data, &e); err != nil {
 			return nil, err
 		}
@@ -401,44 +389,6 @@ func UnmarshalEvent(data []byte) (Event, error) {
 	// Permission persistence
 	case "PermissionPersisted":
 		var e PermissionPersisted
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	// Team events
-	case "TeamCreated":
-		var e TeamCreated
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "TeamDeleted":
-		var e TeamDeleted
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	// Lifecycle events
-	case "LifecycleStepStarted":
-		var e LifecycleStepStarted
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "LifecycleNodeCompleted":
-		var e LifecycleNodeCompleted
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "LifecycleTransition":
-		var e LifecycleTransition
-		if err := json.Unmarshal(data, &e); err != nil {
-			return nil, err
-		}
-		event = e
-	case "LifecycleCompleted":
-		var e LifecycleCompleted
 		if err := json.Unmarshal(data, &e); err != nil {
 			return nil, err
 		}

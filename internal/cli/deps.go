@@ -31,7 +31,6 @@ import (
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/sysprompt"
-	"github.com/artpar/pragma/internal/task"
 )
 
 // Deps holds all shared dependencies created by SetupDeps.
@@ -46,8 +45,6 @@ type Deps struct {
 	Engine                 *query.Engine
 	CostTracker            *model.CostTracker
 	EngineCfg              query.EngineConfig
-	TaskReg                *task.Registry
-	TaskContext            context.Context
 	McpManager             *mcp.Manager
 	CapabilityWorkDir      string
 	capabilityMu           sync.Mutex
@@ -61,11 +58,10 @@ type Deps struct {
 	LogFilePath            string
 	RecordingPath          string
 	Cwd                    string
-	SessionStart           time.Time
+	StartedAt              time.Time
 	SessionHeader          session.HeaderData
 	SessionWriter          *session.Writer
 	SessionLastIdx         int
-	SessionStarted         bool
 	ModelSwitcher          func(string) error
 	SystemPromptForWorkDir func(string) model.SystemPrompt
 	Cleanup                func()
@@ -349,9 +345,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 
 	hookMgr.SetSessionID(conv.ID)
 
-	taskCtx, taskCancel := context.WithCancel(cmd.Context())
-	taskReg := task.NewRegistry(bus)
-
 	var cronSched *cron.Scheduler
 	if pragmaHome, homeErr := config.PragmaHome(); homeErr == nil {
 		observe.GlobalTrace("if: homeErr == nil")
@@ -384,7 +377,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 
 	depsCtx, depsCancel := context.WithCancel(cmd.Context())
 	var depsWG sync.WaitGroup
-	mcpManager.SetLifecycleContext(depsCtx)
 
 	watchdog := observe.NewMCPWatchdog(mcpManager.ServerStatus, bus, 30*time.Second)
 	depsWG.Add(1)
@@ -397,10 +389,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		if deps != nil {
 			reportProviderCleanup(context.Background(), deps.Prov, bus)
 		}
-		if taskReg != nil {
-			taskReg.ShutdownActive(500 * time.Millisecond)
-		}
-		taskCancel()
 		depsCancel()
 		mcpManager.DisconnectAll()
 		done := make(chan struct{})
@@ -436,8 +424,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		Engine:                 nil,
 		CostTracker:            costTracker,
 		EngineCfg:              engineCfg,
-		TaskReg:                taskReg,
-		TaskContext:            taskCtx,
 		McpManager:             mcpManager,
 		CapabilityWorkDir:      "",
 		capabilityContext:      depsCtx,
@@ -450,11 +436,10 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		LogFilePath:            logFilePath,
 		RecordingPath:          "",
 		Cwd:                    cwd,
-		SessionStart:           sessionStart,
+		StartedAt:              sessionStart,
 		SessionHeader:          sessionHeader,
 		SessionWriter:          sessionWriter,
 		SessionLastIdx:         sessionLastIdx,
-		SessionStarted:         false,
 		Cleanup:                compositeCleanup,
 		SystemPromptForWorkDir: systemPromptForWorkDir,
 	}

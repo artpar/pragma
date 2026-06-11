@@ -117,9 +117,6 @@ func (s *StatusSubscriber) HandleEvent(event observe.Event) {
 		s.waiting = false
 		s.updateStatusLocked()
 		s.mu.Unlock()
-	case observe.SessionStarted:
-		observe.GlobalTrace("typecase: observe.SessionStarted")
-		s.registry.UpdateSessionID(s.pid, s.ownerToken, e.SessionID)
 	}
 }
 

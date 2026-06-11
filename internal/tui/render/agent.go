@@ -22,6 +22,7 @@ type AgentProgressEntry struct {
 
 var (
 	agentBold = lipgloss.NewStyle().Bold(true)
+	agentDim  = lipgloss.NewStyle().Faint(true)
 )
 
 // RenderAgentProgress renders agent execution progress as a tree.
@@ -32,8 +33,8 @@ func RenderAgentProgress(agents []AgentProgressEntry, verbose bool, width int) s
 	defer observe.GlobalTrace("exit")
 	if len(agents) == 0 {
 		observe.GlobalTrace("if: len(agents) == 0")
-		observe.GlobalTrace("return: ContentIndent + lifecycleDim.Render(\"Agent: initializing…\")")
-		return ContentIndent + lifecycleDim.Render("Agent: initializing…")
+		observe.GlobalTrace("return: ContentIndent + agentDim.Render(\"Agent: initializing…\")")
+		return ContentIndent + agentDim.Render("Agent: initializing…")
 	}
 
 	var b strings.Builder
@@ -72,7 +73,7 @@ func RenderAgentProgress(agents []AgentProgressEntry, verbose bool, width int) s
 		if !allBackground && !verbose {
 			observe.GlobalTrace("if: !allBackground && !verbose")
 			b.WriteString(" ")
-			b.WriteString(lifecycleDim.Render("(ctrl+o to expand)"))
+			b.WriteString(agentDim.Render("(ctrl+o to expand)"))
 		}
 		b.WriteString("\n")
 	}
@@ -109,14 +110,14 @@ func renderAgentLine(b *strings.Builder, a AgentProgressEntry, isLast bool, hasM
 	b.WriteString(ContentIndent)
 	if hasMultiple {
 		observe.GlobalTrace("if: hasMultiple")
-		b.WriteString(lifecycleDim.Render(treeChar))
+		b.WriteString(agentDim.Render(treeChar))
 		b.WriteString(" ")
 	}
 
 	label := "Agent"
 	if a.Description != "" {
 		observe.GlobalTrace("if: a.Description != \"\"")
-		label += " (" + truncate(a.Description, 50) + ")"
+		label += " (" + truncateAgentText(a.Description, 50) + ")"
 	}
 
 	metrics := ""
@@ -131,7 +132,7 @@ func renderAgentLine(b *strings.Builder, a AgentProgressEntry, isLast bool, hasM
 
 	if !isResolved {
 		observe.GlobalTrace("if: !isResolved")
-		b.WriteString(lifecycleDim.Render(label + metrics))
+		b.WriteString(agentDim.Render(label + metrics))
 	} else {
 		observe.GlobalTrace("else: !isResolved")
 		b.WriteString(label + metrics)
@@ -143,16 +144,26 @@ func renderAgentLine(b *strings.Builder, a AgentProgressEntry, isLast bool, hasM
 		if hasMultiple {
 			observe.GlobalTrace("if: hasMultiple")
 			b.WriteString(ContentIndent)
-			b.WriteString(lifecycleDim.Render(contChar))
+			b.WriteString(agentDim.Render(contChar))
 			b.WriteString(" ")
 		} else {
 			observe.GlobalTrace("else: hasMultiple")
 			b.WriteString(ContentIndent)
 		}
-		b.WriteString(lifecycleDim.Render("⎿  "))
-		b.WriteString(lifecycleDim.Render(agentStatusText(a)))
+		b.WriteString(agentDim.Render("⎿  "))
+		b.WriteString(agentDim.Render(agentStatusText(a)))
 		b.WriteString("\n")
 	}
+}
+
+func truncateAgentText(s string, maxLen int) string {
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 1 {
+		return "…"
+	}
+	return s[:maxLen-1] + "…"
 }
 
 // agentStatusText returns the status text for an agent entry.

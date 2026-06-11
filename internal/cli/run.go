@@ -218,18 +218,16 @@ func RunBackground(cmd *cobra.Command) error {
 // InteractiveRuntime is the presentation-neutral runtime for an interactive session.
 // cli owns construction; presentation packages own transport and rendering.
 type InteractiveRuntime struct {
-	Deps                       *Deps
-	Engine                     *query.Engine
-	SlashCmds                  *slash.Registry
-	SlashDeps                  slash.Deps
-	PromptHistory              []string
-	admissionMu                sync.Mutex
-	turnActive                 bool
-	sessionSave                func() error
-	sessionClose               func() error
-	pendingSessionStartHook    hook.AggregatedResult
-	hasPendingSessionStartHook bool
-	Cleanup                    func(context.Context)
+	Deps          *Deps
+	Engine        *query.Engine
+	SlashCmds     *slash.Registry
+	SlashDeps     slash.Deps
+	PromptHistory []string
+	admissionMu   sync.Mutex
+	turnActive    bool
+	sessionSave   func() error
+	sessionClose  func() error
+	Cleanup       func(context.Context)
 }
 
 type InteractiveRuntimeOptions struct {
@@ -341,8 +339,8 @@ func (rt *InteractiveRuntime) runSlash(ctx context.Context, submittedInput strin
 			return
 		}
 	}
-	if result.DisplayText != "" || result.OpenTeams || result.OpenModelPicker || result.OpenResumePicker || result.ResumeSessionID != "" || result.ClearConversation {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runSlash", "if: result.DisplayText != \"\" || result.OpenTeams || result.OpenModelPicker || res...")
+	if result.DisplayText != "" || result.OpenModelPicker || result.OpenResumePicker || result.ResumeSessionID != "" || result.ClearConversation {
+		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runSlash", "if: result.DisplayText != \"\" || result.OpenModelPicker || result.OpenResumePicker ||...")
 		ch <- interactive.SlashResultEvent{Result: result}
 	}
 	if result.Quit {
@@ -432,21 +430,6 @@ func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context)
 func (rt *InteractiveRuntime) runEngine(ctx context.Context, input string, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
 	observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runEngine", "enter")
 	defer observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runEngine", "exit")
-	sessionHookResult, consumedPendingSessionHook, err := rt.sessionStartHookForNextRun(ctx)
-	if err != nil {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runEngine", "if: err != nil")
-		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
-		return
-	}
-	if err := rt.appendHookContext(hook.SessionStart, sessionHookResult, true); err != nil {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runEngine", "if: err != nil")
-		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
-		return
-	}
-	if consumedPendingSessionHook {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runEngine", "if: consumedPendingSessionHook")
-		rt.clearPendingSessionStartHook()
-	}
 	if err := rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false); err != nil {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runEngine", "if: err != nil")
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
@@ -507,21 +490,6 @@ func (rt *InteractiveRuntime) rememberAcceptedPrompt(input string) {
 func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.OrchestrationRequest, submittedInput string, promptHookResult hook.AggregatedResult, ch chan<- interactive.Event) {
 	observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "enter")
 	defer observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "exit")
-	sessionHookResult, consumedPendingSessionHook, err := rt.sessionStartHookForNextRun(ctx)
-	if err != nil {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "if: err != nil")
-		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
-		return
-	}
-	if err := rt.appendHookContext(hook.SessionStart, sessionHookResult, true); err != nil {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "if: err != nil")
-		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
-		return
-	}
-	if consumedPendingSessionHook {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "if: consumedPendingSessionHook")
-		rt.clearPendingSessionStartHook()
-	}
 	if err := rt.appendHookContext(hook.UserPromptSubmit, promptHookResult, false); err != nil {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "if: err != nil")
 		ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
@@ -617,19 +585,6 @@ func cleanNonEmptyPath(path string) string {
 	return filepath.Clean(path)
 }
 
-func (rt *InteractiveRuntime) sessionStartHookForNextRun(ctx context.Context) (hook.AggregatedResult, bool, error) {
-	observe.TraceCtx(ctx, "cli", "InteractiveRuntime.sessionStartHookForNextRun", "enter")
-	defer observe.TraceCtx(ctx, "cli", "InteractiveRuntime.sessionStartHookForNextRun", "exit")
-	if rt.hasPendingSessionStartHook {
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.sessionStartHookForNextRun", "if: rt.hasPendingSessionStartHook")
-		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.sessionStartHookForNextRun", "return: rt.pendingSessionStartHook, true, nil")
-		return rt.pendingSessionStartHook, true, nil
-	}
-	result, err := startSessionForCurrentConversation(ctx, rt.Deps)
-	observe.TraceCtx(ctx, "cli", "InteractiveRuntime.sessionStartHookForNextRun", "return: result, false, err")
-	return result, false, err
-}
-
 func (rt *InteractiveRuntime) appendHookContext(event hook.Event, result hook.AggregatedResult, includeStdout bool) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -666,7 +621,6 @@ func interactiveOrchestrationArtifactRoot(d *Deps) string {
 func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	resumedFrom := rt.Deps.Store.Snapshot().Conversation.ID
 	sessStore, err := session.NewStore()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -710,7 +664,6 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	}
 	rt.Deps.SessionWriter = w
 	rt.Deps.SessionLastIdx = len(sess.Conversation.Messages)
-	rt.Deps.SessionStarted = false
 	rt.applyResumeProvider(providerBinding)
 	promptHistory := sessionPromptHistory(sess)
 	resumedConv := resumedConversation(sess, rt.Deps.Cwd)
@@ -726,23 +679,20 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	ensureCapabilitiesForActiveWorkDir(context.Background(), rt.Deps)
 	rt.PromptHistory = promptHistory
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
-	rt.Deps.SessionStart = sessionStartForConversation(sess.Conversation)
+	rt.Deps.StartedAt = startedAtForConversation(sess.Conversation)
 	rt.Engine.ResetSessionState(sess.ContentReplacements)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
-	sessionHookResult, err := beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
-	if err != nil {
+	if err := startSessionRecording(rt.Deps); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
 		return err
 	}
-	rt.pendingSessionStartHook = sessionHookResult
-	rt.hasPendingSessionStartHook = true
 	observe.GlobalTrace("return: nil")
 	return nil
 }
 
-func sessionStartForConversation(conv model.Conversation) time.Time {
+func startedAtForConversation(conv model.Conversation) time.Time {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !conv.CreatedAt.IsZero() {
@@ -943,7 +893,6 @@ func (rt *InteractiveRuntime) closeCurrentSession(ctx context.Context) error {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.closeCurrentSession", "return: nil")
 		return nil
 	}
-	rt.clearPendingSessionStartHook()
 	if rt.sessionSave != nil {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.closeCurrentSession", "if: rt.sessionSave != nil")
 		if err := rt.sessionSave(); err != nil {
@@ -952,7 +901,6 @@ func (rt *InteractiveRuntime) closeCurrentSession(ctx context.Context) error {
 			return err
 		}
 	}
-	endSessionLifecycle(ctx, rt.Deps)
 	reportProviderCleanup(ctx, rt.Deps.Prov, rt.Deps.Bus)
 	if rt.sessionClose != nil {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.closeCurrentSession", "if: rt.sessionClose != nil")
@@ -979,17 +927,6 @@ func reportProviderCleanup(ctx context.Context, prov provider.Provider, bus *obs
 			ErrorMessage: err.Error(),
 		})
 	}
-}
-
-func (rt *InteractiveRuntime) clearPendingSessionStartHook() {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if rt == nil {
-		observe.GlobalTrace("if: rt == nil")
-		return
-	}
-	rt.pendingSessionStartHook = hook.AggregatedResult{}
-	rt.hasPendingSessionStartHook = false
 }
 
 // BuildInteractiveRuntime wires the shared dependencies for an interactive UI.
@@ -1027,12 +964,9 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
-	var pendingSessionStartHook hook.AggregatedResult
-	hasPendingSessionStartHook := false
 	if d.SessionWriter != nil {
 		observe.GlobalTrace("if: d.SessionWriter != nil")
-		sessionHookResult, err := beginSessionLifecycle(cmd.Context(), d, "")
-		if err != nil {
+		if err := startSessionRecording(d); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			if d.Cleanup != nil {
 				observe.GlobalTrace("if: d.Cleanup != nil")
@@ -1041,8 +975,6 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 			observe.GlobalTrace("return: nil, err")
 			return nil, err
 		}
-		pendingSessionStartHook = sessionHookResult
-		hasPendingSessionStartHook = true
 	}
 
 	compDeps, compactor := BuildCompactionDeps(d)
@@ -1072,7 +1004,6 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 		ModelName:      d.Cfg.Model,
 		Provider:       d.Cfg.Provider,
 		Cwd:            d.Cwd,
-		TaskReg:        d.TaskReg,
 		ClipboardWrite: clipboard.WriteAll,
 		ModelLister: func() []string {
 			if ml, ok := d.Prov.(provider.ModelLister); ok {
@@ -1096,15 +1027,13 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 	}
 
 	rt := &InteractiveRuntime{
-		Deps:                       d,
-		Engine:                     engine,
-		SlashCmds:                  slashCmds,
-		SlashDeps:                  slashDeps,
-		PromptHistory:              promptHistory,
-		sessionSave:                sessionSaveFn,
-		sessionClose:               sessionCloseFn,
-		pendingSessionStartHook:    pendingSessionStartHook,
-		hasPendingSessionStartHook: hasPendingSessionStartHook,
+		Deps:          d,
+		Engine:        engine,
+		SlashCmds:     slashCmds,
+		SlashDeps:     slashDeps,
+		PromptHistory: promptHistory,
+		sessionSave:   sessionSaveFn,
+		sessionClose:  sessionCloseFn,
 	}
 	rt.SlashDeps.ModelSwitcher = rt.switchActiveModel
 	d.ModelSwitcher = rt.switchActiveModel
@@ -1154,8 +1083,7 @@ func RunTUIInteractive(cmd *cobra.Command) error {
 		Metrics:        rt.Deps.Metrics,
 		Workspace:      rt.Deps.Cwd,
 		Version:        buildinfo.Version,
-		TaskReg:        rt.Deps.TaskReg,
-		SessionStart:   rt.Deps.SessionStart,
+		StartedAt:      rt.Deps.StartedAt,
 		McpServerNames: connectedMcpNames(rt.Deps.McpManager),
 		PromptHistory:  rt.PromptHistory,
 	})
@@ -1378,10 +1306,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		}
 	}
 
-	defer func() {
-		endSessionLifecycle(cmd.Context(), d)
-	}()
-
 	if opts.ConfigureDeps != nil {
 		observe.GlobalTrace("if: opts.ConfigureDeps != nil")
 		opts.ConfigureDeps(d)
@@ -1462,13 +1386,7 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 	}
 	if strings.TrimSpace(prompt) != "" {
 		observe.GlobalTrace("if: strings.TrimSpace(prompt) != \"\"")
-		sessionHookResult, err := startSessionForCurrentConversation(ctx, d)
-		if err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: err")
-			return err
-		}
-		if err := engine.AppendHookContext(string(hook.SessionStart), hookContextStrings(sessionHookResult, true)); err != nil {
+		if err := startSessionForCurrentConversation(ctx, d); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			observe.GlobalTrace("return: err")
 			return err
@@ -1628,13 +1546,13 @@ func hookContextStrings(result hook.AggregatedResult, includeStdout bool) []stri
 	return contexts
 }
 
-func startSessionForCurrentConversation(ctx context.Context, d *Deps) (hook.AggregatedResult, error) {
+func startSessionForCurrentConversation(ctx context.Context, d *Deps) error {
 	observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "enter")
 	defer observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "exit")
 	if d.SessionWriter != nil {
 		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "if: d.SessionWriter != nil")
-		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: beginSessionLifecycle(ctx, d, \"\")")
-		return beginSessionLifecycle(ctx, d, "")
+		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: startSessionRecording(d)")
+		return startSessionRecording(d)
 	}
 	header := d.SessionHeader
 	if header.SessionID == "" {
@@ -1644,20 +1562,20 @@ func startSessionForCurrentConversation(ctx context.Context, d *Deps) (hook.Aggr
 	sessStore, err := session.NewStore()
 	if err != nil {
 		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "if: err != nil")
-		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: hook.AggregatedResult{}, err")
-		return hook.AggregatedResult{}, err
+		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: err")
+		return err
 	}
 	w, err := sessStore.Create(header)
 	if err != nil {
 		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "if: err != nil")
-		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: hook.AggregatedResult{}, err")
-		return hook.AggregatedResult{}, err
+		observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: err")
+		return err
 	}
 	d.SessionWriter = w
 	d.SessionHeader = header
 	d.SessionLastIdx = 0
-	observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: beginSessionLifecycle(ctx, d, \"\")")
-	return beginSessionLifecycle(ctx, d, "")
+	observe.TraceCtx(ctx, "cli", "startSessionForCurrentConversation", "return: startSessionRecording(d)")
+	return startSessionRecording(d)
 }
 
 func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
@@ -1685,71 +1603,6 @@ func sessionHeaderForCurrentConversation(d *Deps) session.HeaderData {
 		CreatedAt:      snap.Conversation.CreatedAt,
 		System:         snap.Conversation.System,
 	}
-}
-
-func beginSessionLifecycle(ctx context.Context, d *Deps, resumedFrom string) (hook.AggregatedResult, error) {
-	observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "enter")
-	defer observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "exit")
-	if d == nil || d.SessionStarted {
-		observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "if: d == nil || d.SessionStarted")
-		observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "return: hook.AggregatedResult{}, nil")
-		return hook.AggregatedResult{}, nil
-	}
-	sessionID := d.Store.Snapshot().Conversation.ID
-	if d.HookMgr != nil {
-		observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "if: d.HookMgr != nil")
-		d.HookMgr.SetSessionID(sessionID)
-	}
-	var hookResult hook.AggregatedResult
-	if d.HookMgr != nil {
-		observe.GlobalTrace("if: d.HookMgr != nil")
-		hookResult = d.HookMgr.ExecuteInWorkDir(ctx, hook.SessionStart, hook.HookInput{}, activeHookWorkDir(d))
-		if hookResult.Blocked {
-			observe.GlobalTrace("if: hookResult.Blocked")
-			closeUnstartedSessionWriter(d)
-			observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "return: hookResult, blockedSessionStartError(hookResult)")
-			return hookResult, blockedSessionStartError(hookResult)
-		}
-	}
-	if err := startSessionRecording(d); err != nil {
-		observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "if: err != nil")
-		observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "return: hook.AggregatedResult{}, err")
-		return hook.AggregatedResult{}, err
-	}
-	d.Bus.Emit(observe.SessionStarted{
-		EventHeader: observe.NewEventHeader("SessionStarted", "", sessionID, ""),
-		SessionID:   sessionID,
-		ResumedFrom: resumedFrom,
-	})
-	d.SessionStarted = true
-	observe.TraceCtx(ctx, "cli", "beginSessionLifecycle", "return: hookResult, nil")
-	return hookResult, nil
-}
-
-func blockedSessionStartError(result hook.AggregatedResult) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	msg := strings.TrimSpace(result.BlockMsg)
-	if msg == "" {
-		observe.GlobalTrace("if: msg == \"\"")
-		msg = "session start blocked by hook"
-	}
-	observe.GlobalTrace("return: fmt.Errorf(\"blocked by hook: %s\", msg)")
-	return fmt.Errorf("blocked by hook: %s", msg)
-}
-
-func closeUnstartedSessionWriter(d *Deps) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if d == nil || d.SessionWriter == nil {
-		observe.GlobalTrace("if: d == nil || d.SessionWriter == nil")
-		return
-	}
-	_ = d.SessionWriter.Close()
-	d.SessionWriter = nil
-	d.SessionHeader = session.HeaderData{}
-	d.SessionLastIdx = 0
-	d.SessionStarted = false
 }
 
 func startSessionRecording(d *Deps) error {
@@ -1811,24 +1664,6 @@ func sessionRecordingPath(d *Deps) (string, error) {
 	name := time.Now().UTC().Format("20060102T150405.000000000Z") + ".jsonl"
 	observe.GlobalTrace("return: filepath.Join(dir, name), nil")
 	return filepath.Join(dir, name), nil
-}
-
-const sessionEndHookTimeout = 5 * time.Second
-
-func endSessionLifecycle(_ context.Context, d *Deps) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if d == nil || !d.SessionStarted {
-		observe.GlobalTrace("if: d == nil || !d.SessionStarted")
-		return
-	}
-	if d.HookMgr != nil {
-		observe.GlobalTrace("if: d.HookMgr != nil")
-		ctx, cancel := context.WithTimeout(context.Background(), sessionEndHookTimeout)
-		defer cancel()
-		d.HookMgr.ExecuteInWorkDir(ctx, hook.SessionEnd, hook.HookInput{}, activeHookWorkDir(d))
-	}
-	d.SessionStarted = false
 }
 
 func activeHookWorkDir(d *Deps) string {
@@ -1988,27 +1823,10 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 	}
 	closeFn = func() error {
 		if d.SessionWriter != nil && !closed {
-			snap := d.Store.Snapshot()
-			sessionID := snap.Conversation.ID
-			durationMs := time.Since(d.SessionStart).Milliseconds()
-			turnCount := d.Metrics.Snapshot().TurnCount
-			totalCost := 0.0
-			if d.CostTracker != nil {
-				totalCost = d.CostTracker.TotalUSD()
-			}
 			if err := d.SessionWriter.Close(); err != nil {
 				return err
 			}
 			closed = true
-			if d.Bus != nil {
-				d.Bus.Emit(observe.SessionEnded{
-					EventHeader:  observe.NewEventHeader("SessionEnded", "", sessionID, ""),
-					SessionID:    sessionID,
-					DurationMs:   durationMs,
-					TurnCount:    turnCount,
-					TotalCostUSD: totalCost,
-				})
-			}
 		}
 		return nil
 	}
@@ -2043,7 +1861,6 @@ func rewriteCurrentSession(d *Deps) error {
 		ContentReplacements:    existing.ContentReplacements,
 		PromptHistory:          existing.PromptHistory,
 		OrchestrationArtifacts: snap.OrchestrationArtifacts,
-		TaskResults:            existing.TaskResults,
 	}); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")

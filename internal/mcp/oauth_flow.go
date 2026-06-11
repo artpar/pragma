@@ -42,7 +42,7 @@ func (m *Manager) StartOAuthFlow(serverName string, auth AuthConfig) (string, er
 	authURL := BuildAuthURL(auth.AuthURL, auth.ClientID, redirectURI, challenge, state, auth.Scopes)
 	m.emitOAuthStarted(serverName, authURL)
 
-	go m.handleOAuthCallback(m.LifecycleContext(), serverName, auth, port, state, verifier, redirectURI)
+	go m.handleOAuthCallback(context.Background(), serverName, auth, port, state, verifier, redirectURI)
 	observe.GlobalTrace("return: authURL, nil")
 	return authURL, nil
 }

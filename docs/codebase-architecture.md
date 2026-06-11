@@ -15,10 +15,9 @@ Pragma is primarily a Go CLI agent runtime with:
 - A normalized model layer in `internal/model/`.
 - A query engine in `internal/query/`.
 - Provider adapters in `internal/provider/*`.
-- Tool descriptors and execution machinery in `internal/tool/` and `internal/tools/*`.
 - Session/event persistence under `internal/session/` and observability under `internal/observe/`.
 - Terminal UI in `internal/tui/`.
-- FSM/orchestration runtimes in `internal/orchestration/` and `internal/lifecycle/`.
+- FSM/orchestration runtime in `internal/orchestration/`.
 - A JetBrains IDE MCP plugin in `plugins/jetbrains-reflective-mcp/`.
 
 High-level runtime flow:
@@ -28,11 +27,11 @@ cmd/pragma/main.go
   -> internal/cli.RunDispatcher
      -> SetupDepsWithOptions
         -> config, credentials, provider, EventBus, permission checker,
-           StateStore, MCP manager, task registry, session wiring
+           StateStore, MCP manager, session wiring
      -> RegisterTools
-        -> tool.Registry, tool.Orchestrator, query.Engine
+        -> query.Engine
      -> interactive TUI, non-interactive stdout, background process,
-        orchestration, lifecycle, replay, inspect, metrics, audit commands
+        orchestration, replay, inspect, metrics, audit commands
 ```
 
 The active default conversation loop is the Pragma shell-action loop:
@@ -63,7 +62,6 @@ than the older native provider tool-call loop.
 | `cmd/pragma/replay.go`, `cmd/pragma/replay_raw_http.go`, `cmd/pragma/replay_export.go` | `replayCmd()`, `replayRawHTTPCmd()`, `replayExportCmd()` | Replay and raw HTTP inspection/export command surfaces. |
 | `cmd/pragma/inspect.go` | `inspectCmd()`, `inspectRawHTTPCmd()`, `inspectPhasesCmd()` | Offline inspection commands. |
 | `cmd/pragma/audit.go`, `cmd/pragma/metrics.go` | `auditCmd()`, `metricsCmd()` | Audit and metrics command surfaces. |
-| `cmd/pragma/lifecycle.go` | `lifecycleCmd()`, `lifecycleRunCmd()`, `lifecycleListCmd()` | Standalone lifecycle graph command surface. |
 | `cmd/pragma/orchestration.go` | `orchestrationCmd()`, `orchestrationRunCmd()` | Standalone orchestration FSM command surface. |
 | `cmd/pragma/cron.go` | `cronCmd()` | Scheduled task daemon command surface. |
 
@@ -84,13 +82,12 @@ The command layer should stay thin. Most runtime construction belongs to
 | `internal/cli/run.go` | `InteractiveRuntime.runSlash` | Executes slash commands and interprets `slash.Result` effects such as clear, resume, quit, injected prompts, or orchestration. |
 | `internal/cli/run.go` | `InteractiveRuntime.runEngine` | Appends hook context, records the accepted turn/history, then forwards `query.LoopEvent`s from `Engine.Run`. |
 | `internal/cli/run.go` | `InteractiveRuntime.runOrchestration` | Runs a YAML orchestration definition through `internal/orchestration` and records handoff artifacts. |
-| `internal/cli/run.go` | `BuildInteractiveRuntimeWithOptions` | Calls `SetupDepsWithOptions`, `RegisterTools`, starts session lifecycle hooks, builds compaction, slash deps, and runtime cleanup. |
-| `internal/cli/deps.go` | `Deps` | Shared runtime object graph: config, credentials, provider, bus, checker, state store, registry, engine, task registry, MCP manager, cron scheduler, hook manager, metrics, session writer, and cleanup. |
-| `internal/cli/deps.go` | `SetupDepsWithOptions` | Main dependency injection root. Loads config/credentials, resolves provider, initializes observe subscribers, permissions, hooks, sessions/resume state, state store, tasks, cron, MCP manager, and cleanup. |
+| `internal/cli/run.go` | `BuildInteractiveRuntimeWithOptions` | Calls `SetupDepsWithOptions`, `RegisterTools`, builds compaction, slash deps, and runtime cleanup. |
+| `internal/cli/deps.go` | `Deps` | Shared runtime object graph: config, credentials, provider, bus, checker, state store, engine, MCP manager, cron scheduler, hook manager, metrics, session writer, and cleanup. |
+| `internal/cli/deps.go` | `SetupDepsWithOptions` | Main dependency injection root. Loads config/credentials, resolves provider, initializes observe subscribers, permissions, hooks, sessions/resume state, state store, cron, MCP manager, and cleanup. |
 | `internal/cli/deps.go` | `CreateProvider` | Factory for `anthropic`, `openai`, `google`, `google-vertex`, `groq`, and `lilac` providers. |
 | `internal/cli/deps.go` | `buildRuntimeSystemPrompt` | Builds the runtime system prompt from override text or `internal/sysprompt.Builder`. |
-| `internal/cli/tools.go` | `RegisterTools` | Registers built-in tools, Agent, AskUserQuestion, Skill, REPL, LifecycleRun, binds ToolSearch, creates `tool.Orchestrator`, then creates `query.Engine`. |
-| `internal/cli/tools.go` | `BaseTools`, `baseTools` | Defines the built-in descriptor set: search/read/write/edit/bash/apply_patch, task tools, worktree, cron, web, config, selftrace, MCP, and optional feature tools. |
+| `internal/cli/tools.go` | `RegisterTools` | Creates `query.Engine`. |
 | `internal/cli/subcommands.go` | `RegisterSubcommands`, `RunPromptCommand`, `RunLocalCommand` | Exposes slash commands as regular Cobra subcommands where applicable. |
 
 ## Query Engine
@@ -98,11 +95,11 @@ The command layer should stay thin. Most runtime construction belongs to
 | File | Type or method | Responsibility |
 | --- | --- | --- |
 | `internal/query/engine.go` | `EngineConfig` | Runtime execution configuration: model, tokens, turns, structured output, compaction/session hooks, MCP status callbacks, and restored state records. |
-| `internal/query/engine.go` | `Engine` | Owns provider, tool registry/orchestrator, app state, cost tracker, event bus, compaction, hooks, task registry, file state, and content replacement state. |
+| `internal/query/engine.go` | `Engine` | Owns provider, app state, cost tracker, event bus, compaction, hooks, file state, and content replacement state. |
 | `internal/query/engine.go` | `NewEngine` | Constructs an engine with injected dependencies and restored file/content replacement state. |
 | `internal/query/engine.go` | `Engine.ForkFreshConversation` | Creates a scoped engine with a separate conversation store for orchestration/persona states. |
 | `internal/query/engine.go` | `Engine.RebindProvider`, `Engine.SetModel` | Switches provider/model at runtime. |
-| `internal/query/engine.go` | `Engine.SetCompaction`, `Engine.SetHookManager`, `Engine.SetTaskRegistry`, `Engine.SetSessionCheckpoint` | Attaches optional runtime services after construction. |
+| `internal/query/engine.go` | `Engine.SetCompaction`, `Engine.SetHookManager`, `Engine.SetSessionCheckpoint` | Attaches optional runtime services after construction. |
 | `internal/query/engine.go` | `Engine.appendConversationMessage` | Single append path for conversation state; emits `observe.MessageAppended` and checkpoints the session. |
 | `internal/query/engine.go` | `Engine.AppendHookContext` | Adds hook-produced context as an internal user message. |
 | `internal/query/loop.go` | `Engine.Run` | Public async entrypoint; returns a channel of sealed `LoopEvent` values. |
@@ -116,8 +113,7 @@ The command layer should stay thin. Most runtime construction belongs to
 | `internal/query/miniswe_loop.go` | `Engine.completePragmaLoopResponse` | Calls `Provider.Complete` with retry handling/classified errors. |
 | `internal/query/miniswe_loop.go` | `runPragmaLoopBash` | Executes shell actions via `internal/shellrun` and routes shell-embedded `apply_patch` through the applypatch tool implementation. |
 | `internal/query/miniswe_loop.go` | `pragmaLoopSourceMutationReason` | Blocks direct repository source mutation through shell redirection, `sed -i`, `tee`, or write-intent scripts. |
-| `internal/query/event.go` | `LoopEvent` and concrete event types | Query-to-presentation event surface: text, thinking, model request/response, tool call/result, structured output, user message, turn complete, compaction, lifecycle, orchestration, agent progress, retry, and error events. |
-| `internal/query/engine.go` | `Engine.RunGraph` | Executes a lifecycle graph through the lifecycle bridge and emits lifecycle progress events. |
+| `internal/query/event.go` | `LoopEvent` and concrete event types | Query-to-presentation event surface: text, thinking, model request/response, tool call/result, structured output, user message, turn complete, compaction, orchestration, agent progress, retry, and error events. |
 
 ## Model And App State
 
@@ -130,7 +126,7 @@ The command layer should stay thin. Most runtime construction belongs to
 | `internal/model/response.go` | `Response` | Provider-normalized model response with content, stop reason, usage, and model ID. |
 | `internal/model/tool.go` | `ToolDef` | Provider-neutral tool definition shape. |
 | `internal/model/usage.go` | `CostTracker`, `TokenUsage`, `Pricing` | Token and cost accounting. |
-| `internal/app/state.go` | `AppState` | Mutable runtime state snapshot: conversation, cwd, model/provider, todos, team, prompt history, orchestration artifacts, worktree state. |
+| `internal/app/state.go` | `AppState` | Mutable runtime state snapshot: conversation, cwd, model/provider, prompt history, orchestration artifacts, worktree state. |
 | `internal/app/state.go` | `AppState.WorkDir`, `AppState.SessionID` | Adapters for tool snapshots and artifact/session ownership. |
 | `internal/app/store.go` | `StateStore` | Thread-safe application state store. |
 | `internal/app/store.go` | `StateStore.Snapshot`, `StateStore.Update` | Deep-copy reads and single locked mutation path. |
@@ -160,37 +156,9 @@ The architectural rule is that provider adapters translate wire data into
 
 | File | Type or method | Responsibility |
 | --- | --- | --- |
-| `internal/tool/tool.go` | `Descriptor` | Contract every tool implements: `Name`, `Description`, `InputSchema`, `Invoke`, `CheckPerm`, and `Flags`. |
-| `internal/tool/tool.go` | `InvokeResult`, `ToolFlags`, `StateSnapshot` | Tool result payloads, execution traits, and read-only state interface. |
-| `internal/tool/registry.go` | `Registry` | Descriptor lookup, JSON Schema compilation, hidden tools, exposure filtering, scoped registries, and provider-facing `ToolDefs`. |
-| `internal/tool/registry.go` | `Register`, `Unregister`, `Get`, `ToolDefs`, `Scoped` | Registry mutation and lookup methods. |
-| `internal/tool/orchestrator.go` | `Orchestrator` | Permission checking, hook execution, serial/concurrent batching, panic recovery, and tool observability. |
-| `internal/tool/orchestrator.go` | `Orchestrator.Execute` | Executes a batch of tool calls and preserves result order. |
-| `internal/tool/orchestrator.go` | `Orchestrator.executeSingle` | Validates JSON input, checks permission, invokes hooks, calls one descriptor, and emits events. |
 | `internal/permission/permission.go` | `Checker`, `Rule`, `CheckResult`, `PermissionMode` | Permission boundary abstractions and rule data. |
 | `internal/permission/rulechecker.go` | `RuleChecker` | Production permission checker with scoped workdir support, session/persistent rules, mode defaults, and dangerous path checks. |
 | `internal/permission/persist.go` | `PersistRule`, `LoadPersistedRules` | Local permission rule persistence. |
-
-Built-in tools are registered from `internal/cli/tools.go` and implemented under
-`internal/tools/*`. The common class shape is a `Tool` type implementing
-`tool.Descriptor` methods. Notable tool groups:
-
-| Package | Main type(s) | Purpose |
-| --- | --- | --- |
-| `internal/tools/glob`, `grep`, `fileread` | `Tool` | Read/search workspace state. |
-| `internal/tools/filewrite`, `fileedit`, `notebookedit`, `applypatch` | `Tool`, `LegacyTool` | Source and notebook mutation; patch mode blocks shell mutation in the Pragma loop. |
-| `internal/tools/bash`, `powershell`, `sleep` | `Tool` | Shell/process execution primitives. |
-| `internal/tools/agent` | `Tool` | Sub-agent execution through an engine factory, task registry, and shared provider/cost state. |
-| `internal/tools/ask` | `Tool` | User-question tool backed by an `Asker`. |
-| `internal/tools/task*`, `sendmsg` | `Tool` | Task creation, state updates, lifecycle messages, output, stopping, and inter-agent messages. |
-| `internal/tools/todo` | `Tool` | Mutates session todos in `app.StateStore`. |
-| `internal/tools/worktree` | `EnterTool`, `ExitTool` | Enters/exits temporary worktrees and refreshes runtime system prompt/capabilities. |
-| `internal/tools/webfetch`, `websearch` | `Tool` | Web fetch/search helpers. |
-| `internal/tools/mcp`, `mcpauth` | `ListTool`, `ReadTool`, `Tool` | MCP resource and OAuth support. |
-| `internal/tools/cron` | `CreateTool`, `DeleteTool`, `ListTool` | Scheduled task tool surface. |
-| `internal/tools/config` | `Tool` | Runtime config inspection and selected live mutation. |
-| `internal/tools/lifecycle` | `Tool` | Runs lifecycle graphs as a tool. |
-| `internal/tools/toolsearch`, `toolresultread`, `selftrace`, `brief`, `skill`, `synthetic`, `repl`, `remote` | `Tool` variants | Discovery, large-result readback, trace inspection, brief events, skill invocation, structured-output fallback, REPL, and optional remote trigger support. |
 
 ## Sessions And Persistence
 
@@ -201,11 +169,11 @@ Built-in tools are registered from `internal/cli/tools.go` and implemented under
 | `internal/session/store.go` | `Store` | Owns `~/.pragma/sessions`, session loading/listing/deletion, artifact/tool-result directory paths. |
 | `internal/session/store.go` | `Store.Create`, `Open`, `Load`, `List`, `Delete` | Session file lifecycle. |
 | `internal/session/writer.go` | `Writer` | Thread-safe append/rewrite writer for session JSONL files. |
-| `internal/session/writer.go` | `WriteHeader`, `WriteMessage`, `WriteMetadata`, `WriteContentReplacement`, `WritePromptHistory`, `WriteFileState`, `WriteTodos`, `WriteTeamContext`, `WriteOrchestrationArtifacts`, `WriteTaskResult`, `Rewrite`, `Close` | Durable entry write surface. |
+| `internal/session/writer.go` | `WriteHeader`, `WriteMessage`, `WriteMetadata`, `WriteContentReplacement`, `WritePromptHistory`, `WriteFileState`, `WriteOrchestrationArtifacts`, `Rewrite`, `Close` | Durable entry write surface. |
 
 The session log is append-oriented JSONL. `Store.Load` reconstructs the latest
-conversation plus metadata, replacements, prompt history, file state, todos,
-team context, orchestration artifacts, task results, and worktree state.
+conversation plus metadata, replacements, prompt history, file state,
+orchestration artifacts, and worktree state.
 
 ## Observability
 
@@ -231,10 +199,10 @@ status subscribers, MCP status, and trace/replay tooling.
 | --- | --- | --- |
 | `internal/interactive/event.go` | interactive event wrappers | Presentation-facing events around query loop events, accepted/rejected prompts, slash results, and runtime termination. |
 | `internal/tui/model.go` | `Config` | Dependency bundle passed from `RunTUIInteractive`. |
-| `internal/tui/model.go` | `Model` | Bubble Tea state machine for viewport, input, permission dialog, ask dialog, teams, model picker, resume picker, toolbar, streaming segments, tasks, and layout. |
+| `internal/tui/model.go` | `Model` | Bubble Tea state machine for viewport, input, permission dialog, ask dialog, model picker, resume picker, toolbar, streaming segments, and layout. |
 | `internal/tui/model.go` | `New` | Constructs the TUI model and initial context/components. |
 | `internal/tui/handlers.go` | update handlers | Bubble Tea update/event handling. |
-| `internal/tui/render/*` | render helpers | Markdown, tool results, lifecycle progress, agent progress, errors, welcome screen, and grouped output rendering. |
+| `internal/tui/render/*` | render helpers | Markdown, tool results, agent progress, errors, welcome screen, and grouped output rendering. |
 | `internal/tui/permission.go`, `prompter.go` | interactive permission prompter | Bridges permission prompts into the TUI. |
 | `internal/tui/ask.go`, `asker.go` | interactive ask surface | Bridges tool-driven user questions into the TUI. |
 
@@ -248,7 +216,7 @@ The TUI does not build providers or tools directly. It receives `RunInput`,
 | --- | --- | --- |
 | `internal/slash/command.go` | `Registry`, `Command`, `Result`, `Deps` | Slash command catalog, handler contract, runtime dependencies, and command side-effect result. |
 | `internal/slash/command.go` | `NewRegistry`, `Register`, `Execute`, `CommandsWithDeps` | Build and execute command registry, including skill-backed prompt commands. |
-| `internal/slash/commands.go` | `registerBuiltins` | Registers built-ins: compact, clear, copy, help, exit, insights, cost, model, doctor, review, security-review, commit, init, teams, config, skills, resume, mcp, orchestrate. |
+| `internal/slash/commands.go` | `registerBuiltins` | Registers built-ins: compact, clear, copy, help, exit, insights, cost, model, doctor, review, security-review, commit, init, config, skills, resume, mcp, orchestrate. |
 | `internal/slash/*_cmd.go`, `review.go`, `commit.go`, `doctor.go`, `orchestrate.go` | command handlers | Command-specific local behavior or injected prompt construction. |
 
 Slash commands return declarative `Result` values. `InteractiveRuntime.runSlash`
@@ -270,52 +238,24 @@ owns applying those results to the active runtime.
 Orchestration reuses the query engine but forks conversations for persona states
 so each state keeps scoped history.
 
-## Lifecycle Graph Runtime
-
-| File | Type or method | Responsibility |
-| --- | --- | --- |
-| `internal/lifecycle/graph.go` | `Graph`, `Builder`, `NodeFunc`, `RouterFunc`, `ConditionalEdge` | Immutable graph definition and builder. |
-| `internal/lifecycle/graph.go` | `Builder.AddNode`, `AddEdge`, `AddConditionalEdges`, `SetReducer`, `SetInitialNode`, `Build` | Graph construction and validation. |
-| `internal/lifecycle/state.go` | `State`, `StateUpdate` | Graph state map and typed key helpers. |
-| `internal/lifecycle/executor.go` | `Executor` | Superstep graph executor. |
-| `internal/lifecycle/executor.go` | `Executor.Stream`, `Executor.Run`, `executeSuperstep`, `resolveNextNodes` | Parallel node execution, reducer application, checkpointing, and transition resolution. |
-| `internal/lifecycle/definition/*` | definition parser/resolver | YAML/definition parsing, schema validation, fixups, routing resolution. |
-| `internal/lifecycle/bridge/*` | bridge nodes and runner | Bridges lifecycle graph state to provider calls, tool calls, LLM nodes, eval nodes, reducers, and progress projection. |
-| `internal/lifecycle/bridge/runner.go` | `Runner`, `RunnerConfig`, `RunEvent`, `RunResult` | Runs lifecycle graphs with model/system/tools context and projects final assistant response. |
-| `internal/tools/lifecycle/lifecycle.go` | `lifecycletool.Tool` | Exposes lifecycle graph execution as a tool. |
-| `cmd/pragma/lifecycle.go` | lifecycle CLI | Standalone lifecycle execution/listing. |
-
-Lifecycle is a separate graph execution model from orchestration. Orchestration
-is YAML FSM/persona oriented; lifecycle is graph/superstep oriented.
-
 ## MCP Runtime
 
 | File | Type or method | Responsibility |
 | --- | --- | --- |
 | `internal/mcp/config.go` | `ServerConfig` and config loaders | MCP server configuration loading. |
 | `internal/mcp/client.go` | `Client` | Connects to one MCP server, lists tools/resources, calls tools, disconnects/reconnects. |
-| `internal/mcp/manager.go` | `Manager` | Owns all MCP clients, statuses, generation, configured servers, tool registration, reconnection, and registered tool names. |
-| `internal/mcp/manager.go` | `ConfigureServers`, `ReplaceServers`, `ConnectAllAndRegister`, `RegisterTools`, `DisconnectAll`, `ServerStatuses`, `WaitForRegisteredTools` | MCP lifecycle and registry integration. |
-| `internal/mcp/adapter.go` | `MCPToolAdapter` | Wraps remote MCP tools as `tool.Descriptor`s. |
-| `internal/mcp/adapter.go` | `Name`, `Description`, `InputSchema`, `Invoke`, `CheckPerm`, `Flags` | Descriptor implementation for MCP tools. |
-| `internal/tools/mcp/list.go`, `read.go` | `ListTool`, `ReadTool` | Built-in MCP resource tools. |
-| `internal/tools/mcpauth/mcpauth.go` | `Tool` | MCP OAuth helper. |
+| `internal/mcp/manager.go` | `Manager` | Owns MCP clients, statuses, generation, configured servers, reconnection, and registered names. |
+| `internal/mcp/manager.go` | `ConfigureServers`, `ReplaceServers`, `DisconnectAll`, `ServerStatuses`, `WaitForRegisteredTools` | MCP connection and registry integration. |
 
-MCP tools become normal registry descriptors after adaptation. Registry-facing
-names are normally `mcp__<server>__<tool>` unless the server is configured to
-preserve tool names.
-
-## Config, System Prompt, Hooks, Tasks
+## Config, System Prompt, Hooks
 
 | Package | Key types/methods | Responsibility |
 | --- | --- | --- |
 | `internal/config` | `Config`, `Load`, `LoadPermissions`, `Credentials`, `PragmaHome`, `SessionsDir`, settings path helpers | Reads global/project/local settings, credentials, permissions, toolsets, and path conventions under `~/.pragma` and project `.pragma`. |
 | `internal/sysprompt` | `Builder`, `Builder.Build`, `LoadAgentMD`, `DetectEnv`, git helpers | Builds system prompt blocks from static prompt, environment, git state, AGENT.md files, and skills. |
-| `internal/hook` | `Manager`, `Execute`, `ExecuteInWorkDir`, `LoadHooks`, `ExecCommand` | Loads and executes hooks for events such as session start, user prompt submit, pre/post tool use, and stop. |
-| `internal/task` | `Registry`, `Task`, `Create`, `Update`, `DeliverMessage`, `RequestShutdown`, `Heartbeat`, `ReapDead` | In-memory task/teammate registry and lifecycle messaging. |
+| `internal/hook` | `Manager`, `Execute`, `ExecuteInWorkDir`, `LoadHooks`, `ExecCommand` | Loads and executes hooks for events such as user prompt submit, pre/post tool use, and stop. |
 | `internal/cron` | `Scheduler`, `Job`, `Create`, `Delete`, `List`, `Start`, `Store` | Scheduled prompt/job management. |
 | `internal/compact` | `Service`, `Compact`, `AutoTracker`, token/window helpers | Manual and automatic conversation compaction. |
-| `internal/team` | `TeamFile`, `TeamMember`, workspace/team file helpers | Optional agent-team workspace metadata. |
 | `internal/skill` | `Loader`, `RuntimeCatalog`, `Skill`, `SubstituteArgs` | Skill discovery/loading and command/tool integration. |
 
 ## Background Process Support
@@ -375,14 +315,10 @@ through `internal/mcp.Manager` as an MCP server, not by importing plugin code.
   wire types out of `internal/provider/*`.
 - `internal/query` owns loop control, conversation appends, and query-local
   event emission.
-- `internal/tool` owns the generic descriptor/orchestrator contract.
-- `internal/tools/*` own individual tool behavior.
 - `internal/observe` owns cross-cutting runtime events; avoid ad-hoc side
   channels when an event is the correct integration point.
 - `internal/session` owns durable session JSONL schema and reconstruction.
 - `internal/tui` owns presentation, not provider/tool construction.
-- `internal/orchestration` and `internal/lifecycle` are distinct runtimes and
-  should not be conflated.
 - `plugins/jetbrains-reflective-mcp` is a separate Kotlin MCP server boundary.
 
 ## Common Extension Points
@@ -395,15 +331,11 @@ through `internal/mcp.Manager` as an MCP server, not by importing plugin code.
   declarative `slash.Result`.
 - Add a provider: implement `provider.Provider` under `internal/provider/<name>`
   and add selection to `internal/cli/deps.go:CreateProvider`.
-- Add a tool: implement `tool.Descriptor` under `internal/tools/<name>` and add
-  registration in `internal/cli/tools.go:baseTools` or `RegisterTools`.
 - Add a persistent session field: add an entry/data type in `internal/session`,
   write it from the owning runtime, and reconstruct it in `Store.Load`.
 - Add an event: define the observe event type/catalog entry in `internal/observe`
   and emit it from the owning runtime boundary.
 - Add an orchestration state/control: extend `internal/orchestration` schema,
   validation, execution, projection if needed, and YAML definitions.
-- Add a lifecycle node: define or generate it in `internal/lifecycle/bridge` or
-  the definition resolver, then surface progress through lifecycle events.
 - Add a JetBrains MCP tool: add/update a Kotlin `ToolDescriptor`, port/runtime
   implementation, and target API coverage tests in the plugin.

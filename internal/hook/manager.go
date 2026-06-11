@@ -218,8 +218,8 @@ func eventSupportsDecisionBlock(event Event) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch event {
-	case PreToolUse, UserPromptSubmit, SessionStart:
-		observe.GlobalTrace("case: PreToolUse, UserPromptSubmit, SessionStart")
+	case PreToolUse, UserPromptSubmit:
+		observe.GlobalTrace("case: PreToolUse, UserPromptSubmit")
 		return true
 	default:
 		observe.GlobalTrace("default")

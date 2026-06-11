@@ -117,10 +117,6 @@ func formatEventDetail(ev observe.Event) string {
 		return fmt.Sprintf("server=%s tools=%d", e.ServerName, e.ToolCount)
 	case observe.MCPHealthCheck:
 		return fmt.Sprintf("server=%s status=%s", e.ServerName, e.Status)
-	case observe.SessionStarted:
-		return fmt.Sprintf("session=%s", e.SessionID)
-	case observe.SessionEnded:
-		return fmt.Sprintf("turns=%d cost=$%.4f", e.TurnCount, e.TotalCostUSD)
 	case observe.ErrorOccurred:
 		return fmt.Sprintf("[%s] %s: %s", e.Severity, e.Component, e.ErrorMessage)
 	case observe.SubAgentSpawned:

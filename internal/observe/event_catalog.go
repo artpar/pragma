@@ -345,14 +345,6 @@ func (MCPHealthCheck) eventSealed() {}
 
 // --- Session Events ---
 
-type SessionStarted struct {
-	EventHeader
-	SessionID   string `json:"session_id"`
-	ResumedFrom string `json:"resumed_from,omitempty"`
-}
-
-func (SessionStarted) eventSealed() {}
-
 type SessionSaved struct {
 	EventHeader
 	SessionID     string `json:"session_id"`
@@ -361,16 +353,6 @@ type SessionSaved struct {
 }
 
 func (SessionSaved) eventSealed() {}
-
-type SessionEnded struct {
-	EventHeader
-	SessionID    string  `json:"session_id"`
-	DurationMs   int64   `json:"duration_ms"`
-	TurnCount    int     `json:"turn_count"`
-	TotalCostUSD float64 `json:"total_cost_usd"`
-}
-
-func (SessionEnded) eventSealed() {}
 
 // --- Agent Events ---
 
@@ -574,26 +556,6 @@ type McpOAuthCompleted struct {
 
 func (McpOAuthCompleted) eventSealed() {}
 
-// --- Team Events ---
-
-// TeamCreated records when a new multi-agent swarm team is created.
-type TeamCreated struct {
-	EventHeader
-	TeamName    string `json:"team_name"`
-	LeadAgentID string `json:"lead_agent_id"`
-	MemberCount int    `json:"member_count"`
-}
-
-func (TeamCreated) eventSealed() {}
-
-// TeamDeleted records when a team is cleaned up and disbanded.
-type TeamDeleted struct {
-	EventHeader
-	TeamName string `json:"team_name"`
-}
-
-func (TeamDeleted) eventSealed() {}
-
 // --- Flow Trace Events ---
 
 // FlowTrace captures a decision point, branch, or loop iteration in the code.
@@ -619,48 +581,6 @@ func (bus *EventBus) Trace(component, function, msg string) {
 		Message:     msg,
 	})
 }
-
-// --- Lifecycle events (internal/lifecycle/) ---
-
-// LifecycleStepStarted is emitted before each superstep in a lifecycle graph.
-type LifecycleStepStarted struct {
-	EventHeader
-	Step  int      `json:"step"`
-	Nodes []string `json:"nodes"`
-}
-
-func (LifecycleStepStarted) eventSealed() {}
-
-// LifecycleNodeCompleted is emitted when a lifecycle node finishes.
-type LifecycleNodeCompleted struct {
-	EventHeader
-	Step     int           `json:"step"`
-	Node     string        `json:"node"`
-	Duration time.Duration `json:"duration"`
-	Error    string        `json:"error,omitempty"`
-}
-
-func (LifecycleNodeCompleted) eventSealed() {}
-
-// LifecycleTransition is emitted on each lifecycle edge traversal.
-type LifecycleTransition struct {
-	EventHeader
-	Step     int    `json:"step"`
-	From     string `json:"from"`
-	To       string `json:"to"`
-	RouteKey string `json:"route_key,omitempty"`
-}
-
-func (LifecycleTransition) eventSealed() {}
-
-// LifecycleCompleted is emitted when a lifecycle execution finishes.
-type LifecycleCompleted struct {
-	EventHeader
-	TotalSteps int    `json:"total_steps"`
-	Error      string `json:"error,omitempty"`
-}
-
-func (LifecycleCompleted) eventSealed() {}
 
 // --- Orchestration events (internal/orchestration/) ---
 

@@ -31,7 +31,6 @@ func main() {
 	root.AddCommand(inspectCmd())
 	root.AddCommand(auditCmd())
 	root.AddCommand(metricsCmd())
-	root.AddCommand(lifecycleCmd())
 	root.AddCommand(orchestrationCmd())
 	root.AddCommand(cronCmd())
 

@@ -14,7 +14,6 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/skill"
-	"github.com/artpar/pragma/internal/task"
 )
 
 // ErrUnknownCommand is returned when no command matches the given name.
@@ -28,7 +27,6 @@ type Result struct {
 	Quit              bool   // true for /exit: runtime should terminate after command handling
 	InjectPrompt      string // if set, presentation feeds this as a user message to the engine
 	Orchestrate       *OrchestrationRequest
-	OpenTeams         bool // true for /teams: presentation opens team selection
 	OpenModelPicker   bool // true for /model with no args: presentation opens model picker
 	OpenResumePicker  bool // true for /resume with no args: presentation opens session picker
 	ResumeCandidates  []ResumeCandidate
@@ -55,7 +53,6 @@ type Deps struct {
 	ModelName   string
 	Provider    string
 	Cwd         string // working directory for shell execution
-	TaskReg     *task.Registry
 	// Commands is set internally by Registry.Execute — not for external callers.
 	Commands []Command
 

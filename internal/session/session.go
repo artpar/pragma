@@ -19,7 +19,6 @@ type Session struct {
 	ContentReplacements    []model.ContentReplacementRecord `json:"content_replacements,omitempty"`
 	PromptHistory          []PromptHistoryData              `json:"prompt_history,omitempty"`
 	OrchestrationArtifacts []app.OrchestrationArtifact      `json:"orchestration_artifacts,omitempty"`
-	TaskResults            []TaskResultData                 `json:"task_results,omitempty"`
 	Worktree               *app.WorktreeSession             `json:"worktree,omitempty"`
 }
 

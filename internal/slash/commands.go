@@ -110,14 +110,6 @@ func registerBuiltins(r *Registry) {
 		CLIUse:      "init",
 	})
 	r.Register(Command{
-		Name:        "teams",
-		Aliases:     []string{"teammates"},
-		Description: "Manage active teammates",
-		Handle:      handleTeams,
-		Type:        TypeLocal,
-	})
-
-	r.Register(Command{
 		Name:        "config",
 		Description: "Show effective configuration and sources",
 		Handle:      handleConfig,
@@ -469,9 +461,17 @@ func handleMcp(_ context.Context, _ string, deps Deps) (Result, error) {
 	return Result{DisplayText: b.String()}, nil
 }
 
-func handleExit(_ context.Context, _ string, _ Deps) (Result, error) {
+func handleExit(_ context.Context, _ string, deps Deps) (Result, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if deps.SessionSave != nil {
+		observe.GlobalTrace("if: deps.SessionSave != nil")
+		if err := deps.SessionSave(); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: Result{}, err")
+			return Result{}, err
+		}
+	}
 	observe.GlobalTrace("return: Result{Quit: true}, nil")
 	return Result{Quit: true}, nil
 }

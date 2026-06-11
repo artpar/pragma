@@ -43,7 +43,6 @@ var toolRenderers = map[string]ToolRenderer{
 	"Glob":             renderGlob,
 	"Agent":            renderAgent,
 	"AskUserQuestion":  renderAskResult,
-	"LifecycleRun":     renderLifecycleRun,
 	"tool_result.read": renderToolResultRead,
 }
 

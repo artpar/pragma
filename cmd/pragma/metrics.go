@@ -5,7 +5,6 @@ import (
 	"os"
 	"sort"
 	"text/tabwriter"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -47,10 +46,6 @@ func metricsRun(_ *cobra.Command, args []string) error {
 	fmt.Println("Session Metrics")
 	fmt.Println("===============")
 
-	if snap.SessionDurationMs > 0 {
-		d := time.Duration(snap.SessionDurationMs) * time.Millisecond
-		fmt.Printf("Duration:      %s\n", d.Truncate(time.Second))
-	}
 	fmt.Printf("Turns:         %d\n", snap.TurnCount)
 	if snap.APIErrorCount > 0 {
 		fmt.Printf("API Calls:     %d (%d errors)\n", snap.APICallCount, snap.APIErrorCount)

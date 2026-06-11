@@ -94,8 +94,6 @@ func TestBuild_StaticPromptDoesNotAdvertiseSpecificToolNames(t *testing.T) {
 		"Glob",
 		"Grep",
 		"Agent",
-		"LifecycleRun",
-		"TaskCreate",
 		"AskUserQuestion",
 		"Skill",
 	} {

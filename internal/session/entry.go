@@ -17,7 +17,6 @@ const (
 	EntryMetadata               EntryKind = "metadata"
 	EntryContentReplacement     EntryKind = "content_replacement"
 	EntryPromptHistory          EntryKind = "prompt_history"
-	EntryTaskResult             EntryKind = "task_result"
 	EntryOrchestrationArtifacts EntryKind = "orchestration_artifacts"
 )
 
@@ -64,20 +63,6 @@ type PromptHistoryData struct {
 
 type OrchestrationArtifactsData struct {
 	Artifacts []app.OrchestrationArtifact `json:"artifacts"`
-}
-
-type TaskResultData struct {
-	TaskID     string    `json:"task_id"`
-	Subject    string    `json:"subject,omitempty"`
-	AgentName  string    `json:"agent_name,omitempty"`
-	Status     string    `json:"status"`
-	Result     string    `json:"result,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	TokensUsed int       `json:"tokens_used,omitempty"`
-	DurationMs int64     `json:"duration_ms,omitempty"`
-	TurnCount  int       `json:"turn_count,omitempty"`
-	CreatedAt  time.Time `json:"created_at,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 }
 
 // MarshalEntry creates a JSONL-ready Entry from typed data.

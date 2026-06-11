@@ -18,7 +18,6 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/slash"
-	"github.com/artpar/pragma/internal/task"
 	"github.com/artpar/pragma/internal/tui/render"
 )
 
@@ -38,8 +37,7 @@ type Config struct {
 	Metrics        *observe.Metrics      // always non-nil (created in deps.go)
 	Workspace      string                // full workspace directory path (run.go passes d.Cwd)
 	Version        string                // build version (from buildinfo.Version)
-	TaskReg        *task.Registry        // task registry for teammate visibility
-	SessionStart   time.Time             // original session start (for resume elapsed time)
+	StartedAt      time.Time             // original session start (for resume elapsed time)
 	McpServerNames []string              // connected MCP server names for welcome banner
 	PromptHistory  []string              // input history seeded from saved sessions
 }
@@ -50,11 +48,10 @@ type segmentKind int
 const (
 	segText segmentKind = iota
 	segThinking
-	segTool      // raw tool result data, rendered on demand based on verbose
-	segLifecycle // lifecycle progress, updated in-place based on events
-	segAgent     // agent progress, updated in-place based on AgentProgressEvent (ADR-043)
-	segGroup     // collapsed read/search group, accumulates consecutive collapsible tools (ADR-044)
-	segError     // classified error with optional retry state, rendered on demand based on verbose
+	segTool  // raw tool result data, rendered on demand based on verbose
+	segAgent // agent progress, updated in-place based on AgentProgressEvent (ADR-043)
+	segGroup // collapsed read/search group, accumulates consecutive collapsible tools (ADR-044)
+	segError // classified error with optional retry state, rendered on demand based on verbose
 )
 
 // toolSegData holds raw tool result data for on-demand rendering.
@@ -64,35 +61,6 @@ type toolSegData struct {
 	Input   json.RawMessage
 	Content string
 	IsError bool
-}
-
-// lifecycleNodeResult holds the outcome of a single node execution.
-type lifecycleNodeResult struct {
-	Duration time.Duration
-	Error    string
-}
-
-// lifecycleStep holds progress for a single superstep in a lifecycle graph.
-type lifecycleStep struct {
-	Step        int
-	Nodes       []string
-	Results     map[string]lifecycleNodeResult // node → result
-	Transitions []lifecycleTransition          // edges traversed after this step
-	Status      string                         // "running", "completed"
-}
-
-// lifecycleTransition records an edge traversal in the graph.
-type lifecycleTransition struct {
-	From     string
-	To       string
-	RouteKey string
-}
-
-// lifecycleSegData holds accumulated lifecycle progress for on-demand rendering.
-type lifecycleSegData struct {
-	Steps     []lifecycleStep
-	Completed bool
-	Error     string
 }
 
 // agentEntry tracks one agent's progress within a segAgent segment.
@@ -175,14 +143,13 @@ type errorSegData struct {
 // segment is a typed chunk of viewport output. Text segments are pre-rendered;
 // thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
-	kind      segmentKind
-	content   string            // segText: pre-rendered; segThinking: raw thinking text
-	redacted  bool              // only meaningful for segThinking
-	tool      *toolSegData      // only meaningful for segTool
-	lifecycle *lifecycleSegData // only meaningful for segLifecycle
-	agent     *agentSegData     // only meaningful for segAgent
-	group     *groupSegData     // only meaningful for segGroup (ADR-044)
-	errData   *errorSegData     // only meaningful for segError
+	kind     segmentKind
+	content  string        // segText: pre-rendered; segThinking: raw thinking text
+	redacted bool          // only meaningful for segThinking
+	tool     *toolSegData  // only meaningful for segTool
+	agent    *agentSegData // only meaningful for segAgent
+	group    *groupSegData // only meaningful for segGroup (ADR-044)
+	errData  *errorSegData // only meaningful for segError
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -201,15 +168,10 @@ type Model struct {
 	workspace      string   // full workspace path for welcome display
 	mcpServerNames []string // connected MCP server names for welcome banner
 
-	// Task registry for teammate visibility
-	taskReg         *task.Registry
-	teammateEntries []render.TeammateEntry
-
 	// Components
 	viewport  viewport.Model
 	input     inputComponent
 	perm      permissionDialog
-	teams     teamsDialog
 	modelDlg  modelDialog
 	resumeDlg resumeDialog
 	toolbar   toolbar
@@ -258,7 +220,7 @@ func New(cfg Config) Model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"})
 	observe.GlobalTrace("return: Model{...}")
 
-	tb := newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace, cfg.SessionStart)
+	tb := newToolbar(cfg.ModelName, cfg.Provider, cfg.Workspace, cfg.StartedAt)
 
 	tb.UpdateCost(cfg.CostTracker.TotalUSD())
 	msnap := cfg.Metrics.Snapshot()
@@ -291,7 +253,6 @@ func New(cfg Config) Model {
 		version:         cfg.Version,
 		workspace:       cfg.Workspace,
 		mcpServerNames:  cfg.McpServerNames,
-		taskReg:         cfg.TaskReg,
 		input:           input,
 		perm:            newPermissionDialog(),
 		toolbar:         tb,
@@ -354,7 +315,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
 
-			m.refreshTeammates()
 			m.viewport.SetContent(m.viewportContent())
 			observe.GlobalTrace("return: m, cmd")
 			return m, cmd
@@ -472,13 +432,6 @@ func (m Model) viewportContent() string {
 				seg.tool.IsError, m.width, m.verbose,
 			))
 			b.WriteString("\n")
-		case segLifecycle:
-			observe.GlobalTrace("case: segLifecycle")
-			if seg.lifecycle != nil {
-				rSteps := convertLifecycleSteps(seg.lifecycle.Steps)
-				b.WriteString(render.RenderLifecycleProgress(rSteps, seg.lifecycle.Completed, seg.lifecycle.Error, m.verbose, m.width))
-				b.WriteString("\n")
-			}
 		case segAgent:
 			observe.GlobalTrace("case: segAgent")
 			if seg.agent != nil {
@@ -513,18 +466,6 @@ func (m Model) viewportContent() string {
 	if m.spinnerActive {
 		observe.GlobalTrace("if: m.spinnerActive")
 		b.WriteString("\n" + m.spin.View() + " " + m.spinnerTool + "...")
-
-		if len(m.teammateEntries) > 0 {
-			observe.GlobalTrace("if: len(m.teammateEntries) > 0")
-			b.WriteString("\n")
-			b.WriteString(render.RenderTeammateTree(m.teammateEntries, m.verbose, m.width))
-		}
-	}
-
-	if m.teams.active {
-		observe.GlobalTrace("if: m.teams.active")
-		b.WriteString("\n")
-		b.WriteString(m.teams.View(m.width))
 	}
 
 	if m.modelDlg.active {
@@ -584,18 +525,15 @@ func appendError(segs []segment, data errorSegData) []segment {
 	return append(segs, segment{kind: segError, errData: &data})
 }
 
-// hasProgressSegment returns true if a recent segLifecycle or segAgent segment
-// exists that already covers this tool's visual output. This prevents creating
-// a duplicate segTool when the progress segment is the authoritative display.
+// hasProgressSegment returns true if a recent segAgent segment already covers
+// this tool's visual output. This prevents creating a duplicate segTool when
+// the progress segment is the authoritative display.
 func hasProgressSegment(segs []segment, toolName string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	for i := len(segs) - 1; i >= 0; i-- {
 		observe.GlobalTrace("for: i >= 0")
 		switch {
-		case segs[i].kind == segLifecycle && segs[i].lifecycle != nil && toolName == "LifecycleRun":
-			observe.GlobalTrace("case: segs[i].kind == segLifecycle && segs[i].lifecycle != nil && toolName == \"Life...")
-			return true
 		case segs[i].kind == segAgent && segs[i].agent != nil && toolName == "Agent":
 			observe.GlobalTrace("case: segs[i].kind == segAgent && segs[i].agent != nil && toolName == \"Agent\"")
 			return true
@@ -609,67 +547,6 @@ func hasProgressSegment(segs []segment, toolName string) bool {
 	}
 	observe.GlobalTrace("return: false")
 	return false
-}
-
-// updateLifecycleProgress finds or creates the active segLifecycle segment
-// and updates it in-place based on the lifecycle progress event.
-func (m *Model) updateLifecycleProgress(e query.LifecycleProgressEvent) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	// Find the last segLifecycle segment, or create one.
-	var data *lifecycleSegData
-	for i := len(m.outputSegs) - 1; i >= 0; i-- {
-		observe.GlobalTrace("for: i >= 0")
-		if m.outputSegs[i].kind == segLifecycle && m.outputSegs[i].lifecycle != nil {
-			observe.GlobalTrace("if: m.outputSegs[i].kind == segLifecycle && m.outputSegs[i].lifecycle != nil")
-			data = m.outputSegs[i].lifecycle
-			break
-		}
-	}
-	if data == nil {
-		observe.GlobalTrace("if: data == nil")
-		data = &lifecycleSegData{}
-		m.outputSegs = append(m.outputSegs, segment{kind: segLifecycle, lifecycle: data})
-	}
-
-	switch e.Status {
-	case "step_started":
-		observe.GlobalTrace("case: \"step_started\"")
-		data.Steps = append(data.Steps, lifecycleStep{
-			Step:    e.Step,
-			Nodes:   e.Nodes,
-			Results: make(map[string]lifecycleNodeResult),
-			Status:  "running",
-		})
-	case "node_completed":
-		observe.GlobalTrace("case: \"node_completed\"")
-		if len(data.Steps) > 0 {
-			step := &data.Steps[len(data.Steps)-1]
-			step.Results[e.Node] = lifecycleNodeResult{
-				Duration: e.Duration,
-				Error:    e.Error,
-			}
-
-			if len(step.Results) == len(step.Nodes) {
-				observe.GlobalTrace("if: len(step.Results) == len(step.Nodes)")
-				step.Status = "completed"
-			}
-		}
-	case "transition":
-		observe.GlobalTrace("case: \"transition\"")
-		if len(data.Steps) > 0 {
-			step := &data.Steps[len(data.Steps)-1]
-			step.Transitions = append(step.Transitions, lifecycleTransition{
-				From:     e.FromNode,
-				To:       e.ToNode,
-				RouteKey: e.RouteKey,
-			})
-		}
-	case "completed":
-		observe.GlobalTrace("case: \"completed\"")
-		data.Completed = true
-		data.Error = e.Error
-	}
 }
 
 // updateAgentProgress finds or creates the active segAgent segment
@@ -862,9 +739,6 @@ func segByteSize(seg segment) int {
 	case seg.kind == segTool && seg.tool != nil:
 		observe.GlobalTrace("case: seg.kind == segTool && seg.tool != nil")
 		return len(seg.tool.Content) + len(seg.tool.Input)
-	case seg.kind == segLifecycle && seg.lifecycle != nil:
-		observe.GlobalTrace("case: seg.kind == segLifecycle && seg.lifecycle != nil")
-		return len(seg.lifecycle.Steps) * 50
 	case seg.kind == segAgent && seg.agent != nil:
 		observe.GlobalTrace("case: seg.kind == segAgent && seg.agent != nil")
 		return len(seg.agent.Agents) * 80
@@ -895,35 +769,6 @@ func outputLen(segs []segment) int {
 	}
 	observe.GlobalTrace("return: n")
 	return n
-}
-
-// convertLifecycleSteps converts internal lifecycleStep types to render package types.
-func convertLifecycleSteps(steps []lifecycleStep) []render.LifecycleStep {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	out := make([]render.LifecycleStep, len(steps))
-	for i, s := range steps {
-		observe.GlobalTrace("range steps")
-		results := make(map[string]render.LifecycleNodeResult, len(s.Results))
-		for k, v := range s.Results {
-			observe.GlobalTrace("range s.Results")
-			results[k] = render.LifecycleNodeResult{Duration: v.Duration, Error: v.Error}
-		}
-		transitions := make([]render.LifecycleTransition, len(s.Transitions))
-		for j, t := range s.Transitions {
-			observe.GlobalTrace("range s.Transitions")
-			transitions[j] = render.LifecycleTransition{From: t.From, To: t.To, RouteKey: t.RouteKey}
-		}
-		out[i] = render.LifecycleStep{
-			Step:        s.Step,
-			Nodes:       s.Nodes,
-			Results:     results,
-			Transitions: transitions,
-			Status:      s.Status,
-		}
-	}
-	observe.GlobalTrace("return: out")
-	return out
 }
 
 // loadMessageSegments loads a single message into output segments.
@@ -1083,18 +928,4 @@ func (m *Model) syncViewportHeight() {
 	}
 	headerHeight := m.input.ViewHeight() + 1 + 2
 	m.viewport.Height = max(m.height-headerHeight, 1)
-}
-
-// refreshTeammates polls the task registry for running teammates and updates
-// the cached entries + toolbar count. Called on every spinner tick.
-func (m *Model) refreshTeammates() {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if m.taskReg == nil {
-		observe.GlobalTrace("if: m.taskReg == nil")
-		return
-	}
-	tasks := m.taskReg.ListTeammates(false)
-	m.teammateEntries = buildTeammateEntries(tasks)
-	m.toolbar.teammateCount = len(m.teammateEntries)
 }

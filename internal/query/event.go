@@ -115,23 +115,6 @@ type CompactionStartedEvent struct{}
 
 func (CompactionStartedEvent) loopEventSealed() {}
 
-// LifecycleProgressEvent carries intermediate lifecycle graph progress.
-// Emitted during LifecycleRun tool execution so the TUI can show step-by-step
-// progress instead of a static spinner (addresses GitHub #11036, #30528).
-type LifecycleProgressEvent struct {
-	Step     int
-	Node     string
-	Nodes    []string      // pending nodes (step_started)
-	Status   string        // "step_started", "node_completed", "transition", "completed"
-	Duration time.Duration // node_completed only
-	Error    string        // node_completed / completed errors
-	FromNode string        // transition only
-	ToNode   string        // transition only
-	RouteKey string        // transition only
-}
-
-func (LifecycleProgressEvent) loopEventSealed() {}
-
 // OrchestrationStartedEvent signals the start of an orchestration FSM run.
 type OrchestrationStartedEvent struct {
 	Name    string
