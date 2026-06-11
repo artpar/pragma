@@ -259,35 +259,6 @@ func TestTransitionLookupUsesSourceStateAndEvent(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeRejectsPersonaControlState(t *testing.T) {
-	_, err := NewRuntime(Definition{
-		Name:    "bad",
-		Initial: "worker",
-		States: []State{
-			{
-				ID:      "worker",
-				Persona: "implementer",
-				Control: Control{
-					ForEachNext: &ForEachNextControl{
-						ListPath:   "/tmp/list.json",
-						CursorPath: "/tmp/current.json",
-						ItemEvent:  "item",
-						DoneEvent:  "done",
-					},
-				},
-			},
-			{ID: "done", Terminal: true},
-		},
-		Transitions: []Transition{
-			{Event: "item", From: []string{"worker"}, To: "done"},
-			{Event: "done", From: []string{"worker"}, To: "done"},
-		},
-	})
-	if err == nil {
-		t.Fatal("expected persona/control state to be rejected")
-	}
-}
-
 func TestNewRuntimeRejectsInvalidTaskPromptMode(t *testing.T) {
 	_, err := NewRuntime(Definition{
 		Name:    "bad",

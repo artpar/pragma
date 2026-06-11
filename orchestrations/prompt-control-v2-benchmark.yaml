@@ -51,6 +51,13 @@ states:
           description: JSON checklist consumed by the item loop.
 
   - id: next_item
+    persona: next_item
+    artifacts:
+      outputs:
+        - id: current_item_handoff
+          path: /tmp/pragma/handoff-prompts/next_item/current-item.md
+          required: true
+          description: Persona-authored handoff for the selected item worker.
     control:
       foreach_next:
         list_path: /tmp/pragma/checklist.json
@@ -220,7 +227,7 @@ transitions:
       - id: current_item_handoff
         path: /tmp/pragma/handoff-prompts/next_item/current-item.md
         required: true
-        description: Immediate handoff written by the next_item control for the selected item.
+        description: Persona-authored handoff written by next_item for the selected item.
   - event: all_items_done
     from: [next_item]
     to: validation_runner
@@ -329,7 +336,7 @@ transitions:
       - id: current_item_handoff
         path: /tmp/pragma/handoff-prompts/next_item/current-item.md
         required: true
-        description: Immediate handoff written by the next_item control for the selected item.
+        description: Persona-authored handoff written by next_item for the selected item.
       - id: implementer_report
         path: /tmp/pragma/implementer-report.md
         required: true

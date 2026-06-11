@@ -107,7 +107,7 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	}
 
 	taskPrompt := opts.TaskPrompt
-	stateEngines := make(map[string]*query.Engine)
+	persistentStateEngines := make(map[string]*query.Engine)
 	var transitionHandoff []Artifact
 	var transitionFrom string
 	var transitionEvent string
@@ -115,17 +115,15 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 		observe.TraceCtx(ctx, "orchestration", "runEvents", "for: !runtime.States[runtime.FSM.Current()].Terminal")
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
-		stateEngine := engine
+		stateEngine, err := engineForOrchestrationState(engine, persistentStateEngines, state)
+		if err != nil {
+			observe.TraceCtx(ctx, "orchestration", "runEvents", "if: err != nil")
+			ch <- query.ErrorEvent{Err: err}
+			return
+		}
 		stateTaskPrompt := ""
 		if state.Control.IsZero() {
 			observe.TraceCtx(ctx, "orchestration", "runEvents", "if: state.Control.IsZero()")
-			var ok bool
-			stateEngine, ok = stateEngines[state.ID]
-			if !ok {
-				observe.TraceCtx(ctx, "orchestration", "runEvents", "if: !ok")
-				stateEngine, _ = engine.ForkFreshConversation()
-				stateEngines[state.ID] = stateEngine
-			}
 			stateTaskPrompt = taskPrompt
 			taskPrompt = ""
 		}
@@ -158,6 +156,45 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 		Response:   model.Response{StopReason: model.StopEndTurn},
 		StopReason: model.StopEndTurn,
 	}
+}
+
+func engineForOrchestrationState(root *query.Engine, persistent map[string]*query.Engine, state State) (*query.Engine, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if !stateRunsPersona(state) {
+		observe.GlobalTrace("if: !stateRunsPersona(state)")
+		observe.GlobalTrace("return: root, nil")
+		return root, nil
+	}
+	if stateUsesPersistentConversation(state) {
+		observe.GlobalTrace("if: stateUsesPersistentConversation(state)")
+		if engine, ok := persistent[state.ID]; ok {
+			observe.GlobalTrace("if: engine, ok := persistent[state.ID]; ok")
+			observe.GlobalTrace("return: engine, nil")
+			return engine, nil
+		}
+		engine, _ := root.ForkFreshConversation()
+		persistent[state.ID] = engine
+		observe.GlobalTrace("return: engine, nil")
+		return engine, nil
+	}
+	engine, _ := root.ForkFreshConversation()
+	observe.GlobalTrace("return: engine, nil")
+	return engine, nil
+}
+
+func stateRunsPersona(state State) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: state.Control.IsZero() || strings.TrimSpace(state.Persona) != \"\"")
+	return state.Control.IsZero() || strings.TrimSpace(state.Persona) != ""
+}
+
+func stateUsesPersistentConversation(state State) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: state.ID == \"next_item\" && strings.TrimSpace(state.Persona) != \"\" && state.Control.ForEachNext...")
+	return state.ID == "next_item" && strings.TrimSpace(state.Persona) != "" && state.Control.ForEachNext != nil
 }
 
 func EnsureRunDirs(def Definition, artifactRoots ...string) error {
@@ -275,51 +312,29 @@ func runNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 			return "", "", fmt.Errorf("control state %q failed: %w", state.ID, err)
 		}
 		emitOrchestration(ch, bus, projection, query.OrchestrationControlEvent{StateID: state.ID, Control: control, Event: event})
-		if state.Control.ForEachNext != nil && state.Control.ForEachNext.HandoffPath != "" {
-			observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: state.Control.ForEachNext != nil && state.Control.ForEachNext.HandoffPath != \"\"")
-			emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
-				StateID:   state.ID,
-				Event:     event,
-				Path:      state.Control.ForEachNext.HandoffPath,
-				Direction: "write",
-			})
+		if state.Control.ForEachNext != nil && state.Persona != "" && event == state.Control.ForEachNext.ItemEvent {
+			observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: state.Control.ForEachNext != nil && state.Persona != \"\" && event == state.Control.ForEachNext.ItemEvent")
+			controlHandoff := controlPersonaHandoffArtifacts(state, transitionHandoff)
+			if err := runPersonaForState(ctx, ch, bus, projection, engine, personaDir, def, state, "", handoffPrompt, controlHandoff, transitionFrom, transitionEvent, artifactRoot); err != nil {
+				observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: err != nil")
+				observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "return: \"\", \"\", fmt.Errorf(\"state %q failed: %w\", state.ID, err)")
+				return "", "", fmt.Errorf("state %q failed: %w", state.ID, err)
+			}
+			if state.Control.ForEachNext.HandoffPath != "" {
+				observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: state.Control.ForEachNext.HandoffPath != \"\"")
+				emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
+					StateID:   state.ID,
+					Event:     event,
+					Path:      state.Control.ForEachNext.HandoffPath,
+					Direction: "write",
+				})
+			}
 		}
 		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "return: event, \"\", nil")
 		return event, "", nil
 	}
 
-	personaDef, err := LoadPersonaForState(personaDir, state)
-	if err != nil {
-		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: err != nil")
-		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "return: \"\", \"\", err")
-		return "", "", err
-	}
-	emitOrchestration(ch, bus, projection, query.OrchestrationStateStartedEvent{StateID: state.ID, PersonaID: personaDef.ID})
-	transitionHandoffPrompt, readEvents, err := RenderTransitionHandoff(state, transitionHandoff, artifactRoot, true)
-	if err != nil {
-		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: err != nil")
-		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "return: \"\", \"\", err")
-		return "", "", err
-	}
-	for _, read := range readEvents {
-		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "range readEvents")
-		emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
-			StateID:    state.ID,
-			From:       transitionFrom,
-			Event:      transitionEvent,
-			To:         state.ID,
-			ArtifactID: read.ArtifactID,
-			Path:       read.Path,
-			Direction:  "read",
-		})
-	}
-	if strings.TrimSpace(transitionHandoffPrompt) != "" {
-		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: strings.TrimSpace(transitionHandoffPrompt) != \"\"")
-		handoffPrompt = transitionHandoffPrompt
-	}
-
-	_, err = RunStateEvents(ctx, ch, engine, projection, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
-	if err != nil {
+	if err := runPersonaForState(ctx, ch, bus, projection, engine, personaDir, def, state, taskPrompt, handoffPrompt, transitionHandoff, transitionFrom, transitionEvent, artifactRoot); err != nil {
 		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: err != nil")
 		observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "return: \"\", \"\", fmt.Errorf(\"state %q failed: %w\", state.ID, err)")
 		return "", "", fmt.Errorf("state %q failed: %w", state.ID, err)
@@ -333,6 +348,67 @@ func runNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 	}
 	observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "return: event, \"\", nil")
 	return event, "", nil
+}
+
+func runPersonaForState(ctx context.Context, ch chan<- query.LoopEvent, bus *observe.EventBus, projection *Projection, engine *query.Engine, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, transitionHandoff []Artifact, transitionFrom string, transitionEvent string, artifactRoot string) error {
+	observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "enter")
+	defer observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "exit")
+	personaDef, err := LoadPersonaForState(personaDir, state)
+	if err != nil {
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "if: err != nil")
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "return: err")
+		return err
+	}
+	emitOrchestration(ch, bus, projection, query.OrchestrationStateStartedEvent{StateID: state.ID, PersonaID: personaDef.ID})
+	transitionHandoffPrompt, readEvents, err := RenderTransitionHandoff(state, transitionHandoff, artifactRoot, true)
+	if err != nil {
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "if: err != nil")
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "return: err")
+		return err
+	}
+	for _, read := range readEvents {
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "range readEvents")
+		emitOrchestration(ch, bus, projection, query.OrchestrationHandoffEvent{
+			StateID:    state.ID,
+			From:       transitionFrom,
+			Event:      transitionEvent,
+			To:         state.ID,
+			ArtifactID: read.ArtifactID,
+			Path:       read.Path,
+			Direction:  "read",
+		})
+	}
+	if strings.TrimSpace(transitionHandoffPrompt) != "" {
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "if: strings.TrimSpace(transitionHandoffPrompt) != \"\"")
+		handoffPrompt = transitionHandoffPrompt
+	}
+
+	_, err = RunStateEvents(ctx, ch, engine, projection, def, state, personaDef, taskPrompt, handoffPrompt, artifactRoot)
+	if err != nil {
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "if: err != nil")
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "return: err")
+		return err
+	}
+
+	observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "return: nil")
+	return nil
+}
+
+func controlPersonaHandoffArtifacts(state State, transitionHandoff []Artifact) []Artifact {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	handoff := append([]Artifact(nil), transitionHandoff...)
+	if state.Control.ForEachNext != nil && state.Control.ForEachNext.CursorPath != "" {
+		observe.GlobalTrace("if: state.Control.ForEachNext != nil && state.Control.ForEachNext.CursorPath != \"\"")
+		handoff = append(handoff, Artifact{
+			ID:          "current_item",
+			Path:        state.Control.ForEachNext.CursorPath,
+			Required:    true,
+			Description: "Current checklist item selected by the foreach_next control.",
+		})
+	}
+	observe.GlobalTrace("return: handoff")
+	return handoff
 }
 
 func ControlName(state State) string {
@@ -634,8 +710,8 @@ func RenderArtifactContract(artifacts Artifacts) string {
 func RenderStateCompletionContract(state State) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if !state.Control.IsZero() {
-		observe.GlobalTrace("if: !state.Control.IsZero()")
+	if !state.Control.IsZero() && strings.TrimSpace(state.Persona) == "" {
+		observe.GlobalTrace("if: !state.Control.IsZero() && strings.TrimSpace(state.Persona) == \"\"")
 		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
@@ -728,8 +804,8 @@ func RenderNextForEachContract(def Definition, state State) string {
 	fmt.Fprintf(&b, "It will parse `%s` and write the selected item to `%s`.\n\n", control.ListPath, control.CursorPath)
 	if control.HandoffPath != "" {
 		observe.GlobalTrace("if: control.HandoffPath != \"\"")
-		fmt.Fprintf(&b, "It will also write an immediate selected-item handoff to `%s`.\n", control.HandoffPath)
-		b.WriteString("Do not write a separate generic next-item handoff; the control state owns that handoff after selection.\n\n")
+		fmt.Fprintf(&b, "Its `%s` persona will write the selected-item handoff to `%s` after selection.\n", next.Persona, control.HandoffPath)
+		b.WriteString("Do not write a separate generic next-item handoff; the next state's persona owns that handoff after the cursor is selected.\n\n")
 	}
 	fmt.Fprintf(&b, "Write `%s` as JSON with this exact shape:\n\n", control.ListPath)
 	b.WriteString("```json\n")
@@ -759,7 +835,7 @@ func RenderNextForEachContract(def Definition, state State) string {
 	fmt.Fprintf(&b, "- When no `%s` items remain, `%s` will write a cursor item with status `%s`.\n", pendingStatus, next.ID, doneStatus)
 	if control.HandoffPath != "" {
 		observe.GlobalTrace("if: control.HandoffPath != \"\"")
-		fmt.Fprintf(&b, "- `%s` will write the handoff for the exact selected item, not for future checklist items.\n", next.ID)
+		fmt.Fprintf(&b, "- `%s` will select the item and its `%s` persona will write the handoff for that exact selected item, not for future checklist items.\n", next.ID, next.Persona)
 	}
 	b.WriteString("- `acceptance`, `allowed_files`, `forbidden_files`, `coupled_edit_paths`, and `report_changed_files` must be JSON arrays.\n")
 	b.WriteString("- Use `validation_command: \"none\"` only when `acceptance_check` is present and `validation_deferred_until` names what later item or surface makes validation runnable.\n")

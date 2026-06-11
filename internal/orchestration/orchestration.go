@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/artpar/pragma/internal/observe"
@@ -400,11 +399,6 @@ func validateStateExecution(defName string, state State) error {
 	}
 	if !state.Control.IsZero() {
 		observe.GlobalTrace("if: !state.Control.IsZero()")
-		if state.Persona != "" {
-			observe.GlobalTrace("if: state.Persona != \"\"")
-			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q cannot have both persona and control\", ...")
-			return fmt.Errorf("orchestration %q state %q cannot have both persona and control", defName, state.ID)
-		}
 		if state.TaskPrompt != "" {
 			observe.GlobalTrace("if: state.TaskPrompt != \"\"")
 			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q cannot define task_prompt\", def...")
@@ -457,9 +451,53 @@ func validateStateExecution(defName string, state State) error {
 			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q must define exactly one control...")
 			return fmt.Errorf("orchestration %q control state %q must define exactly one control", defName, state.ID)
 		}
+		if state.Persona != "" && state.Control.ForEachNext == nil {
+			observe.GlobalTrace("if: state.Persona != \"\" && state.Control.ForEachNext == nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q can only define persona with foreach...")
+			return fmt.Errorf("orchestration %q control state %q can only define persona with foreach_next", defName, state.ID)
+		}
+		if state.Control.ForEachNext != nil && state.Control.ForEachNext.HandoffPath != "" && state.Persona == "" {
+			observe.GlobalTrace("if: state.Control.ForEachNext != nil && state.Control.ForEachNext.HandoffPath != \"\" && state.Persona == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next handoff_path requires persona\", ...")
+			return fmt.Errorf("orchestration %q state %q foreach_next handoff_path requires persona", defName, state.ID)
+		}
+		if state.Persona != "" && state.Control.ForEachNext != nil {
+			observe.GlobalTrace("if: state.Persona != \"\" && state.Control.ForEachNext != nil")
+			if err := validatePersonaBackedForEachNext(defName, state); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: err")
+				return err
+			}
+		}
 	}
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+func validatePersonaBackedForEachNext(defName string, state State) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	control := state.Control.ForEachNext
+	if control == nil {
+		observe.GlobalTrace("if: control == nil")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	if control.HandoffPath == "" {
+		observe.GlobalTrace("if: control.HandoffPath == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q persona-backed foreach_next requires handoff_path...")
+		return fmt.Errorf("orchestration %q state %q persona-backed foreach_next requires handoff_path", defName, state.ID)
+	}
+	for _, artifact := range state.Artifacts.Outputs {
+		observe.GlobalTrace("range state.Artifacts.Outputs")
+		if artifact.Path == control.HandoffPath && artifact.Required {
+			observe.GlobalTrace("if: artifact.Path == control.HandoffPath && artifact.Required")
+			observe.GlobalTrace("return: nil")
+			return nil
+		}
+	}
+	observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q persona-backed foreach_next requires a required output artifact...")
+	return fmt.Errorf("orchestration %q state %q persona-backed foreach_next requires a required output artifact at handoff_path %q", defName, state.ID, control.HandoffPath)
 }
 
 func validateArtifacts(defName, stateID string, artifacts Artifacts) error {
@@ -692,14 +730,6 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 			observe.GlobalTrace("return: \"\", err")
 			return "", err
 		}
-		if control.HandoffPath != "" {
-			observe.GlobalTrace("if: control.HandoffPath != \"\"")
-			if err := writeForEachItemHandoff(control.HandoffPath, item); err != nil {
-				observe.GlobalTrace("if: err != nil")
-				observe.GlobalTrace("return: \"\", err")
-				return "", err
-			}
-		}
 		observe.GlobalTrace("return: control.ItemEvent, nil")
 		return control.ItemEvent, nil
 	}
@@ -708,67 +738,8 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
-	if control.HandoffPath != "" {
-		observe.GlobalTrace("if: control.HandoffPath != \"\"")
-		if err := writeForEachDoneHandoff(control.HandoffPath, doneStatus); err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: \"\", err")
-			return "", err
-		}
-	}
 	observe.GlobalTrace("return: control.DoneEvent, nil")
 	return control.DoneEvent, nil
-}
-
-func writeForEachItemHandoff(path string, item ChecklistItem) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	raw, err := json.MarshalIndent(item, "", "  ")
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: fmt.Errorf(\"marshal selected item handoff: %w\", err)")
-		return fmt.Errorf("marshal selected item handoff: %w", err)
-	}
-	var b strings.Builder
-	b.WriteString("# Current Item Handoff\n\n")
-	b.WriteString("This handoff is for the immediate next checklist item only.\n")
-	b.WriteString("Do not implement or inspect future checklist items from this handoff.\n\n")
-	b.WriteString("## Selected Item\n\n")
-	b.WriteString("```json\n")
-	b.Write(raw)
-	b.WriteString("\n```\n")
-	observe.GlobalTrace("return: writeTextFile(path, b.String())")
-	return writeTextFile(path, b.String())
-}
-
-func writeForEachDoneHandoff(path string, doneStatus string) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	var b strings.Builder
-	b.WriteString("# Checklist Exhausted Handoff\n\n")
-	fmt.Fprintf(&b, "No pending checklist items remain. The cursor status is `%s`.\n", doneStatus)
-	observe.GlobalTrace("return: writeTextFile(path, b.String())")
-	return writeTextFile(path, b.String())
-}
-
-func writeTextFile(path string, content string) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if dir := filepath.Dir(path); dir != "." && dir != "" {
-		observe.GlobalTrace("if: dir != \".\" && dir != \"\"")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: fmt.Errorf(\"create directory %q: %w\", dir, err)")
-			return fmt.Errorf("create directory %q: %w", dir, err)
-		}
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: fmt.Errorf(\"write %q: %w\", path, err)")
-		return fmt.Errorf("write %q: %w", path, err)
-	}
-	observe.GlobalTrace("return: nil")
-	return nil
 }
 
 func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
