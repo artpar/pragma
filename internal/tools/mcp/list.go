@@ -79,6 +79,7 @@ func (t *ListTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 	observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "enter")
 	defer observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "exit")
 	if t.EnsureActive != nil {
+		observe.TraceCtx(ctx, "toolmcp", "ListTool.Invoke", "if: t.EnsureActive != nil")
 		t.EnsureActive(ctx, state)
 	}
 	var in listInput

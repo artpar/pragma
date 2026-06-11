@@ -3,6 +3,7 @@ package background
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"github.com/artpar/pragma/internal/observe"
 	"time"
 )
 
@@ -42,17 +43,28 @@ type ProcessInfo struct {
 }
 
 func (p ProcessInfo) HasSession() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: p.SessionID != \"\"")
 	return p.SessionID != ""
 }
 
 func (p ProcessInfo) HasFreshHeartbeat(now time.Time) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: !p.HeartbeatAt.IsZero() && now.Sub(p.HeartbeatAt) <= HeartbeatTimeout")
 	return !p.HeartbeatAt.IsZero() && now.Sub(p.HeartbeatAt) <= HeartbeatTimeout
 }
 
 func NewOwnerToken() (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
+	observe.GlobalTrace("return: hex.EncodeToString(b[:]), nil")
 	return hex.EncodeToString(b[:]), nil
 }

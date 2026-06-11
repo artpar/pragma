@@ -90,6 +90,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		return checker.Check(ctx, "Write", "")
 	}
 	observe.TraceCtx(ctx, "filewrite", "Tool.CheckPerm", "return: checker.Check(ctx, \"Write\", in.FilePath)")
+	observe.TraceCtx(ctx, "filewrite", "Tool.CheckPerm", "return: permission.CheckPath(ctx, checker, \"Write\", in.FilePath)")
 	return permission.CheckPath(ctx, checker, "Write", in.FilePath)
 }
 
@@ -163,11 +164,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if isCreate {
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "if: isCreate")
 		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"File created successfully at: %s\", ...")
+		observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"File created successfully at: %s\", ...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("File created successfully at: %s", in.FilePath),
 		}, nil
 	}
 	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
+	observe.TraceCtx(ctx, "filewrite", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"The file %s has been updated succes...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
 	}, nil

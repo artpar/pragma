@@ -133,6 +133,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, _ tool.StateSn
 		return tool.InvokeResult{}, fmt.Errorf("output does not match required schema: %s", errMsg)
 	}
 	observe.TraceCtx(ctx, "synthetic", "Tool.Invoke", "return: tool.InvokeResult{Content: \"Structured output provided successfully\"}, nil")
+	observe.TraceCtx(ctx, "synthetic", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\t\t\"Structured output provided successfully\",\n\tStr...")
 
 	return tool.InvokeResult{
 		Content:          "Structured output provided successfully",

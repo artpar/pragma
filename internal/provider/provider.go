@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Provider is the translation boundary between internal model types and
@@ -27,9 +28,14 @@ type ResourceCleaner interface {
 }
 
 func Close(ctx context.Context, prov Provider) error {
+	observe.TraceCtx(ctx, "provider", "Close", "enter")
+	defer observe.TraceCtx(ctx, "provider", "Close", "exit")
 	if cleaner, ok := prov.(ResourceCleaner); ok {
+		observe.TraceCtx(ctx, "provider", "Close", "if: ok")
+		observe.TraceCtx(ctx, "provider", "Close", "return: cleaner.Close(ctx)")
 		return cleaner.Close(ctx)
 	}
+	observe.TraceCtx(ctx, "provider", "Close", "return: nil")
 	return nil
 }
 

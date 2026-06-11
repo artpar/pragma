@@ -152,11 +152,17 @@ func (r *Registry) Update(id string, fn func(*Task)) error {
 }
 
 func (r *Registry) UpdateFields(id string, fields UpdateFields) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if fields.Status != nil {
+		observe.GlobalTrace("if: fields.Status != nil")
 		if _, err := ParseStatus(string(*fields.Status)); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: err")
 			return err
 		}
 	}
+	observe.GlobalTrace("return: r.Update(id, func(t *Task) {\n\tif fields.Status != nil {\n\t\tt.Status = *fields....")
 	return r.Update(id, func(t *Task) {
 		if fields.Status != nil {
 			t.Status = *fields.Status
@@ -191,6 +197,7 @@ func (r *Registry) Cancel(id string) error {
 	defer observe.GlobalTrace("exit")
 	_, err := r.ApplyLifecycleCommand(id, LifecycleCommandKill)
 	observe.GlobalTrace("return: nil")
+	observe.GlobalTrace("return: err")
 	return err
 }
 
@@ -265,17 +272,22 @@ func lifecycleCommandMessage(t *Task, cmd LifecycleCommand) string {
 	defer observe.GlobalTrace("exit")
 	name := t.ID
 	if t.AgentName != "" {
+		observe.GlobalTrace("if: t.AgentName != \"\"")
 		name = t.AgentName
 	}
 	switch cmd {
 	case LifecycleCommandShutdown:
+		observe.GlobalTrace("case: LifecycleCommandShutdown")
 		return fmt.Sprintf("Shutdown requested for %s", name)
 	case LifecycleCommandKill:
+		observe.GlobalTrace("case: LifecycleCommandKill")
 		if t.AgentName == "" {
+			observe.GlobalTrace("return: fmt.Sprintf(\"Task %s cancelled\", t.ID)")
 			return fmt.Sprintf("Task %s cancelled", t.ID)
 		}
 		return fmt.Sprintf("Killed %s", name)
 	default:
+		observe.GlobalTrace("default")
 		return fmt.Sprintf("Applied %s to %s", cmd, name)
 	}
 }
@@ -358,23 +370,29 @@ func (r *Registry) ApplyLifecycleCommand(id string, cmd LifecycleCommand) (Lifec
 	if !ok {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: fmt.Errorf(\"task %q not found\", id)")
+		observe.GlobalTrace("return: LifecycleCommandResult{}, fmt.Errorf(\"task %q not found\", id)")
 		return LifecycleCommandResult{}, fmt.Errorf("task %q not found", id)
 	}
 	if cmd != LifecycleCommandShutdown && cmd != LifecycleCommandKill {
+		observe.GlobalTrace("if: cmd != LifecycleCommandShutdown && cmd != LifecycleCommandKill")
+		observe.GlobalTrace("return: LifecycleCommandResult{}, fmt.Errorf(\"unknown lifecycle command %q\", cmd)")
 		return LifecycleCommandResult{}, fmt.Errorf("unknown lifecycle command %q", cmd)
 	}
 	if t.Status != TaskRunning && t.Status != TaskPending {
 		observe.GlobalTrace("if: t.Status != TaskRunning && t.Status != TaskPending")
 		observe.GlobalTrace("return: fmt.Errorf(\"task %q is %s, cannot apply lifecycle command\", id, t.Status)")
+		observe.GlobalTrace("return: LifecycleCommandResult{}, fmt.Errorf(\"task %q is %s, cannot %s\", id, t.Status...")
 		return LifecycleCommandResult{}, fmt.Errorf("task %q is %s, cannot %s", id, t.Status, cmd)
 	}
 
 	notify := false
 	switch cmd {
 	case LifecycleCommandShutdown:
+		observe.GlobalTrace("case: LifecycleCommandShutdown")
 		t.ShutdownRequested = true
 		notify = true
 	case LifecycleCommandKill:
+		observe.GlobalTrace("case: LifecycleCommandKill")
 		if t.Cancel != nil {
 			observe.GlobalTrace("if: t.Cancel != nil")
 			t.Cancel()
@@ -383,6 +401,7 @@ func (r *Registry) ApplyLifecycleCommand(id string, cmd LifecycleCommand) (Lifec
 	}
 	t.UpdatedAt = time.Now()
 	if notify {
+		observe.GlobalTrace("if: notify")
 		r.notifyTaskLocked(t)
 	}
 
@@ -470,6 +489,7 @@ func (r *Registry) ShutdownActive(timeout time.Duration) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		observe.GlobalTrace("for: true")
 		if r.activeTaskCount(ids) == 0 {
 			observe.GlobalTrace("if: r.activeTaskCount(ids) == 0")
 			return
@@ -524,6 +544,9 @@ func (r *Registry) activeTaskCount(ids []string) int {
 }
 
 func isActiveTaskStatus(status TaskStatus) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: status == TaskPending || status == TaskRunning")
 	return status == TaskPending || status == TaskRunning
 }
 

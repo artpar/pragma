@@ -76,10 +76,13 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"lilac: create cookie jar: %w\", err)")
 		return nil, fmt.Errorf("lilac: create cookie jar: %w", err)
 	}
 	httpClient := &http.Client{Timeout: lilacRequestTimeout, Jar: jar}
 	if client, ok := rawcapture.HTTPClientFromEnv(lilacRequestTimeout); ok {
+		observe.GlobalTrace("if: ok")
 		httpClient = client
 		httpClient.Jar = jar
 		cfgOpts = append(cfgOpts, config.WithHTTPClient(client))
@@ -106,6 +109,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		return nil, fmt.Errorf("lilac: create provider: %w", err)
 	}
 	observe.GlobalTrace("return: &Provider{inner: inner, bus: bus, maxRetries: 10}, nil")
+	observe.GlobalTrace("return: &Provider{\n\tinner:\t\tinner,\n\tbus:\t\tbus,\n\tmaxRetries:\t10,\n\tapiKey:\t\tapiKey,\n\tba...")
 	return &Provider{
 		inner:      inner,
 		bus:        bus,
@@ -117,7 +121,10 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 }
 
 func transformLilacRequest(req *oaisdk.ChatCompletionNewParams) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if req.MaxCompletionTokens.Valid() {
+		observe.GlobalTrace("if: req.MaxCompletionTokens.Valid()")
 		req.MaxTokens = oaisdk.Int(req.MaxCompletionTokens.Value)
 	}
 	req.MaxCompletionTokens = param.Opt[int64]{}
@@ -177,26 +184,38 @@ func (p *Provider) ContextWindow(modelID string) (int, bool) {
 var lilacStatusClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
 
 func lilacClassify(err error) shared.ErrorClassification {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if isRetryableLilacTimeout(err) {
+		observe.GlobalTrace("if: isRetryableLilacTimeout(err)")
+		observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\ttrue,\n\tErrorType:\t\"tim...")
 		return shared.ErrorClassification{
 			Wrapped:   err,
 			Retryable: true,
 			ErrorType: "timeout",
 		}
 	}
+	observe.GlobalTrace("return: lilacStatusClassify(err)")
 	return lilacStatusClassify(err)
 }
 
 func isRetryableLilacTimeout(err error) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Timeout() {
+		observe.GlobalTrace("if: errors.As(err, &urlErr) && urlErr.Timeout()")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
+		observe.GlobalTrace("if: errors.As(err, &netErr) && netErr.Timeout()")
+		observe.GlobalTrace("return: true")
 		return true
 	}
+	observe.GlobalTrace("return: strings.Contains(err.Error(), \"Client.Timeout exceeded while awaiting headers\")")
 
 	return strings.Contains(err.Error(), "Client.Timeout exceeded while awaiting headers")
 }
@@ -253,6 +272,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 
 	resp := anyllm.ResponseFromCompletion(comp.toAnyLLM())
 	if comp.Usage != nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.Complete", "if: comp.Usage != nil")
 		resp.Usage = comp.Usage.toTokenUsage()
 	}
 	if resp.Usage.OutputTokens == 0 {
@@ -296,10 +316,15 @@ type chatCompletionRequest struct {
 type temperatureParam float64
 
 func formatTemperatureParam(value *float64) *temperatureParam {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if value == nil {
+		observe.GlobalTrace("if: value == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	temperature := temperatureParam(*value)
+	observe.GlobalTrace("return: &temperature")
 	return &temperature
 }
 
@@ -315,6 +340,8 @@ func (t temperatureParam) MarshalJSON() ([]byte, error) {
 }
 
 func (p *Provider) completeDirect(ctx context.Context, params providers.CompletionParams) (*completionResponse, error) {
+	observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "enter")
+	defer observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "exit")
 	reqBody := chatCompletionRequest{
 		Messages:          params.Messages,
 		Model:             params.Model,
@@ -333,6 +360,7 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 		StreamOptions:     params.StreamOptions,
 	}
 	if len(reqBody.Tools) == 0 && reqBody.ToolChoice == nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: len(reqBody.Tools) == 0 && reqBody.ToolChoice == nil")
 		reqBody.ToolChoice = "none"
 	}
 
@@ -340,12 +368,16 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 	enc := json.NewEncoder(&body)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(reqBody); err != nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: err != nil")
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: nil, fmt.Errorf(\"lilac: encode chat completion request: %w\", err)")
 		return nil, fmt.Errorf("lilac: encode chat completion request: %w", err)
 	}
 	bodyBytes := bytes.TrimSuffix(body.Bytes(), []byte("\n"))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/chat/completions", bytes.NewReader(bodyBytes))
 	if err != nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: err != nil")
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: nil, fmt.Errorf(\"lilac: create chat completion request: %w\", err)")
 		return nil, fmt.Errorf("lilac: create chat completion request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
@@ -355,30 +387,42 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 
 	httpClient := p.httpClient
 	if httpClient == nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: httpClient == nil")
 		httpClient = http.DefaultClient
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: err != nil")
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: nil, err")
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: err != nil")
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: nil, fmt.Errorf(\"lilac: read chat completion response: %w\", err)")
 		return nil, fmt.Errorf("lilac: read chat completion response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: resp.StatusCode < 200 || resp.StatusCode >= 300")
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: nil, fmt.Errorf(\"lilac: status %d: %s\", resp.StatusCode, strings.TrimSpace(st...")
 		return nil, fmt.Errorf("lilac: status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
 	var wire completionResponse
 	if err := json.Unmarshal(respBody, &wire); err != nil {
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: err != nil")
+		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: nil, fmt.Errorf(\"lilac: decode chat completion response: %w\", err)")
 		return nil, fmt.Errorf("lilac: decode chat completion response: %w", err)
 	}
+	observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: &wire, nil")
 	return &wire, nil
 }
 
 func setOpenAICompatibleHeaders(req *http.Request, timeout time.Duration) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	req.Header.Set("User-Agent", "OpenAI/Python 2.38.0")
 	req.Header.Set("X-Stainless-Lang", "python")
 	req.Header.Set("X-Stainless-Package-Version", "2.38.0")
@@ -415,9 +459,14 @@ type promptTokensDetails struct {
 }
 
 func (u *completionUsage) toAnyLLM() *providers.Usage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if u == nil {
+		observe.GlobalTrace("if: u == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: &providers.Usage{\n\tPromptTokens:\t\tu.PromptTokens,\n\tCompletionTokens:\tu.Comple...")
 	return &providers.Usage{
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
@@ -427,16 +476,23 @@ func (u *completionUsage) toAnyLLM() *providers.Usage {
 }
 
 func (u *completionUsage) toTokenUsage() model.TokenUsage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if u == nil {
+		observe.GlobalTrace("if: u == nil")
+		observe.GlobalTrace("return: model.TokenUsage{}")
 		return model.TokenUsage{}
 	}
 	cachedTokens := u.PromptTokensDetails.CachedTokens
 	if cachedTokens < 0 {
+		observe.GlobalTrace("if: cachedTokens < 0")
 		cachedTokens = 0
 	}
 	if cachedTokens > u.PromptTokens {
+		observe.GlobalTrace("if: cachedTokens > u.PromptTokens")
 		cachedTokens = u.PromptTokens
 	}
+	observe.GlobalTrace("return: model.TokenUsage{\n\tInputTokens:\t\tu.PromptTokens - cachedTokens,\n\tOutputTokens...")
 	return model.TokenUsage{
 		InputTokens:          u.PromptTokens - cachedTokens,
 		OutputTokens:         u.CompletionTokens,
@@ -486,13 +542,17 @@ func (r flexibleReasoning) MarshalJSON() ([]byte, error) {
 }
 
 func (r completionResponse) toAnyLLM() *providers.ChatCompletion {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	choices := make([]providers.Choice, 0, len(r.Choices))
 	for _, choice := range r.Choices {
+		observe.GlobalTrace("range r.Choices")
 		msg := providers.Message{
 			Role:      choice.Message.Role,
 			ToolCalls: choice.Message.ToolCalls,
 		}
 		if choice.Message.Content != nil {
+			observe.GlobalTrace("if: choice.Message.Content != nil")
 			msg.Content = *choice.Message.Content
 		}
 		choices = append(choices, providers.Choice{
@@ -501,6 +561,7 @@ func (r completionResponse) toAnyLLM() *providers.ChatCompletion {
 			FinishReason: choice.FinishReason,
 		})
 	}
+	observe.GlobalTrace("return: &providers.ChatCompletion{\n\tID:\t\t\tr.ID,\n\tObject:\t\t\tr.Object,\n\tCreated:\t\tr.Cre...")
 	return &providers.ChatCompletion{
 		ID:                r.ID,
 		Object:            r.Object,

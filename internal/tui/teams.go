@@ -143,6 +143,7 @@ func (d *teamsDialog) shutdownSelected() {
 	e := d.entries[d.selected]
 	result, err := d.taskReg.ApplyLifecycleCommand(e.TaskID, task.LifecycleCommandShutdown)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		d.feedback = fmt.Sprintf("Shutdown failed for %s: %v", e.Name, err)
 		d.Refresh()
 		return
@@ -162,6 +163,7 @@ func (d *teamsDialog) killSelected() {
 	e := d.entries[d.selected]
 	result, err := d.taskReg.ApplyLifecycleCommand(e.TaskID, task.LifecycleCommandKill)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		d.feedback = fmt.Sprintf("Kill failed for %s: %v", e.Name, err)
 		d.Refresh()
 		return

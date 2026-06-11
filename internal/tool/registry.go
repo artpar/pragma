@@ -80,6 +80,8 @@ func (r *Registry) Get(name string) (Descriptor, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if !r.exposesLocked(name) {
+		observe.GlobalTrace("if: !r.exposesLocked(name)")
+		observe.GlobalTrace("return: nil, false")
 		return nil, false
 	}
 	desc, ok := r.tools[name]
@@ -193,6 +195,7 @@ func (r *Registry) Scoped(names []string) *Registry {
 			observe.GlobalTrace("if: nameSet[name]")
 			scoped.tools[name] = desc
 			if schema := r.schemas[name]; schema != nil {
+				observe.GlobalTrace("if: schema != nil")
 				scoped.schemas[name] = schema
 			}
 			if r.hidden[name] {
@@ -210,9 +213,15 @@ func (r *Registry) Scoped(names []string) *Registry {
 }
 
 func (r *Registry) visibleLocked(name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: !r.hidden[name] && r.exposesLocked(name)")
 	return !r.hidden[name] && r.exposesLocked(name)
 }
 
 func (r *Registry) exposesLocked(name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: r.exposureFilter == nil || r.exposureFilter(name)")
 	return r.exposureFilter == nil || r.exposureFilter(name)
 }

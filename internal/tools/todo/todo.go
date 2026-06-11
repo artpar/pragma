@@ -121,11 +121,15 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 	}
 	inProgressCount := 0
 	for _, item := range in.Todos {
+		observe.GlobalTrace("range in.Todos")
 		if item.Status == "in_progress" {
+			observe.GlobalTrace("if: item.Status == \"in_progress\"")
 			inProgressCount++
 		}
 	}
 	if inProgressCount > 1 {
+		observe.GlobalTrace("if: inProgressCount > 1")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"only one plan item can be in_progress\")")
 		return tool.InvokeResult{}, fmt.Errorf("only one plan item can be in_progress")
 	}
 

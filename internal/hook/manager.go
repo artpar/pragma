@@ -64,6 +64,9 @@ func (m *Manager) HasHooks(event Event) bool {
 // For PreToolUse/PostToolUse, input.ToolName is used to filter by matcher.
 // Hooks run sequentially — simpler than parallel, avoids race conditions.
 func (m *Manager) Execute(ctx context.Context, event Event, input HookInput) AggregatedResult {
+	observe.TraceCtx(ctx, "hook", "Manager.Execute", "enter")
+	defer observe.TraceCtx(ctx, "hook", "Manager.Execute", "exit")
+	observe.TraceCtx(ctx, "hook", "Manager.Execute", "return: m.ExecuteInWorkDir(ctx, event, input, \"\")")
 	return m.ExecuteInWorkDir(ctx, event, input, "")
 }
 
@@ -74,6 +77,7 @@ func (m *Manager) ExecuteInWorkDir(ctx context.Context, event Event, input HookI
 	defaultWorkDir := m.workDir
 	workDir := strings.TrimSpace(eventWorkDir)
 	if workDir == "" {
+		observe.TraceCtx(ctx, "hook", "Manager.ExecuteInWorkDir", "if: workDir == \"\"")
 		workDir = defaultWorkDir
 	}
 	input.Event = event
@@ -82,10 +86,12 @@ func (m *Manager) ExecuteInWorkDir(ctx context.Context, event Event, input HookI
 	sessionID := m.sessionID
 	var entries []Entry
 	if workDir == defaultWorkDir {
+		observe.TraceCtx(ctx, "hook", "Manager.ExecuteInWorkDir", "if: workDir == defaultWorkDir")
 		entries = m.hooks[event]
 	}
 	m.mu.RUnlock()
 	if workDir != defaultWorkDir {
+		observe.TraceCtx(ctx, "hook", "Manager.ExecuteInWorkDir", "if: workDir != defaultWorkDir")
 		entries = LoadHooks(workDir)[event]
 	}
 	if len(entries) == 0 {
@@ -149,6 +155,7 @@ func (m *Manager) ExecuteInWorkDir(ctx context.Context, event Event, input HookI
 			if applyJSONControl(event, result, &agg) {
 				observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: applyJSONControl")
 				m.emitHookBlocked(event, cmd.Command, agg.BlockMsg)
+				observe.TraceCtx(ctx, "hook", "Manager.ExecuteInWorkDir", "return: agg")
 				return agg
 			}
 			if result.Stdout != "" {
@@ -163,6 +170,7 @@ func (m *Manager) ExecuteInWorkDir(ctx context.Context, event Event, input HookI
 			if applyJSONControl(event, result, &agg) {
 				observe.TraceCtx(ctx, "hook", "Manager.Execute", "if: applyJSONControl")
 				m.emitHookBlocked(event, cmd.Command, agg.BlockMsg)
+				observe.TraceCtx(ctx, "hook", "Manager.ExecuteInWorkDir", "return: agg")
 				return agg
 			}
 
@@ -181,43 +189,66 @@ func (m *Manager) ExecuteInWorkDir(ctx context.Context, event Event, input HookI
 }
 
 func applyJSONControl(event Event, result Result, agg *AggregatedResult) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if result.JSON == nil || agg == nil {
+		observe.GlobalTrace("if: result.JSON == nil || agg == nil")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	if eventSupportsDecisionBlock(event) && strings.EqualFold(strings.TrimSpace(result.JSON.Decision), "block") {
+		observe.GlobalTrace("if: eventSupportsDecisionBlock(event) && strings.EqualFold(strings.TrimSpace(resu...")
 		agg.Blocked = true
 		agg.BlockMsg = hookBlockMessage(result, "hook blocked execution")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	if result.JSON.Continue != nil && !*result.JSON.Continue {
+		observe.GlobalTrace("if: result.JSON.Continue != nil && !*result.JSON.Continue")
 		agg.Blocked = true
 		agg.BlockMsg = hookBlockMessage(result, "hook requested stop")
+		observe.GlobalTrace("return: true")
 		return true
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func eventSupportsDecisionBlock(event Event) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch event {
 	case PreToolUse, UserPromptSubmit, SessionStart:
+		observe.GlobalTrace("case: PreToolUse, UserPromptSubmit, SessionStart")
 		return true
 	default:
+		observe.GlobalTrace("default")
 		return false
 	}
 }
 
 func hookBlockMessage(result Result, fallback string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if result.JSON != nil {
+		observe.GlobalTrace("if: result.JSON != nil")
 		if msg := strings.TrimSpace(result.JSON.Reason); msg != "" {
+			observe.GlobalTrace("if: msg != \"\"")
+			observe.GlobalTrace("return: msg")
 			return msg
 		}
 		if msg := strings.TrimSpace(result.JSON.StopReason); msg != "" {
+			observe.GlobalTrace("if: msg != \"\"")
+			observe.GlobalTrace("return: msg")
 			return msg
 		}
 	}
 	if msg := strings.TrimSpace(result.Stderr); msg != "" {
+		observe.GlobalTrace("if: msg != \"\"")
+		observe.GlobalTrace("return: msg")
 		return msg
 	}
+	observe.GlobalTrace("return: fallback")
 	return fallback
 }
 
@@ -245,7 +276,10 @@ func (m *Manager) emitHookEvent(event Event, command string, result Result) {
 }
 
 func (m *Manager) emitHookBlocked(event Event, command string, message string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.bus == nil {
+		observe.GlobalTrace("if: m.bus == nil")
 		return
 	}
 	m.bus.Emit(observe.HookBlocked{

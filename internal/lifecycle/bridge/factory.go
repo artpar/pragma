@@ -85,20 +85,26 @@ func (f *NodeFactory) Create(nodeType string, config map[string]any) (lifecycle.
 }
 
 func toolNamesFromConfig(value any) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch v := value.(type) {
 	case []string:
+		observe.GlobalTrace("typecase: []string")
 		return append([]string(nil), v...)
 	case []any:
+		observe.GlobalTrace("typecase: []any")
 		out := make([]string, 0, len(v))
 		for _, item := range v {
 			name, ok := item.(string)
 			if !ok {
+				observe.GlobalTrace("if: !ok")
 				continue
 			}
 			out = append(out, name)
 		}
 		return out
 	default:
+		observe.GlobalTrace("typedefault")
 		return nil
 	}
 }

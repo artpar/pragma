@@ -22,6 +22,7 @@ func RunCronDaemon(cmd *cobra.Command, _ []string) error {
 	pragmaHome, err := config.PragmaHome()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"resolve pragma home: %w\", err)")
 		return fmt.Errorf("resolve pragma home: %w", err)
 	}
 	bus := observe.NewEventBus(1024)
@@ -33,6 +34,7 @@ func RunCronDaemon(cmd *cobra.Command, _ []string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"get cwd: %w\", err)")
 		return fmt.Errorf("get cwd: %w", err)
 	}
 
@@ -44,6 +46,7 @@ func RunCronDaemon(cmd *cobra.Command, _ []string) error {
 		}
 		return nil
 	})
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -52,11 +55,13 @@ func launchCronPrompt(ctx context.Context, cwd string, job *cron.Job) error {
 	defer observe.TraceCtx(ctx, "cli", "launchCronPrompt", "exit")
 	if job == nil {
 		observe.TraceCtx(ctx, "cli", "launchCronPrompt", "if: job == nil")
+		observe.TraceCtx(ctx, "cli", "launchCronPrompt", "return: fmt.Errorf(\"nil cron job\")")
 		return fmt.Errorf("nil cron job")
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		observe.TraceCtx(ctx, "cli", "launchCronPrompt", "if: err != nil")
+		observe.TraceCtx(ctx, "cli", "launchCronPrompt", "return: fmt.Errorf(\"resolve executable: %w\", err)")
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 	run := exec.CommandContext(ctx, exe, "--prompt", job.Prompt, "--bg")
@@ -65,10 +70,13 @@ func launchCronPrompt(ctx context.Context, cwd string, job *cron.Job) error {
 	out, err := run.CombinedOutput()
 	if err != nil {
 		observe.TraceCtx(ctx, "cli", "launchCronPrompt", "if: err != nil")
+		observe.TraceCtx(ctx, "cli", "launchCronPrompt", "return: fmt.Errorf(\"start background prompt: %s: %w\", string(out), err)")
 		return fmt.Errorf("start background prompt: %s: %w", string(out), err)
 	}
 	if len(out) > 0 {
+		observe.TraceCtx(ctx, "cli", "launchCronPrompt", "if: len(out) > 0")
 		_, _ = os.Stderr.Write(out)
 	}
+	observe.TraceCtx(ctx, "cli", "launchCronPrompt", "return: nil")
 	return nil
 }

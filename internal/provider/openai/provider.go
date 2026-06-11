@@ -56,6 +56,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		cfgOpts = append(cfgOpts, config.WithBaseURL(pc.baseURL))
 	}
 	if client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute); ok {
+		observe.GlobalTrace("if: ok")
 		cfgOpts = append(cfgOpts, config.WithHTTPClient(client))
 	}
 	inner, err := oai.New(cfgOpts...)

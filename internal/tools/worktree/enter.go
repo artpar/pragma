@@ -123,11 +123,15 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 
 	originalWorkDir := state.WorkDir()
 	if t.Store != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: t.Store != nil")
 		snap := t.Store.Snapshot()
 		if snap.Worktree != nil {
+			observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: snap.Worktree != nil")
+			observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"already in worktree session at %s\", snap.Wor...")
 			return tool.InvokeResult{}, fmt.Errorf("already in worktree session at %s", snap.Worktree.WorktreePath)
 		}
 		if snap.CWD != "" {
+			observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: snap.CWD != \"\"")
 			originalWorkDir = snap.CWD
 		}
 	}
@@ -180,6 +184,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 		OriginalWorkDir: originalWorkDir,
 	}
 	if t.Store != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: t.Store != nil")
 		system := t.systemPromptForWorkDir(dir)
 		t.Store.Update(func(s *app.AppState) {
 			s.CWD = dir
@@ -196,6 +201,7 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 		})
 	}
 	if t.RefreshCapabilitiesForWorkDir != nil {
+		observe.TraceCtx(ctx, "worktree", "EnterTool.Invoke", "if: t.RefreshCapabilitiesForWorkDir != nil")
 		t.RefreshCapabilitiesForWorkDir(ctx, dir)
 	}
 	data, err := json.Marshal(result)
@@ -209,8 +215,13 @@ func (t *EnterTool) Invoke(ctx context.Context, input json.RawMessage, state too
 }
 
 func (t *EnterTool) systemPromptForWorkDir(workDir string) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.SystemPromptForWorkDir == nil {
+		observe.GlobalTrace("if: t.SystemPromptForWorkDir == nil")
+		observe.GlobalTrace("return: model.SystemPrompt{}")
 		return model.SystemPrompt{}
 	}
+	observe.GlobalTrace("return: t.SystemPromptForWorkDir(workDir)")
 	return t.SystemPromptForWorkDir(workDir)
 }

@@ -15,22 +15,26 @@ func (m *Manager) StartOAuthFlow(serverName string, auth AuthConfig) (string, er
 	defer observe.GlobalTrace("exit")
 	if auth.AuthURL == "" || auth.TokenURL == "" {
 		observe.GlobalTrace("if: auth.AuthURL == \"\" || auth.TokenURL == \"\"")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"server %q does not have OAuth endpoints configured\", serverName)")
 		return "", fmt.Errorf("server %q does not have OAuth endpoints configured", serverName)
 	}
 
 	verifier, challenge, err := GeneratePKCE()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"generate PKCE parameters: %w\", err)")
 		return "", fmt.Errorf("generate PKCE parameters: %w", err)
 	}
 	state, err := GenerateState()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"generate state: %w\", err)")
 		return "", fmt.Errorf("generate state: %w", err)
 	}
 	port, err := FindCallbackPort()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"find callback port: %w\", err)")
 		return "", fmt.Errorf("find callback port: %w", err)
 	}
 
@@ -39,6 +43,7 @@ func (m *Manager) StartOAuthFlow(serverName string, auth AuthConfig) (string, er
 	m.emitOAuthStarted(serverName, authURL)
 
 	go m.handleOAuthCallback(m.LifecycleContext(), serverName, auth, port, state, verifier, redirectURI)
+	observe.GlobalTrace("return: authURL, nil")
 	return authURL, nil
 }
 
@@ -81,6 +86,7 @@ func (m *Manager) handleOAuthCallback(ctx context.Context, serverName string, au
 func authToolName(serverName string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"mcp__\" + NormalizeName(serverName) + \"__authenticate\"")
 	return "mcp__" + NormalizeName(serverName) + "__authenticate"
 }
 

@@ -78,15 +78,21 @@ func NewFileStateCache() *FileStateCache {
 }
 
 func (c *FileStateCache) Snapshot() []FileStateRecord {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := make([]FileStateRecord, 0, len(c.order))
 	for _, key := range c.order {
+		observe.GlobalTrace("range c.order")
 		entry, ok := c.entries[key]
 		if !ok {
+			observe.GlobalTrace("if: !ok")
 			continue
 		}
 		state := cloneFileState(entry.state)
@@ -99,11 +105,15 @@ func (c *FileStateCache) Snapshot() []FileStateRecord {
 			IsPartialView: state.IsPartialView,
 		})
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
 func (c *FileStateCache) Restore(records []FileStateRecord) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
 		return
 	}
 	c.mu.Lock()
@@ -112,7 +122,9 @@ func (c *FileStateCache) Restore(records []FileStateRecord) {
 	c.order = make([]string, 0, len(records))
 	c.bytes = 0
 	for _, record := range records {
+		observe.GlobalTrace("range records")
 		if record.Path == "" {
+			observe.GlobalTrace("if: record.Path == \"\"")
 			continue
 		}
 		key := NormalizeFilePath(record.Path)
@@ -125,6 +137,7 @@ func (c *FileStateCache) Restore(records []FileStateRecord) {
 		}
 		size := len([]byte(state.Content))
 		if old, ok := c.entries[key]; ok {
+			observe.GlobalTrace("if: ok")
 			c.bytes -= old.size
 			c.removeOrderLocked(key)
 		}
@@ -219,28 +232,41 @@ func (c *FileStateCache) Delete(path string) {
 }
 
 func (c *FileStateCache) EffectCursor() int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	observe.GlobalTrace("return: len(c.effects)")
 	return len(c.effects)
 }
 
 func (c *FileStateCache) EffectsSince(cursor int) []FileEffect {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if cursor < 0 {
+		observe.GlobalTrace("if: cursor < 0")
 		cursor = 0
 	}
 	if cursor >= len(c.effects) {
+		observe.GlobalTrace("if: cursor >= len(c.effects)")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := make([]FileEffect, len(c.effects[cursor:]))
 	copy(out, c.effects[cursor:])
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -408,7 +434,10 @@ func (c *FileStateCache) evictLocked() {
 }
 
 func (c *FileStateCache) recordEffect(path, operation string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c == nil {
+		observe.GlobalTrace("if: c == nil")
 		return
 	}
 	effect := FileEffect{

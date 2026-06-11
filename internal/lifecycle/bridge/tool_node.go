@@ -54,8 +54,10 @@ func ToolNodeWithFileState(orch *tool.Orchestrator, cwd string, fileState *tool.
 	}
 	var allowedTools map[string]struct{}
 	if len(allowedToolNames) > 0 && len(allowedToolNames[0]) > 0 {
+		observe.GlobalTrace("if: len(allowedToolNames) > 0 && len(allowedToolNames[0]) > 0")
 		allowedTools = make(map[string]struct{}, len(allowedToolNames[0]))
 		for _, name := range allowedToolNames[0] {
+			observe.GlobalTrace("range allowedToolNames[0]")
 			allowedTools[name] = struct{}{}
 		}
 	}
@@ -97,8 +99,12 @@ func ToolNodeWithFileState(orch *tool.Orchestrator, cwd string, fileState *tool.
 }
 
 func executeAllowedToolCalls(ctx context.Context, orch *tool.Orchestrator, cwd string, fileState *tool.FileStateCache, toolCalls []model.ToolCallPart, allowedTools map[string]struct{}) []model.ContentPart {
+	observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "enter")
+	defer observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "exit")
 	if len(allowedTools) == 0 {
+		observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "if: len(allowedTools) == 0")
 		result := orch.Execute(ctx, toolCalls, simpleSnapshot{cwd: cwd, fileState: fileState})
+		observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "return: result.ContentParts()")
 		return result.ContentParts()
 	}
 
@@ -107,7 +113,9 @@ func executeAllowedToolCalls(ctx context.Context, orch *tool.Orchestrator, cwd s
 	allowedCalls := make([]model.ToolCallPart, 0, len(toolCalls))
 	allowedIndexes := make([]int, 0, len(toolCalls))
 	for i, call := range toolCalls {
+		observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "range toolCalls")
 		if _, ok := allowedTools[call.Name]; !ok {
+			observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "if: !ok")
 			results[i] = model.ToolResultPart{
 				ToolCallID: call.ID,
 				Content:    fmt.Sprintf("tool %q is not allowed in this lifecycle node", call.Name),
@@ -119,16 +127,21 @@ func executeAllowedToolCalls(ctx context.Context, orch *tool.Orchestrator, cwd s
 		allowedIndexes = append(allowedIndexes, i)
 	}
 	if len(allowedCalls) == 0 {
+		observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "if: len(allowedCalls) == 0")
+		observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "return: tool.ExecuteResult{Results: results, SupplementsByResult: supplementsByResult...")
 		return tool.ExecuteResult{Results: results, SupplementsByResult: supplementsByResult}.ContentParts()
 	}
 
 	result := orch.Execute(ctx, allowedCalls, simpleSnapshot{cwd: cwd, fileState: fileState})
 	for i, part := range result.Results {
+		observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "range result.Results")
 		idx := allowedIndexes[i]
 		results[idx] = part
 		if i < len(result.SupplementsByResult) {
+			observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "if: i < len(result.SupplementsByResult)")
 			supplementsByResult[idx] = append([]model.ContentPart(nil), result.SupplementsByResult[i]...)
 		}
 	}
+	observe.TraceCtx(ctx, "bridge", "executeAllowedToolCalls", "return: tool.ExecuteResult{Results: results, SupplementsByResult: supplementsByResult...")
 	return tool.ExecuteResult{Results: results, SupplementsByResult: supplementsByResult, Supplements: result.Supplements}.ContentParts()
 }

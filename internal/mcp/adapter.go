@@ -36,6 +36,7 @@ func NewMCPToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
 	}
 	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tBuildToolName(...")
 	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tfullName,\n}")
+	observe.GlobalTrace("return: &MCPToolAdapter{\n\tclient:\t\tclient,\n\ttoolInfo:\tinfo,\n\tfullName:\tfullName,\n\tser...")
 	return &MCPToolAdapter{
 		client:   client,
 		toolInfo: info,
@@ -91,6 +92,7 @@ func (a *MCPToolAdapter) Invoke(ctx context.Context, input json.RawMessage, _ to
 			observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: errors.Is(err, ErrServerNotConnected)")
 			if a.reconnect == nil {
 				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "if: a.reconnect == nil")
+				observe.TraceCtx(ctx, "mcp", "MCPToolAdapter.Invoke", "return: tool.InvokeResult{}, err")
 				return tool.InvokeResult{}, err
 			}
 			reconnectedClient, reconnErr := a.reconnect(ctx, a.server, a.fullName)

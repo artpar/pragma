@@ -140,26 +140,34 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 
 	originalWorkDir := ""
 	if t.Store != nil {
+		observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: t.Store != nil")
 		snap := t.Store.Snapshot()
 		if snap.Worktree == nil {
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: snap.Worktree == nil")
 			result := exitResult{
 				Status:       "no_active_worktree",
 				WorktreePath: wtPath,
 				Message:      "No worktree session is active",
 			}
 			data, _ := json.Marshal(result)
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{Content: string(data)}, nil")
 			return tool.InvokeResult{Content: string(data)}, nil
 		}
 		activePath, err := filepath.Abs(snap.Worktree.WorktreePath)
 		if err != nil {
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: err != nil")
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"resolve active worktree path: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("resolve active worktree path: %w", err)
 		}
 		activePath = filepath.Clean(activePath)
 		if activePath != wtPath {
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: activePath != wtPath")
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"active worktree is %s, not %s\", activePath, ...")
 			return tool.InvokeResult{}, fmt.Errorf("active worktree is %s, not %s", activePath, wtPath)
 		}
 		originalWorkDir = snap.Worktree.OriginalCWD
 		if in.HeadCommit == "" {
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: in.HeadCommit == \"\"")
 			in.HeadCommit = snap.Worktree.HeadCommit
 		}
 	}
@@ -199,6 +207,7 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 
 		gitBase := state.WorkDir()
 		if originalWorkDir != "" {
+			observe.TraceCtx(ctx, "worktree", "ExitTool.Invoke", "if: originalWorkDir != \"\"")
 			gitBase = originalWorkDir
 		}
 		gitRootCmd := exec.CommandContext(ctx, "git", "-C", gitBase, "rev-parse", "--show-toplevel")
@@ -262,7 +271,10 @@ func (t *ExitTool) Invoke(ctx context.Context, input json.RawMessage, state tool
 }
 
 func (t *ExitTool) restoreSessionCWD(ctx context.Context, originalWorkDir string) {
+	observe.TraceCtx(ctx, "worktree", "ExitTool.restoreSessionCWD", "enter")
+	defer observe.TraceCtx(ctx, "worktree", "ExitTool.restoreSessionCWD", "exit")
 	if t.Store == nil || originalWorkDir == "" {
+		observe.TraceCtx(ctx, "worktree", "ExitTool.restoreSessionCWD", "if: t.Store == nil || originalWorkDir == \"\"")
 		return
 	}
 	system := t.systemPromptForWorkDir(originalWorkDir)
@@ -275,13 +287,19 @@ func (t *ExitTool) restoreSessionCWD(ctx context.Context, originalWorkDir string
 		s.Worktree = nil
 	})
 	if t.RefreshCapabilitiesForWorkDir != nil {
+		observe.TraceCtx(ctx, "worktree", "ExitTool.restoreSessionCWD", "if: t.RefreshCapabilitiesForWorkDir != nil")
 		t.RefreshCapabilitiesForWorkDir(ctx, originalWorkDir)
 	}
 }
 
 func (t *ExitTool) systemPromptForWorkDir(workDir string) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.SystemPromptForWorkDir == nil {
+		observe.GlobalTrace("if: t.SystemPromptForWorkDir == nil")
+		observe.GlobalTrace("return: model.SystemPrompt{}")
 		return model.SystemPrompt{}
 	}
+	observe.GlobalTrace("return: t.SystemPromptForWorkDir(workDir)")
 	return t.SystemPromptForWorkDir(workDir)
 }

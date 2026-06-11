@@ -46,6 +46,7 @@ func NewLoader(workDir string) *Loader {
 func NewRuntimeCatalog(fallbackWorkDir string, currentWorkDir WorkDirFunc) *RuntimeCatalog {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &RuntimeCatalog{\n\tfallbackWorkDir:\tfallbackWorkDir,\n\tcurrentWorkDir:\t\tcurrent...")
 	return &RuntimeCatalog{
 		fallbackWorkDir: fallbackWorkDir,
 		currentWorkDir:  currentWorkDir,
@@ -55,24 +56,34 @@ func NewRuntimeCatalog(fallbackWorkDir string, currentWorkDir WorkDirFunc) *Runt
 func (c *RuntimeCatalog) LoadAll() ([]Skill, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: NewLoader(c.workDir()).LoadAll()")
 	return NewLoader(c.workDir()).LoadAll()
 }
 
 func (c *RuntimeCatalog) Load(name string) (Skill, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: NewLoader(c.workDir()).Load(name)")
 	return NewLoader(c.workDir()).Load(name)
 }
 
 func (c *RuntimeCatalog) workDir() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if c != nil && c.currentWorkDir != nil {
+		observe.GlobalTrace("if: c != nil && c.currentWorkDir != nil")
 		if workDir := strings.TrimSpace(c.currentWorkDir()); workDir != "" {
+			observe.GlobalTrace("if: workDir != \"\"")
+			observe.GlobalTrace("return: workDir")
 			return workDir
 		}
 	}
 	if c != nil {
+		observe.GlobalTrace("if: c != nil")
+		observe.GlobalTrace("return: c.fallbackWorkDir")
 		return c.fallbackWorkDir
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }
 

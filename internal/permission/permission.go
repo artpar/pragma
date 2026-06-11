@@ -2,6 +2,7 @@ package permission
 
 import (
 	"context"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // Decision is the outcome of a permission check.
@@ -73,9 +74,14 @@ type PathChecker interface {
 }
 
 func CheckPath(ctx context.Context, checker Checker, toolName string, path string) CheckResult {
+	observe.TraceCtx(ctx, "permission", "CheckPath", "enter")
+	defer observe.TraceCtx(ctx, "permission", "CheckPath", "exit")
 	if pathChecker, ok := checker.(PathChecker); ok {
+		observe.TraceCtx(ctx, "permission", "CheckPath", "if: ok")
+		observe.TraceCtx(ctx, "permission", "CheckPath", "return: pathChecker.CheckPath(ctx, toolName, path)")
 		return pathChecker.CheckPath(ctx, toolName, path)
 	}
+	observe.TraceCtx(ctx, "permission", "CheckPath", "return: checker.Check(ctx, toolName, path)")
 	return checker.Check(ctx, toolName, path)
 }
 
@@ -85,9 +91,14 @@ type WorkDirScopedChecker interface {
 }
 
 func CheckerForWorkDir(checker Checker, workDir string) Checker {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if scoped, ok := checker.(WorkDirScopedChecker); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: scoped.WithWorkDir(workDir)")
 		return scoped.WithWorkDir(workDir)
 	}
+	observe.GlobalTrace("return: checker")
 	return checker
 }
 
@@ -96,6 +107,9 @@ type SessionRuleResetter interface {
 }
 
 func SessionRuleForPrompt(toolName string, result CheckResult, decision Decision) Rule {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: Rule{\n\tToolName:\ttoolName,\n\tContent:\tresult.Content,\n\tDecision:\tdecision,\n\tSo...")
 	return Rule{
 		ToolName: toolName,
 		Content:  result.Content,

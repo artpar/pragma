@@ -23,11 +23,15 @@ const (
 )
 
 func ParseStatus(raw string) (TaskStatus, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	status := TaskStatus(raw)
 	switch status {
 	case TaskPending, TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
+		observe.GlobalTrace("case: TaskPending, TaskRunning, TaskCompleted, TaskFailed, TaskCancelled")
 		return status, nil
 	default:
+		observe.GlobalTrace("default")
 		return "", fmt.Errorf("invalid task status %q", raw)
 	}
 }

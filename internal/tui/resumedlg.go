@@ -152,8 +152,10 @@ func (d *resumeDialog) View(width int) string {
 
 	title := "Resume Session"
 	if d.scope == slash.ResumeScopeCurrentDirectory {
+		observe.GlobalTrace("if: d.scope == slash.ResumeScopeCurrentDirectory")
 		title += " (this directory)"
 	} else if d.scope == slash.ResumeScopeAllSessions {
+		observe.GlobalTrace("else-if: d.scope == slash.ResumeScopeAllSessions")
 		title += " (all)"
 	}
 	b.WriteString(resumeDlgTitle.Render(title))

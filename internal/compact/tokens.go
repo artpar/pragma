@@ -124,6 +124,7 @@ func EstimateToolDefTokens(tool model.ToolDef) int {
 	size := len(tool.Name) + len(tool.Description) + len(tool.InputSchema)
 	tokens := size / bytesPerToken
 	if tokens == 0 && size > 0 {
+		observe.GlobalTrace("if: tokens == 0 && size > 0")
 		tokens = 1
 	}
 	tokens += structOverheadToolDef

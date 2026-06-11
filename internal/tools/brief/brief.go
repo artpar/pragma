@@ -178,6 +178,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		content = fmt.Sprintf("Message delivered to user. (%d %s included)", validCount, noun)
 	}
 	observe.TraceCtx(ctx, "brief", "Tool.Invoke", "return: tool.InvokeResult{Content: content}, nil")
+	observe.TraceCtx(ctx, "brief", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tcontent,\n\tUserMessages: []tool.UserMessage{{\n\t\tM...")
 
 	return tool.InvokeResult{
 		Content: content,

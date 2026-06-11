@@ -203,16 +203,25 @@ func handleClear(_ context.Context, _ string, deps Deps) (Result, error) {
 }
 
 func handleCopy(_ context.Context, _ string, deps Deps) (Result, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if deps.LatestAssistantText == nil || deps.ClipboardWrite == nil {
+		observe.GlobalTrace("if: deps.LatestAssistantText == nil || deps.ClipboardWrite == nil")
+		observe.GlobalTrace("return: Result{DisplayText: \"Copy is only available when the active UI provides clipb...")
 		return Result{DisplayText: "Copy is only available when the active UI provides clipboard access."}, nil
 	}
 	text := deps.LatestAssistantText()
 	if strings.TrimSpace(text) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(text) == \"\"")
+		observe.GlobalTrace("return: Result{DisplayText: \"No assistant message to copy.\"}, nil")
 		return Result{DisplayText: "No assistant message to copy."}, nil
 	}
 	if err := deps.ClipboardWrite(text); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: Result{}, fmt.Errorf(\"copy failed: %w\", err)")
 		return Result{}, fmt.Errorf("copy failed: %w", err)
 	}
+	observe.GlobalTrace("return: Result{DisplayText: \"Copied latest assistant message.\"}, nil")
 	return Result{DisplayText: "Copied latest assistant message."}, nil
 }
 
@@ -318,30 +327,42 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 	}
 
 	if deps.ModelSwitcher != nil {
+		observe.GlobalTrace("if: deps.ModelSwitcher != nil")
 		if err := deps.ModelSwitcher(args); err != nil {
+			observe.GlobalTrace("if: err != nil")
 			var b strings.Builder
 			b.WriteString(err.Error())
 			if deps.ModelLister != nil {
+				observe.GlobalTrace("if: deps.ModelLister != nil")
 				if models := deps.ModelLister(); len(models) > 0 {
+					observe.GlobalTrace("if: len(models) > 0")
 					b.WriteString("\n\nAvailable models:")
 					for _, m := range models {
+						observe.GlobalTrace("range models")
 						b.WriteString("\n  " + m)
 					}
 				}
 			}
+			observe.GlobalTrace("return: Result{DisplayText: b.String()}, nil")
 			return Result{DisplayText: b.String()}, nil
 		}
 		if deps.SessionSave != nil {
+			observe.GlobalTrace("if: deps.SessionSave != nil")
 			if err := deps.SessionSave(); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: Result{}, err")
 				return Result{}, err
 			}
 		}
 		msg := fmt.Sprintf("Model switched to: %s (takes effect on next turn)", args)
 		if deps.ContextWindowFunc != nil {
+			observe.GlobalTrace("if: deps.ContextWindowFunc != nil")
 			if cw, ok := deps.ContextWindowFunc(args); ok {
+				observe.GlobalTrace("if: ok")
 				msg += fmt.Sprintf("\nContext window: %d tokens", cw)
 			}
 		}
+		observe.GlobalTrace("return: Result{DisplayText: msg}, nil")
 		return Result{DisplayText: msg}, nil
 	}
 
@@ -375,7 +396,10 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		deps.OnModelChanged(args)
 	}
 	if deps.SessionSave != nil {
+		observe.GlobalTrace("if: deps.SessionSave != nil")
 		if err := deps.SessionSave(); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: Result{}, err")
 			return Result{}, err
 		}
 	}
@@ -424,14 +448,17 @@ func handleMcp(_ context.Context, _ string, deps Deps) (Result, error) {
 			observe.GlobalTrace("if: st == \"connected\"")
 			connected++
 			if server.ToolCount > 0 {
+				observe.GlobalTrace("if: server.ToolCount > 0")
 				fmt.Fprintf(&b, "  ● %s — connected (%d tools)\n", server.Name, server.ToolCount)
 			} else {
+				observe.GlobalTrace("else: server.ToolCount > 0")
 				fmt.Fprintf(&b, "  ● %s — connected\n", server.Name)
 			}
 		} else {
 			observe.GlobalTrace("else: st == \"connected\"")
 			fmt.Fprintf(&b, "  ○ %s — %s\n", server.Name, st)
 			if server.Error != "" {
+				observe.GlobalTrace("if: server.Error != \"\"")
 				fmt.Fprintf(&b, "      %s\n", server.Error)
 			}
 		}

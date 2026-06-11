@@ -101,6 +101,9 @@ type ResolvedProviderConfig struct {
 }
 
 func SetupDeps(cmd *cobra.Command) (*Deps, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: SetupDepsWithOptions(cmd, SetupDepsOptions{})")
 	return SetupDepsWithOptions(cmd, SetupDepsOptions{})
 }
 
@@ -121,6 +124,8 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		AllowProviderFallback: true,
 	})
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 	cfg := resolved.Config
@@ -210,6 +215,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		observe.GlobalTrace("if: mode == \"\"")
 		mode = opts.DefaultPermissionMode
 		if mode == "" || permissionConfigured {
+			observe.GlobalTrace("if: mode == \"\" || permissionConfigured")
 			mode = permission.ModeDefault
 		}
 	}
@@ -298,6 +304,8 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 			return nil, fmt.Errorf("resume session: %w", loadErr)
 		}
 		if err := validateResumeWorkDir(cwd, sess); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, err")
 			return nil, err
 		}
 		conv = resumedConversation(sess, cwd)
@@ -473,12 +481,17 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		SystemPromptForWorkDir: systemPromptForWorkDir,
 	}
 	if err := refreshCapabilitiesForWorkDir(cmd.Context(), deps, activeCapabilityWorkDir(deps)); err != nil {
+		observe.GlobalTrace("if: err != nil")
 		fmt.Fprintf(os.Stderr, "warning: refresh runtime capabilities: %v\n", err)
 	}
+	observe.GlobalTrace("return: deps, nil")
 	return deps, nil
 }
 
 func contentReplacementRecorder(deps func() *Deps) func([]model.ContentReplacementRecord) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(records []model.ContentReplacementRecord) error {\n\tif len(records) == 0 ...")
 	return func(records []model.ContentReplacementRecord) error {
 		if len(records) == 0 || deps == nil {
 			return nil
@@ -492,61 +505,87 @@ func contentReplacementRecorder(deps func() *Deps) func([]model.ContentReplaceme
 }
 
 func buildRuntimeSystemPrompt(cmd *cobra.Command, cfg config.Config, bus *observe.EventBus, workDir string) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var sysPrompt model.SystemPrompt
 	if cfg.SystemPrompt != "" {
+		observe.GlobalTrace("if: cfg.SystemPrompt != \"\"")
 		sysPrompt = model.SystemPrompt{
 			Blocks: []model.SystemBlock{{Text: cfg.SystemPrompt, Cacheable: true}},
 		}
 	} else {
+		observe.GlobalTrace("else: cfg.SystemPrompt != \"\"")
 		builder := sysprompt.New(workDir, cfg.Model, bus)
 		sysPrompt = builder.Build()
 	}
 
 	appendPrompt, _ := cmd.Flags().GetString("append-system-prompt")
 	if appendPrompt != "" {
+		observe.GlobalTrace("if: appendPrompt != \"\"")
 		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
 	}
+	observe.GlobalTrace("return: applySystemPromptToolFilters(cmd, sysPrompt)")
 	return applySystemPromptToolFilters(cmd, sysPrompt)
 }
 
 func applySystemPromptToolFilters(cmd *cobra.Command, prompt model.SystemPrompt) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if updatePlanAvailable(cmd) {
+		observe.GlobalTrace("if: updatePlanAvailable(cmd)")
+		observe.GlobalTrace("return: prompt")
 		return prompt
 	}
 	for i := range prompt.Blocks {
+		observe.GlobalTrace("range prompt.Blocks")
 		prompt.Blocks[i].Text = stripUnavailableUpdatePlanGuidance(prompt.Blocks[i].Text)
 	}
+	observe.GlobalTrace("return: prompt")
 	return prompt
 }
 
 func updatePlanAvailable(cmd *cobra.Command) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	allowedStr, _ := cmd.Flags().GetString("allowed-tools")
 	if allowedStr != "" {
+		observe.GlobalTrace("if: allowedStr != \"\"")
 		allowed := parseToolList(allowedStr)
 		found := false
 		for _, name := range allowed {
+			observe.GlobalTrace("range allowed")
 			if name == "update_plan" {
+				observe.GlobalTrace("if: name == \"update_plan\"")
 				found = true
 				break
 			}
 		}
 		if !found {
+			observe.GlobalTrace("if: !found")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 	}
 
 	disallowedStr, _ := cmd.Flags().GetString("disallowed-tools")
 	if disallowedStr != "" {
+		observe.GlobalTrace("if: disallowedStr != \"\"")
 		for _, name := range parseToolList(disallowedStr) {
+			observe.GlobalTrace("range parseToolList(disallowedStr)")
 			if name == "update_plan" {
+				observe.GlobalTrace("if: name == \"update_plan\"")
+				observe.GlobalTrace("return: false")
 				return false
 			}
 		}
 	}
+	observe.GlobalTrace("return: true")
 	return true
 }
 
 func stripUnavailableUpdatePlanGuidance(text string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	text = strings.ReplaceAll(
 		text,
 		"- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n",
@@ -554,21 +593,29 @@ func stripUnavailableUpdatePlanGuidance(text string) string {
 	)
 	text = removeMarkdownSection(text, "## Planning", "## Task execution")
 	text = removeMarkdownSection(text, "## `update_plan`", "")
+	observe.GlobalTrace("return: text")
 	return text
 }
 
 func removeMarkdownSection(text, start, end string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	startIdx := strings.Index(text, start)
 	if startIdx < 0 {
+		observe.GlobalTrace("if: startIdx < 0")
+		observe.GlobalTrace("return: text")
 		return text
 	}
 	endIdx := len(text)
 	if end != "" {
+		observe.GlobalTrace("if: end != \"\"")
 		searchFrom := startIdx + len(start)
 		if idx := strings.Index(text[searchFrom:], end); idx >= 0 {
+			observe.GlobalTrace("if: idx >= 0")
 			endIdx = searchFrom + idx
 		}
 	}
+	observe.GlobalTrace("return: strings.TrimRight(text[:startIdx], \"\\n\") + \"\\n\\n\" + strings.TrimLeft(text[end...")
 	return strings.TrimRight(text[:startIdx], "\n") + "\n\n" + strings.TrimLeft(text[endIdx:], "\n")
 }
 
@@ -648,10 +695,14 @@ func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (
 	defer observe.GlobalTrace("exit")
 	cwd, err := os.Getwd()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: ResolvedProviderConfig{}, fmt.Errorf(\"get working directory: %w\", err)")
 		return ResolvedProviderConfig{}, fmt.Errorf("get working directory: %w", err)
 	}
 	cfg, err := config.Load(cwd)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: ResolvedProviderConfig{}, fmt.Errorf(\"load config: %w\", err)")
 		return ResolvedProviderConfig{}, fmt.Errorf("load config: %w", err)
 	}
 	creds, _ := config.LoadCredentials()
@@ -661,18 +712,23 @@ func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (
 	modelExplicit := cmd.Flags().Changed("model")
 
 	if cfg.Provider == "" && opts.DefaultProvider != "" {
+		observe.GlobalTrace("if: cfg.Provider == \"\" && opts.DefaultProvider != \"\"")
 		cfg.Provider = opts.DefaultProvider
 	}
 	if cfg.Provider == "" {
+		observe.GlobalTrace("if: cfg.Provider == \"\"")
 		cfg.Provider = autoDetectProvider(creds)
 	}
 	if cfg.Provider == "" {
+		observe.GlobalTrace("if: cfg.Provider == \"\"")
 		cfg.Provider = "lilac"
 	}
 	if cfg.Model == "" && opts.DefaultModel != "" {
+		observe.GlobalTrace("if: cfg.Model == \"\" && opts.DefaultModel != \"\"")
 		cfg.Model = opts.DefaultModel
 	}
 	if cfg.Model == "" {
+		observe.GlobalTrace("if: cfg.Model == \"\"")
 		cfg.Model = DefaultModelFor(cfg.Provider)
 	}
 	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
@@ -691,12 +747,15 @@ func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (
 		observe.GlobalTrace("if: cfg.APIKey == \"\" (try provider picker)")
 		selected, selErr := pickAvailableProvider(cfg.Provider, creds)
 		if selErr != nil {
+			observe.GlobalTrace("if: selErr != nil")
+			observe.GlobalTrace("return: ResolvedProviderConfig{}, selErr")
 			return ResolvedProviderConfig{}, selErr
 		}
 		cfg.Provider = selected.name
 		cfg.APIKey = selected.apiKey
 		cfg.Model = DefaultModelFor(cfg.Provider)
 	}
+	observe.GlobalTrace("return: ResolvedProviderConfig{\n\tConfig:\t\t\tcfg,\n\tCredentials:\t\tcreds,\n\tProvider:\t\tcfg...")
 
 	return ResolvedProviderConfig{
 		Config:           cfg,
@@ -860,40 +919,60 @@ func resolveBaseURL(envVar, provider string) string {
 // HTTP utilities. It follows provider-specific env vars, credentials, then a
 // known default where one exists.
 func ProviderBaseURL(provider string, creds config.Credentials) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	envVar := baseURLEnvVarForProvider(provider)
 	if envVar != "" {
+		observe.GlobalTrace("if: envVar != \"\"")
 		if v := os.Getenv(envVar); v != "" {
+			observe.GlobalTrace("if: v != \"\"")
+			observe.GlobalTrace("return: v")
 			return v
 		}
 	}
 	if v := creds.CredentialFor(provider).BaseURL; v != "" {
+		observe.GlobalTrace("if: v != \"\"")
+		observe.GlobalTrace("return: v")
 		return v
 	}
+	observe.GlobalTrace("return: DefaultBaseURLFor(provider)")
 	return DefaultBaseURLFor(provider)
 }
 
 func DefaultBaseURLFor(provider string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch provider {
 	case "lilac":
+		observe.GlobalTrace("case: \"lilac\"")
 		return "https://api.getlilac.com/v1"
 	case "openai":
+		observe.GlobalTrace("case: \"openai\"")
 		return "https://api.openai.com/v1"
 	case "groq":
+		observe.GlobalTrace("case: \"groq\"")
 		return "https://api.groq.com/openai/v1"
 	default:
+		observe.GlobalTrace("default")
 		return ""
 	}
 }
 
 func baseURLEnvVarForProvider(provider string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch provider {
 	case "lilac":
+		observe.GlobalTrace("case: \"lilac\"")
 		return "LILAC_BASE_URL"
 	case "openai":
+		observe.GlobalTrace("case: \"openai\"")
 		return "OPENAI_BASE_URL"
 	case "google":
+		observe.GlobalTrace("case: \"google\"")
 		return "GOOGLE_BASE_URL"
 	default:
+		observe.GlobalTrace("default")
 		return ""
 	}
 }

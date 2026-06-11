@@ -138,6 +138,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		return checker.Check(ctx, "Edit", "")
 	}
 	observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"Edit\", in.FilePath)")
+	observe.TraceCtx(ctx, "fileedit", "Tool.CheckPerm", "return: permission.CheckPath(ctx, checker, \"Edit\", in.FilePath)")
 	return permission.CheckPath(ctx, checker, "Edit", in.FilePath)
 }
 
@@ -247,6 +248,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			tool.RecordFileWriteState(state, filePath, tool.NormalizeTextContent(in.NewString), timestamp, nil, nil, false)
 		}
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"The file %s has been updated succes...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
 		}, nil
@@ -314,11 +316,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if in.ReplaceAll && count > 1 {
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "if: in.ReplaceAll && count > 1")
 		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated. All %...")
+		observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"The file %s has been updated. All %...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("The file %s has been updated. All %d occurrences were successfully replaced.", in.FilePath, count),
 		}, nil
 	}
 	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"The file %s has been updated succes...")
+	observe.TraceCtx(ctx, "fileedit", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"The file %s has been updated succes...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("The file %s has been updated successfully.", in.FilePath),
 	}, nil

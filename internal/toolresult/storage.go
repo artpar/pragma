@@ -402,6 +402,7 @@ func persistAndBuildReplacement(content, toolUseID, sessionID string) (string, e
 func persistToolResult(content, toolUseID, sessionID string) (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: persistToolResultBytes([]byte(content), toolUseID, sessionID, \".txt\")")
 	return persistToolResultBytes([]byte(content), toolUseID, sessionID, ".txt")
 }
 
@@ -410,8 +411,10 @@ func PersistBinaryOutput(content []byte, artifactID, sessionID, ext string) (str
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if ext == "" || !strings.HasPrefix(ext, ".") {
+		observe.GlobalTrace("if: ext == \"\" || !strings.HasPrefix(ext, \".\")")
 		ext = ".bin"
 	}
+	observe.GlobalTrace("return: persistToolResultBytes(content, artifactID, sessionID, ext)")
 	return persistToolResultBytes(content, artifactID, sessionID, ext)
 }
 

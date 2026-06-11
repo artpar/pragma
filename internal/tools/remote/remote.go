@@ -90,6 +90,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		content += " " + in.TriggerID
 	}
 	if len(in.Body) > 0 {
+		observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "if: len(in.Body) > 0")
 		content += " " + string(in.Body)
 	}
 	observe.TraceCtx(ctx, "toolremote", "Tool.CheckPerm", "return: checker.Check(ctx, \"RemoteTrigger\", content)")

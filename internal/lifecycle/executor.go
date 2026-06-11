@@ -138,6 +138,7 @@ func (e *Executor) Stream(ctx context.Context, initial State) <-chan ExecutionEv
 				ch <- ev
 			})
 			if err != nil {
+				observe.TraceCtx(ctx, "lifecycle", "Executor.Stream", "if: err != nil")
 				e.emitCompleted(step, err)
 				ch <- ExecutionEvent{Type: "completed", Step: step, State: state.Snapshot(), Err: err}
 				return
@@ -255,6 +256,7 @@ func (e *Executor) resolveNextNodes(step int, completed []string, state State, e
 			target, ok := ce.PathMap[key]
 			if !ok {
 				observe.GlobalTrace("if: !ok")
+				observe.GlobalTrace("return: nil, fmt.Errorf(\"lifecycle: node %q router returned unmapped route key %q\", n...")
 				return nil, fmt.Errorf("lifecycle: node %q router returned unmapped route key %q", node, key)
 			}
 			if target == "" {
@@ -281,6 +283,7 @@ func (e *Executor) resolveNextNodes(step int, completed []string, state State, e
 
 	}
 	observe.GlobalTrace("return: next")
+	observe.GlobalTrace("return: next, nil")
 
 	return next, nil
 }

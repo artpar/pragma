@@ -26,6 +26,7 @@ func NewStatusSubscriber(registry *Registry, ownerToken string) *StatusSubscribe
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &StatusSubscriber{registry: registry, pid: os.Getpid()}")
+	observe.GlobalTrace("return: &StatusSubscriber{registry: registry, pid: os.Getpid(), ownerToken: ownerToken}")
 	return &StatusSubscriber{registry: registry, pid: os.Getpid(), ownerToken: ownerToken}
 }
 
@@ -123,12 +124,17 @@ func (s *StatusSubscriber) HandleEvent(event observe.Event) {
 }
 
 func (s *StatusSubscriber) updateStatusLocked() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch {
 	case s.waiting:
+		observe.GlobalTrace("case: s.waiting")
 		s.registry.UpdateStatus(s.pid, s.ownerToken, StatusWaiting)
 	case s.activeAPI > 0 || s.activeToolBatch > 0 || s.pendingToolBatch:
+		observe.GlobalTrace("case: s.activeAPI > 0 || s.activeToolBatch > 0 || s.pendingToolBatch")
 		s.registry.UpdateStatus(s.pid, s.ownerToken, StatusBusy)
 	default:
+		observe.GlobalTrace("default")
 		s.registry.UpdateStatus(s.pid, s.ownerToken, StatusIdle)
 	}
 }

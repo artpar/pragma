@@ -61,6 +61,8 @@ type Tool struct {
 }
 
 func (t *Tool) SetPatchMode(enabled bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	t.PatchMode = enabled
 }
 
@@ -275,9 +277,13 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		RunningOutputLines: runningOutputLines,
 	})
 	if err != nil {
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, err")
 		return tool.InvokeResult{}, err
 	}
 	if result.Running {
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: result.Running")
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: result.Output}, nil")
 		return tool.InvokeResult{Content: result.Output}, nil
 	}
 	output := strings.TrimRight(result.Output, "\n")
@@ -308,21 +314,28 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 			return tool.InvokeResult{Content: output}, nil
 		}
 		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"execute command: %w\", err)")
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"execute command: %w\", result.Err)")
 
 		return tool.InvokeResult{}, fmt.Errorf("execute command: %w", result.Err)
 	}
 	observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 	if shellrun.CommandMayUseBackground(in.Command) {
+		observe.TraceCtx(ctx, "bash", "Tool.Invoke", "if: shellrun.CommandMayUseBackground(in.Command)")
 		output = appendLogPaths(output, result.Files)
 	}
+	observe.TraceCtx(ctx, "bash", "Tool.Invoke", "return: tool.InvokeResult{Content: output}, nil")
 
 	return tool.InvokeResult{Content: output}, nil
 }
 
 func appendLogPaths(output string, files shellrun.Files) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if output != "" {
+		observe.GlobalTrace("if: output != \"\"")
 		output += "\n"
 	}
+	observe.GlobalTrace("return: output + fmt.Sprintf(\"Logs:\\nConsole: %s\", files.Console)")
 	return output + fmt.Sprintf("Logs:\nConsole: %s", files.Console)
 }
 

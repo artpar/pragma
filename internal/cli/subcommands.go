@@ -60,6 +60,7 @@ func RegisterSubcommands(root *cobra.Command, registry *slash.Registry) {
 func RunPromptCommand(cmd *cobra.Command, slashCmd slash.Command, args string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: runNonInteractive(cmd, nonInteractiveRunOptions{\n\tAllowStructuredOutput:\ttrue...")
 
 	return runNonInteractive(cmd, nonInteractiveRunOptions{
 		AllowStructuredOutput: true,
@@ -106,6 +107,8 @@ func RunLocalCommand(cmd *cobra.Command, slashCmd slash.Command, args string) er
 
 	slashDeps, err := BuildLocalSlashDeps(cmd)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	result, err := slashCmd.Handle(cmd.Context(), args, slashDeps)
@@ -130,18 +133,23 @@ func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
 	defer observe.GlobalTrace("exit")
 	cwd, err := os.Getwd()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: slash.Deps{}, fmt.Errorf(\"get working directory: %w\", err)")
 		return slash.Deps{}, fmt.Errorf("get working directory: %w", err)
 	}
 	cfg, _ := config.Load(cwd)
 	creds, _ := config.LoadCredentials()
 	ApplyFlagOverrides(cmd, &cfg)
 	if cfg.Provider == "" {
+		observe.GlobalTrace("if: cfg.Provider == \"\"")
 		cfg.Provider = autoDetectProvider(creds)
 	}
 	if cfg.Provider == "" {
+		observe.GlobalTrace("if: cfg.Provider == \"\"")
 		cfg.Provider = "lilac"
 	}
 	if cfg.Model == "" {
+		observe.GlobalTrace("if: cfg.Model == \"\"")
 		cfg.Model = DefaultModelFor(cfg.Provider)
 	}
 	cfg.Model = resolveModelAlias(cfg.Provider, cfg.Model)
@@ -159,6 +167,7 @@ func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
 		MaxTokens:    cfg.MaxTokens,
 		Temperature:  cfg.Temperature,
 	})
+	observe.GlobalTrace("return: slash.Deps{\n\tStore:\t\tstore,\n\tCostTracker:\tmodel.NewCostTracker(0),\n\tModelName...")
 
 	return slash.Deps{
 		Store:        store,
@@ -173,6 +182,9 @@ func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
 }
 
 func localMcpStatuses(cwd string) func() []slash.McpServerStatus {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func() []slash.McpServerStatus {\n\tbus := observe.NewEventBus(16)\n\tservers, er...")
 	return func() []slash.McpServerStatus {
 		bus := observe.NewEventBus(16)
 		servers, err := mcp.LoadConfig(cwd, bus)

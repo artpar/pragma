@@ -15,6 +15,7 @@ func staticBlocks() []model.SystemBlock {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: []model.SystemBlock{codexDefaultPrompt}")
+	observe.GlobalTrace("return: []model.SystemBlock{\n\t{Text: codexDefaultPrompt, Cacheable: false},\n}")
 	return []model.SystemBlock{
 		{Text: codexDefaultPrompt, Cacheable: false},
 	}

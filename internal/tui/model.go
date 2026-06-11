@@ -274,8 +274,10 @@ func New(cfg Config) Model {
 
 	input := newInputComponent()
 	if len(cfg.PromptHistory) > 0 {
+		observe.GlobalTrace("if: len(cfg.PromptHistory) > 0")
 		input.SetHistory(cfg.PromptHistory)
 	}
+	observe.GlobalTrace("return: Model{\n\trunInput:\t\tcfg.RunInput,\n\tresume:\t\t\tcfg.Resume,\n\tcloseSession:\t\tcfg.C...")
 
 	return Model{
 		runInput:        cfg.RunInput,
@@ -1090,7 +1092,10 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) syncViewportHeight() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !m.ready {
+		observe.GlobalTrace("if: !m.ready")
 		return
 	}
 	headerHeight := m.input.ViewHeight() + 1 + 2

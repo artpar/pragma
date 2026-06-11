@@ -148,6 +148,7 @@ func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permiss
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "enter")
 	defer observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "exit")
 	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "return: checker.Check(ctx, \"AskUserQuestion\", \"\")")
+	observe.TraceCtx(ctx, "ask", "Tool.CheckPerm", "return: checker.Check(ctx, toolName, \"\")")
 	return checker.Check(ctx, toolName, "")
 }
 
@@ -193,6 +194,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	sessionID, _ := tool.SessionIDFrom(state)
 	invocation, _ := tool.InvocationContextFrom(ctx)
 	if invocation.ToolName == "" {
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: invocation.ToolName == \"\"")
 		invocation.ToolName = toolName
 	}
 	promptStart := time.Now()
@@ -201,6 +203,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	resp, err := t.Asker.Ask(ctx, req)
 	promptDuration := time.Since(promptStart).Milliseconds()
 	if err != nil {
+		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: err != nil")
 		t.emitAskPromptCancelled(askID, sessionID, invocation, err.Error(), promptDuration)
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "if: err != nil")
 		observe.TraceCtx(ctx, "ask", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"ask user: %w\", err)")
@@ -214,7 +217,10 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 }
 
 func (t *Tool) emitAskPromptRequested(askID, sessionID string, invocation tool.InvocationContext, req tool.AskRequest) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.Bus == nil {
+		observe.GlobalTrace("if: t.Bus == nil")
 		return
 	}
 	t.Bus.Emit(observe.AskPromptRequested{
@@ -229,7 +235,10 @@ func (t *Tool) emitAskPromptRequested(askID, sessionID string, invocation tool.I
 }
 
 func (t *Tool) emitAskPromptResolved(askID, sessionID string, invocation tool.InvocationContext, answerCount int, durationMs int64) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.Bus == nil {
+		observe.GlobalTrace("if: t.Bus == nil")
 		return
 	}
 	t.Bus.Emit(observe.AskPromptResolved{
@@ -244,7 +253,10 @@ func (t *Tool) emitAskPromptResolved(askID, sessionID string, invocation tool.In
 }
 
 func (t *Tool) emitAskPromptCancelled(askID, sessionID string, invocation tool.InvocationContext, errMessage string, durationMs int64) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.Bus == nil {
+		observe.GlobalTrace("if: t.Bus == nil")
 		return
 	}
 	t.Bus.Emit(observe.AskPromptCancelled{
@@ -259,23 +271,30 @@ func (t *Tool) emitAskPromptCancelled(askID, sessionID string, invocation tool.I
 }
 
 func observeAskQuestions(questions []tool.AskQuestion) []observe.AskPromptQuestion {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(questions) == 0 {
+		observe.GlobalTrace("if: len(questions) == 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := make([]observe.AskPromptQuestion, len(questions))
 	for i, q := range questions {
+		observe.GlobalTrace("range questions")
 		out[i] = observe.AskPromptQuestion{
 			Question:    q.Question,
 			Header:      q.Header,
 			MultiSelect: q.MultiSelect,
 		}
 		for _, opt := range q.Options {
+			observe.GlobalTrace("range q.Options")
 			out[i].Options = append(out[i].Options, observe.AskPromptOption{
 				Label:       opt.Label,
 				Description: opt.Description,
 			})
 		}
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 

@@ -34,6 +34,7 @@ func (b *Builder) WithSkillCatalog(catalog skill.Catalog) *Builder {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	b.skillCatalog = catalog
+	observe.GlobalTrace("return: b")
 	return b
 }
 
@@ -84,6 +85,7 @@ func (b *Builder) buildSkillBlock() (model.SystemBlock, bool) {
 	defer observe.GlobalTrace("exit")
 	catalog := b.skillCatalog
 	if catalog == nil {
+		observe.GlobalTrace("if: catalog == nil")
 		catalog = skill.NewLoader(b.workDir)
 	}
 	skills, err := catalog.LoadAll()

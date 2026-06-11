@@ -21,6 +21,7 @@ func ResolveGraph(def *definition.GraphDef, infra Infra) (*lifecycle.Graph, erro
 			"total_usage": UsageReducer,
 		},
 	}
+	observe.GlobalTrace("return: definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)")
 	return definition.Resolve(def, factory.Create, definition.DefaultRouterCreator(), opts)
 }
 
@@ -30,8 +31,10 @@ func GenerateAndResolveGraph(ctx context.Context, prov provider.Provider, bus *o
 	def, err := GenerateGraph(ctx, prov, bus, modelID, structure)
 	if err != nil {
 		observe.TraceCtx(ctx, "lifecycle/bridge", "GenerateAndResolveGraph", "if: err != nil")
+		observe.TraceCtx(ctx, "bridge", "GenerateAndResolveGraph", "return: nil, err")
 		return nil, err
 	}
+	observe.TraceCtx(ctx, "bridge", "GenerateAndResolveGraph", "return: ResolveGraph(def, infra)")
 	return ResolveGraph(def, infra)
 }
 

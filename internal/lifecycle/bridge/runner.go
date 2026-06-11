@@ -22,6 +22,7 @@ type RunnerConfig struct {
 func NewRunnerConfig(system model.SystemPrompt, modelID string, maxTokens int, tools []model.ToolDef, bus *observe.EventBus) RunnerConfig {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: RunnerConfig{\n\tsystem:\t\tsystem,\n\tmodelID:\tmodelID,\n\tmaxTokens:\tmaxTokens,\n\tto...")
 	return RunnerConfig{
 		system:    system,
 		modelID:   modelID,
@@ -70,6 +71,7 @@ type Runner struct {
 func NewRunner(graph *lifecycle.Graph, config RunnerConfig) *Runner {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: &Runner{graph: graph, config: config}")
 	return &Runner{graph: graph, config: config}
 }
 
@@ -82,6 +84,7 @@ func (r *Runner) InitialState(prompt string) lifecycle.State {
 		Content:   []model.ContentPart{model.TextPart{Text: prompt}},
 		Timestamp: time.Now(),
 	}
+	observe.GlobalTrace("return: lifecycle.State{\n\tKeyMessages:\t[]model.Message{userMsg},\n\tKeySystem:\tr.config...")
 	return lifecycle.State{
 		KeyMessages:  []model.Message{userMsg},
 		KeySystem:    r.config.system,
@@ -99,13 +102,16 @@ func (r *Runner) Stream(ctx context.Context, prompt string) <-chan RunEvent {
 		defer close(ch)
 		executor := lifecycle.NewExecutor(r.graph, lifecycle.WithEventBus(r.config.bus))
 		for ev := range executor.Stream(ctx, r.InitialState(prompt)) {
+			observe.TraceCtx(ctx, "bridge", "Runner.Stream", "range executor.Stream(ctx, r.InitialState(prompt))")
 			runEv := RunEvent{Event: ev, Progress: ProjectProgress(ev)}
 			if ev.Type == "completed" {
+				observe.TraceCtx(ctx, "bridge", "Runner.Stream", "if: ev.Type == \"completed\"")
 				runEv.Result = ProjectResult(ev.State, ev.Err)
 			}
 			ch <- runEv
 		}
 	}()
+	observe.TraceCtx(ctx, "bridge", "Runner.Stream", "return: ch")
 	return ch
 }
 
@@ -123,9 +129,11 @@ func ProjectProgress(ev lifecycle.ExecutionEvent) ProgressEvent {
 		RouteKey: ev.RouteKey,
 	}
 	if ev.Err != nil {
+		observe.GlobalTrace("if: ev.Err != nil")
 		progress.Err = ev.Err
 		progress.Error = ev.Err.Error()
 	}
+	observe.GlobalTrace("return: progress")
 	return progress
 }
 
@@ -139,13 +147,16 @@ func ProjectResult(finalState lifecycle.State, runErr error) RunResult {
 	}
 	result.AssistantText = LastAssistantText(finalState)
 	if sr := StopReason(finalState); sr != "" {
+		observe.GlobalTrace("if: sr != \"\"")
 		result.StopReason = model.StopReason(sr)
 	}
 	result.Response = Response(finalState)
 	result.Usage = TotalUsage(finalState)
 	if result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0 {
+		observe.GlobalTrace("if: result.Usage.InputTokens > 0 || result.Usage.OutputTokens > 0")
 		result.Response.Usage = result.Usage
 	}
+	observe.GlobalTrace("return: result")
 	return result
 }
 
@@ -169,6 +180,7 @@ func LastAssistantText(state lifecycle.State) string {
 		}
 		if len(parts) > 0 {
 			observe.GlobalTrace("if: len(parts) > 0")
+			observe.GlobalTrace("return: strings.Join(parts, \"\\n\")")
 			return strings.Join(parts, "\n")
 		}
 	}

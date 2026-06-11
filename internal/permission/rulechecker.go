@@ -49,33 +49,55 @@ func NewRuleChecker(rules []Rule, mode PermissionMode, workDir string, bus *obse
 // Check evaluates permission for a tool invocation.
 // content is the tool-specific extracted string (command for Bash, path for file tools, domain:X for WebFetch).
 func (rc *RuleChecker) Check(ctx context.Context, toolName string, content string) CheckResult {
+	observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "enter")
+	defer observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "exit")
+	observe.TraceCtx(ctx, "permission", "RuleChecker.Check", "return: rc.check(ctx, toolName, content, rc.workDir, contentGeneric)")
 	return rc.check(ctx, toolName, content, rc.workDir, contentGeneric)
 }
 
 func (rc *RuleChecker) CheckPath(ctx context.Context, toolName string, path string) CheckResult {
+	observe.TraceCtx(ctx, "permission", "RuleChecker.CheckPath", "enter")
+	defer observe.TraceCtx(ctx, "permission", "RuleChecker.CheckPath", "exit")
+	observe.TraceCtx(ctx, "permission", "RuleChecker.CheckPath", "return: rc.check(ctx, toolName, path, rc.workDir, contentPath)")
 	return rc.check(ctx, toolName, path, rc.workDir, contentPath)
 }
 
 func (rc *RuleChecker) WithWorkDir(workDir string) Checker {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(workDir) == "" || workDir == rc.workDir {
+		observe.GlobalTrace("if: strings.TrimSpace(workDir) == \"\" || workDir == rc.workDir")
+		observe.GlobalTrace("return: rc")
 		return rc
 	}
+	observe.GlobalTrace("return: &scopedRuleChecker{base: rc, workDir: workDir}")
 	return &scopedRuleChecker{base: rc, workDir: workDir}
 }
 
 func (sc *scopedRuleChecker) Check(ctx context.Context, toolName string, content string) CheckResult {
+	observe.TraceCtx(ctx, "permission", "scopedRuleChecker.Check", "enter")
+	defer observe.TraceCtx(ctx, "permission", "scopedRuleChecker.Check", "exit")
+	observe.TraceCtx(ctx, "permission", "scopedRuleChecker.Check", "return: sc.base.check(ctx, toolName, content, sc.workDir, contentGeneric)")
 	return sc.base.check(ctx, toolName, content, sc.workDir, contentGeneric)
 }
 
 func (sc *scopedRuleChecker) CheckPath(ctx context.Context, toolName string, path string) CheckResult {
+	observe.TraceCtx(ctx, "permission", "scopedRuleChecker.CheckPath", "enter")
+	defer observe.TraceCtx(ctx, "permission", "scopedRuleChecker.CheckPath", "exit")
+	observe.TraceCtx(ctx, "permission", "scopedRuleChecker.CheckPath", "return: sc.base.check(ctx, toolName, path, sc.workDir, contentPath)")
 	return sc.base.check(ctx, toolName, path, sc.workDir, contentPath)
 }
 
 func (sc *scopedRuleChecker) AddSessionRule(rule Rule) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	sc.base.AddSessionRule(rule)
 }
 
 func (sc *scopedRuleChecker) AddPersistentRule(rule Rule) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: sc.base.addPersistentRule(sc.workDir, rule)")
 	return sc.base.addPersistentRule(sc.workDir, rule)
 }
 
@@ -176,7 +198,9 @@ func (rc *RuleChecker) ClearSessionRules() {
 	defer rc.mu.Unlock()
 	filtered := rc.rules[:0]
 	for _, rule := range rc.rules {
+		observe.GlobalTrace("range rc.rules")
 		if rule.Source == SourceSession {
+			observe.GlobalTrace("if: rule.Source == SourceSession")
 			continue
 		}
 		filtered = append(filtered, rule)
@@ -185,6 +209,9 @@ func (rc *RuleChecker) ClearSessionRules() {
 }
 
 func (rc *RuleChecker) AddPersistentRule(rule Rule) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: rc.addPersistentRule(rc.workDir, rule)")
 	return rc.addPersistentRule(rc.workDir, rule)
 }
 
@@ -263,13 +290,21 @@ func (rc *RuleChecker) acceptEditsDecision(toolName, content string, activeWorkD
 }
 
 func matchPermissionContent(ruleContent, actualContent, workDir string, kind contentKind) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if kind == contentPath {
+		observe.GlobalTrace("if: kind == contentPath")
+		observe.GlobalTrace("return: MatchPathContent(ruleContent, actualContent, workDir)")
 		return MatchPathContent(ruleContent, actualContent, workDir)
 	}
+	observe.GlobalTrace("return: MatchContent(ruleContent, actualContent, workDir)")
 	return MatchContent(ruleContent, actualContent, workDir)
 }
 
 func shouldCheckDangerousPath(content string, kind contentKind) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: kind == contentPath || isFilePath(content)")
 	return kind == contentPath || isFilePath(content)
 }
 

@@ -133,6 +133,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		if err := ctx.Err(); err != nil {
 			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: err != nil")
 			for j := i; j < len(in.Operations); j++ {
+				observe.TraceCtx(ctx, "repl", "Tool.Invoke", "for: j < len(in.Operations)")
 				results[j] = fmt.Sprintf("[%d] %s: cancelled", j, in.Operations[j].Tool)
 			}
 			break
@@ -154,14 +155,19 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 
 	var allSupplements []model.ContentPart
 	if len(calls) > 0 {
+		observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: len(calls) > 0")
 		if t.Orchestrator == nil {
+			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: t.Orchestrator == nil")
+			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"REPL orchestrator is unavailable\")")
 			return tool.InvokeResult{}, fmt.Errorf("REPL orchestrator is unavailable")
 		}
 		execResult := t.Orchestrator.Execute(ctx, calls, state)
 		allSupplements = append(allSupplements, execResult.Supplements...)
 		for j, part := range execResult.Results {
+			observe.TraceCtx(ctx, "repl", "Tool.Invoke", "range execResult.Results")
 			i := callIndexes[j]
 			if part.IsError {
+				observe.TraceCtx(ctx, "repl", "Tool.Invoke", "if: part.IsError")
 				results[i] = fmt.Sprintf("[%d] %s: error: %s", i, calls[j].Name, part.Content)
 				continue
 			}

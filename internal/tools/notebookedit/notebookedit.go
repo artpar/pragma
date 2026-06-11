@@ -121,6 +121,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		return checker.Check(ctx, "NotebookEdit", "")
 	}
 	observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: checker.Check(ctx, \"NotebookEdit\", in.NotebookPath)")
+	observe.TraceCtx(ctx, "notebookedit", "Tool.CheckPerm", "return: permission.CheckPath(ctx, checker, \"NotebookEdit\", in.NotebookPath)")
 	return permission.CheckPath(ctx, checker, "NotebookEdit", in.NotebookPath)
 }
 

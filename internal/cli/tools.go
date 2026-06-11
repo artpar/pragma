@@ -226,21 +226,29 @@ func RegisterTools(d *Deps, prompter permission.Prompter, asker tool.Asker) (*qu
 }
 
 func RebindProviderBackedTools(d *Deps) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	secondaryModel := SecondaryModelFor(d.Cfg.Provider)
 	if desc, ok := d.Registry.Get("Agent"); ok {
+		observe.GlobalTrace("if: ok")
 		if tl, ok := desc.(*toolagent.Tool); ok {
+			observe.GlobalTrace("if: ok")
 			tl.Provider = d.Prov
 			tl.SecondaryModel = secondaryModel
 		}
 	}
 	if desc, ok := d.Registry.Get("LifecycleRun"); ok {
+		observe.GlobalTrace("if: ok")
 		if tl, ok := desc.(*toollifecycle.Tool); ok {
+			observe.GlobalTrace("if: ok")
 			tl.Provider = d.Prov
 			tl.SecondaryModel = secondaryModel
 		}
 	}
 	if desc, ok := d.Registry.Get("WebFetch"); ok {
+		observe.GlobalTrace("if: ok")
 		if tl, ok := desc.(*toolwebfetch.Tool); ok {
+			observe.GlobalTrace("if: ok")
 			tl.Provider = d.Prov
 			tl.SecondaryModel = secondaryModel
 		}
@@ -252,12 +260,15 @@ func shouldRegisterBuiltinTool(d *Deps, name string) bool {
 	defer observe.GlobalTrace("exit")
 	if d != nil && !d.ToolPolicy.Allows(name) {
 		observe.GlobalTrace("if: d != nil && !d.ToolPolicy.Allows(name)")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	if d != nil && !builtinAllowedByToolset(d.Toolset, name) {
 		observe.GlobalTrace("if: d != nil && !builtinAllowedByToolset(d.Toolset, name)")
+		observe.GlobalTrace("return: false")
 		return false
 	}
+	observe.GlobalTrace("return: true")
 	return true
 }
 
@@ -268,35 +279,51 @@ type ToolExposurePolicy struct {
 }
 
 func toolExposurePolicyFromFlags(cmd *cobra.Command) ToolExposurePolicy {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var policy ToolExposurePolicy
 	if cmd == nil || cmd.Flags() == nil {
+		observe.GlobalTrace("if: cmd == nil || cmd.Flags() == nil")
+		observe.GlobalTrace("return: policy")
 		return policy
 	}
 	if allowedStr, _ := cmd.Flags().GetString("allowed-tools"); allowedStr != "" {
+		observe.GlobalTrace("if: allowedStr != \"\"")
 		allowed := parseToolList(allowedStr)
 		policy.HasAllowed = true
 		policy.Allowed = make(map[string]bool, len(allowed))
 		for _, name := range allowed {
+			observe.GlobalTrace("range allowed")
 			policy.Allowed[name] = true
 		}
 	}
 	if disallowedStr, _ := cmd.Flags().GetString("disallowed-tools"); disallowedStr != "" {
+		observe.GlobalTrace("if: disallowedStr != \"\"")
 		disallowed := parseToolList(disallowedStr)
 		policy.Disallowed = make(map[string]bool, len(disallowed))
 		for _, name := range disallowed {
+			observe.GlobalTrace("range disallowed")
 			policy.Disallowed[name] = true
 		}
 	}
+	observe.GlobalTrace("return: policy")
 	return policy
 }
 
 func (p ToolExposurePolicy) Allows(name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if p.HasAllowed && !p.Allowed[name] {
+		observe.GlobalTrace("if: p.HasAllowed && !p.Allowed[name]")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	if p.Disallowed[name] {
+		observe.GlobalTrace("if: p.Disallowed[name]")
+		observe.GlobalTrace("return: false")
 		return false
 	}
+	observe.GlobalTrace("return: true")
 	return true
 }
 
@@ -337,6 +364,9 @@ func mcpStatusesForQuery(mgr interface {
 // BaseTools returns all tool descriptors except Agent and AskUserQuestion
 // (which need the engine factory / asker).
 func BaseTools(d *Deps) []tool.Descriptor {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: baseTools(d, d.Store, d.Registry)")
 	return baseTools(d, d.Store, d.Registry)
 }
 
@@ -463,6 +493,9 @@ func bindToolSearchRegistry(registry *tool.Registry) {
 }
 
 func validateLiveConfigValue(d *Deps) func(string, any) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(setting string, value any) error {\n\tswitch setting {\n\tcase \"model\":\n\t\tmo...")
 	return func(setting string, value any) error {
 		switch setting {
 		case "model":
@@ -478,6 +511,9 @@ func validateLiveConfigValue(d *Deps) func(string, any) error {
 }
 
 func applyLiveConfigValue(d *Deps) func(string, any) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(setting string, value any) {\n\tswitch setting {\n\tcase \"model\":\n\t\tmodelID,...")
 	return func(setting string, value any) {
 		switch setting {
 		case "model":
@@ -495,60 +531,91 @@ func applyLiveConfigValue(d *Deps) func(string, any) {
 }
 
 func validateActiveModel(d *Deps, modelID string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d == nil || d.Prov == nil {
+		observe.GlobalTrace("if: d == nil || d.Prov == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	if _, ok := d.Prov.ContextWindow(modelID); !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: fmt.Errorf(\"Unknown model: %s\", modelID)")
 		return fmt.Errorf("Unknown model: %s", modelID)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func switchActiveModel(d *Deps, modelID string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if err := validateActiveModel(d, modelID); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	if d != nil {
+		observe.GlobalTrace("if: d != nil")
 		d.Cfg.Model = modelID
 		d.EngineCfg.Model = modelID
 		if d.Engine != nil {
+			observe.GlobalTrace("if: d.Engine != nil")
 			d.Engine.SetModel(modelID)
 		}
 	}
 	if d != nil && d.Store != nil {
+		observe.GlobalTrace("if: d != nil && d.Store != nil")
 		d.Store.Update(func(s *app.AppState) {
 			s.Model = modelID
 		})
 	}
 	if d != nil && d.Prov != nil && d.TokenMonitor != nil {
+		observe.GlobalTrace("if: d != nil && d.Prov != nil && d.TokenMonitor != nil")
 		if cw, ok := d.Prov.ContextWindow(modelID); ok {
+			observe.GlobalTrace("if: ok")
 			d.TokenMonitor.SetBudget(cw)
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func activeModelForDeps(d *Deps) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d == nil {
+		observe.GlobalTrace("if: d == nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	if d.Store != nil {
+		observe.GlobalTrace("if: d.Store != nil")
 		snap := d.Store.Snapshot()
 		if snap.Model != "" {
+			observe.GlobalTrace("if: snap.Model != \"\"")
+			observe.GlobalTrace("return: snap.Model")
 			return snap.Model
 		}
 	}
 	if d.EngineCfg.Model != "" {
+		observe.GlobalTrace("if: d.EngineCfg.Model != \"\"")
+		observe.GlobalTrace("return: d.EngineCfg.Model")
 		return d.EngineCfg.Model
 	}
+	observe.GlobalTrace("return: d.Cfg.Model")
 	return d.Cfg.Model
 }
 
 func runtimeSkillCatalog(d *Deps) skill.Catalog {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	fallback := ""
 	if d != nil {
+		observe.GlobalTrace("if: d != nil")
 		fallback = d.Cwd
 	}
+	observe.GlobalTrace("return: skill.NewRuntimeCatalog(fallback, func() string {\n\tif d != nil && d.Store != ...")
 	return skill.NewRuntimeCatalog(fallback, func() string {
 		if d != nil && d.Store != nil {
 			if cwd := d.Store.Snapshot().CWD; cwd != "" {
@@ -560,6 +627,9 @@ func runtimeSkillCatalog(d *Deps) skill.Catalog {
 }
 
 func runtimeSystemPromptForDeps(d *Deps) func(string) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(workDir string) model.SystemPrompt {\n\tif d == nil {\n\t\treturn model.Syste...")
 	return func(workDir string) model.SystemPrompt {
 		if d == nil {
 			return model.SystemPrompt{}
@@ -575,6 +645,9 @@ func runtimeSystemPromptForDeps(d *Deps) func(string) model.SystemPrompt {
 }
 
 func runtimeCapabilitiesForDeps(d *Deps) func(context.Context, string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(ctx context.Context, workDir string) {\n\tif err := refreshCapabilitiesFor...")
 	return func(ctx context.Context, workDir string) {
 		if err := refreshCapabilitiesForWorkDir(ctx, d, workDir); err != nil && d != nil && d.Bus != nil {
 			d.Bus.Emit(observe.ErrorOccurred{

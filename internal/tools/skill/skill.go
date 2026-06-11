@@ -120,6 +120,8 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		return tool.InvokeResult{Content: "Skill name is required."}, nil
 	}
 	if t.Loader == nil {
+		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "if: t.Loader == nil")
+		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "return: tool.InvokeResult{Content: \"Skills loader is unavailable.\"}, nil")
 		return tool.InvokeResult{Content: "Skills loader is unavailable."}, nil
 	}
 
@@ -141,6 +143,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 	if s.IsForked() {
 		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "forked execution")
 		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "return: t.invokeForked(ctx, s, content)")
+		observe.TraceCtx(ctx, "skill", "Tool.Invoke", "return: t.invokeForked(ctx, s, content, state)")
 		return t.invokeForked(ctx, s, content, state)
 	}
 
@@ -156,6 +159,7 @@ func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content strin
 
 	if t.Agent == nil {
 		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: t.Agent == nil")
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Skill %q failed: agent runner is un...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("Skill %q failed: agent runner is unavailable", s.Name),
 		}, nil
@@ -164,6 +168,7 @@ func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content strin
 	result, err := t.Agent.RunForked(ctx, content, "skill:"+s.Name, s.Model, s.AllowedTools, state)
 	if err != nil {
 		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "if: err != nil")
+		observe.TraceCtx(ctx, "skill", "Tool.invokeForked", "return: result, err")
 		return result, err
 	}
 
@@ -180,13 +185,18 @@ func (t *Tool) invokeForked(ctx context.Context, s skillpkg.Skill, content strin
 }
 
 func skillAgentResultText(content string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var ar struct {
 		Status string `json:"status"`
 		Result string `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(content), &ar); err == nil && ar.Status == "completed" {
+		observe.GlobalTrace("if: err == nil && ar.Status == \"completed\"")
+		observe.GlobalTrace("return: ar.Result")
 		return ar.Result
 	}
+	observe.GlobalTrace("return: content")
 	return content
 }
 
@@ -195,6 +205,8 @@ func (t *Tool) availableSkillNames() []string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if t.Loader == nil {
+		observe.GlobalTrace("if: t.Loader == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	skills, err := t.Loader.LoadAll()

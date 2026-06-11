@@ -50,29 +50,40 @@ func (cm *cacheManager) Close(ctx context.Context) error {
 	current := cm.current
 	cm.mu.Unlock()
 	if current == nil {
+		observe.TraceCtx(ctx, "google", "cacheManager.Close", "if: current == nil")
+		observe.TraceCtx(ctx, "google", "cacheManager.Close", "return: nil")
 		return nil
 	}
 	deleteCtx, cancel := cacheDeleteContext(ctx)
 	defer cancel()
 	if _, err := cm.client.Caches.Delete(deleteCtx, current.name, nil); err != nil {
 		observe.TraceCtx(ctx, "google", "cacheManager.Close", fmt.Sprintf("delete cache (non-fatal): %v", err))
+		observe.TraceCtx(ctx, "google", "cacheManager.Close", "return: fmt.Errorf(\"google: delete cache %q: %w\", current.name, err)")
 		return fmt.Errorf("google: delete cache %q: %w", current.name, err)
 	}
 	cm.mu.Lock()
 	if cm.current == current {
+		observe.TraceCtx(ctx, "google", "cacheManager.Close", "if: cm.current == current")
 		cm.current = nil
 	}
 	cm.mu.Unlock()
+	observe.TraceCtx(ctx, "google", "cacheManager.Close", "return: nil")
 	return nil
 }
 
 func cacheDeleteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	observe.TraceCtx(ctx, "google", "cacheDeleteContext", "enter")
+	defer observe.TraceCtx(ctx, "google", "cacheDeleteContext", "exit")
 	if ctx == nil {
+		observe.TraceCtx(ctx, "google", "cacheDeleteContext", "if: ctx == nil")
 		ctx = context.Background()
 	}
 	if _, ok := ctx.Deadline(); ok {
+		observe.TraceCtx(ctx, "google", "cacheDeleteContext", "if: ok")
+		observe.TraceCtx(ctx, "google", "cacheDeleteContext", "return: context.WithCancel(ctx)")
 		return context.WithCancel(ctx)
 	}
+	observe.TraceCtx(ctx, "google", "cacheDeleteContext", "return: context.WithTimeout(ctx, 10*time.Second)")
 	return context.WithTimeout(ctx, 10*time.Second)
 }
 
@@ -119,7 +130,7 @@ func (cm *cacheManager) getOrCreateCache(
 		_, delErr := cm.client.Caches.Delete(deleteCtx, cm.current.name, nil)
 		cancel()
 		if delErr != nil {
-			// Non-fatal: cache may have expired or been cleaned up server-side.
+
 			observe.TraceCtx(ctx, "google", "cacheManager.getOrCreateCache", fmt.Sprintf("delete old cache (non-fatal): %v", delErr))
 		}
 		cm.current = nil

@@ -188,6 +188,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
 		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
 	}
+	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.invoke(ctx, in, state, excludeTool(nil, \"Agent\"))")
 	return t.invoke(ctx, in, state, excludeTool(nil, "Agent"))
 }
 
@@ -195,6 +196,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 func (t *Tool) RunForked(ctx context.Context, prompt, description, modelOverride string, scopedToolNames []string, state tool.StateSnapshot) (tool.InvokeResult, error) {
 	observe.TraceCtx(ctx, "agent", "Tool.RunForked", "enter")
 	defer observe.TraceCtx(ctx, "agent", "Tool.RunForked", "exit")
+	observe.TraceCtx(ctx, "agent", "Tool.RunForked", "return: t.invoke(ctx, AgentInput{\n\tPrompt:\t\tprompt,\n\tDescription:\tdescription,\n\tModel...")
 	return t.invoke(ctx, AgentInput{
 		Prompt:      prompt,
 		Description: description,
@@ -303,8 +305,11 @@ func (t *Tool) invoke(ctx context.Context, in AgentInput, state tool.StateSnapsh
 			})
 			observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"compile structure: %w\", err)")
 			if wtPath != "" {
+				observe.TraceCtx(ctx, "agent", "Tool.invoke", "if: wtPath != \"\"")
+				observe.TraceCtx(ctx, "agent", "Tool.invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"compile structure: %w%s\", err, retainedWorkt...")
 				return tool.InvokeResult{}, fmt.Errorf("compile structure: %w%s", err, retainedWorktreeNote(wtPath, wtHeadCommit))
 			}
+			observe.TraceCtx(ctx, "agent", "Tool.invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"compile structure: %w\", err)")
 			return tool.InvokeResult{}, fmt.Errorf("compile structure: %w", err)
 		}
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runGraphSync(ctx, tk.ID, engine, graph, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)")
@@ -327,6 +332,7 @@ func (t *Tool) invoke(ctx context.Context, in AgentInput, state tool.StateSnapsh
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "if: in.RunInBackground")
 		emitAgentProgress(progressCh, tk.ID, subject, "initializing", 0, 0, "", true)
 		observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runBackground(tk.ID, engine, subStore, in, wtPath, wtBranch, wtHeadCommit)")
+		observe.TraceCtx(ctx, "agent", "Tool.invoke", "return: t.runBackground(tk.ID, engine, subStore, in, subject, wtPath, wtBranch, wtHea...")
 		return t.runBackground(tk.ID, engine, subStore, in, subject, wtPath, wtBranch, wtHeadCommit)
 	}
 	observe.TraceCtx(ctx, "agent", "Tool.Invoke", "return: t.runSync(ctx, tk.ID, engine, in, progressCh, subject, wtPath, wtBranch, wtHeadCommit)")
@@ -353,7 +359,9 @@ func (t *Tool) runSync(
 
 	drain := t.drainAgentRunEvents(ctx, events, taskID, subject, progressCh, false)
 	if drain.Err != nil {
+		observe.TraceCtx(ctx, "agent", "Tool.runSync", "if: drain.Err != nil")
 		t.failAgentTask(taskID, "agent_error", drain.Err)
+		observe.TraceCtx(ctx, "agent", "Tool.runSync", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent failed: %v%s\", drain.Err, retai...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent failed: %v%s", drain.Err, retainedWorktreeNote(wtPath, wtHeadCommit))}, nil
 	}
 	emitAgentProgress(progressCh, taskID, subject, "completed", drain.ToolCount,
@@ -392,10 +400,16 @@ type agentRunDrain struct {
 }
 
 func (r agentRunDrain) TokensUsed() int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: r.Usage.InputTokens + r.Usage.OutputTokens")
 	return r.Usage.InputTokens + r.Usage.OutputTokens
 }
 
 func (r agentRunDrain) ProgressTokens() int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: r.LatestInputTokens + r.CumulativeOutputTokens")
 	return r.LatestInputTokens + r.CumulativeOutputTokens
 }
 
@@ -446,10 +460,13 @@ func (t *Tool) drainAgentRunEvents(
 		}
 	}
 	out.Result = result.String()
+	observe.TraceCtx(ctx, "agent", "Tool.drainAgentRunEvents", "return: out")
 	return out
 }
 
 func (t *Tool) failAgentTask(taskID, errorType string, err error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	t.updateTask(taskID, func(tt *task.Task) {
 		tt.Status = task.TaskFailed
 		tt.Error = err.Error()
@@ -463,6 +480,8 @@ func (t *Tool) failAgentTask(taskID, errorType string, err error) {
 }
 
 func (t *Tool) completeAgentTask(taskID, result string, tokensUsed int, duration time.Duration, turnCount int, usage model.TokenUsage) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	t.updateTask(taskID, func(tt *task.Task) {
 		tt.Status = task.TaskCompleted
 		tt.Result = result
@@ -502,8 +521,10 @@ func (t *Tool) runBackground(
 		events := engine.Run(childCtx, in.Prompt)
 		drain := t.drainAgentRunEvents(childCtx, events, taskID, subject, nil, true)
 		if drain.Err != nil {
+			observe.GlobalTrace("if: drain.Err != nil")
 			t.failAgentTask(taskID, "agent_error", drain.Err)
 		} else {
+			observe.GlobalTrace("else: drain.Err != nil")
 			t.completeAgentTask(taskID, drain.Result, drain.TokensUsed(), time.Since(startTime), drain.TurnCount, drain.Usage)
 		}
 		t.writeBackgroundTaskResult(taskID, time.Since(startTime), drain.TurnCount)
@@ -624,23 +645,34 @@ func (t *Tool) runTeammate(
 }
 
 func (t *Tool) runtimeTaskContext() context.Context {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.TaskContext != nil {
+		observe.GlobalTrace("if: t.TaskContext != nil")
+		observe.GlobalTrace("return: t.TaskContext")
 		return t.TaskContext
 	}
+	observe.GlobalTrace("return: context.Background()")
 	return context.Background()
 }
 
 func (t *Tool) writeBackgroundTaskResult(taskID string, duration time.Duration, turnCount int) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.TaskResultWriter == nil || t.Tasks == nil {
+		observe.GlobalTrace("if: t.TaskResultWriter == nil || t.Tasks == nil")
 		return
 	}
 	tk, ok := t.Tasks.Get(taskID)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
 		return
 	}
 	switch tk.Status {
 	case task.TaskCompleted, task.TaskFailed, task.TaskCancelled:
+		observe.GlobalTrace("case: task.TaskCompleted, task.TaskFailed, task.TaskCancelled")
 	default:
+		observe.GlobalTrace("default")
 		return
 	}
 	if err := t.TaskResultWriter(session.TaskResultData{
@@ -656,6 +688,7 @@ func (t *Tool) writeBackgroundTaskResult(taskID string, duration time.Duration, 
 		CreatedAt:  tk.CreatedAt,
 		UpdatedAt:  tk.UpdatedAt,
 	}); err != nil {
+		observe.GlobalTrace("if: err != nil")
 		t.Bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 			Severity:     "warn",
@@ -684,6 +717,7 @@ func (t *Tool) drainTeammateEvents(
 	usage.CacheReadInputTokens += drain.Usage.CacheReadInputTokens
 	*toolCount += drain.ToolCount
 	if drain.Err != nil {
+		observe.TraceCtx(ctx, "agent", "Tool.drainTeammateEvents", "if: drain.Err != nil")
 		t.Bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 			Severity:     "error",
@@ -754,12 +788,15 @@ func retainedWorktreeNote(wtPath, headCommit string) string {
 	defer observe.GlobalTrace("exit")
 	if wtPath == "" {
 		observe.GlobalTrace("if: wtPath == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	if headCommit == "" {
 		observe.GlobalTrace("if: headCommit == \"\"")
+		observe.GlobalTrace("return: fmt.Sprintf(\" (worktree retained at %s)\", wtPath)")
 		return fmt.Sprintf(" (worktree retained at %s)", wtPath)
 	}
+	observe.GlobalTrace("return: fmt.Sprintf(\" (worktree retained at %s, head %s)\", wtPath, headCommit)")
 	return fmt.Sprintf(" (worktree retained at %s, head %s)", wtPath, headCommit)
 }
 
@@ -784,6 +821,7 @@ func (t *Tool) compileStructure(ctx context.Context, structure string, engine *q
 		FileState:    engine.FileStateCache(),
 	}
 	observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, structure, infra)")
+	observe.TraceCtx(ctx, "agent", "Tool.compileStructure", "return: bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, structure, in...")
 	return bridge.GenerateAndResolveGraph(ctx, t.Provider, t.Bus, modelID, structure, infra)
 }
 
@@ -808,7 +846,9 @@ func (t *Tool) runGraphSync(
 
 	drain := t.drainAgentRunEvents(ctx, events, taskID, subject, progressCh, false)
 	if drain.Err != nil {
+		observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "if: drain.Err != nil")
 		t.failAgentTask(taskID, "graph_error", drain.Err)
+		observe.TraceCtx(ctx, "agent", "Tool.runGraphSync", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Agent graph failed: %v%s\", drain.Err,...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Agent graph failed: %v%s", drain.Err, retainedWorktreeNote(wtPath, wtHeadCommit))}, nil
 	}
 	emitAgentProgress(progressCh, taskID, subject, "completed", drain.ToolCount,

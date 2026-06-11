@@ -76,6 +76,7 @@ func Validate(req Request) error {
 		observe.GlobalTrace("case: ActionGet")
 		if req.TriggerID == "" {
 			observe.GlobalTrace("if: req.TriggerID == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"trigger_id required for get\")")
 			return fmt.Errorf("trigger_id required for get")
 		}
 		return nil
@@ -83,6 +84,7 @@ func Validate(req Request) error {
 		observe.GlobalTrace("case: ActionCreate")
 		if len(req.Body) == 0 {
 			observe.GlobalTrace("if: len(req.Body) == 0")
+			observe.GlobalTrace("return: fmt.Errorf(\"body required for create\")")
 			return fmt.Errorf("body required for create")
 		}
 		return validateBodyObject(req.Action, req.Body)
@@ -90,10 +92,12 @@ func Validate(req Request) error {
 		observe.GlobalTrace("case: ActionUpdate")
 		if req.TriggerID == "" {
 			observe.GlobalTrace("if: req.TriggerID == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"trigger_id required for update\")")
 			return fmt.Errorf("trigger_id required for update")
 		}
 		if len(req.Body) == 0 {
 			observe.GlobalTrace("if: len(req.Body) == 0")
+			observe.GlobalTrace("return: fmt.Errorf(\"body required for update\")")
 			return fmt.Errorf("body required for update")
 		}
 		return validateBodyObject(req.Action, req.Body)
@@ -101,6 +105,7 @@ func Validate(req Request) error {
 		observe.GlobalTrace("case: ActionRun")
 		if req.TriggerID == "" {
 			observe.GlobalTrace("if: req.TriggerID == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"trigger_id required for run\")")
 			return fmt.Errorf("trigger_id required for run")
 		}
 		return nil
@@ -111,12 +116,19 @@ func Validate(req Request) error {
 }
 
 func validateBodyObject(action Action, body json.RawMessage) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var obj map[string]any
 	if err := json.Unmarshal(body, &obj); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"body for %s must be a JSON object: %w\", action, err)")
 		return fmt.Errorf("body for %s must be a JSON object: %w", action, err)
 	}
 	if obj == nil {
+		observe.GlobalTrace("if: obj == nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"body for %s must be a JSON object\", action)")
 		return fmt.Errorf("body for %s must be a JSON object", action)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }

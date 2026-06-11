@@ -170,11 +170,17 @@ func (e *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 }
 
 func firstNonEmpty(values ...string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, value := range values {
+		observe.GlobalTrace("range values")
 		if strings.TrimSpace(value) != "" {
+			observe.GlobalTrace("if: strings.TrimSpace(value) != \"\"")
+			observe.GlobalTrace("return: value")
 			return value
 		}
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }
 
@@ -204,7 +210,9 @@ func (e *Engine) RebindProvider(prov provider.Provider, modelID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if e.provider != nil && e.provider != prov {
+		observe.GlobalTrace("if: e.provider != nil && e.provider != prov")
 		if err := provider.Close(context.Background(), e.provider); err != nil && e.bus != nil {
+			observe.GlobalTrace("if: err != nil && e.bus != nil")
 			e.bus.Emit(observe.ErrorOccurred{
 				EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
 				Severity:     "warn",
@@ -224,6 +232,7 @@ func (e *Engine) SetModel(modelID string) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if modelID != "" {
+		observe.GlobalTrace("if: modelID != \"\"")
 		e.config.Model = modelID
 	}
 }
@@ -264,6 +273,7 @@ func (e *Engine) resetFileState(records []tool.FileStateRecord) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if e.fileState == nil {
+		observe.GlobalTrace("if: e.fileState == nil")
 		e.fileState = tool.NewFileStateCache()
 	}
 	e.fileState.Restore(records)
@@ -273,14 +283,18 @@ func (e *Engine) FileStateRecords() []tool.FileStateRecord {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if e.fileState == nil {
+		observe.GlobalTrace("if: e.fileState == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: e.fileState.Snapshot()")
 	return e.fileState.Snapshot()
 }
 
 func (e *Engine) FileStateCache() *tool.FileStateCache {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: e.fileState")
 	return e.fileState
 }
 
@@ -288,6 +302,7 @@ func (e *Engine) SetFileStateCache(cache *tool.FileStateCache) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if cache != nil {
+		observe.GlobalTrace("if: cache != nil")
 		e.fileState = cache
 	}
 }
@@ -327,13 +342,19 @@ func (e *Engine) appendConversationMessage(msg model.Message, mutate func(*app.A
 		}
 	})
 	e.emitMessageAppended(msg)
+	observe.GlobalTrace("return: e.checkpointSession()")
 	return e.checkpointSession()
 }
 
 func (e *Engine) checkpointSession() error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if e.config.SessionCheckpoint == nil {
+		observe.GlobalTrace("if: e.config.SessionCheckpoint == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: e.config.SessionCheckpoint()")
 	return e.config.SessionCheckpoint()
 }
 
@@ -345,8 +366,10 @@ func (e *Engine) AppendHookContext(source string, contexts []string) error {
 	text := formatHookContext(source, contexts)
 	if text == "" {
 		observe.GlobalTrace("if: text == \"\"")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: e.appendConversationMessage(model.Message{\n\tID:\t\tmodel.NewUUID(),\n\tRole:\t\tmod...")
 	return e.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
@@ -369,6 +392,7 @@ func formatHookContext(source string, contexts []string) string {
 	}
 	if len(cleaned) == 0 {
 		observe.GlobalTrace("if: len(cleaned) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	if source == "" {
@@ -457,6 +481,7 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 	}
 
 	if err := e.appendLifecycleMessages(result.State); err != nil {
+		observe.TraceCtx(ctx, "query", "Engine.runGraph", "if: err != nil")
 		ch <- ErrorEvent{Err: err}
 		return
 	}
@@ -475,6 +500,9 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 }
 
 func lifecycleProgressEvent(progress bridge.ProgressEvent) LifecycleProgressEvent {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: LifecycleProgressEvent{\n\tStep:\t\tprogress.Step,\n\tNode:\t\tprogress.Node,\n\tNodes:...")
 	return LifecycleProgressEvent{
 		Step:     progress.Step,
 		Node:     progress.Node,
@@ -494,8 +522,11 @@ func (e *Engine) appendLifecycleMessages(state lifecycle.State) error {
 	for _, msg := range bridge.Messages(state) {
 		observe.GlobalTrace("range bridge.Messages(state)")
 		if err := e.appendConversationMessage(msg, nil); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: err")
 			return err
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }

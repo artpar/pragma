@@ -140,6 +140,7 @@ func (p *Provider) nextResponse() (model.Response, bool, error) {
 		return model.Response{}, true, nil
 	}
 	observe.GlobalTrace("return: model.Response{}, false, fmt.Errorf(\"no recorded API response for turn %d\")")
+	observe.GlobalTrace("return: model.Response{}, false, fmt.Errorf(\"no recorded API response for turn %d\", p...")
 	return model.Response{}, false, fmt.Errorf("no recorded API response for turn %d", p.turn)
 }
 

@@ -37,6 +37,7 @@ func NewService(prov provider.Provider, bus *observe.EventBus, ct *model.CostTra
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: &Service{\n\tprovider:\tprov,\n\tbus:\t\tbus,\n\tcostTracker:\tct,\n\tmodel:\t\tmodelName,\n}")
+	observe.GlobalTrace("return: &Service{\n\tprovider:\tprovider.WithAccounting(prov, ct, bus),\n\tbus:\t\tbus,\n\tcos...")
 	return &Service{
 		provider:    provider.WithAccounting(prov, ct, bus),
 		bus:         bus,

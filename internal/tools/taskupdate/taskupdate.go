@@ -112,16 +112,21 @@ func (t *Tool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnap
 
 	var fields task.UpdateFields
 	if in.Status != "" {
+		observe.GlobalTrace("if: in.Status != \"\"")
 		status, parseErr := task.ParseStatus(in.Status)
 		if parseErr != nil {
+			observe.GlobalTrace("if: parseErr != nil")
+			observe.GlobalTrace("return: tool.InvokeResult{Content: parseErr.Error()}, nil")
 			return tool.InvokeResult{Content: parseErr.Error()}, nil
 		}
 		fields.Status = &status
 	}
 	if in.Description != "" {
+		observe.GlobalTrace("if: in.Description != \"\"")
 		fields.Description = &in.Description
 	}
 	if in.Result != "" {
+		observe.GlobalTrace("if: in.Result != \"\"")
 		fields.Result = &in.Result
 	}
 	err := t.Tasks.UpdateFields(in.ID, fields)

@@ -38,11 +38,17 @@ type InvocationContext struct {
 type invocationContextKey struct{}
 
 func WithInvocationContext(ctx context.Context, meta InvocationContext) context.Context {
+	observe.TraceCtx(ctx, "tool", "WithInvocationContext", "enter")
+	defer observe.TraceCtx(ctx, "tool", "WithInvocationContext", "exit")
+	observe.TraceCtx(ctx, "tool", "WithInvocationContext", "return: context.WithValue(ctx, invocationContextKey{}, meta)")
 	return context.WithValue(ctx, invocationContextKey{}, meta)
 }
 
 func InvocationContextFrom(ctx context.Context) (InvocationContext, bool) {
+	observe.TraceCtx(ctx, "tool", "InvocationContextFrom", "enter")
+	defer observe.TraceCtx(ctx, "tool", "InvocationContextFrom", "exit")
 	meta, ok := ctx.Value(invocationContextKey{}).(InvocationContext)
+	observe.TraceCtx(ctx, "tool", "InvocationContextFrom", "return: meta, ok")
 	return meta, ok
 }
 

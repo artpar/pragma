@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"errors"
+	"github.com/artpar/pragma/internal/observe"
 )
 
 // AskOption is a selectable choice for a question.
@@ -46,5 +47,8 @@ type NonInteractiveAsker struct{}
 
 // Ask always returns an error because there is no interactive UI to answer it.
 func (a *NonInteractiveAsker) Ask(_ context.Context, _ AskRequest) (AskResponse, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: AskResponse{}, errors.New(\"AskUserQuestion requires interactive mode\")")
 	return AskResponse{}, errors.New("AskUserQuestion requires interactive mode")
 }

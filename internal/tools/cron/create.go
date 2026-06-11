@@ -134,6 +134,8 @@ func (t *CreateTool) Invoke(_ context.Context, input json.RawMessage, _ tool.Sta
 		durable = *in.Durable
 	}
 	if !durable {
+		observe.GlobalTrace("if: !durable")
+		observe.GlobalTrace("return: tool.InvokeResult{}, fmt.Errorf(\"non-durable cron jobs require a live in-proc...")
 		return tool.InvokeResult{}, fmt.Errorf("non-durable cron jobs require a live in-process scheduler and are not supported by CronCreate; run the cron daemon and create a durable job")
 	}
 

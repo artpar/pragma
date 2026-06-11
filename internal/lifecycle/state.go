@@ -31,23 +31,36 @@ func (s State) Snapshot() State {
 }
 
 func cloneStateValue(value any) any {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if value == nil {
+		observe.GlobalTrace("if: value == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	cloned := cloneReflectValue(reflect.ValueOf(value))
 	if !cloned.IsValid() {
+		observe.GlobalTrace("if: !cloned.IsValid()")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: cloned.Interface()")
 	return cloned.Interface()
 }
 
 func cloneReflectValue(value reflect.Value) reflect.Value {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !value.IsValid() {
+		observe.GlobalTrace("if: !value.IsValid()")
+		observe.GlobalTrace("return: value")
 		return value
 	}
 	switch value.Kind() {
 	case reflect.Interface:
+		observe.GlobalTrace("case: reflect.Interface")
 		if value.IsNil() {
+			observe.GlobalTrace("return: value")
 			return value
 		}
 		cloned := cloneReflectValue(value.Elem())
@@ -55,7 +68,9 @@ func cloneReflectValue(value reflect.Value) reflect.Value {
 		out.Set(cloned)
 		return out
 	case reflect.Slice:
+		observe.GlobalTrace("case: reflect.Slice")
 		if value.IsNil() {
+			observe.GlobalTrace("return: value")
 			return value
 		}
 		out := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
@@ -64,7 +79,9 @@ func cloneReflectValue(value reflect.Value) reflect.Value {
 		}
 		return out
 	case reflect.Map:
+		observe.GlobalTrace("case: reflect.Map")
 		if value.IsNil() {
+			observe.GlobalTrace("return: value")
 			return value
 		}
 		out := reflect.MakeMapWithSize(value.Type(), value.Len())
@@ -74,6 +91,7 @@ func cloneReflectValue(value reflect.Value) reflect.Value {
 		}
 		return out
 	default:
+		observe.GlobalTrace("default")
 		return value
 	}
 }

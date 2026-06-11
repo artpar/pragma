@@ -627,6 +627,7 @@ func renderResult(changes []verifiedChange) tool.InvokeResult {
 		paths = append(paths, change.op.Path)
 	}
 	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"Applied patch successfully. Changed...")
+	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Applied patch successfully. Changed...")
 	return tool.InvokeResult{
 		Content: fmt.Sprintf("Applied patch successfully. Changed files: %s", strings.Join(paths, ", ")),
 	}

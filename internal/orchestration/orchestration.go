@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/artpar/pragma/internal/observe"
 	"github.com/looplab/fsm"
 	"gopkg.in/yaml.v3"
 )
@@ -34,6 +35,9 @@ type Artifacts struct {
 }
 
 func (a Artifacts) IsZero() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: len(a.Inputs) == 0 && len(a.Outputs) == 0")
 	return len(a.Inputs) == 0 && len(a.Outputs) == 0
 }
 
@@ -54,6 +58,9 @@ type Control struct {
 }
 
 func (c Control) IsZero() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: c.ForEachNext == nil && c.MarkCurrentItem == nil && c.ArtifactVerdict == nil ...")
 	return c.ForEachNext == nil && c.MarkCurrentItem == nil && c.ArtifactVerdict == nil && c.ArtifactDecision == nil
 }
 
@@ -201,19 +208,25 @@ func (i ChecklistItem) MarshalJSON() ([]byte, error) {
 }
 
 func NewRuntime(def Definition) (*Runtime, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	states, transitions, err := validate(def)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 
 	events := make([]fsm.EventDesc, 0, len(def.Transitions))
 	for _, tr := range def.Transitions {
+		observe.GlobalTrace("range def.Transitions")
 		events = append(events, fsm.EventDesc{
 			Name: tr.Event,
 			Src:  append([]string(nil), tr.From...),
 			Dst:  tr.To,
 		})
 	}
+	observe.GlobalTrace("return: &Runtime{\n\tDefinition:\tdef,\n\tStates:\t\tstates,\n\tTransitions:\ttransitions,\n\tFSM...")
 
 	return &Runtime{
 		Definition:  def,
@@ -224,75 +237,118 @@ func NewRuntime(def Definition) (*Runtime, error) {
 }
 
 func (r *Runtime) TransitionFor(from string, event string) (Transition, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if r == nil {
+		observe.GlobalTrace("if: r == nil")
+		observe.GlobalTrace("return: Transition{}, false")
 		return Transition{}, false
 	}
 	tr, ok := r.Transitions[TransitionKey{From: from, Event: event}]
+	observe.GlobalTrace("return: tr, ok")
 	return tr, ok
 }
 
 func LoadDefinitionFile(path string) (Definition, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: Definition{}, err")
 		return Definition{}, err
 	}
 	var def Definition
 	if err := yaml.Unmarshal(raw, &def); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: Definition{}, fmt.Errorf(\"parse orchestration definition %q: %w\", path, err)")
 		return Definition{}, fmt.Errorf("parse orchestration definition %q: %w", path, err)
 	}
 	if _, _, err := validate(def); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: Definition{}, err")
 		return Definition{}, err
 	}
+	observe.GlobalTrace("return: def, nil")
 	return def, nil
 }
 
 func validate(def Definition) (map[string]State, map[TransitionKey]Transition, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if def.Name == "" {
+		observe.GlobalTrace("if: def.Name == \"\"")
+		observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration definition requires a name\")")
 		return nil, nil, fmt.Errorf("orchestration definition requires a name")
 	}
 	if def.Initial == "" {
+		observe.GlobalTrace("if: def.Initial == \"\"")
+		observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q requires an initial state\", def.Name)")
 		return nil, nil, fmt.Errorf("orchestration %q requires an initial state", def.Name)
 	}
 
 	states := make(map[string]State, len(def.States))
 	for _, state := range def.States {
+		observe.GlobalTrace("range def.States")
 		if state.ID == "" {
+			observe.GlobalTrace("if: state.ID == \"\"")
+			observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q has a state with empty id\", def.Name)")
 			return nil, nil, fmt.Errorf("orchestration %q has a state with empty id", def.Name)
 		}
 		if _, exists := states[state.ID]; exists {
+			observe.GlobalTrace("if: exists")
+			observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q has duplicate state %q\", def.Name, sta...")
 			return nil, nil, fmt.Errorf("orchestration %q has duplicate state %q", def.Name, state.ID)
 		}
 		states[state.ID] = state
 	}
 
 	if _, ok := states[def.Initial]; !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q initial state %q is not defined\", def....")
 		return nil, nil, fmt.Errorf("orchestration %q initial state %q is not defined", def.Name, def.Initial)
 	}
 
 	transitions := make(map[TransitionKey]Transition)
 	for _, tr := range def.Transitions {
+		observe.GlobalTrace("range def.Transitions")
 		if tr.Event == "" {
+			observe.GlobalTrace("if: tr.Event == \"\"")
+			observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q has a transition with empty event\", de...")
 			return nil, nil, fmt.Errorf("orchestration %q has a transition with empty event", def.Name)
 		}
 		if len(tr.From) == 0 {
+			observe.GlobalTrace("if: len(tr.From) == 0")
+			observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q transition %q has no source states\", d...")
 			return nil, nil, fmt.Errorf("orchestration %q transition %q has no source states", def.Name, tr.Event)
 		}
 		if _, ok := states[tr.To]; !ok {
+			observe.GlobalTrace("if: !ok")
+			observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q transition %q targets unknown state %q...")
 			return nil, nil, fmt.Errorf("orchestration %q transition %q targets unknown state %q", def.Name, tr.Event, tr.To)
 		}
 		if err := validateArtifactList(def.Name, fmt.Sprintf("transition %s to %s", tr.Event, tr.To), tr.Handoff); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, nil, err")
 			return nil, nil, err
 		}
 		for _, from := range tr.From {
+			observe.GlobalTrace("range tr.From")
 			state, ok := states[from]
 			if !ok {
+				observe.GlobalTrace("if: !ok")
+				observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q transition %q references unknown sourc...")
 				return nil, nil, fmt.Errorf("orchestration %q transition %q references unknown source state %q", def.Name, tr.Event, from)
 			}
 			if state.Terminal {
+				observe.GlobalTrace("if: state.Terminal")
+				observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q terminal state %q cannot be a transiti...")
 				return nil, nil, fmt.Errorf("orchestration %q terminal state %q cannot be a transition source", def.Name, from)
 			}
 			key := TransitionKey{From: from, Event: tr.Event}
 			if _, exists := transitions[key]; exists {
+				observe.GlobalTrace("if: exists")
+				observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q has duplicate transition for state %q ...")
 				return nil, nil, fmt.Errorf("orchestration %q has duplicate transition for state %q event %q", def.Name, from, tr.Event)
 			}
 			transitions[key] = tr
@@ -300,237 +356,377 @@ func validate(def Definition) (map[string]State, map[TransitionKey]Transition, e
 	}
 
 	for _, state := range states {
+		observe.GlobalTrace("range states")
 		if state.Terminal {
+			observe.GlobalTrace("if: state.Terminal")
 			if !state.Control.IsZero() {
+				observe.GlobalTrace("if: !state.Control.IsZero()")
+				observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q terminal state %q cannot have control\"...")
 				return nil, nil, fmt.Errorf("orchestration %q terminal state %q cannot have control", def.Name, state.ID)
 			}
 			continue
 		}
 		if err := validateStateExecution(def.Name, state); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, nil, err")
 			return nil, nil, err
 		}
 		if err := validateArtifacts(def.Name, state.ID, state.Artifacts); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, nil, err")
 			return nil, nil, err
 		}
 		for _, event := range emittedEvents(state) {
+			observe.GlobalTrace("range emittedEvents(state)")
 			if _, ok := transitions[TransitionKey{From: state.ID, Event: event}]; !ok {
+				observe.GlobalTrace("if: !ok")
+				observe.GlobalTrace("return: nil, nil, fmt.Errorf(\"orchestration %q state %q can emit event %q but has no ...")
 				return nil, nil, fmt.Errorf("orchestration %q state %q can emit event %q but has no matching transition", def.Name, state.ID, event)
 			}
 		}
 	}
+	observe.GlobalTrace("return: states, transitions, nil")
 
 	return states, transitions, nil
 }
 
 func validateStateExecution(defName string, state State) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if state.TaskPrompt != "" && state.TaskPrompt != TaskPromptFull && state.TaskPrompt != TaskPromptNone {
+		observe.GlobalTrace("if: state.TaskPrompt != \"\" && state.TaskPrompt != TaskPromptFull && state.TaskPro...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q has invalid task_prompt %q\", defName, s...")
 		return fmt.Errorf("orchestration %q state %q has invalid task_prompt %q", defName, state.ID, state.TaskPrompt)
 	}
 	if !state.Control.IsZero() {
+		observe.GlobalTrace("if: !state.Control.IsZero()")
 		if state.Persona != "" {
+			observe.GlobalTrace("if: state.Persona != \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q cannot have both persona and control\", ...")
 			return fmt.Errorf("orchestration %q state %q cannot have both persona and control", defName, state.ID)
 		}
 		if state.TaskPrompt != "" {
+			observe.GlobalTrace("if: state.TaskPrompt != \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q cannot define task_prompt\", def...")
 			return fmt.Errorf("orchestration %q control state %q cannot define task_prompt", defName, state.ID)
 		}
 		if state.Event.Default != "" {
+			observe.GlobalTrace("if: state.Event.Default != \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q cannot also define event\", defN...")
 			return fmt.Errorf("orchestration %q control state %q cannot also define event", defName, state.ID)
 		}
 		controls := 0
 		if state.Control.ForEachNext != nil {
+			observe.GlobalTrace("if: state.Control.ForEachNext != nil")
 			controls++
 			if err := validateForEachNextControl(defName, state.ID, state.Control.ForEachNext); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: err")
 				return err
 			}
 		}
 		if state.Control.MarkCurrentItem != nil {
+			observe.GlobalTrace("if: state.Control.MarkCurrentItem != nil")
 			controls++
 			if err := validateMarkCurrentItemControl(defName, state.ID, state.Control.MarkCurrentItem); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: err")
 				return err
 			}
 		}
 		if state.Control.ArtifactVerdict != nil {
+			observe.GlobalTrace("if: state.Control.ArtifactVerdict != nil")
 			controls++
 			if err := validateArtifactVerdictControl(defName, state.ID, state.Control.ArtifactVerdict); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: err")
 				return err
 			}
 		}
 		if state.Control.ArtifactDecision != nil {
+			observe.GlobalTrace("if: state.Control.ArtifactDecision != nil")
 			controls++
 			if err := validateArtifactDecisionControl(defName, state.ID, state.Control.ArtifactDecision); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: err")
 				return err
 			}
 		}
 		if controls != 1 {
+			observe.GlobalTrace("if: controls != 1")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q must define exactly one control...")
 			return fmt.Errorf("orchestration %q control state %q must define exactly one control", defName, state.ID)
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func validateArtifacts(defName, stateID string, artifacts Artifacts) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: validateArtifactList(defName, \"state \"+stateID, append(append([]Artifact(nil)...")
 	return validateArtifactList(defName, "state "+stateID, append(append([]Artifact(nil), artifacts.Inputs...), artifacts.Outputs...))
 }
 
 func validateArtifactList(defName, owner string, artifacts []Artifact) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, artifact := range artifacts {
+		observe.GlobalTrace("range artifacts")
 		if artifact.ID == "" {
+			observe.GlobalTrace("if: artifact.ID == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact requires id\", defName, owner)")
 			return fmt.Errorf("orchestration %q %s artifact requires id", defName, owner)
 		}
 		if artifact.Path == "" {
+			observe.GlobalTrace("if: artifact.Path == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q requires path\", defName, owner, a...")
 			return fmt.Errorf("orchestration %q %s artifact %q requires path", defName, owner, artifact.ID)
 		}
 		for _, value := range artifact.AllowedValues {
+			observe.GlobalTrace("range artifact.AllowedValues")
 			if strings.TrimSpace(value) == "" {
+				observe.GlobalTrace("if: strings.TrimSpace(value) == \"\"")
+				observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q has empty allowed value\", defName...")
 				return fmt.Errorf("orchestration %q %s artifact %q has empty allowed value", defName, owner, artifact.ID)
 			}
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func validateForEachNextControl(defName, stateID string, control *ForEachNextControl) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if control.ListPath == "" {
+		observe.GlobalTrace("if: control.ListPath == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next requires list_path\", defNa...")
 		return fmt.Errorf("orchestration %q state %q foreach_next requires list_path", defName, stateID)
 	}
 	if control.CursorPath == "" {
+		observe.GlobalTrace("if: control.CursorPath == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next requires cursor_path\", def...")
 		return fmt.Errorf("orchestration %q state %q foreach_next requires cursor_path", defName, stateID)
 	}
 	if control.ItemEvent == "" {
+		observe.GlobalTrace("if: control.ItemEvent == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next requires item_event\", defN...")
 		return fmt.Errorf("orchestration %q state %q foreach_next requires item_event", defName, stateID)
 	}
 	if control.DoneEvent == "" {
+		observe.GlobalTrace("if: control.DoneEvent == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next requires done_event\", defN...")
 		return fmt.Errorf("orchestration %q state %q foreach_next requires done_event", defName, stateID)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func validateMarkCurrentItemControl(defName, stateID string, control *MarkCurrentItemControl) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if control.ListPath == "" {
+		observe.GlobalTrace("if: control.ListPath == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q mark_current_item requires list_path\", ...")
 		return fmt.Errorf("orchestration %q state %q mark_current_item requires list_path", defName, stateID)
 	}
 	if control.CursorPath == "" {
+		observe.GlobalTrace("if: control.CursorPath == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q mark_current_item requires cursor_path\"...")
 		return fmt.Errorf("orchestration %q state %q mark_current_item requires cursor_path", defName, stateID)
 	}
 	if control.Status == "" {
+		observe.GlobalTrace("if: control.Status == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q mark_current_item requires status\", def...")
 		return fmt.Errorf("orchestration %q state %q mark_current_item requires status", defName, stateID)
 	}
 	if control.Event == "" {
+		observe.GlobalTrace("if: control.Event == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q mark_current_item requires event\", defN...")
 		return fmt.Errorf("orchestration %q state %q mark_current_item requires event", defName, stateID)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func validateArtifactVerdictControl(defName, stateID string, control *ArtifactVerdictControl) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if control.Path == "" {
+		observe.GlobalTrace("if: control.Path == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_verdict requires path\", defNam...")
 		return fmt.Errorf("orchestration %q state %q artifact_verdict requires path", defName, stateID)
 	}
 	if control.ApproveEvent == "" {
+		observe.GlobalTrace("if: control.ApproveEvent == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_verdict requires approve_event...")
 		return fmt.Errorf("orchestration %q state %q artifact_verdict requires approve_event", defName, stateID)
 	}
 	if control.BlockEvent == "" {
+		observe.GlobalTrace("if: control.BlockEvent == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_verdict requires block_event\",...")
 		return fmt.Errorf("orchestration %q state %q artifact_verdict requires block_event", defName, stateID)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func validateArtifactDecisionControl(defName, stateID string, control *ArtifactDecisionControl) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if control.Path == "" {
+		observe.GlobalTrace("if: control.Path == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_decision requires path\", defNa...")
 		return fmt.Errorf("orchestration %q state %q artifact_decision requires path", defName, stateID)
 	}
 	if len(control.Events) == 0 {
+		observe.GlobalTrace("if: len(control.Events) == 0")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_decision requires events\", def...")
 		return fmt.Errorf("orchestration %q state %q artifact_decision requires events", defName, stateID)
 	}
 	for decision, event := range control.Events {
+		observe.GlobalTrace("range control.Events")
 		if strings.TrimSpace(decision) == "" {
+			observe.GlobalTrace("if: strings.TrimSpace(decision) == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_decision has empty decision\", ...")
 			return fmt.Errorf("orchestration %q state %q artifact_decision has empty decision", defName, stateID)
 		}
 		if strings.TrimSpace(event) == "" {
+			observe.GlobalTrace("if: strings.TrimSpace(event) == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_decision decision %q has empty...")
 			return fmt.Errorf("orchestration %q state %q artifact_decision decision %q has empty event", defName, stateID, decision)
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func emittedEvents(state State) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if state.Control.ForEachNext != nil {
+		observe.GlobalTrace("if: state.Control.ForEachNext != nil")
+		observe.GlobalTrace("return: []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneE...")
 		return []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneEvent}
 	}
 	if state.Control.MarkCurrentItem != nil {
+		observe.GlobalTrace("if: state.Control.MarkCurrentItem != nil")
+		observe.GlobalTrace("return: []string{state.Control.MarkCurrentItem.Event}")
 		return []string{state.Control.MarkCurrentItem.Event}
 	}
 	if state.Control.ArtifactVerdict != nil {
+		observe.GlobalTrace("if: state.Control.ArtifactVerdict != nil")
+		observe.GlobalTrace("return: []string{state.Control.ArtifactVerdict.ApproveEvent, state.Control.ArtifactVe...")
 		return []string{state.Control.ArtifactVerdict.ApproveEvent, state.Control.ArtifactVerdict.BlockEvent}
 	}
 	if state.Control.ArtifactDecision != nil {
+		observe.GlobalTrace("if: state.Control.ArtifactDecision != nil")
 		events := make([]string, 0, len(state.Control.ArtifactDecision.Events))
 		for _, event := range state.Control.ArtifactDecision.Events {
+			observe.GlobalTrace("range state.Control.ArtifactDecision.Events")
 			events = append(events, event)
 		}
+		observe.GlobalTrace("return: events")
 		return events
 	}
 	if state.Event.Default != "" {
+		observe.GlobalTrace("if: state.Event.Default != \"\"")
+		observe.GlobalTrace("return: []string{state.Event.Default}")
 		return []string{state.Event.Default}
 	}
+	observe.GlobalTrace("return: []string{EventComplete}")
 	return []string{EventComplete}
 }
 
 func ExecuteControl(state State) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch {
 	case state.Control.ForEachNext != nil:
+		observe.GlobalTrace("case: state.Control.ForEachNext != nil")
 		return executeForEachNext(*state.Control.ForEachNext)
 	case state.Control.MarkCurrentItem != nil:
+		observe.GlobalTrace("case: state.Control.MarkCurrentItem != nil")
 		return executeMarkCurrentItem(*state.Control.MarkCurrentItem)
 	case state.Control.ArtifactVerdict != nil:
+		observe.GlobalTrace("case: state.Control.ArtifactVerdict != nil")
 		return executeArtifactVerdict(*state.Control.ArtifactVerdict)
 	case state.Control.ArtifactDecision != nil:
+		observe.GlobalTrace("case: state.Control.ArtifactDecision != nil")
 		return executeArtifactDecision(*state.Control.ArtifactDecision)
 	default:
+		observe.GlobalTrace("default")
 		return "", fmt.Errorf("state %q has no control", state.ID)
 	}
 }
 
 func executeForEachNext(control ForEachNextControl) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	checklist, err := readChecklist(control.ListPath)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	pendingStatus := control.PendingStatus
 	if pendingStatus == "" {
+		observe.GlobalTrace("if: pendingStatus == \"\"")
 		pendingStatus = "pending"
 	}
 	doneStatus := control.DoneStatus
 	if doneStatus == "" {
+		observe.GlobalTrace("if: doneStatus == \"\"")
 		doneStatus = "approved"
 	}
 	for _, item := range checklist.Items {
+		observe.GlobalTrace("range checklist.Items")
 		if item.Status != pendingStatus {
+			observe.GlobalTrace("if: item.Status != pendingStatus")
 			continue
 		}
 		if err := writeJSONFile(control.CursorPath, item); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: \"\", err")
 			return "", err
 		}
 		if control.HandoffPath != "" {
+			observe.GlobalTrace("if: control.HandoffPath != \"\"")
 			if err := writeForEachItemHandoff(control.HandoffPath, item); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: \"\", err")
 				return "", err
 			}
 		}
+		observe.GlobalTrace("return: control.ItemEvent, nil")
 		return control.ItemEvent, nil
 	}
 	if err := writeJSONFile(control.CursorPath, ChecklistItem{Status: doneStatus}); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	if control.HandoffPath != "" {
+		observe.GlobalTrace("if: control.HandoffPath != \"\"")
 		if err := writeForEachDoneHandoff(control.HandoffPath, doneStatus); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: \"\", err")
 			return "", err
 		}
 	}
+	observe.GlobalTrace("return: control.DoneEvent, nil")
 	return control.DoneEvent, nil
 }
 
 func writeForEachItemHandoff(path string, item ChecklistItem) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := json.MarshalIndent(item, "", "  ")
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"marshal selected item handoff: %w\", err)")
 		return fmt.Errorf("marshal selected item handoff: %w", err)
 	}
 	var b strings.Builder
@@ -541,215 +737,325 @@ func writeForEachItemHandoff(path string, item ChecklistItem) error {
 	b.WriteString("```json\n")
 	b.Write(raw)
 	b.WriteString("\n```\n")
+	observe.GlobalTrace("return: writeTextFile(path, b.String())")
 	return writeTextFile(path, b.String())
 }
 
 func writeForEachDoneHandoff(path string, doneStatus string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 	b.WriteString("# Checklist Exhausted Handoff\n\n")
 	fmt.Fprintf(&b, "No pending checklist items remain. The cursor status is `%s`.\n", doneStatus)
+	observe.GlobalTrace("return: writeTextFile(path, b.String())")
 	return writeTextFile(path, b.String())
 }
 
 func writeTextFile(path string, content string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		observe.GlobalTrace("if: dir != \".\" && dir != \"\"")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"create directory %q: %w\", dir, err)")
 			return fmt.Errorf("create directory %q: %w", dir, err)
 		}
 	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"write %q: %w\", path, err)")
 		return fmt.Errorf("write %q: %w", path, err)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	checklist, err := readChecklist(control.ListPath)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	current, err := readChecklistItem(control.CursorPath)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	if current.ID == "" {
+		observe.GlobalTrace("if: current.ID == \"\"")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"current item %q has empty id\", control.CursorPath)")
 		return "", fmt.Errorf("current item %q has empty id", control.CursorPath)
 	}
 	found := false
 	for i := range checklist.Items {
+		observe.GlobalTrace("range checklist.Items")
 		if checklist.Items[i].ID == current.ID {
+			observe.GlobalTrace("if: checklist.Items[i].ID == current.ID")
 			checklist.Items[i].Status = control.Status
 			found = true
 			break
 		}
 	}
 	if !found {
+		observe.GlobalTrace("if: !found")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"current item %q not found in checklist %q\", current.ID, contr...")
 		return "", fmt.Errorf("current item %q not found in checklist %q", current.ID, control.ListPath)
 	}
 	if err := writeJSONFile(control.ListPath, checklist); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	current.Status = control.Status
 	if err := writeJSONFile(control.CursorPath, current); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
+	observe.GlobalTrace("return: control.Event, nil")
 	return control.Event, nil
 }
 
 func executeArtifactVerdict(control ArtifactVerdictControl) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := os.ReadFile(control.Path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	decision, err := parseDecision(string(raw))
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"parse verdict %q: %w\", control.Path, err)")
 		return "", fmt.Errorf("parse verdict %q: %w", control.Path, err)
 	}
 	approve := control.Approve
 	if approve == "" {
+		observe.GlobalTrace("if: approve == \"\"")
 		approve = "APPROVE"
 	}
 	block := control.Block
 	if block == "" {
+		observe.GlobalTrace("if: block == \"\"")
 		block = "BLOCK"
 	}
 	switch decision {
 	case approve:
+		observe.GlobalTrace("case: approve")
 		return control.ApproveEvent, nil
 	case block:
+		observe.GlobalTrace("case: block")
 		return control.BlockEvent, nil
 	default:
+		observe.GlobalTrace("default")
 		return "", fmt.Errorf("verdict %q has unsupported decision %q", control.Path, decision)
 	}
 }
 
 func executeArtifactDecision(control ArtifactDecisionControl) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := os.ReadFile(control.Path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	decision, err := parseJSONDecision(raw, control.Field)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"parse decision %q: %w\", control.Path, err)")
 		return "", fmt.Errorf("parse decision %q: %w", control.Path, err)
 	}
 	event, ok := control.Events[decision]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"decision %q has unsupported value %q\", control.Path, decision)")
 		return "", fmt.Errorf("decision %q has unsupported value %q", control.Path, decision)
 	}
+	observe.GlobalTrace("return: event, nil")
 	return event, nil
 }
 
 func parseJSONDecision(raw []byte, field string) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(field) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(field) == \"\"")
 		field = "decision"
 	}
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &doc); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"parse json: %w\", err)")
 		return "", fmt.Errorf("parse json: %w", err)
 	}
 	value, ok := doc[field]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"missing %q field\", field)")
 		return "", fmt.Errorf("missing %q field", field)
 	}
 	var decision string
 	if err := json.Unmarshal(value, &decision); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"%q field must be a string\", field)")
 		return "", fmt.Errorf("%q field must be a string", field)
 	}
 	decision = strings.TrimSpace(decision)
 	if decision == "" {
+		observe.GlobalTrace("if: decision == \"\"")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"%q field is empty\", field)")
 		return "", fmt.Errorf("%q field is empty", field)
 	}
+	observe.GlobalTrace("return: decision, nil")
 	return decision, nil
 }
 
 func parseDecision(text string) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
+		observe.GlobalTrace("range lines")
 		if strings.TrimSpace(line) != "Decision:" {
+			observe.GlobalTrace("if: strings.TrimSpace(line) != \"Decision:\"")
 			continue
 		}
 		for _, candidate := range lines[i+1:] {
+			observe.GlobalTrace("range lines[i+1:]")
 			decision := strings.TrimSpace(candidate)
 			if decision != "" {
+				observe.GlobalTrace("if: decision != \"\"")
+				observe.GlobalTrace("return: decision, nil")
 				return decision, nil
 			}
 		}
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"decision marker has no value\")")
 		return "", fmt.Errorf("decision marker has no value")
 	}
+	observe.GlobalTrace("return: \"\", fmt.Errorf(\"missing Decision: marker\")")
 	return "", fmt.Errorf("missing Decision: marker")
 }
 
 func readChecklist(path string) (Checklist, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: Checklist{}, err")
 		return Checklist{}, err
 	}
 	var envelope struct {
 		Items []json.RawMessage `json:"items"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: Checklist{}, fmt.Errorf(\"parse json %q: %w\", path, err)")
 		return Checklist{}, fmt.Errorf("parse json %q: %w", path, err)
 	}
 	checklist := Checklist{Items: make([]ChecklistItem, 0, len(envelope.Items))}
 	for idx, rawItem := range envelope.Items {
+		observe.GlobalTrace("range envelope.Items")
 		var item ChecklistItem
 		if err := json.Unmarshal(rawItem, &item); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: Checklist{}, fmt.Errorf(\"parse json %q: items[%d]: %w\", path, idx, err)")
 			return Checklist{}, fmt.Errorf("parse json %q: items[%d]: %w", path, idx, err)
 		}
 		if strings.TrimSpace(item.ID) == "" {
+			observe.GlobalTrace("if: strings.TrimSpace(item.ID) == \"\"")
+			observe.GlobalTrace("return: Checklist{}, fmt.Errorf(\"parse json %q: items[%d].id must be a non-empty stri...")
 			return Checklist{}, fmt.Errorf("parse json %q: items[%d].id must be a non-empty string", path, idx)
 		}
 		checklist.Items = append(checklist.Items, item)
 	}
+	observe.GlobalTrace("return: checklist, nil")
 	return checklist, nil
 }
 
 func readChecklistItem(path string) (ChecklistItem, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var item ChecklistItem
 	if err := readJSONFile(path, &item); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: ChecklistItem{}, err")
 		return ChecklistItem{}, err
 	}
+	observe.GlobalTrace("return: item, nil")
 	return item, nil
 }
 
 func readJSONFile(path string, dst any) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	if err := json.Unmarshal(raw, dst); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: fmt.Errorf(\"parse json %q: %w\", path, err)")
 		return fmt.Errorf("parse json %q: %w", path, err)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func jsonValueKind(text string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch {
 	case text == "":
+		observe.GlobalTrace("case: text == \"\"")
 		return "empty"
 	case strings.HasPrefix(text, "\""):
+		observe.GlobalTrace("case: strings.HasPrefix(text, \"\\\"\")")
 		return "string"
 	case strings.HasPrefix(text, "{"):
+		observe.GlobalTrace("case: strings.HasPrefix(text, \"{\")")
 		return "object"
 	case strings.HasPrefix(text, "["):
+		observe.GlobalTrace("case: strings.HasPrefix(text, \"[\")")
 		return "array"
 	case text == "true" || text == "false":
+		observe.GlobalTrace("case: text == \"true\" || text == \"false\"")
 		return "boolean"
 	case text == "null":
+		observe.GlobalTrace("case: text == \"null\"")
 		return "null"
 	default:
+		observe.GlobalTrace("default")
 		return "number or token"
 	}
 }
 
 func writeJSONFile(path string, value any) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	raw = append(raw, '\n')
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }

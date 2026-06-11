@@ -27,6 +27,7 @@ func NewRemoteTriggerClient(httpClient *http.Client, baseURL string, tokenSource
 		httpClient = http.DefaultClient
 	}
 	observe.GlobalTrace("return: &RemoteTriggerClient{...}")
+	observe.GlobalTrace("return: &RemoteTriggerClient{\n\tHTTPClient:\thttpClient,\n\tBaseURL:\tbaseURL,\n\tTokenSourc...")
 	return &RemoteTriggerClient{
 		HTTPClient:  httpClient,
 		BaseURL:     baseURL,
@@ -41,23 +42,27 @@ func (c *RemoteTriggerClient) Execute(ctx context.Context, triggerReq remote.Req
 	method, urlPath, body, err := c.requestParts(triggerReq)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{}, err")
 		return remote.Response{}, err
 	}
 
 	token, err := c.TokenSource()
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{}, fmt.Errorf(\"get auth token: %w\", err)")
 		return remote.Response{}, fmt.Errorf("get auth token: %w", err)
 	}
 	orgUUID, err := c.OrgUUID()
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{}, fmt.Errorf(\"get org UUID: %w\", err)")
 		return remote.Response{}, fmt.Errorf("get org UUID: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, method, c.BaseURL+urlPath, body)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{}, fmt.Errorf(\"create request: %w\", err)")
 		return remote.Response{}, fmt.Errorf("create request: %w", err)
 	}
 
@@ -70,6 +75,7 @@ func (c *RemoteTriggerClient) Execute(ctx context.Context, triggerReq remote.Req
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{}, fmt.Errorf(\"request failed: %w\", err)")
 		return remote.Response{}, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -77,9 +83,11 @@ func (c *RemoteTriggerClient) Execute(ctx context.Context, triggerReq remote.Req
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{}, fmt.Errorf(\"read response body: %w\", err)")
 		return remote.Response{}, fmt.Errorf("read response body: %w", err)
 	}
 	observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{...}, nil")
+	observe.TraceCtx(ctx, "anthropic", "RemoteTriggerClient.Execute", "return: remote.Response{StatusCode: resp.StatusCode, Body: respBody}, nil")
 	return remote.Response{StatusCode: resp.StatusCode, Body: respBody}, nil
 }
 

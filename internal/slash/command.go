@@ -148,7 +148,10 @@ func (r *Registry) Execute(ctx context.Context, name, args string, deps Deps) (R
 	defer observe.TraceCtx(ctx, "slash", "Registry.Execute", "exit")
 	cmd, ok := r.commands[strings.ToLower(name)]
 	if !ok {
+		observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: !ok")
 		if result, found := skillCommandResult(name, args, deps); found {
+			observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: found")
+			observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: result, nil")
 			return result, nil
 		}
 		observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: !ok")
@@ -156,9 +159,13 @@ func (r *Registry) Execute(ctx context.Context, name, args string, deps Deps) (R
 		return Result{}, fmt.Errorf("%w: /%s", ErrUnknownCommand, name)
 	}
 	if cmd.Handle == nil {
+		observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: cmd.Handle == nil")
 		if result, found := skillCommandResult(name, args, deps); found {
+			observe.TraceCtx(ctx, "slash", "Registry.Execute", "if: found")
+			observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: result, nil")
 			return result, nil
 		}
+		observe.TraceCtx(ctx, "slash", "Registry.Execute", "return: Result{}, fmt.Errorf(\"%w: /%s\", ErrUnknownCommand, name)")
 		return Result{}, fmt.Errorf("%w: /%s", ErrUnknownCommand, name)
 	}
 	deps.Commands = r.CommandsWithDeps(deps)
@@ -197,22 +204,30 @@ func (r *Registry) CommandsWithDeps(deps Deps) []Command {
 	commands := r.Commands()
 	catalog := deps.skillCatalog()
 	if catalog == nil {
+		observe.GlobalTrace("if: catalog == nil")
+		observe.GlobalTrace("return: commands")
 		return commands
 	}
 	skills, err := catalog.LoadAll()
 	if err != nil || len(skills) == 0 {
+		observe.GlobalTrace("if: err != nil || len(skills) == 0")
+		observe.GlobalTrace("return: commands")
 		return commands
 	}
 	seen := make(map[string]bool, len(commands)+len(skills))
 	for _, cmd := range commands {
+		observe.GlobalTrace("range commands")
 		seen[strings.ToLower(cmd.Name)] = true
 		for _, alias := range cmd.Aliases {
+			observe.GlobalTrace("range cmd.Aliases")
 			seen[strings.ToLower(alias)] = true
 		}
 	}
 	for _, s := range skills {
+		observe.GlobalTrace("range skills")
 		name := strings.ToLower(strings.TrimSpace(s.Name))
 		if name == "" || seen[name] {
+			observe.GlobalTrace("if: name == \"\" || seen[name]")
 			continue
 		}
 		commands = append(commands, Command{
@@ -225,38 +240,56 @@ func (r *Registry) CommandsWithDeps(deps Deps) []Command {
 	sort.Slice(commands, func(i, j int) bool {
 		return commands[i].Name < commands[j].Name
 	})
+	observe.GlobalTrace("return: commands")
 	return commands
 }
 
 func (d Deps) skillCatalog() skill.Catalog {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d.SkillCatalog != nil {
+		observe.GlobalTrace("if: d.SkillCatalog != nil")
+		observe.GlobalTrace("return: d.SkillCatalog")
 		return d.SkillCatalog
 	}
 	if d.SkillLoader != nil {
+		observe.GlobalTrace("if: d.SkillLoader != nil")
+		observe.GlobalTrace("return: d.SkillLoader")
 		return d.SkillLoader
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func skillCommandResult(name, args string, deps Deps) (Result, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	catalog := deps.skillCatalog()
 	if catalog == nil {
+		observe.GlobalTrace("if: catalog == nil")
+		observe.GlobalTrace("return: Result{}, false")
 		return Result{}, false
 	}
 	skillName := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
 	if skillName == "" {
+		observe.GlobalTrace("if: skillName == \"\"")
+		observe.GlobalTrace("return: Result{}, false")
 		return Result{}, false
 	}
 	s, err := catalog.Load(skillName)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: Result{}, false")
 		return Result{}, false
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Invoke the %q skill", s.Name)
 	if strings.TrimSpace(args) != "" {
+		observe.GlobalTrace("if: strings.TrimSpace(args) != \"\"")
 		fmt.Fprintf(&b, " with arguments: %s", strings.TrimSpace(args))
 	}
 	b.WriteString(".")
+	observe.GlobalTrace("return: Result{InjectPrompt: b.String()}, true")
 	return Result{InjectPrompt: b.String()}, true
 }
 

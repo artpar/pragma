@@ -146,6 +146,7 @@ func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker per
 		return checker.Check(ctx, "Read", "")
 	}
 	observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: checker.Check(ctx, \"Read\", in.FilePath)")
+	observe.TraceCtx(ctx, "fileread", "Tool.CheckPerm", "return: permission.CheckPath(ctx, checker, \"Read\", in.FilePath)")
 	return permission.CheckPath(ctx, checker, "Read", in.FilePath)
 }
 
@@ -238,6 +239,7 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 		if !t.PreserveRepeatedContent && previousReadUnchanged(cache, filePath, result, info.ModTime().UnixMilli()) {
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "if: found && previous.Offset != nil && sameOptionalInt(previous.Offset, result.Of...")
 			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: \"File unchanged since last read. The content from ...")
+			observe.TraceCtx(ctx, "fileread", "Tool.Invoke", "return: tool.InvokeResult{Content: \"File unchanged since last read.\"}, nil")
 			return tool.InvokeResult{Content: "File unchanged since last read."}, nil
 		}
 		cache.Set(filePath, tool.FileState{
@@ -315,6 +317,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 		observe.GlobalTrace("return: \"<system-reminder>Warning: the file exists but the contents are empty.</syste...")
 		startLine := 1
 		observe.GlobalTrace("return: textReadResult{\n\tOutput:\t\"<system-reminder>Warning: the file exists but the ...")
+		observe.GlobalTrace("return: textReadResult{\n\tOutput:\t\t\"<system-reminder>Warning: the file exists but the ...")
 		return textReadResult{
 			Output:  "<system-reminder>Warning: the file exists but the contents are empty.</system-reminder>",
 			Content: content,
@@ -339,6 +342,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 		observe.GlobalTrace("if: startLine > totalLines")
 		observe.GlobalTrace("return: fmt.Sprintf(\"<system-reminder>Warning: the file exists but is shorter than th...")
 		observe.GlobalTrace("return: textReadResult{\n\tOutput:\tfmt.Sprintf(\"<system-reminder>Warning: the file exi...")
+		observe.GlobalTrace("return: textReadResult{\n\tOutput:\t\tfmt.Sprintf(\"<system-reminder>Warning: the file exi...")
 		return textReadResult{
 			Output:  fmt.Sprintf("<system-reminder>Warning: the file exists but is shorter than the provided offset (%d). The file has %d lines.</system-reminder>", startLine, totalLines),
 			Content: content,
@@ -382,6 +386,7 @@ func readTextFile(filePath string, offset, limit *int) (textReadResult, error) {
 	}
 	observe.GlobalTrace("return: result, nil")
 	observe.GlobalTrace("return: textReadResult{\n\tOutput:\tresult,\n\tContent:\tviewContent,\n\tOffset:\t\t&startLine...")
+	observe.GlobalTrace("return: textReadResult{\n\tOutput:\t\tresult,\n\tContent:\tviewContent,\n\tOffset:\t\t&startLine...")
 
 	return textReadResult{
 		Output:  result,

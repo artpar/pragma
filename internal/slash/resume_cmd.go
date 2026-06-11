@@ -45,12 +45,17 @@ func handleResume(_ context.Context, args string, deps Deps) (Result, error) {
 		observe.GlobalTrace("if: args == \"\"")
 		candidates, err := BrowseResumeCandidates(deps)
 		if err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\"Error listing sessions: %s\", err)}, nil")
 			return Result{DisplayText: fmt.Sprintf("Error listing sessions: %s", err)}, nil
 		}
 		if len(candidates.Candidates) == 0 {
+			observe.GlobalTrace("if: len(candidates.Candidates) == 0")
+			observe.GlobalTrace("return: Result{DisplayText: \"No sessions found.\"}, nil")
 			return Result{DisplayText: "No sessions found."}, nil
 		}
 		observe.GlobalTrace("return: Result{OpenResumePicker: true}, nil")
+		observe.GlobalTrace("return: Result{OpenResumePicker: true, ResumeCandidates: candidates.Candidates, Resum...")
 		return Result{OpenResumePicker: true, ResumeCandidates: candidates.Candidates, ResumeScope: candidates.Scope}, nil
 	}
 
@@ -117,17 +122,24 @@ func handleResume(_ context.Context, args string, deps Deps) (Result, error) {
 }
 
 func BrowseResumeCandidates(deps Deps) (ResumeCandidatesResult, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if deps.SessionStore == nil {
+		observe.GlobalTrace("if: deps.SessionStore == nil")
+		observe.GlobalTrace("return: ResumeCandidatesResult{}, nil")
 		return ResumeCandidatesResult{}, nil
 	}
 	summaries, err := deps.SessionStore.List()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: ResumeCandidatesResult{}, err")
 		return ResumeCandidatesResult{}, err
 	}
 	all := make([]ResumeCandidate, 0, len(summaries))
 	current := make([]ResumeCandidate, 0, len(summaries))
 	cwd := filepath.Clean(strings.TrimSpace(deps.Cwd))
 	for _, summary := range summaries {
+		observe.GlobalTrace("range summaries")
 		candidate := ResumeCandidate{
 			ID:        summary.ID,
 			Summary:   summary.Summary,
@@ -136,14 +148,18 @@ func BrowseResumeCandidates(deps Deps) (ResumeCandidatesResult, error) {
 			UpdatedAt: summary.UpdatedAt,
 		}
 		if cwd != "" && filepath.Clean(summary.WorkDir) == cwd {
+			observe.GlobalTrace("if: cwd != \"\" && filepath.Clean(summary.WorkDir) == cwd")
 			candidate.InCurrentWorkDir = true
 			current = append(current, candidate)
 		}
 		all = append(all, candidate)
 	}
 	if len(current) > 0 {
+		observe.GlobalTrace("if: len(current) > 0")
+		observe.GlobalTrace("return: ResumeCandidatesResult{Candidates: current, Scope: ResumeScopeCurrentDirector...")
 		return ResumeCandidatesResult{Candidates: current, Scope: ResumeScopeCurrentDirectory}, nil
 	}
+	observe.GlobalTrace("return: ResumeCandidatesResult{Candidates: all, Scope: ResumeScopeAllSessions}, nil")
 	return ResumeCandidatesResult{Candidates: all, Scope: ResumeScopeAllSessions}, nil
 }
 

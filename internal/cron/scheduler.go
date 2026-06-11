@@ -64,22 +64,31 @@ func NewScheduler(bus *observe.EventBus, store *Store) *Scheduler {
 }
 
 func (s *Scheduler) ReloadDurable(now time.Time) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if s.store == nil {
+		observe.GlobalTrace("if: s.store == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	saved, err := s.store.Load()
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 
 	durable := make(map[string]*Job, len(saved))
 	for i := range saved {
+		observe.GlobalTrace("range saved")
 		j := saved[i]
 		expr, parseErr := Parse(j.Cron)
 		if parseErr != nil {
+			observe.GlobalTrace("if: parseErr != nil")
 			continue
 		}
 		if j.NextFire.IsZero() {
+			observe.GlobalTrace("if: j.NextFire.IsZero()")
 			j.NextFire = expr.NextAfter(now)
 		}
 		durable[j.ID] = &j
@@ -88,19 +97,25 @@ func (s *Scheduler) ReloadDurable(now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, live := range s.jobs {
+		observe.GlobalTrace("range s.jobs")
 		if live.Durable {
+			observe.GlobalTrace("if: live.Durable")
 			if _, ok := durable[id]; !ok {
+				observe.GlobalTrace("if: !ok")
 				delete(s.jobs, id)
 			}
 		}
 	}
 	for id, j := range durable {
+		observe.GlobalTrace("range durable")
 		copy := *j
 		s.jobs[id] = &copy
 		if n := extractSeq(id); n > s.seq.Load() {
+			observe.GlobalTrace("if: n > s.seq.Load()")
 			s.seq.Store(n)
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -267,7 +282,9 @@ func (s *Scheduler) tick(now time.Time, handler FireHandler) {
 	for _, j := range toFire {
 		observe.GlobalTrace("range toFire")
 		if err := handler(j); err != nil {
+			observe.GlobalTrace("if: err != nil")
 			if s.bus != nil {
+				observe.GlobalTrace("if: s.bus != nil")
 				s.bus.Emit(observe.ErrorOccurred{
 					EventHeader:  observe.NewEventHeader("ErrorOccurred", "", observe.NewSpanID(), ""),
 					Severity:     "warn",

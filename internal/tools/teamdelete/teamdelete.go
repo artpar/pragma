@@ -132,13 +132,19 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 }
 
 func (t *Tool) activeTeammateNames() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.Tasks == nil {
+		observe.GlobalTrace("if: t.Tasks == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	teammates := t.Tasks.ListTeammates(false)
 	names := make([]string, 0, len(teammates))
 	for _, tk := range teammates {
+		observe.GlobalTrace("range teammates")
 		names = append(names, tk.AgentName)
 	}
+	observe.GlobalTrace("return: names")
 	return names
 }

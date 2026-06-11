@@ -93,8 +93,10 @@ func (m *Manager) LifecycleContext() context.Context {
 	defer m.mu.RUnlock()
 	if m.lifecycleCtx == nil {
 		observe.GlobalTrace("if: m.lifecycleCtx == nil")
+		observe.GlobalTrace("return: context.Background()")
 		return context.Background()
 	}
+	observe.GlobalTrace("return: m.lifecycleCtx")
 	return m.lifecycleCtx
 }
 
@@ -164,24 +166,34 @@ func (m *Manager) ReplaceServers(servers map[string]ServerConfig) {
 }
 
 func (m *Manager) activeGenerationLocked(generation uint64) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: !m.stopped && m.generation == generation")
 	return !m.stopped && m.generation == generation
 }
 
 func (m *Manager) markDisconnectedIfActive(generation uint64, name string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.activeGenerationLocked(generation) {
+		observe.GlobalTrace("if: !m.activeGenerationLocked(generation)")
 		return
 	}
 	if _, configured := m.configs[name]; configured {
+		observe.GlobalTrace("if: configured")
 		m.statuses[name] = StatusDisconnected
 	}
 }
 
 func (m *Manager) recordConnectFailure(generation uint64, name string, err error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.activeGenerationLocked(generation) {
+		observe.GlobalTrace("if: !m.activeGenerationLocked(generation)")
 		return
 	}
 	m.statuses[name] = StatusFailed
@@ -189,21 +201,28 @@ func (m *Manager) recordConnectFailure(generation uint64, name string, err error
 }
 
 func (m *Manager) publishConnectedClient(ctx context.Context, generation uint64, name string, client *Client) bool {
+	observe.TraceCtx(ctx, "mcp", "Manager.publishConnectedClient", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.publishConnectedClient", "exit")
 	if ctx.Err() != nil {
+		observe.TraceCtx(ctx, "mcp", "Manager.publishConnectedClient", "if: ctx.Err() != nil")
 		m.markDisconnectedIfActive(generation, name)
 		_ = client.Disconnect()
+		observe.TraceCtx(ctx, "mcp", "Manager.publishConnectedClient", "return: false")
 		return false
 	}
 	m.mu.Lock()
 	if !m.activeGenerationLocked(generation) {
+		observe.TraceCtx(ctx, "mcp", "Manager.publishConnectedClient", "if: !m.activeGenerationLocked(generation)")
 		m.mu.Unlock()
 		_ = client.Disconnect()
+		observe.TraceCtx(ctx, "mcp", "Manager.publishConnectedClient", "return: false")
 		return false
 	}
 	m.clients[name] = client
 	m.statuses[name] = StatusConnected
 	delete(m.lastErrors, name)
 	m.mu.Unlock()
+	observe.TraceCtx(ctx, "mcp", "Manager.publishConnectedClient", "return: true")
 	return true
 }
 
@@ -295,6 +314,7 @@ func (m *Manager) connectAll(ctx context.Context, servers map[string]ServerConfi
 					return
 				}
 				if !m.publishConnectedClient(ctx, generation, ns.name, client) {
+					observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: !m.publishConnectedClient(ctx, generation, ns.name, client)")
 					return
 				}
 				if registerReadyTools {
@@ -326,6 +346,7 @@ func (m *Manager) connectAll(ctx context.Context, servers map[string]ServerConfi
 				return
 			}
 			if !m.publishConnectedClient(ctx, generation, ns.name, client) {
+				observe.TraceCtx(ctx, "mcp", "Manager.connectAll", "if: !m.publishConnectedClient(ctx, generation, ns.name, client)")
 				return
 			}
 			if registerReadyTools {
@@ -348,6 +369,7 @@ func (m *Manager) RegisterTools(ctx context.Context) error {
 	m.mu.RLock()
 	generation := m.generation
 	if m.stopped {
+		observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "if: m.stopped")
 		m.mu.RUnlock()
 		observe.TraceCtx(ctx, "mcp", "Manager.RegisterTools", "return: nil")
 		return nil
@@ -428,6 +450,7 @@ func (m *Manager) registerClientTools(ctx context.Context, generation uint64, na
 	m.registeredTools[name] = registered
 	m.mu.Unlock()
 	for _, msg := range registerErrors {
+		observe.TraceCtx(ctx, "mcp", "Manager.registerClientTools", "range registerErrors")
 		m.bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
 			Severity:     "warn",
@@ -665,7 +688,10 @@ func (m *Manager) ConnectedCount() int {
 // ReconnectServer disconnects and reconnects a single server, re-registering its tools.
 // Used after OAuth authentication completes to swap the auth pseudo-tool for real tools.
 func (m *Manager) ReconnectServer(ctx context.Context, name string) error {
+	observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "enter")
+	defer observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "exit")
 	_, err := m.reconnectServer(ctx, name)
+	observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: err")
 	return err
 }
 
@@ -674,15 +700,21 @@ func (m *Manager) reconnectServerForTool(ctx context.Context, serverName, regist
 	defer observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "exit")
 	client, err := m.reconnectServer(ctx, serverName)
 	if err != nil {
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "if: err != nil")
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "return: nil, err")
 		return nil, err
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, toolName := range m.registeredTools[serverName] {
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "range m.registeredTools[serverName]")
 		if toolName == registryToolName {
+			observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "if: toolName == registryToolName")
+			observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "return: client, nil")
 			return client, nil
 		}
 	}
+	observe.TraceCtx(ctx, "mcp", "Manager.reconnectServerForTool", "return: nil, fmt.Errorf(\"mcp tool %q is not available after reconnect\", registryToolN...")
 	return nil, fmt.Errorf("mcp tool %q is not available after reconnect", registryToolName)
 }
 
@@ -696,6 +728,7 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: !ok")
 		m.mu.Unlock()
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"server %q not found in config\", name)")
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, fmt.Errorf(\"server %q not found in config\", name)")
 		return nil, fmt.Errorf("server %q not found in config", name)
 	}
 	generation := m.generation
@@ -703,6 +736,7 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: m.stopped")
 		m.mu.Unlock()
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"mcp manager stopped\")")
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, fmt.Errorf(\"mcp manager stopped\")")
 		return nil, fmt.Errorf("mcp manager stopped")
 	}
 
@@ -726,6 +760,7 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
 		m.recordConnectFailure(generation, name, err)
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"reconnect %q: %w\", name, err)")
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, fmt.Errorf(\"reconnect %q: %w\", name, err)")
 		return nil, fmt.Errorf("reconnect %q: %w", name, err)
 	}
 
@@ -735,8 +770,11 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 		m.mu.Unlock()
 		_ = client.Disconnect()
 		if err := ctx.Err(); err != nil {
+			observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "if: err != nil")
+			observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, err")
 			return nil, err
 		}
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, fmt.Errorf(\"mcp manager stopped\")")
 		return nil, fmt.Errorf("mcp manager stopped")
 	}
 	m.clients[name] = client
@@ -748,6 +786,7 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 	if err != nil {
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: err != nil")
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: fmt.Errorf(\"list tools from %q after reconnect: %w\", name, err)")
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, fmt.Errorf(\"list tools from %q after reconnect: %w\", name, err)")
 		return nil, fmt.Errorf("list tools from %q after reconnect: %w", name, err)
 	}
 
@@ -756,8 +795,11 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 		observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "if: inactive generation or context done")
 		m.mu.Unlock()
 		if err := ctx.Err(); err != nil {
+			observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "if: err != nil")
+			observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, err")
 			return nil, err
 		}
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: nil, fmt.Errorf(\"mcp manager stopped\")")
 		return nil, fmt.Errorf("mcp manager stopped")
 	}
 	var registered []string
@@ -786,6 +828,7 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 	m.registeredTools[name] = registered
 	m.mu.Unlock()
 	for _, msg := range registerErrors {
+		observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "range registerErrors")
 		m.bus.Emit(observe.ErrorOccurred{
 			EventHeader:  observe.NewEventHeader("ErrorOccurred", observe.NewTraceID(), observe.NewSpanID(), ""),
 			Severity:     "warn",
@@ -795,12 +838,16 @@ func (m *Manager) reconnectServer(ctx context.Context, name string) (*Client, er
 		})
 	}
 	observe.TraceCtx(ctx, "mcp", "Manager.ReconnectServer", "return: nil")
+	observe.TraceCtx(ctx, "mcp", "Manager.reconnectServer", "return: client, nil")
 	return client, nil
 }
 
 func (m *Manager) newToolAdapter(client *Client, info ToolInfo) *MCPToolAdapter {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	adapter := NewMCPToolAdapter(client, info)
 	adapter.reconnect = m.reconnectServerForTool
+	observe.GlobalTrace("return: adapter")
 	return adapter
 }
 

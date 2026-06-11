@@ -43,13 +43,17 @@ func (e *Engine) runLoop(ctx context.Context, userMessage string, ch chan<- Loop
 }
 
 func (e *Engine) runStopHook(ch chan<- LoopEvent) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if e.hookMgr == nil {
+		observe.GlobalTrace("if: e.hookMgr == nil")
 		return
 	}
 	hookCtx, hookCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer hookCancel()
 	result := e.hookMgr.ExecuteInWorkDir(hookCtx, hook.Stop, hook.HookInput{}, e.store.Snapshot().CWD)
 	if result.Blocked {
+		observe.GlobalTrace("if: result.Blocked")
 		ch <- ErrorEvent{Err: fmt.Errorf("blocked by hook: %s", result.BlockMsg)}
 	}
 }
@@ -141,12 +145,15 @@ func (e *Engine) messagesForRequestChecked(conv model.Conversation, startIndexes
 	defer observe.GlobalTrace("exit")
 	var messages []model.Message
 	if len(startIndexes) > 0 {
+		observe.GlobalTrace("if: len(startIndexes) > 0")
 		messages = e.messagesForRequestFrom(conv, startIndexes[0])
 	} else {
+		observe.GlobalTrace("else: len(startIndexes) > 0")
 		messages = e.messagesForRequest(conv)
 	}
 	if err := validateToolResultPairing(messages); err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 	observe.GlobalTrace("return: messages, nil")
@@ -157,9 +164,11 @@ func (e *Engine) messagesForRequestFrom(conv model.Conversation, start int) []mo
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if start < 0 {
+		observe.GlobalTrace("if: start < 0")
 		start = 0
 	}
 	if start > len(conv.Messages) {
+		observe.GlobalTrace("if: start > len(conv.Messages)")
 		start = len(conv.Messages)
 	}
 	scoped := conv

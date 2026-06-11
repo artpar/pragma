@@ -187,6 +187,9 @@ func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.Sta
 }
 
 func toolProgressEvent(progress bridge.ProgressEvent) tool.ProgressEvent {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: tool.ProgressEvent{\n\tStep:\t\tprogress.Step,\n\tNode:\t\tprogress.Node,\n\tNodes:\t\tpr...")
 	return tool.ProgressEvent{
 		Step:     progress.Step,
 		Node:     progress.Node,
@@ -257,7 +260,6 @@ func (t *Tool) buildResult(run bridge.RunResult) (tool.InvokeResult, error) {
 		errMsg = run.Err.Error()
 	}
 
-	// Extract the LLM's narrative (last assistant text).
 	resultText := run.AssistantText
 
 	// Extract actual tool call receipts from conversation history.

@@ -195,10 +195,13 @@ func (t *ReadTool) persistBinaryArtifact(snap tool.StateSnapshot, server string,
 	defer observe.GlobalTrace("exit")
 	sessionID, ok := tool.SessionIDFrom(snap)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"session id is required\")")
 		return "", fmt.Errorf("session id is required")
 	}
 	ext := extensionForMIME(mimeType)
 	artifactID := fmt.Sprintf("mcp-resource-%s-%s-%d", server, uri, index)
+	observe.GlobalTrace("return: toolresult.PersistBinaryOutput(data, artifactID, sessionID, ext)")
 	return toolresult.PersistBinaryOutput(data, artifactID, sessionID, ext)
 }
 

@@ -127,6 +127,8 @@ func (r *Registry) UpdateHeartbeat(pid int, ownerToken string) {
 }
 
 func (r *Registry) updateOwned(pid int, ownerToken string, mutate func(*ProcessInfo, time.Time)) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	info, err := r.Get(pid)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -137,6 +139,7 @@ func (r *Registry) updateOwned(pid int, ownerToken string, mutate func(*ProcessI
 		return
 	}
 	if info.OwnerToken == "" {
+		observe.GlobalTrace("if: info.OwnerToken == \"\"")
 		info.OwnerToken = ownerToken
 	}
 	mutate(&info, time.Now())
@@ -197,21 +200,33 @@ func (r *Registry) ListProcesses() ([]ProcessInfo, error) {
 }
 
 func (r *Registry) recordActive(info ProcessInfo, now time.Time) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: info.PID > 0 && info.HasFreshHeartbeat(now) && isProcessAlive(info.PID)")
 	return info.PID > 0 && info.HasFreshHeartbeat(now) && isProcessAlive(info.PID)
 }
 
 func (r *Registry) validateControlRecord(info ProcessInfo, now time.Time) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if info.PID <= 0 {
+		observe.GlobalTrace("if: info.PID <= 0")
+		observe.GlobalTrace("return: fmt.Errorf(\"background record has invalid PID %d\", info.PID)")
 		return fmt.Errorf("background record has invalid PID %d", info.PID)
 	}
 	if !info.HasFreshHeartbeat(now) {
+		observe.GlobalTrace("if: !info.HasFreshHeartbeat(now)")
 		_ = r.Unregister(info.PID)
+		observe.GlobalTrace("return: fmt.Errorf(\"background record for PID %d is stale; removed without killing\", ...")
 		return fmt.Errorf("background record for PID %d is stale; removed without killing", info.PID)
 	}
 	if !isProcessAlive(info.PID) {
+		observe.GlobalTrace("if: !isProcessAlive(info.PID)")
 		_ = r.Unregister(info.PID)
+		observe.GlobalTrace("return: fmt.Errorf(\"background process %d is not running; removed stale record\", info...")
 		return fmt.Errorf("background process %d is not running; removed stale record", info.PID)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -223,6 +238,7 @@ func (r *Registry) ListSessions() ([]ProcessInfo, error) {
 	processes, err := r.ListProcesses()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 	sessions := make([]ProcessInfo, 0, len(processes))

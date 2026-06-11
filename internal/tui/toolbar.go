@@ -126,6 +126,7 @@ func (t *toolbar) SetStartTime(startTime time.Time) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if !startTime.IsZero() {
+		observe.GlobalTrace("if: !startTime.IsZero()")
 		t.startTime = startTime
 	}
 }

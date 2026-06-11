@@ -11,6 +11,7 @@ import (
 func StartHeartbeat(ctx context.Context, registry *Registry, pid int, ownerToken string) context.CancelFunc {
 	observe.GlobalTrace("enter")
 	if ctx == nil {
+		observe.TraceCtx(ctx, "background", "StartHeartbeat", "if: ctx == nil")
 		ctx = context.Background()
 	}
 	heartbeatCtx, cancel := context.WithCancel(ctx)
@@ -21,10 +22,13 @@ func StartHeartbeat(ctx context.Context, registry *Registry, pid int, ownerToken
 		ticker := time.NewTicker(HeartbeatInterval)
 		defer ticker.Stop()
 		for {
+			observe.TraceCtx(ctx, "background", "StartHeartbeat", "for: true")
 			select {
 			case <-heartbeatCtx.Done():
+				observe.TraceCtx(ctx, "background", "StartHeartbeat", "select: <-heartbeatCtx.Done()")
 				return
 			case <-ticker.C:
+				observe.TraceCtx(ctx, "background", "StartHeartbeat", "select: <-ticker.C")
 				registry.UpdateHeartbeat(pid, ownerToken)
 			}
 		}

@@ -30,84 +30,118 @@ func ExtractUserPrompts(messages []model.Message) []string {
 }
 
 func extractUserPrompts(messages []model.Message) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ExtractUserPrompts(messages)")
 	return ExtractUserPrompts(messages)
 }
 
 func latestAssistantText(store *app.StateStore) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if store == nil {
+		observe.GlobalTrace("if: store == nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	messages := store.Snapshot().Conversation.Messages
 	for i := len(messages) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
 		msg := messages[i]
 		if msg.Role != model.RoleAssistant || msg.Flags.IsInternal || msg.Flags.IsMeta {
+			observe.GlobalTrace("if: msg.Role != model.RoleAssistant || msg.Flags.IsInternal || msg.Flags.IsMeta")
 			continue
 		}
 		var parts []string
 		for _, part := range msg.Content {
+			observe.GlobalTrace("range msg.Content")
 			if tp, ok := part.(model.TextPart); ok && strings.TrimSpace(tp.Text) != "" {
+				observe.GlobalTrace("if: ok && strings.TrimSpace(tp.Text) != \"\"")
 				parts = append(parts, tp.Text)
 			}
 		}
 		if len(parts) > 0 {
+			observe.GlobalTrace("if: len(parts) > 0")
+			observe.GlobalTrace("return: strings.Join(parts, \"\\n\")")
 			return strings.Join(parts, "\n")
 		}
 	}
+	observe.GlobalTrace("return: \"\"")
 	return ""
 }
 
 func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if result.ClearConversation {
+		observe.GlobalTrace("if: result.ClearConversation")
 		m.outputSegs = m.outputSegs[:0]
 	}
 	if result.DisplayText != "" {
+		observe.GlobalTrace("if: result.DisplayText != \"\"")
 		rendered := m.mdRenderer.Render(result.DisplayText)
 		m.outputSegs = appendText(m.outputSegs, rendered+"\n\n")
 	}
 	if result.OpenTeams {
+		observe.GlobalTrace("if: result.OpenTeams")
 		m.teams.Show(m.taskReg)
 	}
 	if result.OpenModelPicker {
+		observe.GlobalTrace("if: result.OpenModelPicker")
 		var models []string
 		currentModel := m.toolbar.modelName
 		if m.slashDeps.ModelLister != nil {
+			observe.GlobalTrace("if: m.slashDeps.ModelLister != nil")
 			models = m.slashDeps.ModelLister()
 		}
 		m.modelDlg.Show(models, currentModel)
 	}
 	if result.OpenResumePicker {
+		observe.GlobalTrace("if: result.OpenResumePicker")
 		if len(result.ResumeCandidates) > 0 {
+			observe.GlobalTrace("if: len(result.ResumeCandidates) > 0")
 			m.resumeDlg.Show(result.ResumeCandidates, result.ResumeScope)
 		}
 	}
 	if result.ResumeSessionID != "" {
+		observe.GlobalTrace("if: result.ResumeSessionID != \"\"")
 		m.reloadConversationFromStore()
 		m.toolbar.SetStartTime(m.store.Snapshot().Conversation.CreatedAt)
 	}
 	if snap := m.store.Snapshot(); snap.Model != "" {
+		observe.GlobalTrace("if: snap.Model != \"\"")
 		m.toolbar.SetModel(snap.Model)
 	}
 	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
+	observe.GlobalTrace("return: m, nil")
 	return m, nil
 }
 
 func (m *Model) reloadConversationFromStore() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	snap := m.store.Snapshot()
 	conv := snap.Conversation
 	m.outputSegs = nil
 	for _, msg := range conv.Messages {
+		observe.GlobalTrace("range conv.Messages")
 		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 	}
 	m.input.SetHistory(promptHistoryFromSnapshot(snap))
 }
 
 func promptHistoryFromSnapshot(snap app.AppState) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(snap.PromptHistory) > 0 {
+		observe.GlobalTrace("if: len(snap.PromptHistory) > 0")
 		out := make([]string, len(snap.PromptHistory))
 		copy(out, snap.PromptHistory)
+		observe.GlobalTrace("return: out")
 		return out
 	}
+	observe.GlobalTrace("return: extractUserPrompts(snap.Conversation.Messages)")
 	return extractUserPrompts(snap.Conversation.Messages)
 }
 
@@ -146,6 +180,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("typecase: interactive.SlashResultEvent")
 		next, cmd := m.handleRuntimeSlashResult(ev.Result)
 		if cmd != nil {
+			observe.GlobalTrace("return: next, cmd")
 			return next, cmd
 		}
 		return next, waitForEvent(m.eventCh)
@@ -153,11 +188,15 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("typecase: interactive.RuntimeTerminatedEvent")
 		return m.finishRuntimeTermination()
 	case interactive.LoopEvent:
+		observe.GlobalTrace("typecase: interactive.LoopEvent")
 		loopEvent = ev.Event
 	default:
+		observe.GlobalTrace("typedefault")
 		return m, waitForEvent(m.eventCh)
 	}
 	if loopEvent == nil {
+		observe.GlobalTrace("if: loopEvent == nil")
+		observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 		return m, waitForEvent(m.eventCh)
 	}
 
@@ -562,10 +601,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected := m.modelDlg.Update(msg); selected != "" {
 			observe.GlobalTrace("if: selected != \"\" — model chosen: " + selected)
 			if m.runInput == nil {
+				observe.GlobalTrace("if: m.runInput == nil")
 				m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: model command is not available")+"\n\n")
 				m.viewport.SetContent(m.viewportContent())
+				observe.GlobalTrace("return: m, nil")
 				return m, nil
 			}
+			observe.GlobalTrace("return: m.submitPrompt(\"/model \" + selected)")
 			return m.submitPrompt("/model " + selected)
 		}
 		m.viewport.SetContent(m.viewportContent())
@@ -578,10 +620,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selectedID := m.resumeDlg.Update(msg); selectedID != "" {
 			observe.GlobalTrace("if: selectedID != \"\" — session chosen")
 			if m.runInput != nil {
+				observe.GlobalTrace("if: m.runInput != nil")
+				observe.GlobalTrace("return: m.submitPrompt(\"/resume \" + selectedID)")
 				return m.submitPrompt("/resume " + selectedID)
 			}
 			m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: interactive runtime is not available")+"\n\n")
 			m.viewport.SetContent(m.viewportContent())
+			observe.GlobalTrace("return: m, nil")
 			return m, nil
 		}
 		m.viewport.SetContent(m.viewportContent())
@@ -671,6 +716,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.slashCmds != nil && m.input.CompleteSlash(m.slashCommands(), m.completionWorkspace()) {
 			m.input.RefreshSlashCompletions(m.slashCommands(), m.completionWorkspace())
 			m.syncViewportHeight()
+			observe.GlobalTrace("return: m, nil")
 			return m, nil
 		}
 	case tea.KeyPgUp, tea.KeyPgDown:
@@ -706,6 +752,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	cmd := m.input.Update(msg)
 	if m.slashCmds != nil {
+		observe.GlobalTrace("if: m.slashCmds != nil")
 		m.input.RefreshSlashCompletions(m.slashCommands(), m.completionWorkspace())
 	}
 	m.syncViewportHeight()
@@ -714,18 +761,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) slashCommands() []slash.Command {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.slashCmds == nil {
+		observe.GlobalTrace("if: m.slashCmds == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: m.slashCmds.CommandsWithDeps(m.slashDeps)")
 	return m.slashCmds.CommandsWithDeps(m.slashDeps)
 }
 
 func (m Model) completionWorkspace() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if m.slashDeps.Store != nil {
+		observe.GlobalTrace("if: m.slashDeps.Store != nil")
 		if cwd := m.slashDeps.Store.Snapshot().CWD; cwd != "" {
+			observe.GlobalTrace("if: cwd != \"\"")
+			observe.GlobalTrace("return: cwd")
 			return cwd
 		}
 	}
+	observe.GlobalTrace("return: m.workspace")
 	return m.workspace
 }
 
@@ -734,14 +792,17 @@ func (m Model) handleInputSubmitted(msg InputSubmittedMsg) (tea.Model, tea.Cmd) 
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if m.runInput == nil {
+		observe.GlobalTrace("if: m.runInput == nil")
 		m.outputSegs = appendText(m.outputSegs, errorStyle.Render("Error: interactive runtime is not available")+"\n\n")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
+		observe.GlobalTrace("return: m, nil")
 		return m, nil
 	}
 	if m.streaming {
 		observe.GlobalTrace("if: m.streaming — asking runtime admission")
 		events := m.runInput(m.parentCtx, msg.Text)
+		observe.GlobalTrace("return: m, waitForEvent(events)")
 		return m, waitForEvent(events)
 	}
 	observe.GlobalTrace("return: m.submitPrompt(msg.Text)")
@@ -768,6 +829,8 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) renderAcceptedPrompt(text string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	userMsg := model.Message{
 		ID:   model.NewUUID(),
 		Role: model.RoleUser,
@@ -878,12 +941,14 @@ func trimOutputSegs(segs []segment) []segment {
 func (m Model) quit() (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: m.quitWithSessionClose(true)")
 	return m.quitWithSessionClose(true)
 }
 
 func (m Model) finishRuntimeTermination() (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: m.quitWithSessionClose(false)")
 	return m.quitWithSessionClose(false)
 }
 
@@ -894,8 +959,10 @@ func (m Model) quitWithSessionClose(closeSession bool) (tea.Model, tea.Cmd) {
 	if closeSession && m.closeSession != nil {
 		observe.GlobalTrace("if: closeSession && m.closeSession != nil")
 		if err := m.closeSession(); err != nil {
+			observe.GlobalTrace("if: err != nil")
 			m.outputSegs = appendText(m.outputSegs, "\n"+errorStyle.Render("Error: "+err.Error())+"\n\n")
 			m.viewport.SetContent(m.viewportContent())
+			observe.GlobalTrace("return: m, nil")
 			return m, nil
 		}
 	}

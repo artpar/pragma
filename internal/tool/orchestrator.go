@@ -48,6 +48,8 @@ func (o *Orchestrator) SetHookManager(mgr *hook.Manager) {
 }
 
 func (o *Orchestrator) emitPermissionDecision(traceID, spanID, parentSpan, toolCallID, toolName, decision, userDecision, rule, source string, wasExecuted bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	o.bus.Emit(observe.PermissionDecisionFinal{
 		EventHeader:  observe.NewEventHeader("PermissionDecisionFinal", traceID, spanID, parentSpan),
 		ToolCallID:   toolCallID,
@@ -71,16 +73,22 @@ type ExecuteResult struct {
 }
 
 func (r ExecuteResult) ContentParts() []model.ContentPart {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	content := make([]model.ContentPart, 0, len(r.Results)+len(r.Supplements))
 	for i, result := range r.Results {
+		observe.GlobalTrace("range r.Results")
 		content = append(content, result)
 		if i < len(r.SupplementsByResult) {
+			observe.GlobalTrace("if: i < len(r.SupplementsByResult)")
 			content = append(content, r.SupplementsByResult[i]...)
 		}
 	}
 	if len(r.SupplementsByResult) == 0 {
+		observe.GlobalTrace("if: len(r.SupplementsByResult) == 0")
 		content = append(content, r.Supplements...)
 	}
+	observe.GlobalTrace("return: content")
 	return content
 }
 
@@ -414,8 +422,10 @@ func (o *Orchestrator) executeSingle(
 			rule := permission.SessionRuleForPrompt(call.Name, permResult, decision)
 			switch rememberScope {
 			case permission.RememberSession:
+				observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "case: permission.RememberSession")
 				checker.AddSessionRule(rule)
 			case permission.RememberPersistent:
+				observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "case: permission.RememberPersistent")
 				if err := checker.AddPersistentRule(rule); err != nil {
 					o.bus.Emit(observe.ErrorOccurred{
 						EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
@@ -434,6 +444,7 @@ func (o *Orchestrator) executeSingle(
 					})
 				}
 			default:
+				observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "default")
 				o.bus.Emit(observe.ErrorOccurred{
 					EventHeader:  observe.NewEventHeader("ErrorOccurred", traceID, spanID, parentSpan),
 					Severity:     "warn",
@@ -501,6 +512,7 @@ func (o *Orchestrator) executeSingle(
 	var fileState *FileStateCache
 	var fileEffectCursor int
 	if cache, ok := FileStateCacheFrom(state); ok {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: ok")
 		fileState = cache
 		fileEffectCursor = cache.EffectCursor()
 	}
@@ -516,6 +528,7 @@ func (o *Orchestrator) executeSingle(
 	duration := time.Since(start)
 	var fileEffects []FileEffect
 	if fileState != nil {
+		observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "if: fileState != nil")
 		fileEffects = fileState.EffectsSince(fileEffectCursor)
 	}
 
@@ -575,6 +588,7 @@ func (o *Orchestrator) executeSingle(
 	supplements := make([]model.ContentPart, 0, len(hookSupplements)+len(invokeResult.Supplements))
 	supplements = append(supplements, hookSupplements...)
 	supplements = append(supplements, invokeResult.Supplements...)
+	observe.TraceCtx(ctx, "tool", "Orchestrator.executeSingle", "return: singleResult{\n\tpart:\t\t\tpart,\n\tsupplements:\t\tsupplements,\n\tfileEffects:\t\tfileE...")
 
 	return singleResult{
 		part:             part,
@@ -586,21 +600,32 @@ func (o *Orchestrator) executeSingle(
 }
 
 func copyUserMessages(in []UserMessage) []UserMessage {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(in) == 0 {
+		observe.GlobalTrace("if: len(in) == 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := make([]UserMessage, len(in))
 	for i, msg := range in {
+		observe.GlobalTrace("range in")
 		out[i] = msg
 		out[i].Attachments = append([]UserMessageAttachment(nil), msg.Attachments...)
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
 func stateWorkDir(state StateSnapshot) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if state == nil {
+		observe.GlobalTrace("if: state == nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: state.WorkDir()")
 	return state.WorkDir()
 }
 
@@ -610,6 +635,7 @@ func hookFeedbackSupplements(event hook.Event, result hook.AggregatedResult) []m
 	text := hookFeedbackText(event, result.Feedback)
 	if text == "" {
 		observe.GlobalTrace("if: text == \"\"")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	observe.GlobalTrace("return: []model.ContentPart{model.TextPart{Text: text}}")
@@ -629,6 +655,7 @@ func hookFeedbackText(event hook.Event, feedback []string) string {
 	}
 	if len(cleaned) == 0 {
 		observe.GlobalTrace("if: len(cleaned) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	observe.GlobalTrace("return: \"Hook context from \" + string(event) + \":\\n\" + strings.Join(cleaned, \"\\n\\n\")")

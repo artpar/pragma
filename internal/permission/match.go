@@ -79,24 +79,37 @@ func MatchPathContent(pattern, filePath, workDir string) bool {
 }
 
 func normalizePathContent(filePath, workDir string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cleanPath := filepath.Clean(filePath)
 	if workDir != "" && !filepath.IsAbs(cleanPath) && !strings.HasPrefix(cleanPath, "~") {
+		observe.GlobalTrace("if: workDir != \"\" && !filepath.IsAbs(cleanPath) && !strings.HasPrefix(cleanPath, ...")
 		cleanPath = filepath.Join(workDir, cleanPath)
 	}
+	observe.GlobalTrace("return: filepath.Clean(cleanPath)")
 	return filepath.Clean(cleanPath)
 }
 
 func normalizePathPattern(pattern, workDir string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	cleanPattern := filepath.Clean(pattern)
 	if workDir == "" || strings.HasPrefix(cleanPattern, "~") {
+		observe.GlobalTrace("if: workDir == \"\" || strings.HasPrefix(cleanPattern, \"~\")")
+		observe.GlobalTrace("return: cleanPattern")
 		return cleanPattern
 	}
 	if strings.HasPrefix(cleanPattern, string(filepath.Separator)) {
+		observe.GlobalTrace("if: strings.HasPrefix(cleanPattern, string(filepath.Separator))")
+		observe.GlobalTrace("return: filepath.Join(workDir, cleanPattern)")
 		return filepath.Join(workDir, cleanPattern)
 	}
 	if !filepath.IsAbs(cleanPattern) {
+		observe.GlobalTrace("if: !filepath.IsAbs(cleanPattern)")
+		observe.GlobalTrace("return: filepath.Join(workDir, cleanPattern)")
 		return filepath.Join(workDir, cleanPattern)
 	}
+	observe.GlobalTrace("return: cleanPattern")
 	return cleanPattern
 }
 

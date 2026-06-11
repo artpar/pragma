@@ -63,6 +63,7 @@ func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permiss
 	content := t.permissionSubject()
 	if checker == nil {
 		observe.TraceCtx(ctx, "mcpauth", "Tool.CheckPerm", "if: checker == nil")
+		observe.TraceCtx(ctx, "mcpauth", "Tool.CheckPerm", "return: permission.CheckResult{\n\tDecision:\tpermission.DecisionDeny,\n\tReason:\t\t\"permis...")
 		return permission.CheckResult{
 			Decision: permission.DecisionDeny,
 			Reason:   "permission checker unavailable",
@@ -74,6 +75,9 @@ func (t *Tool) CheckPerm(ctx context.Context, _ json.RawMessage, checker permiss
 }
 
 func (t *Tool) permissionSubject() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: fmt.Sprintf(\"server:%s action:oauth_authenticate effects:credential_persisten...")
 	return fmt.Sprintf("server:%s action:oauth_authenticate effects:credential_persistence,capability_change", t.ServerName)
 }
 
@@ -99,6 +103,7 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 
 	if t.Manager == nil {
 		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: t.Manager == nil")
+		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"MCP manager is not available. Ask t...")
 		return tool.InvokeResult{
 			Content: fmt.Sprintf("MCP manager is not available. Ask the user to restart Pragma and try authenticating %q again.", t.ServerName),
 		}, nil
@@ -107,6 +112,7 @@ func (t *Tool) Invoke(ctx context.Context, _ json.RawMessage, _ tool.StateSnapsh
 	authURL, err := t.Manager.StartOAuthFlow(t.ServerName, t.Auth)
 	if err != nil {
 		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "if: err != nil")
+		observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{Content: fmt.Sprintf(\"Failed to start OAuth flow: %v\", err)...")
 		return tool.InvokeResult{Content: fmt.Sprintf("Failed to start OAuth flow: %v", err)}, nil
 	}
 	observe.TraceCtx(ctx, "mcpauth", "Tool.Invoke", "return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\n\t\t\"Ask the user to open this URL in...")

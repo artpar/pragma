@@ -47,6 +47,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		Backend: genai.BackendGeminiAPI,
 	}
 	if client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute); ok {
+		observe.GlobalTrace("if: ok")
 		clientConfig.HTTPClient = client
 	}
 	client, err := genai.NewClient(context.Background(), clientConfig)
@@ -76,9 +77,14 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) Close(ctx context.Context) error {
+	observe.TraceCtx(ctx, "google", "Provider.Close", "enter")
+	defer observe.TraceCtx(ctx, "google", "Provider.Close", "exit")
 	if p.cache == nil {
+		observe.TraceCtx(ctx, "google", "Provider.Close", "if: p.cache == nil")
+		observe.TraceCtx(ctx, "google", "Provider.Close", "return: nil")
 		return nil
 	}
+	observe.TraceCtx(ctx, "google", "Provider.Close", "return: p.cache.Close(ctx)")
 	return p.cache.Close(ctx)
 }
 
@@ -183,6 +189,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 
 	result := responseFromGenai(resp, params.Model, mapper)
 	if result.StopReason == model.StopMalformedToolCall {
+		observe.TraceCtx(ctx, "google", "Provider.Complete", "if: result.StopReason == model.StopMalformedToolCall")
 		err := fmt.Errorf("google: model returned MALFORMED_FUNCTION_CALL finish reason")
 		p.bus.Emit(observe.APIRequestFailed{
 			EventHeader:  observe.NewEventHeader("APIRequestFailed", traceID, spanID, ""),
@@ -192,6 +199,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 			Attempt:      1,
 		})
 		observe.TraceCtx(ctx, "google", "Provider.Complete", "return: model.Response{}, malformed function call")
+		observe.TraceCtx(ctx, "google", "Provider.Complete", "return: model.Response{}, err")
 		return model.Response{}, err
 	}
 	p.bus.Emit(observe.APIRequestCompleted{
@@ -541,6 +549,7 @@ func messagesToGenai(msgs []model.Message, mappers ...googleToolNameMapper) []*g
 				if part.Text != "" {
 					tp := &genai.Part{Text: part.Text}
 					if part.Signature != "" {
+						observe.GlobalTrace("if: part.Signature != \"\"")
 						tp.ThoughtSignature = []byte(part.Signature)
 					}
 					parts = append(parts, tp)
