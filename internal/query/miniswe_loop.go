@@ -87,16 +87,6 @@ func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<
 	e.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), nil, ch)
 }
 
-// RunPragmaLoopWithSystem runs the shell-action loop with an explicit system
-// prompt and first user message. It is used by orchestration states that need
-// persona instructions to have system-message priority.
-func (e *Engine) RunPragmaLoopWithSystem(ctx context.Context, system model.SystemPrompt, userMessage string) <-chan LoopEvent {
-	observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystem", "enter")
-	defer observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystem", "exit")
-	observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystem", "return: e.RunPragmaLoopWithSystemCompletionCheck(ctx, system, userMessage, nil)")
-	return e.RunPragmaLoopWithSystemCompletionCheck(ctx, system, userMessage, nil)
-}
-
 // PragmaLoopCompletionCheck can reject a submitted bash turn and keep the same
 // loop running with a corrective user observation.
 type PragmaLoopCompletionCheck func() (bool, string, error)
