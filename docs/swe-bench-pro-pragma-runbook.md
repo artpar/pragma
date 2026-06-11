@@ -103,7 +103,6 @@ timeout 7200 /pragma-bin \
   --provider lilac \
   --model minimaxai/minimax-m2.7 \
   --permission-mode bypassPermissions \
-  --allowed-tools Bash \
   --temperature 0 \
   --max-turns 250 \
   orchestration \

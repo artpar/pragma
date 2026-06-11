@@ -634,7 +634,6 @@ timeout {shlex.quote(str(args.agent_timeout))} /pragma-bin \\
   --provider {shlex.quote(args.provider)} \\
   --model {shlex.quote(args.model)} \\
   --permission-mode bypassPermissions \\
-  --allowed-tools Bash \\
   --temperature {shlex.quote(str(args.temperature))} \\
   --max-turns {shlex.quote(str(args.max_turns))} \\
   {extra_args} \\

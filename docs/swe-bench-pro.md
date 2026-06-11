@@ -94,7 +94,6 @@ Default Pragma settings:
 | Model | `$LLM_MODEL`, default `minimaxai/minimax-m2.7` |
 | Base URL | `$LLM_BASE_URL`, then `providers.lilac.base_url`, then `https://api.getlilac.com/v1` |
 | Permission mode | `bypassPermissions` |
-| Allowed tools | `Bash` |
 | Temperature | `$PRAGMA_TEMPERATURE`, default `0` |
 | Max turns | `$PRAGMA_MAX_TURNS`, default `250` |
 | Agent timeout | `$PRAGMA_AGENT_TIMEOUT`, default `7200` seconds |
