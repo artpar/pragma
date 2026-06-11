@@ -32,8 +32,6 @@ import (
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/sysprompt"
 	"github.com/artpar/pragma/internal/task"
-	"github.com/artpar/pragma/internal/tool"
-	"github.com/artpar/pragma/internal/toolset"
 )
 
 // Deps holds all shared dependencies created by SetupDeps.
@@ -45,14 +43,11 @@ type Deps struct {
 	Prov                   provider.Provider
 	Checker                permission.Checker
 	Store                  *app.StateStore
-	Registry               *tool.Registry
 	Engine                 *query.Engine
 	CostTracker            *model.CostTracker
 	EngineCfg              query.EngineConfig
 	TaskReg                *task.Registry
 	TaskContext            context.Context
-	Toolset                *toolset.Compiled
-	ToolPolicy             ToolExposurePolicy
 	McpManager             *mcp.Manager
 	CapabilityWorkDir      string
 	capabilityMu           sync.Mutex
@@ -134,8 +129,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		observe.GlobalTrace("if: cfg.MaxTokens == 0")
 		cfg.MaxTokens = 16384
 	}
-	toolPolicy := toolExposurePolicyFromFlags(cmd)
-
 	bus := observe.NewEventBus(1024)
 	restoreGlobalBus := observe.InstallGlobalBus(bus)
 	var traceFilter *observe.TraceFilter
@@ -237,9 +230,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	var resumedCost float64
 	var resumedTokens model.TokenUsage
 	var resumedContentReplacements []model.ContentReplacementRecord
-	var resumedFileStateRecords []tool.FileStateRecord
-	var resumedTodos []app.TodoItem
-	var resumedTeamContext *app.TeamContext
 	var resumedPromptHistory []string
 	var resumedOrchestrationArtifacts []app.OrchestrationArtifact
 	var resumedWorktree *app.WorktreeSession
@@ -313,9 +303,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		resumedCost = sess.CostUSD
 		resumedTokens = sess.TokenUsage
 		resumedContentReplacements = sess.ContentReplacements
-		resumedFileStateRecords = sess.FileStateRecords
-		resumedTodos = sess.Todos
-		resumedTeamContext = app.CopyTeamContext(sess.TeamContext)
 		resumedPromptHistory = sessionPromptHistory(sess)
 		resumedOrchestrationArtifacts = sess.OrchestrationArtifacts
 		resumedWorktree = copyWorktreeSession(sess.Worktree)
@@ -355,8 +342,6 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		Provider:               cfg.Provider,
 		MaxTokens:              cfg.MaxTokens,
 		Temperature:            cfg.Temperature,
-		Todos:                  resumedTodos,
-		TeamContext:            app.CopyTeamContext(resumedTeamContext),
 		PromptHistory:          append([]string(nil), resumedPromptHistory...),
 		OrchestrationArtifacts: append([]app.OrchestrationArtifact(nil), resumedOrchestrationArtifacts...),
 		Worktree:               resumedWorktree,
@@ -382,10 +367,8 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		Model:                     cfg.Model,
 		MaxTokens:                 cfg.MaxTokens,
 		MaxTurns:                  cfg.MaxTurns,
-		StopAfterToolExec:         cfg.StopAfterToolExec,
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
-		FileStateRecords:          resumedFileStateRecords,
 	}
 	var deps *Deps
 	engineCfg.RecordContentReplacements = contentReplacementRecorder(func() *Deps { return deps })
@@ -397,9 +380,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		}
 	}
 
-	registry := tool.NewRegistry(bus)
-
-	mcpManager := mcp.NewManager(bus, registry)
+	mcpManager := mcp.NewManager(bus)
 
 	depsCtx, depsCancel := context.WithCancel(cmd.Context())
 	var depsWG sync.WaitGroup
@@ -452,14 +433,11 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		Prov:                   prov,
 		Checker:                checker,
 		Store:                  store,
-		Registry:               registry,
 		Engine:                 nil,
 		CostTracker:            costTracker,
 		EngineCfg:              engineCfg,
 		TaskReg:                taskReg,
 		TaskContext:            taskCtx,
-		Toolset:                nil,
-		ToolPolicy:             toolPolicy,
 		McpManager:             mcpManager,
 		CapabilityWorkDir:      "",
 		capabilityContext:      depsCtx,
@@ -524,99 +502,8 @@ func buildRuntimeSystemPrompt(cmd *cobra.Command, cfg config.Config, bus *observ
 		observe.GlobalTrace("if: appendPrompt != \"\"")
 		sysPrompt.Blocks = append(sysPrompt.Blocks, model.SystemBlock{Text: appendPrompt, Cacheable: true})
 	}
-	observe.GlobalTrace("return: applySystemPromptToolFilters(cmd, sysPrompt)")
-	return applySystemPromptToolFilters(cmd, sysPrompt)
-}
-
-func applySystemPromptToolFilters(cmd *cobra.Command, prompt model.SystemPrompt) model.SystemPrompt {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if updatePlanAvailable(cmd) {
-		observe.GlobalTrace("if: updatePlanAvailable(cmd)")
-		observe.GlobalTrace("return: prompt")
-		return prompt
-	}
-	for i := range prompt.Blocks {
-		observe.GlobalTrace("range prompt.Blocks")
-		prompt.Blocks[i].Text = stripUnavailableUpdatePlanGuidance(prompt.Blocks[i].Text)
-	}
-	observe.GlobalTrace("return: prompt")
-	return prompt
-}
-
-func updatePlanAvailable(cmd *cobra.Command) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	allowedStr, _ := cmd.Flags().GetString("allowed-tools")
-	if allowedStr != "" {
-		observe.GlobalTrace("if: allowedStr != \"\"")
-		allowed := parseToolList(allowedStr)
-		found := false
-		for _, name := range allowed {
-			observe.GlobalTrace("range allowed")
-			if name == "update_plan" {
-				observe.GlobalTrace("if: name == \"update_plan\"")
-				found = true
-				break
-			}
-		}
-		if !found {
-			observe.GlobalTrace("if: !found")
-			observe.GlobalTrace("return: false")
-			return false
-		}
-	}
-
-	disallowedStr, _ := cmd.Flags().GetString("disallowed-tools")
-	if disallowedStr != "" {
-		observe.GlobalTrace("if: disallowedStr != \"\"")
-		for _, name := range parseToolList(disallowedStr) {
-			observe.GlobalTrace("range parseToolList(disallowedStr)")
-			if name == "update_plan" {
-				observe.GlobalTrace("if: name == \"update_plan\"")
-				observe.GlobalTrace("return: false")
-				return false
-			}
-		}
-	}
-	observe.GlobalTrace("return: true")
-	return true
-}
-
-func stripUnavailableUpdatePlanGuidance(text string) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	text = strings.ReplaceAll(
-		text,
-		"- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n",
-		"- Communicate with the user by streaming thinking & responses.\n",
-	)
-	text = removeMarkdownSection(text, "## Planning", "## Task execution")
-	text = removeMarkdownSection(text, "## `update_plan`", "")
-	observe.GlobalTrace("return: text")
-	return text
-}
-
-func removeMarkdownSection(text, start, end string) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	startIdx := strings.Index(text, start)
-	if startIdx < 0 {
-		observe.GlobalTrace("if: startIdx < 0")
-		observe.GlobalTrace("return: text")
-		return text
-	}
-	endIdx := len(text)
-	if end != "" {
-		observe.GlobalTrace("if: end != \"\"")
-		searchFrom := startIdx + len(start)
-		if idx := strings.Index(text[searchFrom:], end); idx >= 0 {
-			observe.GlobalTrace("if: idx >= 0")
-			endIdx = searchFrom + idx
-		}
-	}
-	observe.GlobalTrace("return: strings.TrimRight(text[:startIdx], \"\\n\") + \"\\n\\n\" + strings.TrimLeft(text[end...")
-	return strings.TrimRight(text[:startIdx], "\n") + "\n\n" + strings.TrimLeft(text[endIdx:], "\n")
+	observe.GlobalTrace("return: sysPrompt")
+	return sysPrompt
 }
 
 // ApplyFlagOverrides applies CLI flag values to the config.
@@ -673,17 +560,9 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"max-turns\")")
 		cfg.MaxTurns, _ = cmd.Flags().GetInt("max-turns")
 	}
-	if cmd.Flags().Changed("stop-after-tool-exec") {
-		observe.GlobalTrace("if: cmd.Flags().Changed(\"stop-after-tool-exec\")")
-		cfg.StopAfterToolExec, _ = cmd.Flags().GetBool("stop-after-tool-exec")
-	}
 	if cmd.Flags().Changed("permission-mode") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"permission-mode\")")
 		cfg.PermissionMode, _ = cmd.Flags().GetString("permission-mode")
-	}
-	if cmd.Flags().Changed("toolset") {
-		observe.GlobalTrace("if: cmd.Flags().Changed(\"toolset\")")
-		cfg.Toolset, _ = cmd.Flags().GetString("toolset")
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // LoopEvent is the sealed interface for events emitted by Engine.Run().
@@ -54,8 +53,7 @@ func (ToolCallEvent) loopEventSealed() {}
 
 // ToolResultEvent carries the result of a tool execution.
 type ToolResultEvent struct {
-	Result      model.ToolResultPart
-	FileEffects []tool.FileEffect
+	Result model.ToolResultPart
 }
 
 func (ToolResultEvent) loopEventSealed() {}
@@ -70,10 +68,9 @@ func (StructuredOutputEvent) loopEventSealed() {}
 
 // UserMessageEvent carries a tool-requested user-visible message.
 type UserMessageEvent struct {
-	ToolCallID  string
-	Message     string
-	Status      string
-	Attachments []tool.UserMessageAttachment
+	ToolCallID string
+	Message    string
+	Status     string
 }
 
 func (UserMessageEvent) loopEventSealed() {}

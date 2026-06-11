@@ -91,16 +91,6 @@ func TestMerge(t *testing.T) {
 			},
 		},
 		{
-			name:    "overlay stop after tool exec enables experiment",
-			base:    Config{},
-			overlay: Config{StopAfterToolExec: true},
-			check: func(t *testing.T, got Config) {
-				if !got.StopAfterToolExec {
-					t.Error("StopAfterToolExec = false, want true")
-				}
-			},
-		},
-		{
 			name:    "multiple fields mixed",
 			base:    Config{Model: "base", Provider: "anthropic", MaxTokens: 1000},
 			overlay: Config{Model: "overlay", MaxTokens: 2000},
@@ -113,16 +103,6 @@ func TestMerge(t *testing.T) {
 				}
 				if got.MaxTokens != 2000 {
 					t.Errorf("MaxTokens = %d, want %d", got.MaxTokens, 2000)
-				}
-			},
-		},
-		{
-			name:    "overlay toolset overrides base",
-			base:    Config{Toolset: "default"},
-			overlay: Config{Toolset: "idea"},
-			check: func(t *testing.T, got Config) {
-				if got.Toolset != "idea" {
-					t.Errorf("Toolset = %q, want idea", got.Toolset)
 				}
 			},
 		},
@@ -225,16 +205,14 @@ func TestLoad_MalformedJSON(t *testing.T) {
 func TestJSONRoundTrip(t *testing.T) {
 	temp := 0.5
 	original := Config{
-		Model:             "test-model",
-		Provider:          "anthropic",
-		MaxTokens:         8192,
-		Temperature:       &temp,
-		Thinking:          &ThinkingConfig{Enabled: true, BudgetTokens: 10000},
-		SystemPrompt:      "You are helpful.",
-		StopAfterToolExec: true,
-		Verbose:           true,
-		Record:            true,
-		Toolset:           "idea",
+		Model:        "test-model",
+		Provider:     "anthropic",
+		MaxTokens:    8192,
+		Temperature:  &temp,
+		Thinking:     &ThinkingConfig{Enabled: true, BudgetTokens: 10000},
+		SystemPrompt: "You are helpful.",
+		Verbose:      true,
+		Record:       true,
 	}
 
 	data, err := json.Marshal(original)
@@ -253,9 +231,6 @@ func TestJSONRoundTrip(t *testing.T) {
 	if restored.Provider != original.Provider {
 		t.Errorf("Provider = %q, want %q", restored.Provider, original.Provider)
 	}
-	if restored.Toolset != original.Toolset {
-		t.Errorf("Toolset = %q, want %q", restored.Toolset, original.Toolset)
-	}
 	if restored.MaxTokens != original.MaxTokens {
 		t.Errorf("MaxTokens = %d, want %d", restored.MaxTokens, original.MaxTokens)
 	}
@@ -267,9 +242,6 @@ func TestJSONRoundTrip(t *testing.T) {
 	}
 	if restored.SystemPrompt != original.SystemPrompt {
 		t.Errorf("SystemPrompt = %q, want %q", restored.SystemPrompt, original.SystemPrompt)
-	}
-	if restored.StopAfterToolExec != original.StopAfterToolExec {
-		t.Errorf("StopAfterToolExec = %v, want %v", restored.StopAfterToolExec, original.StopAfterToolExec)
 	}
 	if restored.Verbose != original.Verbose {
 		t.Errorf("Verbose = %v, want %v", restored.Verbose, original.Verbose)

@@ -46,18 +46,6 @@ var SupportedSettings = []SettingDef{
 		Options:     []string{"default", "acceptEdits", "bypassPermissions", "dontAsk"},
 		Description: "Default permission mode",
 	},
-	{
-		Name:        "stop_after_tool_exec",
-		Type:        "boolean",
-		Source:      "project",
-		Description: "Stop after executing tool calls",
-	},
-	{
-		Name:        "toolset",
-		Type:        "string",
-		Source:      "project",
-		Description: "Restrict exposed tools to a named toolset",
-	},
 }
 
 // FindSetting looks up a setting definition by name. Returns nil if not found.

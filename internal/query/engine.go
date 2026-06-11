@@ -15,8 +15,6 @@ import (
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
-	"github.com/artpar/pragma/internal/task"
-	"github.com/artpar/pragma/internal/tool"
 	"github.com/artpar/pragma/internal/toolresult"
 )
 
@@ -29,14 +27,10 @@ type EngineConfig struct {
 	Model                     string
 	MaxTokens                 int
 	MaxTurns                  int // 0 means use DefaultMaxTurns
-	StopAfterToolExec         bool
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
 	ResponseSchema            json.RawMessage
-	RequireStructuredOutput   bool
-	TaskID                    string // when set with TaskRegistry, enables task heartbeat
 	ContentReplacementRecords []model.ContentReplacementRecord
-	FileStateRecords          []tool.FileStateRecord
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
 	SessionCheckpoint         func() error
 	MCPServerStatuses         func() []MCPServerStatus
@@ -52,14 +46,11 @@ type MCPServerStatus struct {
 // Engine orchestrates the agentic loop: stream from provider, accumulate response,
 // execute tool calls, loop until done.
 type Engine struct {
-	provider     provider.Provider
-	registry     *tool.Registry
-	orchestrator *tool.Orchestrator
-	store        *app.StateStore
-	costTracker  *model.CostTracker
-	bus          *observe.EventBus
-	config       EngineConfig
-	fileState    *tool.FileStateCache
+	provider    provider.Provider
+	store       *app.StateStore
+	costTracker *model.CostTracker
+	bus         *observe.EventBus
+	config      EngineConfig
 
 	// Compaction — nil means auto-compaction disabled.
 	// Subagent engines pass nil (#27794: only root engine auto-compacts).
@@ -69,9 +60,6 @@ type Engine struct {
 
 	// Hooks — nil means no hook manager configured.
 	hookMgr *hook.Manager
-
-	// Task registry — when set with config.TaskID, enables heartbeat for task-owned engines.
-	taskRegistry *task.Registry
 
 	contentReplacementState *toolresult.ContentReplacementState
 }
@@ -87,8 +75,6 @@ type CompactionDeps struct {
 // NewEngine creates an Engine with all dependencies injected.
 func NewEngine(
 	prov provider.Provider,
-	reg *tool.Registry,
-	orch *tool.Orchestrator,
 	store *app.StateStore,
 	ct *model.CostTracker,
 	bus *observe.EventBus,
@@ -97,18 +83,13 @@ func NewEngine(
 ) *Engine {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	fileState := tool.NewFileStateCache()
-	fileState.Restore(cfg.FileStateRecords)
 	prov = provider.WithAccounting(prov, ct, bus)
 	e := &Engine{
-		provider:     prov,
-		registry:     reg,
-		orchestrator: orch,
-		store:        store,
-		costTracker:  ct,
-		bus:          bus,
-		config:       cfg,
-		fileState:    fileState,
+		provider:    prov,
+		store:       store,
+		costTracker: ct,
+		bus:         bus,
+		config:      cfg,
 	}
 	snap := store.Snapshot()
 	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), cfg.ContentReplacementRecords)
@@ -142,24 +123,19 @@ func (e *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 		MaxTokens:         snap.MaxTokens,
 		Temperature:       snap.Temperature,
 		Thinking:          snap.Thinking,
-		TeamContext:       app.CopyTeamContext(snap.TeamContext),
 		Worktree:          snap.Worktree,
 		ArtifactSessionID: snap.SessionID(),
 	})
 	sub := &Engine{
 		provider:     e.provider,
-		registry:     e.registry,
-		orchestrator: e.orchestrator,
 		store:        subStore,
 		costTracker:  e.costTracker,
 		bus:          e.bus,
 		config:       e.config,
-		fileState:    e.fileState,
 		compactor:    e.compactor,
 		autoTracker:  e.autoTracker,
 		windowConfig: e.windowConfig,
 		hookMgr:      e.hookMgr,
-		taskRegistry: e.taskRegistry,
 		contentReplacementState: toolresult.ReconstructContentReplacementState(
 			conversation.APIMessages(),
 			e.config.ContentReplacementRecords,
@@ -189,20 +165,6 @@ func (e *Engine) SetHookManager(mgr *hook.Manager) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	e.hookMgr = mgr
-}
-
-// SetTaskRegistry configures the task registry used for task heartbeat/reaping.
-func (e *Engine) SetTaskRegistry(reg *task.Registry) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	e.taskRegistry = reg
-}
-
-// SetTaskID sets the task ID for task heartbeat.
-func (e *Engine) SetTaskID(id string) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	e.config.TaskID = id
 }
 
 // RebindProvider switches the engine to a new provider/model runtime.
@@ -253,13 +215,12 @@ func (e *Engine) SetSessionCheckpoint(checkpoint func() error) {
 	e.config.SessionCheckpoint = checkpoint
 }
 
-// ResetSessionState rebuilds read-time replacement tracking and file freshness
-// after the active conversation/session changes.
-func (e *Engine) ResetSessionState(contentReplacementRecords []model.ContentReplacementRecord, fileStateRecords []tool.FileStateRecord) {
+// ResetSessionState rebuilds read-time replacement tracking after the active
+// conversation/session changes.
+func (e *Engine) ResetSessionState(contentReplacementRecords []model.ContentReplacementRecord) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	e.resetContentReplacementState(contentReplacementRecords)
-	e.resetFileState(fileStateRecords)
 }
 
 func (e *Engine) resetContentReplacementState(records []model.ContentReplacementRecord) {
@@ -267,60 +228,6 @@ func (e *Engine) resetContentReplacementState(records []model.ContentReplacement
 	defer observe.GlobalTrace("exit")
 	snap := e.store.Snapshot()
 	e.contentReplacementState = toolresult.ReconstructContentReplacementState(snap.Conversation.APIMessages(), records)
-}
-
-func (e *Engine) resetFileState(records []tool.FileStateRecord) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if e.fileState == nil {
-		observe.GlobalTrace("if: e.fileState == nil")
-		e.fileState = tool.NewFileStateCache()
-	}
-	e.fileState.Restore(records)
-}
-
-func (e *Engine) FileStateRecords() []tool.FileStateRecord {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if e.fileState == nil {
-		observe.GlobalTrace("if: e.fileState == nil")
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
-	observe.GlobalTrace("return: e.fileState.Snapshot()")
-	return e.fileState.Snapshot()
-}
-
-func (e *Engine) FileStateCache() *tool.FileStateCache {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: e.fileState")
-	return e.fileState
-}
-
-func (e *Engine) SetFileStateCache(cache *tool.FileStateCache) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if cache != nil {
-		observe.GlobalTrace("if: cache != nil")
-		e.fileState = cache
-	}
-}
-
-// Orchestrator returns the engine's tool orchestrator.
-func (e *Engine) Orchestrator() *tool.Orchestrator {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: e.orchestrator")
-	return e.orchestrator
-}
-
-// Registry returns the engine's tool registry.
-func (e *Engine) Registry() *tool.Registry {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: e.registry")
-	return e.registry
 }
 
 // EventBus returns the engine's durable event bus.
@@ -431,8 +338,8 @@ func messageContentTypes(parts []model.ContentPart) []string {
 	return types
 }
 
-// RunGraph executes a lifecycle graph using the engine's own provider, orchestrator,
-// and registry. Returns a channel of LoopEvents, same as Run().
+// RunGraph executes a lifecycle graph using the engine's own provider. Returns
+// a channel of LoopEvents, same as Run().
 func (e *Engine) RunGraph(ctx context.Context, graph *lifecycle.Graph, prompt string) <-chan LoopEvent {
 	observe.TraceCtx(ctx, "query", "Engine.RunGraph", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.RunGraph", "exit")
@@ -465,7 +372,7 @@ func (e *Engine) runGraph(ctx context.Context, graph *lifecycle.Graph, prompt st
 		snap.Conversation.System,
 		resolvedModel,
 		e.config.MaxTokens,
-		e.registry.ToolDefs(),
+		nil,
 		e.bus,
 	))
 

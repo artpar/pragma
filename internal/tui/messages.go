@@ -5,7 +5,6 @@ import (
 
 	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // LoopEventMsg wraps an interactive event for the bubbletea Update loop.
@@ -35,14 +34,6 @@ type PermResponseMsg struct {
 // InputSubmittedMsg carries a user message from the input component.
 type InputSubmittedMsg struct {
 	Text string
-}
-
-// AskRequestMsg signals that a tool goroutine needs to ask the user a question.
-// The TUI renders a question dialog (option selection or free-text) and sends
-// the answer back on the Response channel.
-type AskRequestMsg struct {
-	Request  tool.AskRequest
-	Response chan<- tool.AskResponse
 }
 
 // quitTimeoutMsg signals that the 800ms Ctrl+C exit window has expired.

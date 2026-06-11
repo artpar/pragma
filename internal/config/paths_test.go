@@ -69,23 +69,3 @@ func TestProjectPaths(t *testing.T) {
 		})
 	}
 }
-
-func TestToolsetsPaths(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	workDir := "/tmp/myproject"
-
-	global, err := GlobalToolsetsPath("json")
-	if err != nil {
-		t.Fatalf("GlobalToolsetsPath: %v", err)
-	}
-	if global != filepath.Join(dir, ".pragma", "toolsets.json") {
-		t.Errorf("GlobalToolsetsPath = %q", global)
-	}
-	if got := ProjectToolsetsPath(workDir, "yaml"); got != filepath.Join(workDir, ".pragma", "toolsets.yaml") {
-		t.Errorf("ProjectToolsetsPath = %q", got)
-	}
-	if got := LocalToolsetsPath(workDir, "json"); got != filepath.Join(workDir, ".pragma", "toolsets.local.json") {
-		t.Errorf("LocalToolsetsPath = %q", got)
-	}
-}

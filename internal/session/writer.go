@@ -9,7 +9,6 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // Writer appends JSONL entries to a session file.
@@ -28,9 +27,6 @@ type RewriteData struct {
 	Metadata               MetadataData
 	ContentReplacements    []model.ContentReplacementRecord
 	PromptHistory          []PromptHistoryData
-	FileStateRecords       []tool.FileStateRecord
-	Todos                  []app.TodoItem
-	TeamContext            *app.TeamContext
 	OrchestrationArtifacts []app.OrchestrationArtifact
 	TaskResults            []TaskResultData
 }
@@ -147,18 +143,6 @@ func (w *Writer) WritePromptHistory(text string) error {
 	})
 }
 
-func (w *Writer) WriteFileState(records []tool.FileStateRecord) error {
-	return w.writeEntry(EntryFileState, FileStateData{Records: records})
-}
-
-func (w *Writer) WriteTodos(items []app.TodoItem) error {
-	return w.writeEntry(EntryTodos, TodosData{Items: items})
-}
-
-func (w *Writer) WriteTeamContext(ctx *app.TeamContext) error {
-	return w.writeEntry(EntryTeamContext, TeamContextData{Context: app.CopyTeamContext(ctx)})
-}
-
 func (w *Writer) WriteOrchestrationArtifacts(artifacts []app.OrchestrationArtifact) error {
 	if len(artifacts) == 0 {
 		return nil
@@ -241,21 +225,6 @@ func (w *Writer) Rewrite(data RewriteData) error {
 	}
 	for _, prompt := range data.PromptHistory {
 		if err := w.encodeRewriteEntry(EntryPromptHistory, prompt); err != nil {
-			return err
-		}
-	}
-	if len(data.FileStateRecords) > 0 {
-		if err := w.encodeRewriteEntry(EntryFileState, FileStateData{Records: data.FileStateRecords}); err != nil {
-			return err
-		}
-	}
-	if len(data.Todos) > 0 {
-		if err := w.encodeRewriteEntry(EntryTodos, TodosData{Items: data.Todos}); err != nil {
-			return err
-		}
-	}
-	if data.TeamContext != nil {
-		if err := w.encodeRewriteEntry(EntryTeamContext, TeamContextData{Context: app.CopyTeamContext(data.TeamContext)}); err != nil {
 			return err
 		}
 	}

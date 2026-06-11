@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/interactive"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/slash"
@@ -501,13 +503,19 @@ func TestInputQueuingDuringStreaming(t *testing.T) {
 	m.width = 80
 	m.height = 24
 	m.streaming = true
+	var submitted string
+	m.runInput = func(_ context.Context, input string) <-chan interactive.Event {
+		submitted = input
+		ch := make(chan interactive.Event)
+		close(ch)
+		return ch
+	}
 
-	// Submit input while streaming — should be queued
-	result, _ := m.handleInputSubmitted(InputSubmittedMsg{Text: "follow-up question"})
-	updated := result.(Model)
+	// Submit input while streaming — runtime admission handles busy/reject state.
+	_, _ = m.handleInputSubmitted(InputSubmittedMsg{Text: "follow-up question"})
 
-	if updated.pendingInput != "follow-up question" {
-		t.Errorf("pendingInput = %q, want %q", updated.pendingInput, "follow-up question")
+	if submitted != "follow-up question" {
+		t.Errorf("submitted = %q, want %q", submitted, "follow-up question")
 	}
 }
 
@@ -516,13 +524,20 @@ func TestInputQueuingTruncatesLongLabel(t *testing.T) {
 	m.width = 80
 	m.height = 24
 	m.streaming = true
+	var submitted string
+	m.runInput = func(_ context.Context, input string) <-chan interactive.Event {
+		submitted = input
+		ch := make(chan interactive.Event)
+		close(ch)
+		return ch
+	}
 
 	longText := strings.Repeat("x", 50) // > 40 chars
 	result, _ := m.handleInputSubmitted(InputSubmittedMsg{Text: longText})
 	updated := result.(Model)
 
-	if updated.pendingInput != longText {
-		t.Error("pendingInput should store full text")
+	if submitted != longText {
+		t.Error("runtime admission should receive full text")
 	}
 	// Toolbar status should be truncated
 	status := updated.toolbar.status

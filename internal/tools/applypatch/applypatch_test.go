@@ -2,20 +2,11 @@ package applypatch
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/artpar/pragma/internal/tool"
 )
-
-type testState struct {
-	workDir string
-}
-
-func (s testState) WorkDir() string { return s.workDir }
 
 func TestApplyPatchUpdateAddDelete(t *testing.T) {
 	dir := t.TempDir()
@@ -38,7 +29,7 @@ func TestApplyPatchUpdateAddDelete(t *testing.T) {
 *** Delete File: old.txt
 *** End Patch`
 
-	result, err := ApplyPatchText(context.Background(), patch, dir, testState{workDir: dir})
+	result, err := ApplyPatchText(context.Background(), patch, dir)
 	if err != nil {
 		t.Fatalf("ApplyPatchText: %v", err)
 	}
@@ -65,11 +56,11 @@ func TestApplyPatchUpdateAddDelete(t *testing.T) {
 }
 
 func TestToolNameIsLowercaseApplyPatch(t *testing.T) {
-	if got := (&Tool{}).Name(); got != "apply_patch" {
-		t.Fatalf("Tool.Name() = %q, want apply_patch", got)
+	if ToolName != "apply_patch" {
+		t.Fatalf("ToolName = %q, want apply_patch", ToolName)
 	}
-	if got := (&LegacyTool{}).Name(); got != "ApplyPatch" {
-		t.Fatalf("LegacyTool.Name() = %q, want ApplyPatch", got)
+	if LegacyToolName != "ApplyPatch" {
+		t.Fatalf("LegacyToolName = %q, want ApplyPatch", LegacyToolName)
 	}
 }
 
@@ -90,7 +81,7 @@ func TestApplyPatchRejectsStaleUpdateWithoutMutation(t *testing.T) {
  }
 *** End Patch`
 
-	_, err := ApplyPatchText(context.Background(), patch, dir, testState{workDir: dir})
+	_, err := ApplyPatchText(context.Background(), patch, dir)
 	if err == nil {
 		t.Fatal("expected stale update to fail")
 	}
@@ -114,7 +105,7 @@ func TestApplyPatchMalformedUpdateErrorIsActionable(t *testing.T) {
 package main
 *** End Patch`
 
-	_, err := ApplyPatchText(context.Background(), patch, dir, testState{workDir: dir})
+	_, err := ApplyPatchText(context.Background(), patch, dir)
 	if err == nil {
 		t.Fatal("expected malformed patch to fail")
 	}
@@ -148,7 +139,7 @@ func TestApplyPatchAcceptsBlankContextLines(t *testing.T) {
 +}
 *** End Patch`
 
-	if _, err := ApplyPatchText(context.Background(), patch, dir, testState{workDir: dir}); err != nil {
+	if _, err := ApplyPatchText(context.Background(), patch, dir); err != nil {
 		t.Fatalf("ApplyPatchText: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -157,21 +148,6 @@ func TestApplyPatchAcceptsBlankContextLines(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `println("ok")`) {
 		t.Fatalf("patched content = %q", string(data))
-	}
-}
-
-func TestToolInvokeRequiresPatchJSON(t *testing.T) {
-	dir := t.TempDir()
-	input, _ := json.Marshal(Input{Patch: `*** Begin Patch
-*** Add File: x.txt
-+x
-*** End Patch`})
-	result, err := (&Tool{}).Invoke(context.Background(), input, testState{workDir: dir})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if result.Content == "" {
-		t.Fatal("expected tool content")
 	}
 }
 
@@ -200,5 +176,3 @@ func TestExtractShellApplyPatch(t *testing.T) {
 		t.Fatalf("patch = %q", patch)
 	}
 }
-
-var _ tool.StateSnapshot = testState{}

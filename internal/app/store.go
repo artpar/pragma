@@ -30,10 +30,6 @@ func (s *StateStore) Snapshot() AppState {
 		t := *s.state.Thinking
 		snap.Thinking = &t
 	}
-	if len(s.state.Todos) > 0 {
-		snap.Todos = make([]TodoItem, len(s.state.Todos))
-		copy(snap.Todos, s.state.Todos)
-	}
 	if len(s.state.PromptHistory) > 0 {
 		snap.PromptHistory = make([]string, len(s.state.PromptHistory))
 		copy(snap.PromptHistory, s.state.PromptHistory)
@@ -46,7 +42,6 @@ func (s *StateStore) Snapshot() AppState {
 		wt := *s.state.Worktree
 		snap.Worktree = &wt
 	}
-	snap.TeamContext = CopyTeamContext(s.state.TeamContext)
 	return snap
 }
 

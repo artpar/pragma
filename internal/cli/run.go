@@ -34,9 +34,6 @@ import (
 	"github.com/artpar/pragma/internal/session"
 	"github.com/artpar/pragma/internal/slash"
 	"github.com/artpar/pragma/internal/sysprompt"
-	"github.com/artpar/pragma/internal/tool"
-	toolapplypatch "github.com/artpar/pragma/internal/tools/applypatch"
-	toolsynthetic "github.com/artpar/pragma/internal/tools/synthetic"
 	"github.com/artpar/pragma/internal/tui"
 )
 
@@ -135,9 +132,6 @@ func RunBackground(cmd *cobra.Command) error {
 	addStringFlag("api-key")
 	addStringFlag("system-prompt")
 	addStringFlag("append-system-prompt")
-	addStringFlag("allowed-tools")
-	addStringFlag("disallowed-tools")
-	addStringFlag("toolset")
 	addStringFlag("permission-mode")
 	addStringFlag("context-mode")
 	addStringFlag("handoff-schema")
@@ -148,7 +142,6 @@ func RunBackground(cmd *cobra.Command) error {
 	addBoolFlag("thinking")
 	addBoolFlag("verbose")
 	addBoolFlag("record")
-	addBoolFlag("stop-after-tool-exec")
 	if cmd.Flags().Changed("temperature") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"temperature\")")
 		v, _ := cmd.Flags().GetFloat64("temperature")
@@ -422,7 +415,7 @@ func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context)
 	}
 	if rt.Engine != nil {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.closeCurrentSessionAfterClear", "if: rt.Engine != nil")
-		rt.Engine.ResetSessionState(nil, nil)
+		rt.Engine.ResetSessionState(nil)
 	}
 	rt.Deps.SessionWriter = nil
 	rt.Deps.SessionHeader = session.HeaderData{}
@@ -726,8 +719,6 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 		st.Model = providerBinding.modelID
 		st.Provider = providerBinding.providerName
 		st.CWD = resumedConv.WorkDir
-		st.Todos = sess.Todos
-		st.TeamContext = app.CopyTeamContext(sess.TeamContext)
 		st.PromptHistory = promptHistory
 		st.OrchestrationArtifacts = append([]app.OrchestrationArtifact(nil), sess.OrchestrationArtifacts...)
 		st.Worktree = copyWorktreeSession(sess.Worktree)
@@ -736,7 +727,7 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.PromptHistory = promptHistory
 	rt.Deps.SessionHeader = sessionHeaderForCurrentConversation(rt.Deps)
 	rt.Deps.SessionStart = sessionStartForConversation(sess.Conversation)
-	rt.Engine.ResetSessionState(sess.ContentReplacements, sess.FileStateRecords)
+	rt.Engine.ResetSessionState(sess.ContentReplacements)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
 	sessionHookResult, err := beginSessionLifecycle(context.Background(), rt.Deps, resumedFrom)
@@ -1002,14 +993,14 @@ func (rt *InteractiveRuntime) clearPendingSessionStartHook() {
 }
 
 // BuildInteractiveRuntime wires the shared dependencies for an interactive UI.
-func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter, asker tool.Asker) (*InteractiveRuntime, error) {
+func BuildInteractiveRuntime(cmd *cobra.Command, prompter permission.Prompter) (*InteractiveRuntime, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: BuildInteractiveRuntimeWithOptions(cmd, prompter, asker, InteractiveRuntimeOp...")
-	return BuildInteractiveRuntimeWithOptions(cmd, prompter, asker, InteractiveRuntimeOptions{})
+	observe.GlobalTrace("return: BuildInteractiveRuntimeWithOptions(cmd, prompter, InteractiveRuntimeOptions{})")
+	return BuildInteractiveRuntimeWithOptions(cmd, prompter, InteractiveRuntimeOptions{})
 }
 
-func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.Prompter, asker tool.Asker, opts InteractiveRuntimeOptions) (*InteractiveRuntime, error) {
+func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.Prompter, opts InteractiveRuntimeOptions) (*InteractiveRuntime, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	d, err := SetupDepsWithOptions(cmd, opts.SetupDeps)
@@ -1025,7 +1016,7 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 		opts.ConfigureDeps(d)
 	}
 
-	engine, err := RegisterTools(d, prompter, asker)
+	engine, err := RegisterTools(d, prompter)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
@@ -1036,7 +1027,6 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
-	waitForToolsetMCP(cmd.Context(), d)
 	var pendingSessionStartHook hook.AggregatedResult
 	hasPendingSessionStartHook := false
 	if d.SessionWriter != nil {
@@ -1141,8 +1131,7 @@ func RunTUIInteractive(cmd *cobra.Command) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	prompter := tui.NewInteractivePrompter()
-	asker := tui.NewInteractiveAsker()
-	rt, err := BuildInteractiveRuntime(cmd, prompter, asker)
+	rt, err := BuildInteractiveRuntime(cmd, prompter)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
@@ -1175,7 +1164,6 @@ func RunTUIInteractive(cmd *cobra.Command) error {
 
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	prompter.SetProgram(program)
-	asker.SetProgram(program)
 
 	if _, err := program.Run(); err != nil {
 		observe.GlobalTrace("if: err != nil")
@@ -1215,8 +1203,7 @@ func RunStandaloneOrchestration(cmd *cobra.Command, opts StandaloneOrchestration
 	}
 
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tool.NonInteractiveAsker{}
-	rt, err := BuildInteractiveRuntimeWithOptions(cmd, prompter, asker, InteractiveRuntimeOptions{
+	rt, err := BuildInteractiveRuntimeWithOptions(cmd, prompter, InteractiveRuntimeOptions{
 		SetupDeps: SetupDepsOptions{DefaultPermissionMode: permission.ModeBypassPermissions},
 		ConfigureDeps: func(d *Deps) {
 			d.Bus.Subscribe(d.StderrLogger)
@@ -1407,7 +1394,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 	}
 	var schemaJSON json.RawMessage
 	var nativeStructuredOutput bool
-	var fallbackStructuredOutput bool
 	if schemaFlag != "" {
 		observe.GlobalTrace("if: schemaFlag != \"\"")
 		var err error
@@ -1418,51 +1404,22 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 			return fmt.Errorf("invalid output schema: %w", err)
 		}
 		nativeStructuredOutput = d.Prov.SupportsFeature(provider.FeatureStructuredOutput)
-		fallbackStructuredOutput = !nativeStructuredOutput
 		if nativeStructuredOutput {
 			observe.GlobalTrace("if: nativeStructuredOutput")
 			d.EngineCfg.ResponseSchema = schemaJSON
 		} else {
 			observe.GlobalTrace("else: nativeStructuredOutput")
-			d.EngineCfg.RequireStructuredOutput = true
+			return fmt.Errorf("structured output requires provider support after native tools removal")
 		}
 	}
 
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tool.NonInteractiveAsker{}
-	engine, err := RegisterTools(d, prompter, asker)
+	engine, err := RegisterTools(d, prompter)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
 		return err
 	}
-
-	if fallbackStructuredOutput {
-		observe.GlobalTrace("if: fallbackStructuredOutput")
-		synTool, err := toolsynthetic.New(schemaJSON)
-		if err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: fmt.Errorf(\"create StructuredOutput tool: %w\", err)")
-			return fmt.Errorf("create StructuredOutput tool: %w", err)
-		}
-		if d.Toolset != nil && !d.Toolset.AllowBuiltinTool(synTool.Name()) {
-			observe.GlobalTrace("if: d.Toolset != nil && !d.Toolset.AllowBuiltinTool(synTool.Name())")
-			observe.GlobalTrace("return: fmt.Errorf(\"toolset %q does not expose %s; enable includeBuiltinTools and inc...")
-			return fmt.Errorf("toolset %q does not expose %s; enable includeBuiltinTools and include %s in the toolset tools list", d.Toolset.Name, synTool.Name(), synTool.Name())
-		}
-		if !d.ToolPolicy.Allows(synTool.Name()) {
-			observe.GlobalTrace("if: !d.ToolPolicy.Allows(synTool.Name())")
-			observe.GlobalTrace("return: fmt.Errorf(\"tool exposure policy does not expose %s\", synTool.Name())")
-			return fmt.Errorf("tool exposure policy does not expose %s", synTool.Name())
-		}
-		if err := d.Registry.Register(synTool); err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: fmt.Errorf(\"register StructuredOutput tool: %w\", err)")
-			return fmt.Errorf("register StructuredOutput tool: %w", err)
-		}
-	}
-
-	waitForToolsetMCP(cmd.Context(), d)
 
 	compDeps, _ := BuildCompactionDeps(d)
 	engine.SetCompaction(compDeps)
@@ -1525,7 +1482,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 	events := engine.Run(ctx, prompt)
 
 	hasStructuredOutput := schemaFlag != ""
-	var structuredJSON json.RawMessage
 	var nativeStructuredText strings.Builder
 
 	out := os.Stdout
@@ -1588,9 +1544,6 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 			} else {
 				printUserMessageEvent(out, e)
 			}
-		case query.StructuredOutputEvent:
-			observe.GlobalTrace("typecase: query.StructuredOutputEvent")
-			structuredJSON = append(json.RawMessage(nil), e.JSON...)
 		case query.CompactionEvent:
 			observe.GlobalTrace("typecase: query.CompactionEvent")
 			if d.Cfg.Verbose {
@@ -1623,20 +1576,11 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 		}
 	}
 
-	if fallbackStructuredOutput && structuredJSON != nil {
-		observe.GlobalTrace("if: hasStructuredOutput && structuredJSON != nil")
-		fmt.Fprintln(out, string(structuredJSON))
-	} else if nativeStructuredOutput {
+	if nativeStructuredOutput {
 		observe.GlobalTrace("else-if: nativeStructuredOutput")
 		if text := strings.TrimSpace(nativeStructuredText.String()); text != "" {
 			fmt.Fprintln(out, text)
 		}
-	} else if fallbackStructuredOutput {
-		observe.GlobalTrace("else-if: hasStructuredOutput")
-		if err := sessionCloseFn(); err != nil {
-			return err
-		}
-		return fmt.Errorf("structured output was not produced")
 	}
 
 	if err := sessionCloseFn(); err != nil {
@@ -2024,17 +1968,6 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 				return err
 			}
 		}
-		if d.Engine != nil {
-			if err := d.SessionWriter.WriteFileState(d.Engine.FileStateRecords()); err != nil {
-				return err
-			}
-		}
-		if err := d.SessionWriter.WriteTodos(snap.Todos); err != nil {
-			return err
-		}
-		if err := d.SessionWriter.WriteTeamContext(snap.TeamContext); err != nil {
-			return err
-		}
 		if err := d.SessionWriter.WriteOrchestrationArtifacts(snap.OrchestrationArtifacts); err != nil {
 			return err
 		}
@@ -2103,23 +2036,12 @@ func rewriteCurrentSession(d *Deps) error {
 		observe.GlobalTrace("return: err")
 		return err
 	}
-	var fileStateRecords []tool.FileStateRecord
-	if d.Engine != nil {
-		observe.GlobalTrace("if: d.Engine != nil")
-		fileStateRecords = d.Engine.FileStateRecords()
-	} else {
-		observe.GlobalTrace("else: d.Engine != nil")
-		fileStateRecords = existing.FileStateRecords
-	}
 	if err := d.SessionWriter.Rewrite(session.RewriteData{
 		Header:                 header,
 		Messages:               snap.Conversation.Messages,
 		Metadata:               sessionMetadataForSnapshot(d, snap),
 		ContentReplacements:    existing.ContentReplacements,
 		PromptHistory:          existing.PromptHistory,
-		FileStateRecords:       fileStateRecords,
-		Todos:                  snap.Todos,
-		TeamContext:            snap.TeamContext,
 		OrchestrationArtifacts: snap.OrchestrationArtifacts,
 		TaskResults:            existing.TaskResults,
 	}); err != nil {
@@ -2361,105 +2283,6 @@ func summarizePromptText(text string) string {
 	return s
 }
 
-// applyToolFilters applies --allowed-tools and --disallowed-tools flags.
-// Uses Registry.Unregister — tools are physically removed, not just denied.
-// This is stronger than permission-layer filtering (can't be bypassed via Bash).
-func applyToolFilters(cmd *cobra.Command, registry *tool.Registry) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	allowedStr, _ := cmd.Flags().GetString("allowed-tools")
-	if allowedStr != "" {
-		observe.GlobalTrace("if: allowedStr != \"\"")
-		allowed := parseToolList(allowedStr)
-		allowedSet := make(map[string]bool, len(allowed))
-		for _, name := range allowed {
-			observe.GlobalTrace("range allowed")
-			allowedSet[name] = true
-		}
-		for _, desc := range registry.List() {
-			observe.GlobalTrace("range registry.List()")
-			if !allowedSet[desc.Name()] {
-				observe.GlobalTrace("if: !allowedSet[desc.Name()]")
-				registry.Unregister(desc.Name())
-			}
-		}
-	}
-
-	disallowedStr, _ := cmd.Flags().GetString("disallowed-tools")
-	if disallowedStr != "" {
-		observe.GlobalTrace("if: disallowedStr != \"\"")
-		disallowed := parseToolList(disallowedStr)
-		for _, name := range disallowed {
-			observe.GlobalTrace("range disallowed")
-			registry.Unregister(name)
-		}
-	}
-
-	if !hasExposedPatchTool(registry) {
-		observe.GlobalTrace("if: !hasExposedPatchTool(registry)")
-		setPatchMode(registry, false)
-	}
-}
-
-func hasExposedPatchTool(registry *tool.Registry) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	for _, desc := range registry.List() {
-		observe.GlobalTrace("range registry.List()")
-		switch desc.Name() {
-		case toolapplypatch.ToolName, toolapplypatch.LegacyToolName:
-			observe.GlobalTrace("case: toolapplypatch.ToolName, toolapplypatch.LegacyToolName")
-			return true
-		}
-	}
-	observe.GlobalTrace("return: false")
-	return false
-}
-
-type patchModeSetter interface {
-	SetPatchMode(bool)
-}
-
-func setPatchMode(registry *tool.Registry, enabled bool) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	for _, desc := range registry.List() {
-		observe.GlobalTrace("range registry.List()")
-		if setter, ok := desc.(patchModeSetter); ok {
-			observe.GlobalTrace("if: ok")
-			setter.SetPatchMode(enabled)
-		}
-	}
-}
-
-func waitForToolsetMCP(ctx context.Context, d *Deps) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if d == nil || d.Toolset == nil || d.McpManager == nil || !d.Toolset.SelectsMCP() {
-		observe.GlobalTrace("if: d == nil || d.Toolset == nil || d.McpManager == nil || !d.Toolset.SelectsMCP()")
-		return
-	}
-	d.McpManager.WaitForRegisteredTools(ctx, 3*time.Second)
-}
-
-// parseToolList splits a comma-separated tool list, trimming whitespace.
-func parseToolList(s string) []string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	parts := strings.Split(s, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		observe.GlobalTrace("range parts")
-		p = strings.TrimSpace(p)
-		if p != "" {
-			observe.GlobalTrace("if: p != \"\"")
-			result = append(result, p)
-		}
-	}
-	observe.GlobalTrace("return: result")
-	return result
-}
-
 func printUserMessageEvent(w io.Writer, e query.UserMessageEvent) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -2468,10 +2291,6 @@ func printUserMessageEvent(w io.Writer, e query.UserMessageEvent) {
 		return
 	}
 	fmt.Fprintln(w, e.Message)
-	for _, attachment := range e.Attachments {
-		observe.GlobalTrace("range e.Attachments")
-		fmt.Fprintf(w, "[attachment: %s]\n", attachment.Path)
-	}
 	flushWriter(w)
 }
 

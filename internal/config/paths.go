@@ -43,25 +43,6 @@ func LocalSettingsPath(workDir string) string {
 	return filepath.Join(workDir, ".pragma", "settings.local.json")
 }
 
-// GlobalToolsetsPath returns ~/.pragma/toolsets.<ext>.
-func GlobalToolsetsPath(ext string) (string, error) {
-	dir, err := PragmaHome()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "toolsets."+ext), nil
-}
-
-// ProjectToolsetsPath returns <workDir>/.pragma/toolsets.<ext>.
-func ProjectToolsetsPath(workDir, ext string) string {
-	return filepath.Join(workDir, ".pragma", "toolsets."+ext)
-}
-
-// LocalToolsetsPath returns <workDir>/.pragma/toolsets.local.<ext>.
-func LocalToolsetsPath(workDir, ext string) string {
-	return filepath.Join(workDir, ".pragma", "toolsets.local."+ext)
-}
-
 // SessionsDir returns ~/.pragma/sessions/.
 func SessionsDir() (string, error) {
 	dir, err := PragmaHome()

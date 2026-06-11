@@ -76,18 +76,7 @@ func (m *Manager) handleOAuthCallback(ctx context.Context, serverName string, au
 		m.emitOAuthCompleted(serverName, false, "reconnect failed: "+err.Error())
 		return
 	}
-	if m.registry != nil {
-		observe.TraceCtx(ctx, "mcp", "Manager.handleOAuthCallback", "if: m.registry != nil")
-		m.registry.Unregister(authToolName(serverName))
-	}
 	m.emitOAuthCompleted(serverName, true, "")
-}
-
-func authToolName(serverName string) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"mcp__\" + NormalizeName(serverName) + \"__authenticate\"")
-	return "mcp__" + NormalizeName(serverName) + "__authenticate"
 }
 
 func (m *Manager) emitOAuthStarted(serverName, authURL string) {

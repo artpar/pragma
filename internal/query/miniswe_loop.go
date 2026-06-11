@@ -83,7 +83,7 @@ func (e *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<
 	observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "exit")
 	snap := e.store.Snapshot()
-	system := pragmaLoopSystemFromExisting(snap.Conversation.System)
+	system := model.SystemPrompt{Blocks: []model.SystemBlock{{Text: pragmaLoopSystemPrompt, Cacheable: false}}}
 	e.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), nil, ch)
 }
 
@@ -210,11 +210,6 @@ func (e *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system mode
 			if actionCount != 0 {
 				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: actionCount != 0")
 				break
-			}
-			if e.config.RequireStructuredOutput {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: e.config.RequireStructuredOutput")
-				ch <- ErrorEvent{Err: fmt.Errorf("structured output was not produced")}
-				return
 			}
 			if noActionRetries >= maxNoActionRetries {
 				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: noActionRetries >= maxNoActionRetries")
@@ -396,22 +391,6 @@ func pragmaLoopInstancePrompt(task, cwd string) string {
 	return "Please solve this task: " + task + fmt.Sprintf(pragmaLoopInstanceSuffix, cwd, pragmaLoopSystemInformation(cwd))
 }
 
-func pragmaLoopSystemFromExisting(existing model.SystemPrompt) model.SystemPrompt {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	text := pragmaLoopSystemPrompt
-	for _, block := range existing.Blocks {
-		observe.GlobalTrace("range existing.Blocks")
-		if strings.Contains(block.Text, "## Server Commands") {
-			observe.GlobalTrace("if: strings.Contains(block.Text, \"## Server Commands\")")
-			text += "\n\n\n" + block.Text
-			break
-		}
-	}
-	observe.GlobalTrace("return: model.SystemPrompt{Blocks: []model.SystemBlock{{Text: text, Cacheable: false}}}")
-	return model.SystemPrompt{Blocks: []model.SystemBlock{{Text: text, Cacheable: false}}}
-}
-
 func pragmaLoopSystemInformation(cwd string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -503,17 +482,6 @@ type pragmaLoopBashResult struct {
 	Output     string
 }
 
-type pragmaLoopPatchState struct {
-	workDir string
-}
-
-func (s pragmaLoopPatchState) WorkDir() string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: s.workDir")
-	return s.workDir
-}
-
 func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool) {
 	observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "enter")
 	defer observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "exit")
@@ -531,7 +499,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 				applyWorkDir = filepath.Join(workDir, patchWorkDir)
 			}
 		}
-		result, err := applypatch.ApplyPatchText(ctx, patch, applyWorkDir, pragmaLoopPatchState{workDir: applyWorkDir})
+		result, err := applypatch.ApplyPatchText(ctx, patch, applyWorkDir)
 		if err != nil {
 			return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false
 		}

@@ -3,18 +3,15 @@ package testing
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
-	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/provider/replay"
 	"github.com/artpar/pragma/internal/query"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // SequenceProvider implements provider.Provider with predetermined responses.
@@ -121,10 +118,8 @@ func (sp *SequenceProvider) Calls() []provider.RequestParams {
 type Harness struct {
 	provider *SequenceProvider
 	bus      *observe.EventBus
-	registry *tool.Registry
 	store    *app.StateStore
 	ct       *model.CostTracker
-	checker  permission.Checker
 	engine   *query.Engine
 	events   []observe.Event
 	loopEvts []query.LoopEvent
@@ -151,49 +146,6 @@ func (h *Harness) WithProviderResponses(responses ...model.Response) *Harness {
 	return h
 }
 
-// WithTool registers a simple tool that calls handler when invoked.
-func (h *Harness) WithTool(name string, handler func(json.RawMessage) (string, error)) *Harness {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	h.ensureRegistry()
-	_ = h.registry.Register(&simpleTool{
-		name:    name,
-		handler: handler,
-	})
-	observe.GlobalTrace("return: h")
-	return h
-}
-
-// WithToolError registers a tool that always returns the given error.
-func (h *Harness) WithToolError(name string, errMsg string) *Harness {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	h.ensureRegistry()
-	_ = h.registry.Register(&simpleTool{
-		name: name,
-		handler: func(_ json.RawMessage) (string, error) {
-			return "", errors.New(errMsg)
-		},
-	})
-	observe.GlobalTrace("return: h")
-	return h
-}
-
-// WithPermissionDeny configures the harness to deny the named tools.
-// All other tools are allowed.
-func (h *Harness) WithPermissionDeny(toolNames ...string) *Harness {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	deny := make(map[string]bool, len(toolNames))
-	for _, n := range toolNames {
-		observe.GlobalTrace("range toolNames")
-		deny[n] = true
-	}
-	h.checker = &denyListChecker{deny: deny}
-	observe.GlobalTrace("return: h")
-	return h
-}
-
 // WithMaxTurns sets the maximum number of engine turns.
 func (h *Harness) WithMaxTurns(n int) *Harness {
 	observe.GlobalTrace("enter")
@@ -201,19 +153,6 @@ func (h *Harness) WithMaxTurns(n int) *Harness {
 	h.maxTurns = n
 	observe.GlobalTrace("return: h")
 	return h
-}
-
-func (h *Harness) ensureRegistry() {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if h.bus == nil {
-		observe.GlobalTrace("if: h.bus == nil")
-		h.bus = observe.NewEventBus(256)
-	}
-	if h.registry == nil {
-		observe.GlobalTrace("if: h.registry == nil")
-		h.registry = tool.NewRegistry(h.bus)
-	}
 }
 
 func (h *Harness) build() {
@@ -229,24 +168,13 @@ func (h *Harness) build() {
 		observe.GlobalTrace("if: h.bus == nil")
 		h.bus = observe.NewEventBus(256)
 	}
-	if h.registry == nil {
-		observe.GlobalTrace("if: h.registry == nil")
-		h.registry = tool.NewRegistry(h.bus)
-	}
 	if h.provider == nil {
 		observe.GlobalTrace("if: h.provider == nil")
 		h.provider = NewSequenceProvider()
 	}
-	if h.checker == nil {
-		observe.GlobalTrace("if: h.checker == nil")
-		h.checker = &allowAllChecker{}
-	}
 
 	collector := &eventCollector{harness: h}
 	h.bus.Subscribe(collector)
-
-	prompter := &permission.NonInteractivePrompter{}
-	orch := tool.NewOrchestrator(h.registry, h.checker, prompter, h.bus)
 
 	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp/test")
 	h.store = app.NewStateStore(app.AppState{
@@ -258,7 +186,7 @@ func (h *Harness) build() {
 	})
 	h.ct = model.NewCostTracker(0)
 
-	h.engine = query.NewEngine(h.provider, h.registry, orch, h.store, h.ct, h.bus, query.EngineConfig{
+	h.engine = query.NewEngine(h.provider, h.store, h.ct, h.bus, query.EngineConfig{
 		Model:     "test-model",
 		MaxTokens: 4096,
 		MaxTurns:  h.maxTurns,
@@ -454,109 +382,4 @@ func (ec *eventCollector) HandleEvent(event observe.Event) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	ec.harness.events = append(ec.harness.events, event)
-}
-
-// allowAllChecker allows all tool invocations.
-type allowAllChecker struct{}
-
-func (a *allowAllChecker) Check(_ context.Context, _ string, _ string) permission.CheckResult {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: permission.CheckResult{\n\tDecision:\tpermission.DecisionAllow,\n\tRule:\t\t&permiss...")
-	return permission.CheckResult{
-		Decision: permission.DecisionAllow,
-		Rule:     &permission.Rule{ToolName: "*", Decision: permission.DecisionAllow, Source: "test"},
-	}
-}
-
-func (a *allowAllChecker) AddSessionRule(_ permission.Rule) {}
-func (a *allowAllChecker) AddPersistentRule(_ permission.Rule) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: nil")
-	return nil
-}
-
-// denyListChecker denies the named tools, allows everything else.
-type denyListChecker struct {
-	deny map[string]bool
-}
-
-func (d *denyListChecker) Check(_ context.Context, toolName string, _ string) permission.CheckResult {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if d.deny[toolName] {
-		observe.GlobalTrace("if: d.deny[toolName]")
-		observe.GlobalTrace("return: permission.CheckResult{\n\tDecision:\tpermission.DecisionDeny,\n\tRule:\t\t&permissi...")
-		return permission.CheckResult{
-			Decision: permission.DecisionDeny,
-			Rule:     &permission.Rule{ToolName: toolName, Decision: permission.DecisionDeny, Source: "test"},
-			Reason:   "denied by test harness",
-		}
-	}
-	observe.GlobalTrace("return: permission.CheckResult{\n\tDecision:\tpermission.DecisionAllow,\n\tRule:\t\t&permiss...")
-	return permission.CheckResult{
-		Decision: permission.DecisionAllow,
-		Rule:     &permission.Rule{ToolName: "*", Decision: permission.DecisionAllow, Source: "test"},
-	}
-}
-
-func (d *denyListChecker) AddSessionRule(_ permission.Rule) {}
-func (d *denyListChecker) AddPersistentRule(_ permission.Rule) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: nil")
-	return nil
-}
-
-// simpleTool implements tool.Descriptor for test scenarios.
-type simpleTool struct {
-	name    string
-	handler func(json.RawMessage) (string, error)
-}
-
-func (t *simpleTool) Name() string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: t.name")
-	return t.name
-}
-func (t *simpleTool) Description() string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: \"test tool: \" + t.name")
-	return "test tool: " + t.name
-}
-func (t *simpleTool) InputSchema() json.RawMessage {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: json.RawMessage(`{\"type\":\"object\",\"properties\":{}}`)")
-	return json.RawMessage(`{"type":"object","properties":{}}`)
-}
-
-func (t *simpleTool) Invoke(_ context.Context, input json.RawMessage, _ tool.StateSnapshot) (tool.InvokeResult, error) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	result, err := t.handler(input)
-	if err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: tool.InvokeResult{}, err")
-		return tool.InvokeResult{}, err
-	}
-	observe.GlobalTrace("return: tool.InvokeResult{Content: result}, nil")
-	return tool.InvokeResult{Content: result}, nil
-}
-
-func (t *simpleTool) CheckPerm(_ context.Context, _ json.RawMessage, checker permission.Checker) permission.CheckResult {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: checker.Check(context.Background(), t.name, \"\")")
-	return checker.Check(context.Background(), t.name, "")
-}
-
-func (t *simpleTool) Flags() tool.ToolFlags {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: true, Concurrent: true}")
-	return tool.ToolFlags{ReadOnly: true, Concurrent: true}
 }

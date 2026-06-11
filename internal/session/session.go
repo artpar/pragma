@@ -5,7 +5,6 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // Session wraps a Conversation with persistence metadata.
@@ -19,9 +18,6 @@ type Session struct {
 	GitRemote              string                           `json:"git_remote,omitempty"`
 	ContentReplacements    []model.ContentReplacementRecord `json:"content_replacements,omitempty"`
 	PromptHistory          []PromptHistoryData              `json:"prompt_history,omitempty"`
-	FileStateRecords       []tool.FileStateRecord           `json:"file_state_records,omitempty"`
-	Todos                  []app.TodoItem                   `json:"todos,omitempty"`
-	TeamContext            *app.TeamContext                 `json:"team_context,omitempty"`
 	OrchestrationArtifacts []app.OrchestrationArtifact      `json:"orchestration_artifacts,omitempty"`
 	TaskResults            []TaskResultData                 `json:"task_results,omitempty"`
 	Worktree               *app.WorktreeSession             `json:"worktree,omitempty"`

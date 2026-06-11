@@ -6,7 +6,6 @@ import (
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // EntryKind discriminates JSONL line types in session files.
@@ -18,9 +17,6 @@ const (
 	EntryMetadata               EntryKind = "metadata"
 	EntryContentReplacement     EntryKind = "content_replacement"
 	EntryPromptHistory          EntryKind = "prompt_history"
-	EntryFileState              EntryKind = "file_state"
-	EntryTodos                  EntryKind = "todos"
-	EntryTeamContext            EntryKind = "team_context"
 	EntryTaskResult             EntryKind = "task_result"
 	EntryOrchestrationArtifacts EntryKind = "orchestration_artifacts"
 )
@@ -64,18 +60,6 @@ type ContentReplacementData struct {
 type PromptHistoryData struct {
 	Text      string    `json:"text"`
 	Timestamp time.Time `json:"timestamp"`
-}
-
-type FileStateData struct {
-	Records []tool.FileStateRecord `json:"records"`
-}
-
-type TodosData struct {
-	Items []app.TodoItem `json:"items"`
-}
-
-type TeamContextData struct {
-	Context *app.TeamContext `json:"context,omitempty"`
 }
 
 type OrchestrationArtifactsData struct {

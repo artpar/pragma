@@ -16,7 +16,6 @@ import (
 	"github.com/artpar/pragma/internal/lifecycle/bridge"
 	"github.com/artpar/pragma/internal/lifecycle/definition"
 	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 func lifecycleCmd() *cobra.Command {
@@ -96,23 +95,15 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 	}
 
 	prompter := &permission.NonInteractivePrompter{}
-	asker := &tool.NonInteractiveAsker{}
-	_, err = cli.RegisterTools(d, prompter, asker)
+	_, err = cli.RegisterTools(d, prompter)
 	if err != nil {
 		return err
 	}
 
-	orch := tool.NewOrchestrator(d.Registry, d.Checker, prompter, d.Bus)
-	if d.HookMgr != nil {
-		orch.SetHookManager(d.HookMgr)
-	}
-
 	infra := bridge.Infra{
-		Provider:     d.Prov,
-		Orchestrator: orch,
-		Registry:     d.Registry,
-		Bus:          d.Bus,
-		Cwd:          d.Cwd,
+		Provider: d.Prov,
+		Bus:      d.Bus,
+		Cwd:      d.Cwd,
 	}
 
 	// Resolve the graph: YAML file or LLM-generated from structure description
@@ -141,7 +132,7 @@ func runLifecycle(cmd *cobra.Command, args []string) error {
 		snap.Conversation.System,
 		d.EngineCfg.Model,
 		d.EngineCfg.MaxTokens,
-		d.Registry.ToolDefs(),
+		nil,
 		d.Bus,
 	))
 

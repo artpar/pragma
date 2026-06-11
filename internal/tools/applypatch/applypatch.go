@@ -2,54 +2,22 @@ package applypatch
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/artpar/pragma/internal/observe"
-	"github.com/artpar/pragma/internal/permission"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 type Input struct {
 	Patch string `json:"patch" desc:"The apply_patch body to parse, verify, and apply"`
 }
 
-var inputSchema = json.RawMessage(`{
-	"type": "object",
-	"additionalProperties": false,
-	"required": ["patch"],
-	"properties": {
-		"patch": {
-			"type": "string",
-			"description": "Patch body using *** Begin Patch / *** End Patch format"
-		}
-	}
-}`)
-
 const (
 	ToolName       = "apply_patch"
 	LegacyToolName = "ApplyPatch"
 )
-
-type Tool struct{}
-
-func (t *Tool) Name() string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: ToolName")
-	return ToolName
-}
-
-func (t *Tool) Description() string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: description")
-	return description
-}
 
 const description = `Applies structured file edits after parsing and verifying patch hunks against the current filesystem.
 
@@ -88,88 +56,36 @@ Valid examples:
 
 Every update hunk must match current file content before any file is written. If verification fails, no files are changed.`
 
-// LegacyTool keeps old saved sessions and local toolsets callable while the
-// model-visible primary tool uses Codex-compatible lowercase naming.
-type LegacyTool struct{ Tool }
-
-func (t *LegacyTool) Name() string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: LegacyToolName")
-	return LegacyToolName
+type Result struct {
+	Content string
 }
 
-func (t *Tool) InputSchema() json.RawMessage {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: inputSchema")
-	return inputSchema
-}
-
-func (t *Tool) Flags() tool.ToolFlags {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	observe.GlobalTrace("return: tool.ToolFlags{ReadOnly: false, Concurrent: false}")
-	return tool.ToolFlags{ReadOnly: false, Concurrent: false}
-}
-
-func (t *Tool) CheckPerm(ctx context.Context, input json.RawMessage, checker permission.Checker) permission.CheckResult {
-	observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "enter")
-	defer observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "exit")
-	var in Input
-	if err := json.Unmarshal(input, &in); err != nil || strings.TrimSpace(in.Patch) == "" {
-		observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "if: err != nil || strings.TrimSpace(in.Patch) == \"\"")
-		observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "return: checker.Check(ctx, ToolName, \"\")")
-		return checker.Check(ctx, ToolName, "")
-	}
-	paths, err := PatchPaths(in.Patch)
-	if err != nil {
-		observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "if: err != nil")
-		observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "return: checker.Check(ctx, ToolName, \"\")")
-		return checker.Check(ctx, ToolName, "")
-	}
-	sort.Strings(paths)
-	observe.TraceCtx(ctx, "applypatch", "Tool.CheckPerm", "return: checker.Check(ctx, ToolName, strings.Join(paths, \"\\n\"))")
-	return checker.Check(ctx, ToolName, strings.Join(paths, "\n"))
-}
-
-func (t *Tool) Invoke(ctx context.Context, input json.RawMessage, state tool.StateSnapshot) (tool.InvokeResult, error) {
-	observe.TraceCtx(ctx, "applypatch", "Tool.Invoke", "enter")
-	defer observe.TraceCtx(ctx, "applypatch", "Tool.Invoke", "exit")
-	var in Input
-	if err := json.Unmarshal(input, &in); err != nil {
-		observe.TraceCtx(ctx, "applypatch", "Tool.Invoke", "if: err != nil")
-		observe.TraceCtx(ctx, "applypatch", "Tool.Invoke", "return: tool.InvokeResult{}, fmt.Errorf(\"invalid input: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("invalid input: %w", err)
-	}
-	observe.TraceCtx(ctx, "applypatch", "Tool.Invoke", "return: ApplyPatchText(ctx, in.Patch, state.WorkDir(), state)")
-	return ApplyPatchText(ctx, in.Patch, state.WorkDir(), state)
-}
-
-func ApplyPatchText(ctx context.Context, patch string, workDir string, state tool.StateSnapshot) (tool.InvokeResult, error) {
+func ApplyPatchText(ctx context.Context, patch string, workDir string) (Result, error) {
 	observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "enter")
 	defer observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "exit")
 	parsed, err := Parse(patch)
 	if err != nil {
 		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "if: err != nil")
-		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: tool.InvokeResult{}, fmt.Errorf(\"apply_patch verification failed: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("apply_patch verification failed: %w", err)
+		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: Result{}, fmt.Errorf(\"apply_patch verification failed: %w\", err)")
+		return Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 	}
 	if len(parsed.Ops) == 0 {
 		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "if: len(parsed.Ops) == 0")
-		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: tool.InvokeResult{}, fmt.Errorf(\"apply_patch verification failed: patch conta...")
-		return tool.InvokeResult{}, fmt.Errorf("apply_patch verification failed: patch contains no file hunks")
+		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: Result{}, fmt.Errorf(\"apply_patch verification failed: patch conta...")
+		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: Result{}, fmt.Errorf(\"apply_patch verification failed: patch contains no file...")
+		return Result{}, fmt.Errorf("apply_patch verification failed: patch contains no file hunks")
 	}
 	verified, err := verify(parsed, workDir)
 	if err != nil {
 		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "if: err != nil")
-		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: tool.InvokeResult{}, fmt.Errorf(\"apply_patch verification failed: %w\", err)")
-		return tool.InvokeResult{}, fmt.Errorf("apply_patch verification failed: %w", err)
+		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: Result{}, fmt.Errorf(\"apply_patch verification failed: %w\", err)")
+		return Result{}, fmt.Errorf("apply_patch verification failed: %w", err)
 	}
-	if err := writeVerified(ctx, verified, state); err != nil {
+	if err := writeVerified(ctx, verified); err != nil {
 		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "if: err != nil")
 		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: tool.InvokeResult{}, err")
-		return tool.InvokeResult{}, err
+		observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: Result{}, err")
+		return Result{}, err
 	}
 	observe.TraceCtx(ctx, "applypatch", "ApplyPatchText", "return: renderResult(verified), nil")
 	return renderResult(verified), nil
@@ -584,7 +500,7 @@ func joinPatchLines(lines []string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-func writeVerified(ctx context.Context, changes []verifiedChange, state tool.StateSnapshot) error {
+func writeVerified(ctx context.Context, changes []verifiedChange) error {
 	observe.TraceCtx(ctx, "applypatch", "writeVerified", "enter")
 	defer observe.TraceCtx(ctx, "applypatch", "writeVerified", "exit")
 	for _, change := range changes {
@@ -596,7 +512,6 @@ func writeVerified(ctx context.Context, changes []verifiedChange, state tool.Sta
 				observe.TraceCtx(ctx, "applypatch", "writeVerified", "return: fmt.Errorf(\"delete %s: %w\", change.op.Path, err)")
 				return fmt.Errorf("delete %s: %w", change.op.Path, err)
 			}
-			tool.RecordFileDelete(state, change.absPath)
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(change.absPath), 0755); err != nil {
@@ -609,16 +524,12 @@ func writeVerified(ctx context.Context, changes []verifiedChange, state tool.Sta
 			observe.TraceCtx(ctx, "applypatch", "writeVerified", "return: fmt.Errorf(\"write %s: %w\", change.op.Path, err)")
 			return fmt.Errorf("write %s: %w", change.op.Path, err)
 		}
-		if timestamp, statErr := tool.FileTimestamp(change.absPath); statErr == nil {
-			observe.TraceCtx(ctx, "applypatch", "writeVerified", "if: statErr == nil")
-			tool.RecordFileWriteState(state, change.absPath, change.newContent, timestamp, nil, nil, false)
-		}
 	}
 	observe.TraceCtx(ctx, "applypatch", "writeVerified", "return: nil")
 	return nil
 }
 
-func renderResult(changes []verifiedChange) tool.InvokeResult {
+func renderResult(changes []verifiedChange) Result {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	paths := make([]string, 0, len(changes))
@@ -626,9 +537,9 @@ func renderResult(changes []verifiedChange) tool.InvokeResult {
 		observe.GlobalTrace("range changes")
 		paths = append(paths, change.op.Path)
 	}
-	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent:\tfmt.Sprintf(\"Applied patch successfully. Changed...")
-	observe.GlobalTrace("return: tool.InvokeResult{\n\tContent: fmt.Sprintf(\"Applied patch successfully. Changed...")
-	return tool.InvokeResult{
+	observe.GlobalTrace("return: Result{\n\tContent: fmt.Sprintf(\"Applied patch successfully. Changed...")
+	observe.GlobalTrace("return: Result{\n\tContent: fmt.Sprintf(\"Applied patch successfully. Changed files: %s\"...")
+	return Result{
 		Content: fmt.Sprintf("Applied patch successfully. Changed files: %s", strings.Join(paths, ", ")),
 	}
 }

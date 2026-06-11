@@ -24,10 +24,6 @@ func RegisterFlags(cmd *cobra.Command) {
 	pf.Bool("verbose", false, "verbose logging to stderr")
 	pf.Bool("record", false, "record events to file")
 	pf.Int("max-turns", 0, "override default turn limit (0 = use default)")
-	pf.Bool("stop-after-tool-exec", false, "experimental: stop after executing one model-requested tool batch")
-	pf.String("allowed-tools", "", "comma-separated list of allowed tool names")
-	pf.String("disallowed-tools", "", "comma-separated list of excluded tool names")
-	pf.String("toolset", "", "named reusable toolset to expose")
 	pf.String("permission-mode", "", "permission mode: default, acceptEdits, bypassPermissions, dontAsk")
 
 	pf.Bool("bg", false, "run session in background (requires --prompt)")

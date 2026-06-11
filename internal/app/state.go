@@ -6,28 +6,6 @@ import (
 	"github.com/artpar/pragma/internal/model"
 )
 
-// TodoItem represents a single item in the session task checklist.
-type TodoItem struct {
-	Content string `json:"content"`
-	Status  string `json:"status"` // "pending", "in_progress", "completed"
-}
-
-// TeamContext tracks the current team leadership state.
-// Defined in app/ (not team/) to avoid import cycle.
-type TeamContext struct {
-	TeamName     string `json:"team_name"`
-	TeamFilePath string `json:"team_file_path"`
-	LeadAgentID  string `json:"lead_agent_id"`
-}
-
-func CopyTeamContext(ctx *TeamContext) *TeamContext {
-	if ctx == nil {
-		return nil
-	}
-	cp := *ctx
-	return &cp
-}
-
 // WorktreeSession tracks a temporary worktree entered during the active session.
 type WorktreeSession struct {
 	OriginalCWD  string `json:"original_cwd"`
@@ -49,7 +27,6 @@ type OrchestrationArtifact struct {
 }
 
 // AppState is the full application state.
-// Satisfies tool.StateSnapshot via WorkDir() method.
 type AppState struct {
 	Conversation           model.Conversation      `json:"conversation"`
 	CWD                    string                  `json:"cwd"`
@@ -58,16 +35,13 @@ type AppState struct {
 	MaxTokens              int                     `json:"max_tokens"`
 	Temperature            *float64                `json:"temperature,omitempty"`
 	Thinking               *bool                   `json:"thinking,omitempty"`
-	Todos                  []TodoItem              `json:"todos,omitempty"`
 	PromptHistory          []string                `json:"prompt_history,omitempty"`
 	OrchestrationArtifacts []OrchestrationArtifact `json:"orchestration_artifacts,omitempty"`
-	TeamContext            *TeamContext            `json:"team_context,omitempty"`
 	Worktree               *WorktreeSession        `json:"worktree,omitempty"`
 	ArtifactSessionID      string                  `json:"artifact_session_id,omitempty"`
 }
 
 // WorkDir returns the current working directory.
-// This satisfies tool.StateSnapshot.
 func (s AppState) WorkDir() string {
 	return s.CWD
 }

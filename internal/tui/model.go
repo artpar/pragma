@@ -209,7 +209,6 @@ type Model struct {
 	viewport  viewport.Model
 	input     inputComponent
 	perm      permissionDialog
-	ask       askDialog
 	teams     teamsDialog
 	modelDlg  modelDialog
 	resumeDlg resumeDialog
@@ -349,10 +348,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("typecase: PermResponseMsg")
 		return m.handlePermResponse(msg)
 
-	case AskRequestMsg:
-		observe.GlobalTrace("typecase: AskRequestMsg")
-		return m.handleAskRequest(msg)
-
 	case spinner.TickMsg:
 		observe.GlobalTrace("typecase: spinner.TickMsg")
 		if m.spinnerActive {
@@ -407,12 +402,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.ask.active {
-		observe.GlobalTrace("if: m.ask.active")
-		cmd := m.ask.Update(msg)
-		observe.GlobalTrace("return: m, cmd")
-		return m, cmd
-	}
 	if m.perm.active {
 		observe.GlobalTrace("if: m.perm.active")
 		cmd := m.perm.Update(msg)
@@ -446,12 +435,6 @@ func (m Model) View() string {
 	if m.perm.active {
 		observe.GlobalTrace("if: m.perm.active")
 		b.WriteString(m.perm.View())
-		b.WriteString("\n")
-	}
-
-	if m.ask.active {
-		observe.GlobalTrace("if: m.ask.active")
-		b.WriteString(m.ask.View())
 		b.WriteString("\n")
 	}
 

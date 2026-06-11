@@ -118,27 +118,6 @@ func TestAutoDetectProvider(t *testing.T) {
 	}
 }
 
-func TestApplyFlagOverridesStopAfterToolExec(t *testing.T) {
-	cmd := &cobra.Command{Use: "pragma"}
-	RegisterFlags(cmd)
-	if err := cmd.ParseFlags([]string{
-		"--stop-after-tool-exec",
-		"--toolset", "idea",
-	}); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
-	}
-
-	var cfg config.Config
-	ApplyFlagOverrides(cmd, &cfg)
-
-	if !cfg.StopAfterToolExec {
-		t.Fatal("StopAfterToolExec = false, want true")
-	}
-	if cfg.Toolset != "idea" {
-		t.Fatalf("Toolset = %q, want idea", cfg.Toolset)
-	}
-}
-
 func TestResolveProviderConfigExplicitFlagsWin(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()

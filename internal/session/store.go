@@ -13,7 +13,6 @@ import (
 	"github.com/artpar/pragma/internal/config"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/sessionpath"
-	"github.com/artpar/pragma/internal/tool"
 )
 
 // Store persists sessions to ~/.pragma/sessions/.
@@ -103,9 +102,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 	var meta MetadataData
 	var replacements []model.ContentReplacementRecord
 	var promptHistory []PromptHistoryData
-	var fileStateRecords []tool.FileStateRecord
-	var todos []app.TodoItem
-	var teamContext *app.TeamContext
 	var orchestrationArtifacts []app.OrchestrationArtifact
 	var taskResults []TaskResultData
 	hasHeader := false
@@ -143,21 +139,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 			var data PromptHistoryData
 			if err := json.Unmarshal(entry.Data, &data); err == nil {
 				promptHistory = append(promptHistory, data)
-			}
-		case EntryFileState:
-			var data FileStateData
-			if err := json.Unmarshal(entry.Data, &data); err == nil {
-				fileStateRecords = data.Records
-			}
-		case EntryTodos:
-			var data TodosData
-			if err := json.Unmarshal(entry.Data, &data); err == nil {
-				todos = data.Items
-			}
-		case EntryTeamContext:
-			var data TeamContextData
-			if err := json.Unmarshal(entry.Data, &data); err == nil {
-				teamContext = app.CopyTeamContext(data.Context)
 			}
 		case EntryOrchestrationArtifacts:
 			var data OrchestrationArtifactsData
@@ -201,9 +182,6 @@ func (s *Store) loadJSONL(path string) (Session, error) {
 		GitRemote:              header.GitRemote,
 		ContentReplacements:    replacements,
 		PromptHistory:          promptHistory,
-		FileStateRecords:       fileStateRecords,
-		Todos:                  todos,
-		TeamContext:            app.CopyTeamContext(teamContext),
 		OrchestrationArtifacts: orchestrationArtifacts,
 		TaskResults:            taskResults,
 		Worktree:               copyWorktreeSession(meta.Worktree),

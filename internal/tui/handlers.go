@@ -422,9 +422,6 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(e.Message) != "" {
 			m.outputSegs = appendText(m.outputSegs, m.mdRenderer.Render(e.Message)+"\n")
 		}
-		for _, attachment := range e.Attachments {
-			m.outputSegs = appendText(m.outputSegs, fmt.Sprintf("[attachment: %s]\n", attachment.Path))
-		}
 		m.toolbar.SetStatus("streaming...")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
@@ -520,16 +517,6 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	observe.GlobalTrace("return: m, waitForEvent(m.eventCh)")
 
 	return m, waitForEvent(m.eventCh)
-}
-
-// handleAskRequest shows the ask dialog for a tool question.
-func (m Model) handleAskRequest(msg AskRequestMsg) (tea.Model, tea.Cmd) {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	m.ask.Show(&msg)
-	m.toolbar.SetStatus("waiting for answer...")
-	observe.GlobalTrace("return: m, nil")
-	return m, nil
 }
 
 // handlePermRequest shows the permission dialog, or queues if one is already visible.
@@ -660,21 +647,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			observe.GlobalTrace("return: m, cmd")
 			return m, cmd
 		}
-		if m.ask.active {
-			cmd := m.ask.Update(msg)
-			if !m.ask.active {
-				observe.GlobalTrace("if: !m.ask.active")
-				if m.streaming {
-					observe.GlobalTrace("if: m.streaming")
-					m.toolbar.SetStatus("streaming...")
-				} else {
-					observe.GlobalTrace("else: m.streaming")
-					m.toolbar.SetStatus("ready")
-				}
-			}
-			observe.GlobalTrace("return: m, cmd")
-			return m, cmd
-		}
 
 		if m.streaming {
 			observe.GlobalTrace("return: m.interruptTurn()")
@@ -685,22 +657,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.perm.active {
 		observe.GlobalTrace("if: m.perm.active")
 		cmd := m.perm.Update(msg)
-		observe.GlobalTrace("return: m, cmd")
-		return m, cmd
-	}
-	if m.ask.active {
-		observe.GlobalTrace("if: m.ask.active")
-		cmd := m.ask.Update(msg)
-		if !m.ask.active {
-			observe.GlobalTrace("if: !m.ask.active")
-			if m.streaming {
-				observe.GlobalTrace("if: m.streaming")
-				m.toolbar.SetStatus("streaming...")
-			} else {
-				observe.GlobalTrace("else: m.streaming")
-				m.toolbar.SetStatus("ready")
-			}
-		}
 		observe.GlobalTrace("return: m, cmd")
 		return m, cmd
 	}
