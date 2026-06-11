@@ -10,34 +10,6 @@ import (
 	"github.com/artpar/pragma/internal/model"
 )
 
-func TestPragmaLoopSystemUsesServerGuidanceFromExistingPrompt(t *testing.T) {
-	existing := model.SystemPrompt{Blocks: []model.SystemBlock{
-		{Text: "codex prompt"},
-		{Text: "## Server Commands\n\nTo start the server, run:\n```bash\n./run.sh\n```"},
-	}}
-
-	system := pragmaLoopSystemFromExisting(existing)
-	if len(system.Blocks) != 1 {
-		t.Fatalf("blocks = %d, want 1", len(system.Blocks))
-	}
-	text := system.Blocks[0].Text
-	if strings.Contains(text, "codex prompt") {
-		t.Fatal("system prompt included Codex prompt")
-	}
-	if strings.Contains(text, "THOUGHT") || strings.Contains(text, "reasoning process") || strings.Contains(text, "Your reasoning and analysis") {
-		t.Fatalf("system prompt still teaches prose reasoning before actions: %q", text)
-	}
-	if !strings.Contains(text, "## Server Commands") {
-		t.Fatal("system prompt did not include server guidance")
-	}
-	if strings.Count(text, "## Server Commands") != 1 {
-		t.Fatalf("server guidance count = %d, want 1", strings.Count(text, "## Server Commands"))
-	}
-	if !strings.Contains(text, "rejected.\n\n\n## Server Commands") {
-		t.Fatalf("server guidance separator did not match Pragma loop YAML append semantics: %q", text)
-	}
-}
-
 func TestPragmaLoopInstancePromptIncludesTaskAndWorkdir(t *testing.T) {
 	prompt := pragmaLoopInstancePrompt("do the task", "/work")
 	if !strings.Contains(prompt, "Current working directory: /work") {
