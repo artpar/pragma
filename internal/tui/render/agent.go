@@ -157,12 +157,19 @@ func renderAgentLine(b *strings.Builder, a AgentProgressEntry, isLast bool, hasM
 }
 
 func truncateAgentText(s string, maxLen int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if maxLen <= 0 || len(s) <= maxLen {
+		observe.GlobalTrace("if: maxLen <= 0 || len(s) <= maxLen")
+		observe.GlobalTrace("return: s")
 		return s
 	}
 	if maxLen <= 1 {
+		observe.GlobalTrace("if: maxLen <= 1")
+		observe.GlobalTrace("return: \"…\"")
 		return "…"
 	}
+	observe.GlobalTrace("return: s[:maxLen-1] + \"…\"")
 	return s[:maxLen-1] + "…"
 }
 
