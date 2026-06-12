@@ -1,0 +1,435 @@
+name: swe-bench-pro-engineering-loop
+initial: swe_repo_survey
+states:
+  - id: swe_repo_survey
+    persona: swe_repo_survey
+    artifacts:
+      outputs:
+        - id: repo_survey
+          path: /tmp/pragma/swe/repo-survey.md
+          required: true
+          description: Initial task, repository, validation, and uncertainty survey.
+
+  - id: swe_theory_keeper
+    persona: swe_theory_keeper
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: engineering_context
+          path: /tmp/pragma/swe/engineering-context.md
+          required: true
+          description: Living theory, evidence ledger, scope model, validation history, and next objective.
+
+  - id: swe_slice_planner
+    persona: swe_slice_planner
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: slice_plan
+          path: /tmp/pragma/swe/slice-plan.json
+          required: true
+          description: One thin vertical slice of engineering work or discovery.
+
+  - id: swe_engineering_worker
+    persona: swe_engineering_worker
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: worker_report
+          path: /tmp/pragma/swe/worker-report.md
+          required: true
+          description: Work report, changed files, discovered coupling, validation run, and scope requests.
+        - id: worker_validation_log
+          path: /tmp/pragma/swe/worker-validation.log
+          description: Optional focused command log produced by the worker.
+
+  - id: swe_targeted_validator
+    persona: swe_targeted_validator
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: targeted_validation
+          path: /tmp/pragma/swe/targeted-validation.md
+          required: true
+          description: Targeted validation result for the latest slice.
+
+  - id: swe_engineering_reviewer
+    persona: swe_engineering_reviewer
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: review_decision
+          path: /tmp/pragma/swe/review-decision.json
+          required: true
+          kind: decision
+          allowed_values: [continue_implementation, revise_theory, expand_scope, final_validation, unresolved]
+          description: Engineering review decision for the latest slice.
+
+  - id: route_review_decision
+    control:
+      artifact_decision:
+        path: /tmp/pragma/swe/review-decision.json
+        field: decision
+        events:
+          continue_implementation: continue_implementation
+          revise_theory: revise_theory
+          expand_scope: expand_scope
+          final_validation: final_validation
+          unresolved: unresolved
+
+  - id: swe_scope_expander
+    persona: swe_scope_expander
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: scope_decision
+          path: /tmp/pragma/swe/scope-decision.md
+          required: true
+          description: Evidence-backed scope expansion or rejection for the next context update.
+
+  - id: swe_final_validator
+    persona: swe_final_validator
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: final_validation_status
+          path: /tmp/pragma/swe/final-validation-status.md
+          required: true
+          description: Broad validation status for final review.
+
+  - id: swe_final_reviewer
+    persona: swe_final_reviewer
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: final_verdict
+          path: /tmp/pragma/swe/final-verdict.md
+          required: true
+          kind: verdict
+          allowed_values: [APPROVE, BLOCK]
+          description: Final task verdict from broad validation and engineering context.
+
+  - id: route_final_verdict
+    control:
+      artifact_verdict:
+        path: /tmp/pragma/swe/final-verdict.md
+        approve_event: final_approve
+        block_event: final_block
+
+  - id: swe_diagnosis_router
+    persona: swe_diagnosis_router
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: diagnosis_decision
+          path: /tmp/pragma/swe/diagnosis-decision.json
+          required: true
+          kind: decision
+          allowed_values: [continue_implementation, revise_theory, expand_scope, unresolved]
+          description: Engineering diagnosis route after final validation block.
+
+  - id: route_diagnosis_decision
+    control:
+      artifact_decision:
+        path: /tmp/pragma/swe/diagnosis-decision.json
+        field: decision
+        events:
+          continue_implementation: continue_implementation
+          revise_theory: revise_theory
+          expand_scope: expand_scope
+          unresolved: unresolved
+
+  - id: done
+    terminal: true
+
+  - id: unresolved
+    terminal: true
+
+transitions:
+  - event: complete
+    from: [swe_repo_survey]
+    to: swe_theory_keeper
+    handoff:
+      - id: repo_survey
+        path: /tmp/pragma/swe/repo-survey.md
+        required: true
+        description: Initial survey preserving task intent and repo facts.
+
+  - event: complete
+    from: [swe_theory_keeper]
+    to: swe_slice_planner
+    handoff:
+      - id: repo_survey
+        path: /tmp/pragma/swe/repo-survey.md
+        description: Initial survey, if available.
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+
+  - event: complete
+    from: [swe_slice_planner]
+    to: swe_engineering_worker
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Current thin vertical slice plan.
+
+  - event: complete
+    from: [swe_engineering_worker]
+    to: swe_targeted_validator
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Current thin vertical slice plan.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        required: true
+        description: Work, discoveries, changed files, and scope requests from the slice.
+
+  - event: complete
+    from: [swe_targeted_validator]
+    to: swe_engineering_reviewer
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Current thin vertical slice plan.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        required: true
+        description: Work, discoveries, changed files, and scope requests from the slice.
+      - id: targeted_validation
+        path: /tmp/pragma/swe/targeted-validation.md
+        required: true
+        description: Targeted validation evidence for the slice.
+
+  - event: complete
+    from: [swe_engineering_reviewer]
+    to: route_review_decision
+
+  - event: continue_implementation
+    from: [route_review_decision]
+    to: swe_theory_keeper
+    handoff: &loop_update_handoff
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Previous living context to update.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Latest slice plan.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        required: true
+        description: Latest work and discovery report.
+      - id: targeted_validation
+        path: /tmp/pragma/swe/targeted-validation.md
+        required: true
+        description: Latest targeted validation result.
+      - id: review_decision
+        path: /tmp/pragma/swe/review-decision.json
+        required: true
+        description: Latest engineering review decision.
+
+  - event: revise_theory
+    from: [route_review_decision]
+    to: swe_theory_keeper
+    handoff: *loop_update_handoff
+
+  - event: expand_scope
+    from: [route_review_decision]
+    to: swe_scope_expander
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Latest slice plan.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        required: true
+        description: Latest work and discovery report.
+      - id: targeted_validation
+        path: /tmp/pragma/swe/targeted-validation.md
+        required: true
+        description: Latest targeted validation result.
+      - id: review_decision
+        path: /tmp/pragma/swe/review-decision.json
+        required: true
+        description: Scope expansion request and rationale.
+
+  - event: final_validation
+    from: [route_review_decision]
+    to: swe_final_validator
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Latest slice plan.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        required: true
+        description: Latest work and discovery report.
+      - id: targeted_validation
+        path: /tmp/pragma/swe/targeted-validation.md
+        required: true
+        description: Latest targeted validation result.
+      - id: review_decision
+        path: /tmp/pragma/swe/review-decision.json
+        required: true
+        description: Review decision allowing final validation.
+
+  - event: unresolved
+    from: [route_review_decision]
+    to: unresolved
+
+  - event: complete
+    from: [swe_scope_expander]
+    to: swe_theory_keeper
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Previous living context to update.
+      - id: scope_decision
+        path: /tmp/pragma/swe/scope-decision.md
+        required: true
+        description: Scope expansion decision.
+      - id: review_decision
+        path: /tmp/pragma/swe/review-decision.json
+        description: Review decision that requested expansion.
+      - id: diagnosis_decision
+        path: /tmp/pragma/swe/diagnosis-decision.json
+        description: Final diagnosis decision that requested expansion.
+
+  - event: complete
+    from: [swe_final_validator]
+    to: swe_final_reviewer
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory, evidence, scope, and validation history.
+      - id: final_validation_status
+        path: /tmp/pragma/swe/final-validation-status.md
+        required: true
+        description: Broad validation status for final review.
+
+  - event: complete
+    from: [swe_final_reviewer]
+    to: route_final_verdict
+
+  - event: final_approve
+    from: [route_final_verdict]
+    to: done
+
+  - event: final_block
+    from: [route_final_verdict]
+    to: swe_diagnosis_router
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory, evidence, scope, and validation history.
+      - id: final_validation_status
+        path: /tmp/pragma/swe/final-validation-status.md
+        required: true
+        description: Broad validation failure evidence.
+      - id: final_verdict
+        path: /tmp/pragma/swe/final-verdict.md
+        required: true
+        description: Final reviewer blocker.
+
+  - event: complete
+    from: [swe_diagnosis_router]
+    to: route_diagnosis_decision
+
+  - event: continue_implementation
+    from: [route_diagnosis_decision]
+    to: swe_theory_keeper
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Previous living context to update.
+      - id: final_validation_status
+        path: /tmp/pragma/swe/final-validation-status.md
+        required: true
+        description: Final validation failure evidence.
+      - id: final_verdict
+        path: /tmp/pragma/swe/final-verdict.md
+        required: true
+        description: Final reviewer blocker.
+      - id: diagnosis_decision
+        path: /tmp/pragma/swe/diagnosis-decision.json
+        required: true
+        description: Diagnosis route from final block.
+
+  - event: revise_theory
+    from: [route_diagnosis_decision]
+    to: swe_theory_keeper
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Previous living context to update.
+      - id: final_validation_status
+        path: /tmp/pragma/swe/final-validation-status.md
+        required: true
+        description: Final validation failure evidence.
+      - id: final_verdict
+        path: /tmp/pragma/swe/final-verdict.md
+        required: true
+        description: Final reviewer blocker.
+      - id: diagnosis_decision
+        path: /tmp/pragma/swe/diagnosis-decision.json
+        required: true
+        description: Diagnosis route from final block.
+
+  - event: expand_scope
+    from: [route_diagnosis_decision]
+    to: swe_scope_expander
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: final_validation_status
+        path: /tmp/pragma/swe/final-validation-status.md
+        required: true
+        description: Final validation failure evidence.
+      - id: final_verdict
+        path: /tmp/pragma/swe/final-verdict.md
+        required: true
+        description: Final reviewer blocker.
+      - id: diagnosis_decision
+        path: /tmp/pragma/swe/diagnosis-decision.json
+        required: true
+        description: Scope expansion request and rationale.
+
+  - event: unresolved
+    from: [route_diagnosis_decision]
+    to: unresolved
