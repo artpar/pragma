@@ -149,7 +149,7 @@ func TestRunPragmaLoopBashRoutesShellApplyPatch(t *testing.T) {
 	}
 }
 
-func TestRunPragmaLoopBashRejectsDirectRepoSourceMutation(t *testing.T) {
+func TestRunPragmaLoopBashAllowsDirectRepoSourceWrites(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(dir+"/internal", 0o755); err != nil {
 		t.Fatal(err)
@@ -159,22 +159,23 @@ func TestRunPragmaLoopBashRejectsDirectRepoSourceMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, timedOut := runPragmaLoopBash(t.Context(), dir, `sed -i 's/oldValue/newValue/' internal/example.go`)
+	result, timedOut := runPragmaLoopBash(t.Context(), dir, `cat > internal/example.go <<'EOF'
+package internal
+
+const newValue = 2
+EOF`)
 	if timedOut {
 		t.Fatal("command timed out")
 	}
-	if result.ReturnCode == 0 {
-		t.Fatalf("return code = 0, want rejection; output=%q", result.Output)
-	}
-	if !strings.Contains(result.Output, "Use apply_patch") {
-		t.Fatalf("output = %q, want apply_patch guidance", result.Output)
+	if result.ReturnCode != 0 {
+		t.Fatalf("return code = %d, output=%q", result.ReturnCode, result.Output)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "newValue") {
-		t.Fatalf("direct source mutation was applied: %q", data)
+	if !strings.Contains(string(data), "const newValue = 2") {
+		t.Fatalf("direct source write was not applied: %q", data)
 	}
 }
 

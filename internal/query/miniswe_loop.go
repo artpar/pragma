@@ -124,12 +124,6 @@ type pragmaLoopObservation struct {
 	Complete bool
 }
 
-type pragmaLoopCommandPolicy struct{}
-
-type pragmaLoopCommandRejection struct {
-	Reason string
-}
-
 func (engine *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "exit")
@@ -820,14 +814,6 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 		}
 		return pragmaLoopBashResult{ReturnCode: 0, Output: result.Content}, false
 	}
-	if rejection := (pragmaLoopCommandPolicy{}).Evaluate(workDir, command); rejection.Reason != "" {
-		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "if: reason != \"\"")
-		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: pragmaLoopBashResult{\n\tReturnCode:\t1,\n\tOutput:\t\tfmt.Sprintf(\"Bash rejected: %...")
-		return pragmaLoopBashResult{
-			ReturnCode: 1,
-			Output:     fmt.Sprintf("Bash rejected: %s. Use apply_patch <<'PATCH' for repository source edits; Bash remains available for read-only inspection, validation, and runtime artifact writes.", rejection.Reason),
-		}, false
-	}
 	result, err := shellrun.Execute(ctx, shellrun.Options{
 		Command:            command,
 		WorkDir:            workDir,
@@ -857,181 +843,6 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	}
 	observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: out, result.TimedOut")
 	return out, result.TimedOut
-}
-
-func (pragmaLoopCommandPolicy) Evaluate(workDir, command string) pragmaLoopCommandRejection {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	reason := pragmaLoopSourceMutationReason(workDir, command)
-	if reason == "" {
-		observe.GlobalTrace("if: reason == \"\"")
-		observe.GlobalTrace("return: pragmaLoopCommandRejection{}")
-		return pragmaLoopCommandRejection{}
-	}
-	observe.GlobalTrace("return: pragmaLoopCommandRejection{Reason: reason}")
-	return pragmaLoopCommandRejection{Reason: reason}
-}
-
-func pragmaLoopSourceMutationReason(workDir, command string) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	fields := strings.Fields(command)
-	for i, field := range fields {
-		observe.GlobalTrace("range fields")
-		base := filepath.Base(strings.Trim(field, `"'`))
-		switch base {
-		case "sed", "gsed", "perl":
-			observe.GlobalTrace("case: \"sed\", \"gsed\", \"perl\"")
-			if i+1 < len(fields) && strings.HasPrefix(strings.Trim(fields[i+1], `"'`), "-i") && commandMentionsRepoSourcePath(workDir, strings.Join(fields[i+2:], " ")) {
-				observe.GlobalTrace("return: base + \" in-place edits to repository source are blocked\"")
-				return base + " in-place edits to repository source are blocked"
-			}
-		case "tee":
-			observe.GlobalTrace("case: \"tee\"")
-			if firstRepoSourcePath(workDir, fields[i+1:]) != "" {
-				observe.GlobalTrace("return: \"tee writes to repository source are blocked\"")
-				return "tee writes to repository source are blocked"
-			}
-		case "python", "python3", "perl5":
-			observe.GlobalTrace("case: \"python\", \"python3\", \"perl5\"")
-			if commandContainsWriteIntent(command) && commandMentionsRepoSourcePath(workDir, command) {
-				observe.GlobalTrace("return: base + \" file-write snippets to repository source are blocked\"")
-				return base + " file-write snippets to repository source are blocked"
-			}
-		}
-	}
-
-	for i, field := range fields {
-		observe.GlobalTrace("range fields")
-		switch field {
-		case ">", ">>":
-			observe.GlobalTrace("case: \">\", \">>\"")
-			if i+1 < len(fields) && isRepoSourcePath(workDir, cleanShellPathToken(fields[i+1])) {
-				observe.GlobalTrace("return: \"shell redirection writes to repository source are blocked\"")
-				return "shell redirection writes to repository source are blocked"
-			}
-		default:
-			observe.GlobalTrace("default")
-			if strings.HasPrefix(field, ">") {
-				path := strings.TrimPrefix(strings.TrimPrefix(field, ">>"), ">")
-				if isRepoSourcePath(workDir, cleanShellPathToken(path)) {
-					observe.GlobalTrace("if: isRepoSourcePath(workDir, cleanShellPathToken(path))")
-					observe.GlobalTrace("return: \"shell redirection writes to repository source are blocked\"")
-					return "shell redirection writes to repository source are blocked"
-				}
-			}
-		}
-	}
-	observe.GlobalTrace("return: \"\"")
-	return ""
-}
-
-func commandContainsWriteIntent(command string) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	lower := strings.ToLower(command)
-	for _, needle := range []string{
-		"write_text(",
-		"write_bytes(",
-		"os.writefile(",
-		"os.remove(",
-		"os.rename(",
-		".write(",
-	} {
-		observe.GlobalTrace("range []string{\n\t\"write_text(\",\n\t\"write_bytes(\",\n\t\"os.writefile(\",\n\t\"os.remove(\",\n\t...")
-		if strings.Contains(lower, needle) {
-			observe.GlobalTrace("if: strings.Contains(lower, needle)")
-			observe.GlobalTrace("return: true")
-			return true
-		}
-	}
-	observe.GlobalTrace("return: false")
-	return false
-}
-
-func commandMentionsRepoSourcePath(workDir, command string) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	for _, field := range strings.Fields(command) {
-		observe.GlobalTrace("range strings.Fields(command)")
-		if isRepoSourcePath(workDir, cleanShellPathToken(field)) {
-			observe.GlobalTrace("if: isRepoSourcePath(workDir, cleanShellPathToken(field))")
-			observe.GlobalTrace("return: true")
-			return true
-		}
-	}
-	observe.GlobalTrace("return: false")
-	return false
-}
-
-func firstRepoSourcePath(workDir string, fields []string) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	for _, field := range fields {
-		observe.GlobalTrace("range fields")
-		path := cleanShellPathToken(field)
-		if strings.HasPrefix(path, "-") {
-			observe.GlobalTrace("if: strings.HasPrefix(path, \"-\")")
-			continue
-		}
-		if isRepoSourcePath(workDir, path) {
-			observe.GlobalTrace("if: isRepoSourcePath(workDir, path)")
-			observe.GlobalTrace("return: path")
-			return path
-		}
-	}
-	observe.GlobalTrace("return: \"\"")
-	return ""
-}
-
-func cleanShellPathToken(token string) string {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	token = strings.TrimSpace(token)
-	token = strings.Trim(token, `"'`)
-	token = strings.TrimSuffix(token, ";")
-	token = strings.TrimSuffix(token, `\`)
-	observe.GlobalTrace("return: token")
-	return token
-}
-
-func isRepoSourcePath(workDir, path string) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if path == "" || strings.HasPrefix(path, "-") || strings.HasPrefix(path, "$") {
-		observe.GlobalTrace("if: path == \"\" || strings.HasPrefix(path, \"-\") || strings.HasPrefix(path, \"$\")")
-		observe.GlobalTrace("return: false")
-		return false
-	}
-	if strings.HasPrefix(path, "/tmp/pragma/") || path == "/tmp/pragma" {
-		observe.GlobalTrace("if: strings.HasPrefix(path, \"/tmp/pragma/\") || path == \"/tmp/pragma\"")
-		observe.GlobalTrace("return: false")
-		return false
-	}
-	clean := filepath.Clean(path)
-	if filepath.IsAbs(clean) {
-		observe.GlobalTrace("if: filepath.IsAbs(clean)")
-		if workDir == "" {
-			observe.GlobalTrace("if: workDir == \"\"")
-			observe.GlobalTrace("return: false")
-			return false
-		}
-		absWorkDir, err := filepath.Abs(workDir)
-		if err != nil {
-			observe.GlobalTrace("if: err != nil")
-			absWorkDir = workDir
-		}
-		rel, err := filepath.Rel(absWorkDir, clean)
-		if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
-			observe.GlobalTrace("if: err != nil || strings.HasPrefix(rel, \"..\") || rel == \".\"")
-			observe.GlobalTrace("return: strings.HasPrefix(clean, \"/app/\") && looksLikeSourcePath(strings.TrimPrefix(c...")
-			return strings.HasPrefix(clean, "/app/") && looksLikeSourcePath(strings.TrimPrefix(clean, "/app/"))
-		}
-		clean = rel
-	}
-	clean = strings.TrimPrefix(clean, "./")
-	observe.GlobalTrace("return: looksLikeSourcePath(clean)")
-	return looksLikeSourcePath(clean)
 }
 
 func looksLikeSourcePath(path string) bool {

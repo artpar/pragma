@@ -636,9 +636,9 @@ func renderSourceEditTransport() string {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: `### ` + \"`source_edit_transport`\" + ` (runtime capability)\nRepository source...")
 	return `### ` + "`source_edit_transport`" + ` (runtime capability)
-Repository source edits in this direct bash-fence runtime must use Pragma's structured patch runner.
-Use normal bash for read-only inspection, validation commands, and runtime artifact writes.
-For repository source mutations, respond with exactly one fenced bash block containing one ` + "`apply_patch`" + ` heredoc and no other shell command:
+Repository source edits in this direct bash-fence runtime may use normal shell commands or Pragma's structured patch runner.
+Prefer ` + "`apply_patch`" + ` for complex multi-line or multi-file source edits. Avoid ` + "`sed -i`" + ` for complex changes; use it only for simple, obvious replacements.
+For structured patch edits, respond with exactly one fenced bash block containing one ` + "`apply_patch`" + ` heredoc and no other shell command:
 
 ` + "```bash" + `
 apply_patch <<'PATCH'
@@ -661,8 +661,7 @@ Patch grammar is strict:
 - Do not use git/unified-diff headers (` + "`---`" + `, ` + "`+++`" + `, ` + "`index`" + `, or numbered ` + "`@@ -a,b +c,d @@`" + `). Use plain ` + "`@@`" + ` hunk markers.
 - For insertion after a visible anchor, include the anchor as a space-prefixed context line before the ` + "`+`" + ` lines. Do not put ` + "`+`" + ` lines before the anchor.
 - Do not invent comments, blank lines, or helper text beyond the requested source change.
-- Do not use ` + "`git apply`" + `, ` + "`sed`" + `, ` + "`awk`" + `, ` + "`perl`" + `, ` + "`python`" + `, ` + "`cat`" + `, ` + "`tee`" + `, or shell redirection to mutate repository source files.
-- If ` + "`apply_patch`" + ` fails, reread the target range and retry with a smaller ` + "`apply_patch`" + ` hunk; do not switch editing tools.
+- If ` + "`apply_patch`" + ` fails, reread the target range and retry with a smaller ` + "`apply_patch`" + ` hunk; if structured patching is not working, use a clear shell edit instead.
 
 `
 }
