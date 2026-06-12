@@ -69,8 +69,9 @@ prompt: |
   pending and in their original relative order. Create new pending repair items
   only from the current `patch_plan` `Patch route:` bullets, in the same order
   as those bullets. Put repair items before the preserved remaining pending
-  items when they unblock the current item. Do not write an empty checklist
-  unless no repair items and no pending items remain.
+  items when they unblock the current item. Never delete completed checklist
+  items from a supplied checklist. When no pending or blocked items remain,
+  preserve every completed item exactly; do not write an empty checklist.
 
   Current-item allowed-files repair rule:
   If item_verdict Required repair says to add a concrete repository path to the
