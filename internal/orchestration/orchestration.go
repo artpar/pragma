@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/artpar/pragma/internal/observe"
@@ -19,13 +20,25 @@ const (
 
 // State is one orchestration node. Execution semantics live outside the graph.
 type State struct {
-	ID         string    `yaml:"id"`
-	Terminal   bool      `yaml:"terminal,omitempty"`
-	Persona    string    `yaml:"persona,omitempty"`
-	TaskPrompt string    `yaml:"task_prompt,omitempty"`
-	Artifacts  Artifacts `yaml:"artifacts,omitempty"`
-	Control    Control   `yaml:"control,omitempty"`
-	Event      Event     `yaml:"event,omitempty"`
+	ID           string      `yaml:"id"`
+	Terminal     bool        `yaml:"terminal,omitempty"`
+	Persona      string      `yaml:"persona,omitempty"`
+	TaskPrompt   string      `yaml:"task_prompt,omitempty"`
+	Conversation string      `yaml:"conversation,omitempty"`
+	Artifacts    Artifacts   `yaml:"artifacts,omitempty"`
+	Control      Control     `yaml:"control,omitempty"`
+	Event        Event       `yaml:"event,omitempty"`
+	ShellPolicy  ShellPolicy `yaml:"shell_policy,omitempty"`
+}
+
+type ShellPolicy struct {
+	DenyPatterns  []string `yaml:"deny_patterns,omitempty"`
+	DenyMessage   string   `yaml:"deny_message,omitempty"`
+	HandoffInputs string   `yaml:"handoff_inputs,omitempty"`
+}
+
+func (p ShellPolicy) IsZero() bool {
+	return len(p.DenyPatterns) == 0 && strings.TrimSpace(p.DenyMessage) == "" && strings.TrimSpace(p.HandoffInputs) == ""
 }
 
 type Artifacts struct {
@@ -41,12 +54,40 @@ func (a Artifacts) IsZero() bool {
 }
 
 type Artifact struct {
-	ID            string   `yaml:"id"`
-	Path          string   `yaml:"path"`
-	Required      bool     `yaml:"required,omitempty"`
-	Description   string   `yaml:"description,omitempty"`
-	Kind          string   `yaml:"kind,omitempty"`
-	AllowedValues []string `yaml:"allowed_values,omitempty"`
+	ID                string                   `yaml:"id"`
+	Path              string                   `yaml:"path"`
+	Required          bool                     `yaml:"required,omitempty"`
+	Description       string                   `yaml:"description,omitempty"`
+	Kind              string                   `yaml:"kind,omitempty"`
+	AllowedValues     []string                 `yaml:"allowed_values,omitempty"`
+	PromptAttachments []string                 `yaml:"prompt_attachments,omitempty"`
+	Seed              ArtifactSeed             `yaml:"seed,omitempty"`
+	RuntimeCapture    ArtifactRuntimeCapture   `yaml:"runtime_capture,omitempty"`
+	Checks            []ArtifactIntegrityCheck `yaml:"checks,omitempty"`
+}
+
+type ArtifactSeed struct {
+	Source string `yaml:"source,omitempty"`
+}
+
+func (s ArtifactSeed) IsZero() bool {
+	return strings.TrimSpace(s.Source) == ""
+}
+
+type ArtifactRuntimeCapture struct {
+	Type string `yaml:"type,omitempty"`
+}
+
+type ArtifactIntegrityCheck struct {
+	Type       string   `yaml:"type"`
+	Path       string   `yaml:"path,omitempty"`
+	Field      string   `yaml:"field,omitempty"`
+	TextField  string   `yaml:"text_field,omitempty"`
+	Fields     []string `yaml:"fields,omitempty"`
+	KeyField   string   `yaml:"key_field,omitempty"`
+	Value      string   `yaml:"value,omitempty"`
+	ArtifactID string   `yaml:"artifact_id,omitempty"`
+	Sections   []string `yaml:"sections,omitempty"`
 }
 
 type Control struct {
@@ -64,22 +105,52 @@ func (c Control) IsZero() bool {
 }
 
 type ForEachNextControl struct {
-	ListPath      string `yaml:"list_path"`
-	CursorPath    string `yaml:"cursor_path"`
-	HandoffPath   string `yaml:"handoff_path,omitempty"`
-	PendingStatus string `yaml:"pending_status,omitempty"`
-	DoneStatus    string `yaml:"done_status,omitempty"`
-	BlockedStatus string `yaml:"blocked_status,omitempty"`
-	ItemEvent     string `yaml:"item_event"`
-	DoneEvent     string `yaml:"done_event"`
-	BlockedEvent  string `yaml:"blocked_event,omitempty"`
+	ListPath                  string            `yaml:"list_path"`
+	CursorPath                string            `yaml:"cursor_path"`
+	CursorArtifactID          string            `yaml:"cursor_artifact_id,omitempty"`
+	CursorArtifactDescription string            `yaml:"cursor_artifact_description,omitempty"`
+	HandoffPath               string            `yaml:"handoff_path,omitempty"`
+	HandoffMode               string            `yaml:"handoff_mode,omitempty"`
+	ItemContract              string            `yaml:"item_contract,omitempty"`
+	Dependency                DependencyControl `yaml:"dependency,omitempty"`
+	PendingStatus             string            `yaml:"pending_status,omitempty"`
+	DoneStatus                string            `yaml:"done_status,omitempty"`
+	BlockedStatus             string            `yaml:"blocked_status,omitempty"`
+	ItemEvent                 string            `yaml:"item_event"`
+	DoneEvent                 string            `yaml:"done_event"`
+	BlockedEvent              string            `yaml:"blocked_event,omitempty"`
 }
 
 type MarkCurrentItemControl struct {
-	ListPath   string `yaml:"list_path"`
-	CursorPath string `yaml:"cursor_path"`
-	Status     string `yaml:"status"`
-	Event      string `yaml:"event"`
+	ListPath   string            `yaml:"list_path"`
+	CursorPath string            `yaml:"cursor_path"`
+	Status     string            `yaml:"status"`
+	Event      string            `yaml:"event"`
+	Dependency DependencyControl `yaml:"dependency,omitempty"`
+}
+
+type DependencyControl struct {
+	DependencyIDsField      string `yaml:"dependency_ids_field,omitempty"`
+	DependencyReasonField   string `yaml:"dependency_reason_field,omitempty"`
+	DeferredDependencyField string `yaml:"deferred_dependency_field,omitempty"`
+	BlockedStatus           string `yaml:"blocked_status,omitempty"`
+	UnblockedStatus         string `yaml:"unblocked_status,omitempty"`
+	AutoBlockDeferred       bool   `yaml:"auto_block_deferred,omitempty"`
+	AutoUnblockDependents   bool   `yaml:"auto_unblock_dependents,omitempty"`
+	BlockedCursorReason     string `yaml:"blocked_cursor_reason,omitempty"`
+	MissingDependencyReason string `yaml:"missing_dependency_reason,omitempty"`
+}
+
+func (d DependencyControl) IsZero() bool {
+	return strings.TrimSpace(d.DependencyIDsField) == "" &&
+		strings.TrimSpace(d.DependencyReasonField) == "" &&
+		strings.TrimSpace(d.DeferredDependencyField) == "" &&
+		strings.TrimSpace(d.BlockedStatus) == "" &&
+		strings.TrimSpace(d.UnblockedStatus) == "" &&
+		!d.AutoBlockDeferred &&
+		!d.AutoUnblockDependents &&
+		strings.TrimSpace(d.BlockedCursorReason) == "" &&
+		strings.TrimSpace(d.MissingDependencyReason) == ""
 }
 
 type ArtifactVerdictControl struct {
@@ -131,14 +202,9 @@ type Checklist struct {
 }
 
 type ChecklistItem struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Acceptance  []string `json:"acceptance,omitempty"`
-	Status      string   `json:"status"`
-	BlockedBy   []string `json:"blocked_by,omitempty"`
-	BlockReason string   `json:"block_reason,omitempty"`
-	Extra       map[string]json.RawMessage
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Extra  map[string]json.RawMessage
 }
 
 func (i *ChecklistItem) UnmarshalJSON(data []byte) error {
@@ -157,7 +223,7 @@ func (i *ChecklistItem) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &known); err != nil {
 		return err
 	}
-	for _, key := range []string{"id", "title", "description", "acceptance", "status", "blocked_by", "block_reason"} {
+	for _, key := range []string{"id", "status"} {
 		delete(raw, key)
 	}
 	*i = ChecklistItem(known)
@@ -170,7 +236,7 @@ func (i *ChecklistItem) UnmarshalJSON(data []byte) error {
 }
 
 func (i ChecklistItem) MarshalJSON() ([]byte, error) {
-	fields := make(map[string]json.RawMessage, len(i.Extra)+5)
+	fields := make(map[string]json.RawMessage, len(i.Extra)+2)
 	for key, value := range i.Extra {
 		fields[key] = value
 	}
@@ -180,41 +246,6 @@ func (i ChecklistItem) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 		fields["id"] = raw
-	}
-	if i.Title != "" {
-		raw, err := json.Marshal(i.Title)
-		if err != nil {
-			return nil, err
-		}
-		fields["title"] = raw
-	}
-	if i.Description != "" {
-		raw, err := json.Marshal(i.Description)
-		if err != nil {
-			return nil, err
-		}
-		fields["description"] = raw
-	}
-	if i.Acceptance != nil {
-		raw, err := json.Marshal(i.Acceptance)
-		if err != nil {
-			return nil, err
-		}
-		fields["acceptance"] = raw
-	}
-	if i.BlockedBy != nil {
-		raw, err := json.Marshal(i.BlockedBy)
-		if err != nil {
-			return nil, err
-		}
-		fields["blocked_by"] = raw
-	}
-	if i.BlockReason != "" {
-		raw, err := json.Marshal(i.BlockReason)
-		if err != nil {
-			return nil, err
-		}
-		fields["block_reason"] = raw
 	}
 	raw, err := json.Marshal(i.Status)
 	if err != nil {
@@ -371,12 +402,6 @@ func validate(def Definition) (map[string]State, map[TransitionKey]Transition, e
 			transitions[key] = tr
 		}
 	}
-	if err := validateDefinitionSpecificInvariants(def.Name, transitions); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: nil, nil, err")
-		return nil, nil, err
-	}
-
 	for _, state := range states {
 		observe.GlobalTrace("range states")
 		if state.Terminal {
@@ -419,6 +444,15 @@ func validateStateExecution(defName string, state State) error {
 		observe.GlobalTrace("if: state.TaskPrompt != \"\" && state.TaskPrompt != TaskPromptFull && state.TaskPro...")
 		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q has invalid task_prompt %q\", defName, s...")
 		return fmt.Errorf("orchestration %q state %q has invalid task_prompt %q", defName, state.ID, state.TaskPrompt)
+	}
+	if state.Conversation != "" && state.Conversation != "persistent" {
+		return fmt.Errorf("orchestration %q state %q has invalid conversation %q", defName, state.ID, state.Conversation)
+	}
+	if state.Conversation == "persistent" && strings.TrimSpace(state.Persona) == "" {
+		return fmt.Errorf("orchestration %q state %q persistent conversation requires persona", defName, state.ID)
+	}
+	if err := validateShellPolicy(defName, state.ID, state.ShellPolicy); err != nil {
+		return err
 	}
 	if !state.Control.IsZero() {
 		observe.GlobalTrace("if: !state.Control.IsZero()")
@@ -479,11 +513,6 @@ func validateStateExecution(defName string, state State) error {
 			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q can only define persona with foreach...")
 			return fmt.Errorf("orchestration %q control state %q can only define persona with foreach_next", defName, state.ID)
 		}
-		if state.Control.ForEachNext != nil && state.Control.ForEachNext.HandoffPath != "" && state.Persona == "" {
-			observe.GlobalTrace("if: state.Control.ForEachNext != nil && state.Control.ForEachNext.HandoffPath != \"\" && state.Persona == \"\"")
-			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next handoff_path requires persona\", ...")
-			return fmt.Errorf("orchestration %q state %q foreach_next handoff_path requires persona", defName, state.ID)
-		}
 		if state.Persona != "" && state.Control.ForEachNext != nil {
 			observe.GlobalTrace("if: state.Persona != \"\" && state.Control.ForEachNext != nil")
 			if err := validatePersonaBackedForEachNext(defName, state); err != nil {
@@ -497,12 +526,37 @@ func validateStateExecution(defName string, state State) error {
 	return nil
 }
 
+func validateShellPolicy(defName, stateID string, policy ShellPolicy) error {
+	switch strings.TrimSpace(policy.HandoffInputs) {
+	case "", "rendered":
+	default:
+		return fmt.Errorf("orchestration %q state %q shell_policy handoff_inputs has unsupported value %q", defName, stateID, policy.HandoffInputs)
+	}
+	for idx, pattern := range policy.DenyPatterns {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("orchestration %q state %q shell_policy deny_patterns[%d] is empty", defName, stateID, idx)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("orchestration %q state %q shell_policy deny_patterns[%d] is invalid: %w", defName, stateID, idx, err)
+		}
+	}
+	if len(policy.DenyPatterns) == 0 && strings.TrimSpace(policy.DenyMessage) != "" && strings.TrimSpace(policy.HandoffInputs) == "" {
+		return fmt.Errorf("orchestration %q state %q shell_policy deny_message requires deny_patterns", defName, stateID)
+	}
+	return nil
+}
+
 func validatePersonaBackedForEachNext(defName string, state State) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	control := state.Control.ForEachNext
 	if control == nil {
 		observe.GlobalTrace("if: control == nil")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	if control.HandoffMode != "persona" {
+		observe.GlobalTrace("if: control.HandoffMode != \"persona\"")
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
@@ -553,77 +607,102 @@ func validateArtifactList(defName, owner string, artifacts []Artifact) error {
 				return fmt.Errorf("orchestration %q %s artifact %q has empty allowed value", defName, owner, artifact.ID)
 			}
 		}
-	}
-	observe.GlobalTrace("return: nil")
-	return nil
-}
-
-func validateDefinitionSpecificInvariants(defName string, transitions map[TransitionKey]Transition) error {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if defName != "prompt-control-v2-benchmark" {
-		observe.GlobalTrace("if: defName != \"prompt-control-v2-benchmark\"")
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
-	if err := requireTransitionHandoff(defName, transitions, "patch_planner", EventComplete, "checklist_writer", "checklist", false); err != nil {
-		observe.GlobalTrace("if: err != nil")
-		observe.GlobalTrace("return: err")
-		return err
-	}
-	for _, required := range []struct {
-		from  string
-		event string
-		to    string
-	}{
-		{from: "route_item_block_classification", event: "repair_patch_plan", to: "patch_planner"},
-		{from: "route_item_block_classification", event: "unresolved_ambiguity", to: "patch_planner"},
-		{from: "route_final_verdict", event: "final_block", to: "patch_planner"},
-	} {
-		observe.GlobalTrace("range required")
-		if err := requireTransitionHandoff(defName, transitions, required.from, required.event, required.to, "checklist", true); err != nil {
-			observe.GlobalTrace("if: err != nil")
-			observe.GlobalTrace("return: err")
-			return err
+		for idx, attachment := range artifact.PromptAttachments {
+			if !supportedPromptAttachment(attachment) {
+				return fmt.Errorf("orchestration %q %s artifact %q prompt_attachments[%d] has unsupported value %q", defName, owner, artifact.ID, idx, attachment)
+			}
+		}
+		if strings.TrimSpace(artifact.Seed.Source) == "" && !artifact.Seed.IsZero() {
+			return fmt.Errorf("orchestration %q %s artifact %q seed requires source", defName, owner, artifact.ID)
+		}
+		if artifact.RuntimeCapture.Type != "" && artifact.RuntimeCapture.Type != "command_evidence" {
+			observe.GlobalTrace("if: artifact.RuntimeCapture.Type != \"\" && artifact.RuntimeCapture.Type != \"command_evidence\"")
+			return fmt.Errorf("orchestration %q %s artifact %q has unsupported runtime_capture type %q", defName, owner, artifact.ID, artifact.RuntimeCapture.Type)
+		}
+		for idx, check := range artifact.Checks {
+			observe.GlobalTrace("range artifact.Checks")
+			if strings.TrimSpace(check.Type) == "" {
+				observe.GlobalTrace("if: strings.TrimSpace(check.Type) == \"\"")
+				return fmt.Errorf("orchestration %q %s artifact %q check %d requires type", defName, owner, artifact.ID, idx)
+			}
+			if !supportedArtifactCheckType(check.Type) {
+				observe.GlobalTrace("if: !supportedArtifactCheckType(check.Type)")
+				return fmt.Errorf("orchestration %q %s artifact %q check %d has unsupported type %q", defName, owner, artifact.ID, idx, check.Type)
+			}
+			if check.Type == "command_evidence_support" && strings.TrimSpace(check.ArtifactID) == "" {
+				observe.GlobalTrace("if: check.Type == \"command_evidence_support\" && strings.TrimSpace(check.ArtifactID) == \"\"")
+				return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
+			}
+			if check.Type == "json_each_fields_equal_handoff_artifact" {
+				if strings.TrimSpace(check.ArtifactID) == "" {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
+				}
+				if strings.TrimSpace(check.Path) == "" {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires path", defName, owner, artifact.ID, idx)
+				}
+				if strings.TrimSpace(check.KeyField) == "" {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires key_field", defName, owner, artifact.ID, idx)
+				}
+				if len(check.Fields) == 0 {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires fields", defName, owner, artifact.ID, idx)
+				}
+			}
+			if check.Type == "json_fields_equal_handoff_artifact" {
+				if strings.TrimSpace(check.ArtifactID) == "" {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
+				}
+				if len(check.Fields) == 0 {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires fields", defName, owner, artifact.ID, idx)
+				}
+			}
+			if check.Type == "json_array_subset_of_handoff_text_list" {
+				if strings.TrimSpace(check.ArtifactID) == "" {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
+				}
+				if strings.TrimSpace(check.Field) == "" {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires field", defName, owner, artifact.ID, idx)
+				}
+				if strings.TrimSpace(check.TextField) == "" {
+					return fmt.Errorf("orchestration %q %s artifact %q check %d requires text_field", defName, owner, artifact.ID, idx)
+				}
+			}
 		}
 	}
 	observe.GlobalTrace("return: nil")
 	return nil
 }
 
-func requireTransitionHandoff(defName string, transitions map[TransitionKey]Transition, from string, event string, to string, artifactID string, required bool) error {
+func supportedPromptAttachment(attachment string) bool {
+	switch attachment {
+	case "source_edit_transport":
+		return true
+	default:
+		return false
+	}
+}
+
+func supportedArtifactCheckType(checkType string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	tr, ok := transitions[TransitionKey{From: from, Event: event}]
-	if !ok {
-		observe.GlobalTrace("if: !ok")
-		observe.GlobalTrace("return: nil")
-		return nil
+	switch checkType {
+	case "json_field_equals",
+		"json_array_non_empty",
+		"json_each_required_fields",
+		"json_each_string_substring_of_task_prompt",
+		"json_each_repo_relative_paths",
+		"json_each_behavior_validation_commands",
+		"json_each_fields_equal_handoff_artifact",
+		"json_fields_equal_handoff_artifact",
+		"json_array_subset_of_handoff_text_list",
+		"markdown_constraints_supported_by_claims",
+		"text_forbid_contains",
+		"command_evidence_support":
+		observe.GlobalTrace("return: true")
+		return true
+	default:
+		observe.GlobalTrace("return: false")
+		return false
 	}
-	if tr.To != to {
-		observe.GlobalTrace("if: tr.To != to")
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
-	for _, artifact := range tr.Handoff {
-		observe.GlobalTrace("range tr.Handoff")
-		if artifact.ID != artifactID {
-			observe.GlobalTrace("if: artifact.ID != artifactID")
-			continue
-		}
-		if required && !artifact.Required {
-			observe.GlobalTrace("if: required && !artifact.Required")
-			return fmt.Errorf("orchestration %q transition %s --%s--> %s must hand off required artifact %q", defName, from, event, to, artifactID)
-		}
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
-	if required {
-		observe.GlobalTrace("if: required")
-		return fmt.Errorf("orchestration %q transition %s --%s--> %s must hand off required artifact %q", defName, from, event, to, artifactID)
-	}
-	observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q transition %s --%s--> %s must hand off artifact %q\", ...")
-	return fmt.Errorf("orchestration %q transition %s --%s--> %s must hand off artifact %q", defName, from, event, to, artifactID)
 }
 
 func validateForEachNextControl(defName, stateID string, control *ForEachNextControl) error {
@@ -652,6 +731,27 @@ func validateForEachNextControl(defName, stateID string, control *ForEachNextCon
 	if control.BlockedEvent != "" && strings.TrimSpace(control.BlockedEvent) == "" {
 		return fmt.Errorf("orchestration %q state %q foreach_next has blank blocked_event", defName, stateID)
 	}
+	switch strings.TrimSpace(control.HandoffMode) {
+	case "":
+		if strings.TrimSpace(control.HandoffPath) != "" {
+			return fmt.Errorf("orchestration %q state %q foreach_next handoff_path requires handoff_mode", defName, stateID)
+		}
+	case "persona", "control":
+		if strings.TrimSpace(control.HandoffPath) == "" {
+			return fmt.Errorf("orchestration %q state %q foreach_next handoff_mode requires handoff_path", defName, stateID)
+		}
+	default:
+		return fmt.Errorf("orchestration %q state %q foreach_next has unsupported handoff_mode %q", defName, stateID, control.HandoffMode)
+	}
+	if strings.TrimSpace(control.CursorArtifactDescription) != "" && strings.TrimSpace(control.CursorArtifactID) == "" {
+		return fmt.Errorf("orchestration %q state %q foreach_next cursor_artifact_description requires cursor_artifact_id", defName, stateID)
+	}
+	if strings.TrimSpace(control.HandoffMode) == "persona" && strings.TrimSpace(control.CursorArtifactID) == "" {
+		return fmt.Errorf("orchestration %q state %q foreach_next persona handoff_mode requires cursor_artifact_id", defName, stateID)
+	}
+	if err := validateDependencyControl(defName, stateID, "foreach_next", control.Dependency); err != nil {
+		return err
+	}
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -679,7 +779,32 @@ func validateMarkCurrentItemControl(defName, stateID string, control *MarkCurren
 		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q mark_current_item requires event\", defN...")
 		return fmt.Errorf("orchestration %q state %q mark_current_item requires event", defName, stateID)
 	}
+	if err := validateDependencyControl(defName, stateID, "mark_current_item", control.Dependency); err != nil {
+		return err
+	}
 	observe.GlobalTrace("return: nil")
+	return nil
+}
+
+func validateDependencyControl(defName, stateID, controlName string, dependency DependencyControl) error {
+	if dependency.IsZero() {
+		return nil
+	}
+	if dependency.AutoBlockDeferred && strings.TrimSpace(dependency.DeferredDependencyField) == "" {
+		return fmt.Errorf("orchestration %q state %q %s dependency auto_block_deferred requires deferred_dependency_field", defName, stateID, controlName)
+	}
+	if (dependency.AutoBlockDeferred || dependency.AutoUnblockDependents) && strings.TrimSpace(dependency.DependencyIDsField) == "" {
+		return fmt.Errorf("orchestration %q state %q %s dependency requires dependency_ids_field", defName, stateID, controlName)
+	}
+	if dependency.AutoUnblockDependents && strings.TrimSpace(dependency.UnblockedStatus) == "" {
+		return fmt.Errorf("orchestration %q state %q %s dependency auto_unblock_dependents requires unblocked_status", defName, stateID, controlName)
+	}
+	if dependency.AutoUnblockDependents && strings.TrimSpace(dependency.BlockedStatus) == "" {
+		return fmt.Errorf("orchestration %q state %q %s dependency auto_unblock_dependents requires blocked_status", defName, stateID, controlName)
+	}
+	if (strings.TrimSpace(dependency.BlockedCursorReason) != "" || strings.TrimSpace(dependency.MissingDependencyReason) != "") && strings.TrimSpace(dependency.DependencyReasonField) == "" {
+		return fmt.Errorf("orchestration %q state %q %s dependency reasons require dependency_reason_field", defName, stateID, controlName)
+	}
 	return nil
 }
 
@@ -820,7 +945,7 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 	if blockedStatus == "" {
 		blockedStatus = "blocked"
 	}
-	if normalizeChecklistDependencies(&checklist, pendingStatus, blockedStatus) {
+	if normalizeChecklistDependencies(&checklist, pendingStatus, blockedStatus, control.Dependency) {
 		if err := writeJSONFile(control.ListPath, checklist); err != nil {
 			return "", err
 		}
@@ -840,13 +965,20 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 			observe.GlobalTrace("return: \"\", err")
 			return "", err
 		}
+		if control.HandoffMode == "control" {
+			if err := writeForEachControlHandoff(control.HandoffPath, item); err != nil {
+				return "", err
+			}
+		}
 		observe.GlobalTrace("return: control.ItemEvent, nil")
 		return control.ItemEvent, nil
 	}
 	if hasBlocked && control.BlockedEvent != "" {
 		blockedCursor := ChecklistItem{
-			Status:      blockedStatus,
-			BlockReason: "no pending checklist items remain; blocked checklist items are waiting on prerequisites",
+			Status: blockedStatus,
+		}
+		if strings.TrimSpace(control.Dependency.DependencyReasonField) != "" && strings.TrimSpace(control.Dependency.BlockedCursorReason) != "" {
+			setChecklistItemStringExtra(&blockedCursor, control.Dependency.DependencyReasonField, control.Dependency.BlockedCursorReason)
 		}
 		if err := writeJSONFile(control.CursorPath, blockedCursor); err != nil {
 			return "", err
@@ -860,6 +992,15 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 	}
 	observe.GlobalTrace("return: control.DoneEvent, nil")
 	return control.DoneEvent, nil
+}
+
+func writeForEachControlHandoff(path string, item ChecklistItem) error {
+	raw, err := json.MarshalIndent(item, "", "  ")
+	if err != nil {
+		return err
+	}
+	text := "Selected item:\n\n```json\n" + string(raw) + "\n```\n"
+	return os.WriteFile(path, []byte(text), 0o600)
 }
 
 func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
@@ -888,8 +1029,7 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 		if checklist.Items[i].ID == current.ID {
 			observe.GlobalTrace("if: checklist.Items[i].ID == current.ID")
 			checklist.Items[i].Status = control.Status
-			checklist.Items[i].BlockedBy = nil
-			checklist.Items[i].BlockReason = ""
+			clearDependencyFields(&checklist.Items[i], control.Dependency)
 			found = true
 			break
 		}
@@ -899,7 +1039,9 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"current item %q not found in checklist %q\", current.ID, contr...")
 		return "", fmt.Errorf("current item %q not found in checklist %q", current.ID, control.ListPath)
 	}
-	unblockDependents(&checklist, current.ID)
+	if control.Dependency.AutoUnblockDependents {
+		unblockDependents(&checklist, current.ID, control.Dependency)
+	}
 	if err := writeJSONFile(control.ListPath, checklist); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", err")
@@ -915,7 +1057,10 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 	return control.Event, nil
 }
 
-func normalizeChecklistDependencies(checklist *Checklist, pendingStatus, blockedStatus string) bool {
+func normalizeChecklistDependencies(checklist *Checklist, pendingStatus, blockedStatus string, dependency DependencyControl) bool {
+	if dependency.IsZero() {
+		return false
+	}
 	ids := make(map[string]bool, len(checklist.Items))
 	for _, item := range checklist.Items {
 		ids[item.ID] = true
@@ -923,60 +1068,68 @@ func normalizeChecklistDependencies(checklist *Checklist, pendingStatus, blocked
 	changed := false
 	for idx := range checklist.Items {
 		item := &checklist.Items[idx]
-		if len(item.BlockedBy) > 0 {
-			normalized := normalizeBlockedBy(item.BlockedBy, item.ID, ids)
-			if !sameStringSlice(item.BlockedBy, normalized) {
-				item.BlockedBy = normalized
+		blockedBy := checklistItemStringArrayExtra(item, dependency.DependencyIDsField)
+		if len(blockedBy) > 0 {
+			normalized := normalizeDependencyIDs(blockedBy, item.ID, ids)
+			if !sameStringSlice(blockedBy, normalized) {
+				setChecklistItemStringArrayExtra(item, dependency.DependencyIDsField, normalized)
 				changed = true
 			}
-			if len(item.BlockedBy) > 0 && item.Status != blockedStatus {
+			if len(normalized) > 0 && item.Status != blockedStatus {
 				item.Status = blockedStatus
 				changed = true
 			}
 			continue
 		}
-		deferredUntil := checklistItemStringExtra(item, "validation_deferred_until")
+		deferredUntil := ""
+		if dependency.AutoBlockDeferred {
+			deferredUntil = checklistItemStringExtra(item, dependency.DeferredDependencyField)
+		}
 		if ids[deferredUntil] && deferredUntil != item.ID {
-			item.BlockedBy = []string{deferredUntil}
+			setChecklistItemStringArrayExtra(item, dependency.DependencyIDsField, []string{deferredUntil})
 			item.Status = blockedStatus
-			if item.BlockReason == "" {
-				item.BlockReason = fmt.Sprintf("validation deferred until checklist item %q completes", deferredUntil)
+			if checklistItemStringExtra(item, dependency.DependencyReasonField) == "" && strings.TrimSpace(dependency.MissingDependencyReason) != "" {
+				setChecklistItemStringExtra(item, dependency.DependencyReasonField, dependency.MissingDependencyReason)
 			}
 			changed = true
 			continue
 		}
-		if item.Status == blockedStatus && item.BlockReason == "" {
-			item.BlockReason = "blocked without a structured prerequisite"
+		if item.Status == blockedStatus && strings.TrimSpace(dependency.DependencyReasonField) != "" && checklistItemStringExtra(item, dependency.DependencyReasonField) == "" && strings.TrimSpace(dependency.MissingDependencyReason) != "" {
+			setChecklistItemStringExtra(item, dependency.DependencyReasonField, dependency.MissingDependencyReason)
 			changed = true
 		}
 	}
 	return changed
 }
 
-func unblockDependents(checklist *Checklist, completedID string) {
+func unblockDependents(checklist *Checklist, completedID string, dependency DependencyControl) {
+	if strings.TrimSpace(dependency.DependencyIDsField) == "" {
+		return
+	}
 	for idx := range checklist.Items {
 		item := &checklist.Items[idx]
-		if len(item.BlockedBy) == 0 {
+		blockedBy := checklistItemStringArrayExtra(item, dependency.DependencyIDsField)
+		if len(blockedBy) == 0 {
 			continue
 		}
-		remaining := make([]string, 0, len(item.BlockedBy))
-		for _, blockedBy := range item.BlockedBy {
-			if blockedBy != completedID {
-				remaining = append(remaining, blockedBy)
+		remaining := make([]string, 0, len(blockedBy))
+		for _, dependencyID := range blockedBy {
+			if dependencyID != completedID {
+				remaining = append(remaining, dependencyID)
 			}
 		}
-		if len(remaining) == len(item.BlockedBy) {
+		if len(remaining) == len(blockedBy) {
 			continue
 		}
-		item.BlockedBy = remaining
-		if len(item.BlockedBy) == 0 && item.Status == "blocked" {
-			item.Status = "pending"
-			item.BlockReason = ""
+		setChecklistItemStringArrayExtra(item, dependency.DependencyIDsField, remaining)
+		if len(remaining) == 0 && item.Status == dependency.BlockedStatus && strings.TrimSpace(dependency.UnblockedStatus) != "" {
+			item.Status = dependency.UnblockedStatus
+			clearChecklistItemExtra(item, dependency.DependencyReasonField)
 		}
 	}
 }
 
-func normalizeBlockedBy(values []string, self string, ids map[string]bool) []string {
+func normalizeDependencyIDs(values []string, self string, ids map[string]bool) []string {
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}
 	for _, value := range values {
@@ -994,6 +1147,10 @@ func checklistItemStringExtra(item *ChecklistItem, key string) string {
 	if item == nil || item.Extra == nil {
 		return ""
 	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
 	raw, ok := item.Extra[key]
 	if !ok {
 		return ""
@@ -1003,6 +1160,102 @@ func checklistItemStringExtra(item *ChecklistItem, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(value)
+}
+
+func checklistItemStringArrayExtra(item *ChecklistItem, key string) []string {
+	if item == nil || item.Extra == nil {
+		return nil
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil
+	}
+	raw, ok := item.Extra[key]
+	if !ok {
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil
+	}
+	out := values[:0]
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func setChecklistItemStringExtra(item *ChecklistItem, key string, value string) {
+	if item == nil {
+		return
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" {
+		return
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return
+	}
+	if item.Extra == nil {
+		item.Extra = make(map[string]json.RawMessage)
+	}
+	item.Extra[key] = raw
+}
+
+func setChecklistItemStringArrayExtra(item *ChecklistItem, key string, values []string) {
+	if item == nil {
+		return
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		clearChecklistItemExtra(item, key)
+		return
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return
+	}
+	if item.Extra == nil {
+		item.Extra = make(map[string]json.RawMessage)
+	}
+	item.Extra[key] = raw
+}
+
+func clearDependencyFields(item *ChecklistItem, dependency DependencyControl) {
+	clearChecklistItemExtra(item, dependency.DependencyIDsField)
+	clearChecklistItemExtra(item, dependency.DependencyReasonField)
+}
+
+func clearChecklistItemExtra(item *ChecklistItem, key string) {
+	if item == nil || item.Extra == nil {
+		return
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	delete(item.Extra, key)
+	if len(item.Extra) == 0 {
+		item.Extra = nil
+	}
 }
 
 func sameStringSlice(a, b []string) bool {

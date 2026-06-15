@@ -10,6 +10,44 @@ states:
           required: true
           description: Initial task, repository, validation, and uncertainty survey.
 
+  - id: swe_acceptance_mapper
+    persona: swe_acceptance_mapper
+    task_prompt: full
+    artifacts:
+      outputs:
+        - id: acceptance_map
+          path: /tmp/pragma/swe/acceptance-map.json
+          required: true
+          description: Task-derived acceptance requirements, blocking status, validation needs, and evidence.
+          checks:
+            - type: json_field_equals
+              field: source
+              value: task_prompt
+            - type: json_array_non_empty
+              path: acceptance_items
+            - type: json_each_required_fields
+              path: acceptance_items
+              fields: [id, source_quote]
+            - type: json_each_string_substring_of_task_prompt
+              path: acceptance_items
+              field: source_quote
+            - type: json_each_repo_relative_paths
+              path: acceptance_items
+              field: repo_surfaces_to_verify
+            - type: json_each_behavior_validation_commands
+              path: acceptance_items
+              field: required_validation
+
+  - id: swe_environment_survey
+    persona: swe_environment_survey
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: environment_context
+          path: /tmp/pragma/swe/environment-context.md
+          required: true
+          description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+
   - id: swe_theory_keeper
     persona: swe_theory_keeper
     task_prompt: none
@@ -19,6 +57,48 @@ states:
           path: /tmp/pragma/swe/engineering-context.md
           required: true
           description: Living theory, evidence ledger, scope model, validation history, and next objective.
+          checks:
+            - type: markdown_constraints_supported_by_claims
+
+  - id: swe_acceptance_auditor
+    persona: swe_acceptance_auditor
+    task_prompt: none
+    shell_policy:
+      handoff_inputs: rendered
+      deny_message: This state receives declared handoff inputs as rendered content. Write declared outputs from the rendered handoff blocks instead of reading handoff artifact paths again.
+    artifacts:
+      outputs:
+        - id: acceptance_map
+          path: /tmp/pragma/swe/acceptance-map.json
+          required: true
+          description: Audited task-derived acceptance requirements and validation status.
+          checks:
+            - type: json_field_equals
+              field: source
+              value: task_prompt
+            - type: json_array_non_empty
+              path: acceptance_items
+            - type: json_each_required_fields
+              path: acceptance_items
+              fields: [id, source_quote]
+            - type: json_each_string_substring_of_task_prompt
+              path: acceptance_items
+              field: source_quote
+            - type: json_each_fields_equal_handoff_artifact
+              artifact_id: acceptance_map
+              path: acceptance_items
+              key_field: id
+              fields: [task_text, source_quote, behavior_surface, repo_surfaces_to_verify, blocking_if_missing]
+            - type: json_each_repo_relative_paths
+              path: acceptance_items
+              field: repo_surfaces_to_verify
+            - type: json_each_behavior_validation_commands
+              path: acceptance_items
+              field: required_validation
+        - id: handoff_audit
+          path: /tmp/pragma/swe/handoff-audit.md
+          required: true
+          description: Exact handoff hashes, acceptance-map field changes, and corruption checks.
 
   - id: swe_slice_planner
     persona: swe_slice_planner
@@ -30,6 +110,26 @@ states:
           required: true
           description: One thin vertical slice of engineering work or discovery.
 
+  - id: swe_slice_plan_auditor
+    persona: swe_slice_plan_auditor
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: slice_plan
+          path: /tmp/pragma/swe/slice-plan.json
+          required: true
+          description: Audited thin vertical slice plan.
+          checks:
+            - type: json_fields_equal_handoff_artifact
+              artifact_id: slice_plan
+              fields:
+                - acceptance_ids
+                - missing_acceptance_ids
+        - id: plan_audit
+          path: /tmp/pragma/swe/plan-audit.md
+          required: true
+          description: Slice coverage, scope, and worker-claim audit.
+
   - id: swe_engineering_worker
     persona: swe_engineering_worker
     task_prompt: none
@@ -39,9 +139,56 @@ states:
           path: /tmp/pragma/swe/worker-report.md
           required: true
           description: Work report, changed files, discovered coupling, validation run, and scope requests.
+          checks:
+            - type: text_forbid_contains
+              value: "task_completion_claim_allowed: true"
+            - type: command_evidence_support
+              artifact_id: worker_command_evidence
+              sections:
+                - "Actions taken:"
+                - "Validation run by worker:"
         - id: worker_validation_log
           path: /tmp/pragma/swe/worker-validation.log
           description: Optional focused command log produced by the worker.
+        - id: worker_command_evidence
+          path: /tmp/pragma/swe/worker-command-evidence.jsonl
+          required: true
+          runtime_capture:
+            type: command_evidence
+          description: Runtime-authored command evidence for the worker state.
+
+  - id: route_worker_track
+    control:
+      artifact_decision:
+        path: /tmp/pragma/swe/slice-plan.json
+        field: worker_track
+        events:
+          discovery: discovery
+          implementation: implementation
+
+  - id: swe_discovery_worker
+    persona: swe_discovery_worker
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: worker_report
+          path: /tmp/pragma/swe/worker-report.md
+          required: true
+          description: Discovery report, inspected evidence, discovered coupling, and scope requests.
+          checks:
+            - type: text_forbid_contains
+              value: "task_completion_claim_allowed: true"
+            - type: command_evidence_support
+              artifact_id: worker_command_evidence
+              sections:
+                - "Actions taken:"
+                - "Validation run by worker:"
+        - id: worker_command_evidence
+          path: /tmp/pragma/swe/worker-command-evidence.jsonl
+          required: true
+          runtime_capture:
+            type: command_evidence
+          description: Runtime-authored command evidence for the discovery worker state.
 
   - id: swe_targeted_validator
     persona: swe_targeted_validator
@@ -64,6 +211,11 @@ states:
           kind: decision
           allowed_values: [continue_implementation, revise_theory, expand_scope, final_validation, unresolved]
           description: Engineering review decision for the latest slice.
+          checks:
+            - type: json_array_subset_of_handoff_text_list
+              artifact_id: targeted_validation
+              field: acceptance_status.validated
+              text_field: validated_acceptance_ids
 
   - id: route_review_decision
     control:
@@ -148,7 +300,7 @@ states:
 transitions:
   - event: complete
     from: [swe_repo_survey]
-    to: swe_theory_keeper
+    to: swe_acceptance_mapper
     handoff:
       - id: repo_survey
         path: /tmp/pragma/swe/repo-survey.md
@@ -156,12 +308,104 @@ transitions:
         description: Initial survey preserving task intent and repo facts.
 
   - event: complete
+    from: [swe_acceptance_mapper]
+    to: swe_environment_survey
+    handoff:
+      - id: repo_survey
+        path: /tmp/pragma/swe/repo-survey.md
+        required: true
+        description: Initial survey preserving task intent and repo facts.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements and validation obligations.
+      - id: runner_capability_evidence
+        path: /tmp/pragma/swe/runner-capability-evidence.md
+        required: true
+        description: Runtime-provided runner capability evidence to preserve separately from local probes.
+        seed:
+          source: process_environment
+
+  - event: complete
+    from: [swe_environment_survey]
+    to: swe_theory_keeper
+    handoff:
+      - id: repo_survey
+        path: /tmp/pragma/swe/repo-survey.md
+        required: true
+        description: Initial survey preserving task intent and repo facts.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements and validation obligations.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+
+  - event: complete
     from: [swe_theory_keeper]
+    to: swe_acceptance_auditor
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map to preserve and audit.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        description: Latest slice plan, if this is a loopback update.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        description: Latest work and discovery report, if this is a loopback update.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        description: Runtime-authored command evidence for the latest worker state, if this is a loopback update.
+      - id: targeted_validation
+        path: /tmp/pragma/swe/targeted-validation.md
+        description: Latest targeted validation result, if this is a loopback update.
+      - id: review_decision
+        path: /tmp/pragma/swe/review-decision.json
+        description: Latest engineering review decision, if this is a loopback update.
+      - id: scope_decision
+        path: /tmp/pragma/swe/scope-decision.md
+        description: Scope expansion decision, if this is a scope loopback.
+      - id: final_validation_status
+        path: /tmp/pragma/swe/final-validation-status.md
+        description: Final validation status, if this is a final block loopback.
+      - id: final_verdict
+        path: /tmp/pragma/swe/final-verdict.md
+        description: Final reviewer verdict, if this is a final block loopback.
+      - id: diagnosis_decision
+        path: /tmp/pragma/swe/diagnosis-decision.json
+        description: Final diagnosis route, if this is a final block loopback.
+
+  - event: complete
+    from: [swe_acceptance_auditor]
     to: swe_slice_planner
     handoff:
       - id: repo_survey
         path: /tmp/pragma/swe/repo-survey.md
         description: Initial survey, if available.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Audited task-derived acceptance map and validation status.
+      - id: handoff_audit
+        path: /tmp/pragma/swe/handoff-audit.md
+        required: true
+        description: Exact handoff hashes, acceptance-map field changes, and corruption checks.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: engineering_context
         path: /tmp/pragma/swe/engineering-context.md
         required: true
@@ -169,25 +413,83 @@ transitions:
 
   - event: complete
     from: [swe_slice_planner]
-    to: swe_engineering_worker
+    to: swe_slice_plan_auditor
     handoff:
       - id: engineering_context
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory and scope model.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
       - id: slice_plan
         path: /tmp/pragma/swe/slice-plan.json
         required: true
-        description: Current thin vertical slice plan.
+        description: Proposed thin vertical slice plan.
+      - id: handoff_audit
+        path: /tmp/pragma/swe/handoff-audit.md
+        required: true
+        description: Exact handoff hashes, acceptance-map field changes, and corruption checks.
 
   - event: complete
-    from: [swe_engineering_worker]
+    from: [swe_slice_plan_auditor]
+    to: route_worker_track
+
+  - event: discovery
+    from: [route_worker_track]
+    to: swe_discovery_worker
+    handoff: &worker_handoff
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
+      - id: handoff_audit
+        path: /tmp/pragma/swe/handoff-audit.md
+        required: true
+        description: Exact handoff hashes, acceptance-map field changes, and corruption checks.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Audited thin vertical slice plan.
+      - id: plan_audit
+        path: /tmp/pragma/swe/plan-audit.md
+        required: true
+        description: Slice coverage, scope, and worker-claim audit.
+
+  - event: implementation
+    from: [route_worker_track]
+    to: swe_engineering_worker
+    handoff: *worker_handoff
+
+  - event: complete
+    from: [swe_engineering_worker, swe_discovery_worker]
     to: swe_targeted_validator
     handoff:
       - id: engineering_context
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory and scope model.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
       - id: slice_plan
         path: /tmp/pragma/swe/slice-plan.json
         required: true
@@ -196,6 +498,10 @@ transitions:
         path: /tmp/pragma/swe/worker-report.md
         required: true
         description: Work, discoveries, changed files, and scope requests from the slice.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        required: true
+        description: Runtime-authored worker command hashes, statuses, and completion markers.
 
   - event: complete
     from: [swe_targeted_validator]
@@ -205,6 +511,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory and scope model.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
       - id: slice_plan
         path: /tmp/pragma/swe/slice-plan.json
         required: true
@@ -213,6 +527,10 @@ transitions:
         path: /tmp/pragma/swe/worker-report.md
         required: true
         description: Work, discoveries, changed files, and scope requests from the slice.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        required: true
+        description: Runtime-authored worker command hashes, statuses, and completion markers.
       - id: targeted_validation
         path: /tmp/pragma/swe/targeted-validation.md
         required: true
@@ -230,6 +548,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Previous living context to update.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map to refresh from latest evidence.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: slice_plan
         path: /tmp/pragma/swe/slice-plan.json
         required: true
@@ -238,6 +564,10 @@ transitions:
         path: /tmp/pragma/swe/worker-report.md
         required: true
         description: Latest work and discovery report.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence for the latest worker state.
       - id: targeted_validation
         path: /tmp/pragma/swe/targeted-validation.md
         required: true
@@ -260,6 +590,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory and scope model.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: slice_plan
         path: /tmp/pragma/swe/slice-plan.json
         required: true
@@ -268,6 +606,10 @@ transitions:
         path: /tmp/pragma/swe/worker-report.md
         required: true
         description: Latest work and discovery report.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence for the latest worker state.
       - id: targeted_validation
         path: /tmp/pragma/swe/targeted-validation.md
         required: true
@@ -285,6 +627,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory and scope model.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: slice_plan
         path: /tmp/pragma/swe/slice-plan.json
         required: true
@@ -293,6 +643,10 @@ transitions:
         path: /tmp/pragma/swe/worker-report.md
         required: true
         description: Latest work and discovery report.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence for the latest worker state.
       - id: targeted_validation
         path: /tmp/pragma/swe/targeted-validation.md
         required: true
@@ -314,6 +668,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Previous living context to update.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map to refresh from scope evidence.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: scope_decision
         path: /tmp/pragma/swe/scope-decision.md
         required: true
@@ -333,6 +695,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory, evidence, scope, and validation history.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: final_validation_status
         path: /tmp/pragma/swe/final-validation-status.md
         required: true
@@ -354,6 +724,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory, evidence, scope, and validation history.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: final_validation_status
         path: /tmp/pragma/swe/final-validation-status.md
         required: true
@@ -375,6 +753,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Previous living context to update.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map to refresh from final block evidence.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: final_validation_status
         path: /tmp/pragma/swe/final-validation-status.md
         required: true
@@ -396,6 +782,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Previous living context to update.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map to refresh from final block evidence.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: final_validation_status
         path: /tmp/pragma/swe/final-validation-status.md
         required: true
@@ -417,6 +811,14 @@ transitions:
         path: /tmp/pragma/swe/engineering-context.md
         required: true
         description: Current living theory and scope model.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: final_validation_status
         path: /tmp/pragma/swe/final-validation-status.md
         required: true
