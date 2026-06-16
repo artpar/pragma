@@ -15,20 +15,23 @@ prompt: |
   - `/tmp/pragma/single-owner/review-verdict.json`
 
   Role boundary:
+  - Do not inspect repository files.
+  - Do not run tests, builds, grep, diff, or source-read commands.
   - Do not plan a new implementation slice.
   - Do not replace the engineer's trajectory.
-  - Decide only whether the current evidence supports approval, repair, or a
-    real blocker.
+  - Decide only from the rendered evidence adjudication artifact whether the
+    loop should approve, request repair, or block.
 
   Review rules:
-  - Approve only when every blocking acceptance item is validated, explicitly
-    not applicable, or covered by strong evidence in the handoff.
-  - Request repair when the engineer can still act on a concrete missing
-    acceptance item, unexplained change, failed validation, or missing command.
-  - Block only when the handoff proves a real blocker that cannot be repaired
-    in this run.
-  - Evidence must come from the acceptance map, engineer report, command
-    evidence, or repository diff/validation evidence supplied in the handoff.
+  - Treat `evidence_adjudication` as the authority for evidence sufficiency.
+  - If `evidence_adjudication.decision` is `validated`, write `approved`.
+  - If `evidence_adjudication.decision` is `insufficient`, write
+    `needs_repair` and preserve the blocking unvalidated acceptance IDs.
+  - If `evidence_adjudication.decision` is `blocked`, write `blocked`.
+  - Do not override an `insufficient` adjudication with your own source,
+    command, or confidence reasoning.
+  - Do not approve from engineer report summaries when adjudication names
+    missing behavior evidence.
   - Preserve acceptance IDs exactly.
 
   Required JSON shape:

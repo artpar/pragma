@@ -45,6 +45,12 @@ states:
           path: /tmp/pragma/single-owner/engineer-report.md
           required: true
           description: Current engineering report with changed files, evidence, validation, and blockers.
+          checks:
+            - type: command_evidence_support
+              artifact_id: engineer_command_evidence
+              sections:
+                - "Changes:"
+                - "Validation:"
         - id: engineer_command_evidence
           path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
           required: true
@@ -60,6 +66,18 @@ states:
         events:
           ready_for_review: ready_for_review
           blocked: blocked
+
+  - id: swe_single_evidence_adjudicator
+    persona: swe_single_evidence_adjudicator
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: evidence_adjudication
+          path: /tmp/pragma/single-owner/evidence-adjudication.json
+          required: true
+          kind: decision
+          allowed_values: [validated, insufficient, blocked]
+          description: Evidence sufficiency adjudication for the single-owner engineering loop.
 
   - id: swe_single_reviewer
     persona: swe_single_reviewer
@@ -105,7 +123,7 @@ transitions:
 
   - event: ready_for_review
     from: [route_engineer_status]
-    to: swe_single_reviewer
+    to: swe_single_evidence_adjudicator
     handoff:
       - id: acceptance_map
         path: /tmp/pragma/single-owner/acceptance-map.json
@@ -127,6 +145,31 @@ transitions:
   - event: blocked
     from: [route_engineer_status]
     to: unresolved
+
+  - event: complete
+    from: [swe_single_evidence_adjudicator]
+    to: swe_single_reviewer
+    handoff:
+      - id: acceptance_map
+        path: /tmp/pragma/single-owner/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements.
+      - id: engineer_status
+        path: /tmp/pragma/single-owner/engineer-status.json
+        required: true
+        description: Latest engineer route decision.
+      - id: engineer_report
+        path: /tmp/pragma/single-owner/engineer-report.md
+        required: true
+        description: Current engineer report.
+      - id: engineer_command_evidence
+        path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence from the engineer.
+      - id: evidence_adjudication
+        path: /tmp/pragma/single-owner/evidence-adjudication.json
+        required: true
+        description: Evidence sufficiency adjudication.
 
   - event: complete
     from: [swe_single_reviewer]
@@ -156,6 +199,10 @@ transitions:
         path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
         required: true
         description: Runtime-authored command evidence from the engineer.
+      - id: evidence_adjudication
+        path: /tmp/pragma/single-owner/evidence-adjudication.json
+        required: true
+        description: Evidence sufficiency adjudication reviewed by the final reviewer.
       - id: review_verdict
         path: /tmp/pragma/single-owner/review-verdict.json
         required: true
