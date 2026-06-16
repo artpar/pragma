@@ -636,7 +636,10 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 	if cfg, ok := commandPolicyConfig(state, transitionHandoff, artifactRoot); ok {
 		ctx = query.WithPragmaLoopCommandPolicy(ctx, cfg)
 	}
-	for ev := range engine.RunPragmaLoopWithSystemCompletionCheck(ctx, system, prompt, completionCheck) {
+	runOpts := query.PragmaLoopRunOptions{
+		IncludePriorConversation: stateUsesPersistentConversation(state),
+	}
+	for ev := range engine.RunPragmaLoopWithSystemCompletionCheckOptions(ctx, system, prompt, completionCheck, runOpts) {
 		observe.TraceCtx(ctx, "orchestration", "RunStateEvents", "range engine.RunPragmaLoopWithSystemCompletionCheck(ctx, system, prompt, completion...")
 		switch e := ev.(type) {
 		case query.TextEvent:

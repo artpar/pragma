@@ -124,6 +124,10 @@ type pragmaLoopObservation struct {
 	Complete bool
 }
 
+type PragmaLoopRunOptions struct {
+	IncludePriorConversation bool
+}
+
 func (engine *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "exit")
@@ -139,6 +143,14 @@ type PragmaLoopCompletionCheck func() (bool, string, error)
 // RunPragmaLoopWithSystemCompletionCheck runs the shell-action loop with an
 // optional completion check after a command emits the completion sentinel.
 func (engine *Engine) RunPragmaLoopWithSystemCompletionCheck(ctx context.Context, system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck) <-chan LoopEvent {
+	return engine.RunPragmaLoopWithSystemCompletionCheckOptions(ctx, system, userMessage, completionCheck, PragmaLoopRunOptions{})
+}
+
+// RunPragmaLoopWithSystemCompletionCheckOptions runs the shell-action loop with
+// optional completion checks and request-history controls. By default the
+// request is scoped to the current activation; IncludePriorConversation keeps
+// earlier messages in the engine conversation visible to the model.
+func (engine *Engine) RunPragmaLoopWithSystemCompletionCheckOptions(ctx context.Context, system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck, opts PragmaLoopRunOptions) <-chan LoopEvent {
 	observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystemCompletionCheck", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystemCompletionCheck", "exit")
 	ch := make(chan LoopEvent, 16)
@@ -150,6 +162,10 @@ func (engine *Engine) RunPragmaLoopWithSystemCompletionCheck(ctx context.Context
 				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
 			}
 		}()
+		if opts.IncludePriorConversation {
+			engine.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch)
+			return
+		}
 		startIndex := len(engine.store.Snapshot().Conversation.Messages)
 		engine.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch, startIndex)
 	}()
