@@ -1,0 +1,188 @@
+name: swe-single-owner-engineering-loop
+initial: swe_single_acceptance_mapper
+states:
+  - id: swe_single_acceptance_mapper
+    persona: swe_single_acceptance_mapper
+    task_prompt: full
+    artifacts:
+      outputs:
+        - id: acceptance_map
+          path: /tmp/pragma/single-owner/acceptance-map.json
+          required: true
+          description: Task-derived acceptance requirements preserved for the single-owner engineering loop.
+          checks:
+            - type: json_field_equals
+              field: source
+              value: task_prompt
+            - type: json_array_non_empty
+              path: acceptance_items
+            - type: json_each_required_fields
+              path: acceptance_items
+              fields: [id, source_quote]
+            - type: json_each_string_substring_of_task_prompt
+              path: acceptance_items
+              field: source_quote
+            - type: json_each_repo_relative_paths
+              path: acceptance_items
+              field: repo_surfaces_to_verify
+            - type: json_each_behavior_validation_commands
+              path: acceptance_items
+              field: required_validation
+
+  - id: swe_single_engineer
+    persona: swe_single_engineer
+    task_prompt: none
+    conversation: persistent
+    artifacts:
+      outputs:
+        - id: engineer_status
+          path: /tmp/pragma/single-owner/engineer-status.json
+          required: true
+          kind: decision
+          allowed_values: [continue, ready_for_review, blocked]
+          description: Single-owner engineer route decision and current evidence summary.
+        - id: engineer_report
+          path: /tmp/pragma/single-owner/engineer-report.md
+          required: true
+          description: Current engineering report with changed files, evidence, validation, and blockers.
+        - id: engineer_command_evidence
+          path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
+          required: true
+          runtime_capture:
+            type: command_evidence
+          description: Runtime-authored command evidence for the persistent engineer state.
+
+  - id: route_engineer_status
+    control:
+      artifact_decision:
+        path: /tmp/pragma/single-owner/engineer-status.json
+        field: status
+        events:
+          continue: continue
+          ready_for_review: ready_for_review
+          blocked: blocked
+
+  - id: swe_single_reviewer
+    persona: swe_single_reviewer
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: review_verdict
+          path: /tmp/pragma/single-owner/review-verdict.json
+          required: true
+          kind: decision
+          allowed_values: [approved, needs_repair, blocked]
+          description: Final reviewer decision for the single-owner engineering loop.
+
+  - id: route_review_verdict
+    control:
+      artifact_decision:
+        path: /tmp/pragma/single-owner/review-verdict.json
+        field: decision
+        events:
+          approved: approved
+          needs_repair: needs_repair
+          blocked: blocked
+
+  - id: done
+    terminal: true
+
+  - id: unresolved
+    terminal: true
+
+transitions:
+  - event: complete
+    from: [swe_single_acceptance_mapper]
+    to: swe_single_engineer
+    handoff:
+      - id: acceptance_map
+        path: /tmp/pragma/single-owner/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements.
+
+  - event: complete
+    from: [swe_single_engineer]
+    to: route_engineer_status
+
+  - event: continue
+    from: [route_engineer_status]
+    to: swe_single_engineer
+    handoff:
+      - id: acceptance_map
+        path: /tmp/pragma/single-owner/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements.
+      - id: engineer_status
+        path: /tmp/pragma/single-owner/engineer-status.json
+        required: true
+        description: Latest engineer route decision.
+      - id: engineer_report
+        path: /tmp/pragma/single-owner/engineer-report.md
+        required: true
+        description: Latest engineer report.
+      - id: engineer_command_evidence
+        path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence from the latest engineer activation.
+
+  - event: ready_for_review
+    from: [route_engineer_status]
+    to: swe_single_reviewer
+    handoff:
+      - id: acceptance_map
+        path: /tmp/pragma/single-owner/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements.
+      - id: engineer_status
+        path: /tmp/pragma/single-owner/engineer-status.json
+        required: true
+        description: Latest engineer route decision.
+      - id: engineer_report
+        path: /tmp/pragma/single-owner/engineer-report.md
+        required: true
+        description: Current engineer report.
+      - id: engineer_command_evidence
+        path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence from the engineer.
+
+  - event: blocked
+    from: [route_engineer_status]
+    to: unresolved
+
+  - event: complete
+    from: [swe_single_reviewer]
+    to: route_review_verdict
+
+  - event: approved
+    from: [route_review_verdict]
+    to: done
+
+  - event: needs_repair
+    from: [route_review_verdict]
+    to: swe_single_engineer
+    handoff:
+      - id: acceptance_map
+        path: /tmp/pragma/single-owner/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements.
+      - id: engineer_status
+        path: /tmp/pragma/single-owner/engineer-status.json
+        required: true
+        description: Latest engineer route decision.
+      - id: engineer_report
+        path: /tmp/pragma/single-owner/engineer-report.md
+        required: true
+        description: Engineer report reviewed by the final reviewer.
+      - id: engineer_command_evidence
+        path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence from the engineer.
+      - id: review_verdict
+        path: /tmp/pragma/single-owner/review-verdict.json
+        required: true
+        description: Reviewer repair request.
+
+  - event: blocked
+    from: [route_review_verdict]
+    to: unresolved
