@@ -39,7 +39,7 @@ states:
           path: /tmp/pragma/single-owner/engineer-status.json
           required: true
           kind: decision
-          allowed_values: [continue, ready_for_review, blocked]
+          allowed_values: [ready_for_review, blocked]
           description: Single-owner engineer route decision and current evidence summary.
         - id: engineer_report
           path: /tmp/pragma/single-owner/engineer-report.md
@@ -58,7 +58,6 @@ states:
         path: /tmp/pragma/single-owner/engineer-status.json
         field: status
         events:
-          continue: continue
           ready_for_review: ready_for_review
           blocked: blocked
 
@@ -103,27 +102,6 @@ transitions:
   - event: complete
     from: [swe_single_engineer]
     to: route_engineer_status
-
-  - event: continue
-    from: [route_engineer_status]
-    to: swe_single_engineer
-    handoff:
-      - id: acceptance_map
-        path: /tmp/pragma/single-owner/acceptance-map.json
-        required: true
-        description: Task-derived acceptance requirements.
-      - id: engineer_status
-        path: /tmp/pragma/single-owner/engineer-status.json
-        required: true
-        description: Latest engineer route decision.
-      - id: engineer_report
-        path: /tmp/pragma/single-owner/engineer-report.md
-        required: true
-        description: Latest engineer report.
-      - id: engineer_command_evidence
-        path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
-        required: true
-        description: Runtime-authored command evidence from the latest engineer activation.
 
   - event: ready_for_review
     from: [route_engineer_status]

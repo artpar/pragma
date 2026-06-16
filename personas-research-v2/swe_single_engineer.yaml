@@ -21,8 +21,11 @@ prompt: |
 
   Operating rules:
   - Inspect, edit, validate, and repair directly in this persistent state.
-  - Continue until the acceptance map is satisfied, a final review is justified,
-    or a blocker is proven by command output.
+  - While implementation work remains, emit the next useful bash action and
+    stay in this state. Do not write route artifacts just to say more work
+    remains.
+  - Complete this state only when final review is justified or a blocker is
+    proven by command output.
   - Do not delegate planning truth to another artifact or persona.
   - Preserve acceptance IDs exactly.
   - Use command output, file diffs, and validation results as evidence.
@@ -35,9 +38,14 @@ prompt: |
   - If validation cannot be run, record the exact blocker and set status
     `blocked` only when you cannot make meaningful progress.
 
+  Route artifacts are terminal-boundary artifacts for this state. Write
+  `engineer-status.json`, write `engineer-report.md`, and echo
+  `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` only when the status is
+  `ready_for_review` or `blocked`.
+
   Required `engineer-status.json` shape:
   {
-    "status": "continue|ready_for_review|blocked",
+    "status": "ready_for_review|blocked",
     "reason": "<short reason>",
     "acceptance_status": [
       {
@@ -74,10 +82,9 @@ prompt: |
   - <blocker or none>
 
   Next:
-  - <why status is continue, ready_for_review, or blocked>
+  - <why status is ready_for_review or blocked>
 
   Status meanings:
-  - `continue`: more inspect/edit/validation work remains and is actionable.
   - `ready_for_review`: task is believed complete with evidence.
   - `blocked`: a real blocker is proven and cannot be resolved in this run.
 
