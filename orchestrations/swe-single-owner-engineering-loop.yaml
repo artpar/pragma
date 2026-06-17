@@ -91,10 +91,38 @@ states:
           allowed_values: [approved, needs_repair, blocked]
           description: Final reviewer decision for the single-owner engineering loop.
 
+  - id: swe_single_final_validator
+    persona: swe_single_final_validator
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: final_validation_verdict
+          path: /tmp/pragma/single-owner/final-validation-verdict.json
+          required: true
+          kind: decision
+          allowed_values: [approved, needs_repair, blocked]
+          description: Final repository-owned validation verdict before terminal approval.
+        - id: final_validation_command_evidence
+          path: /tmp/pragma/single-owner/final-validation-command-evidence.jsonl
+          required: true
+          runtime_capture:
+            type: command_evidence
+          description: Runtime-authored command evidence from the final validator.
+
   - id: route_review_verdict
     control:
       artifact_decision:
         path: /tmp/pragma/single-owner/review-verdict.json
+        field: decision
+        events:
+          approved: approved
+          needs_repair: needs_repair
+          blocked: blocked
+
+  - id: route_final_validation_verdict
+    control:
+      artifact_decision:
+        path: /tmp/pragma/single-owner/final-validation-verdict.json
         field: decision
         events:
           approved: approved
@@ -177,7 +205,32 @@ transitions:
 
   - event: approved
     from: [route_review_verdict]
-    to: done
+    to: swe_single_final_validator
+    handoff:
+      - id: acceptance_map
+        path: /tmp/pragma/single-owner/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements.
+      - id: engineer_status
+        path: /tmp/pragma/single-owner/engineer-status.json
+        required: true
+        description: Latest engineer route decision.
+      - id: engineer_report
+        path: /tmp/pragma/single-owner/engineer-report.md
+        required: true
+        description: Current engineer report.
+      - id: engineer_command_evidence
+        path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence from the engineer.
+      - id: evidence_adjudication
+        path: /tmp/pragma/single-owner/evidence-adjudication.json
+        required: true
+        description: Evidence sufficiency adjudication.
+      - id: review_verdict
+        path: /tmp/pragma/single-owner/review-verdict.json
+        required: true
+        description: Final reviewer approval to verify externally.
 
   - event: needs_repair
     from: [route_review_verdict]
@@ -210,4 +263,53 @@ transitions:
 
   - event: blocked
     from: [route_review_verdict]
+    to: unresolved
+
+  - event: complete
+    from: [swe_single_final_validator]
+    to: route_final_validation_verdict
+
+  - event: approved
+    from: [route_final_validation_verdict]
+    to: done
+
+  - event: needs_repair
+    from: [route_final_validation_verdict]
+    to: swe_single_engineer
+    handoff:
+      - id: acceptance_map
+        path: /tmp/pragma/single-owner/acceptance-map.json
+        required: true
+        description: Task-derived acceptance requirements.
+      - id: engineer_status
+        path: /tmp/pragma/single-owner/engineer-status.json
+        required: true
+        description: Latest engineer route decision.
+      - id: engineer_report
+        path: /tmp/pragma/single-owner/engineer-report.md
+        required: true
+        description: Engineer report reviewed by the final validator.
+      - id: engineer_command_evidence
+        path: /tmp/pragma/single-owner/engineer-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence from the engineer.
+      - id: evidence_adjudication
+        path: /tmp/pragma/single-owner/evidence-adjudication.json
+        required: true
+        description: Evidence sufficiency adjudication reviewed by the final validator.
+      - id: review_verdict
+        path: /tmp/pragma/single-owner/review-verdict.json
+        required: true
+        description: Reviewer verdict reviewed by the final validator.
+      - id: final_validation_verdict
+        path: /tmp/pragma/single-owner/final-validation-verdict.json
+        required: true
+        description: Final validation repair request.
+      - id: final_validation_command_evidence
+        path: /tmp/pragma/single-owner/final-validation-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence from the final validator.
+
+  - event: blocked
+    from: [route_final_validation_verdict]
     to: unresolved
