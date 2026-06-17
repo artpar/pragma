@@ -98,7 +98,7 @@ func TestLoadArchitectImplementerProsecutorYAML(t *testing.T) {
 }
 
 func TestLoadChecklistLoopYAML(t *testing.T) {
-	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "architect-checklist-item-loop-final.yaml"))
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "examples", "orchestrations", "architect-checklist-item-loop-final.yaml"))
 	if err != nil {
 		t.Fatalf("LoadDefinitionFile: %v", err)
 	}
@@ -136,8 +136,8 @@ func TestLoadChecklistLoopYAML(t *testing.T) {
 	}
 }
 
-func TestLoadPromptControlV2BenchmarkYAML(t *testing.T) {
-	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "prompt-control-v2-benchmark.yaml"))
+func TestLoadTaskEvidenceItemLoopYAML(t *testing.T) {
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "task-evidence-item-loop.yaml"))
 	if err != nil {
 		t.Fatalf("LoadDefinitionFile: %v", err)
 	}
@@ -425,8 +425,142 @@ func TestRequiredOutputCompletionCheckStillEnforcesOutputs(t *testing.T) {
 	}
 }
 
-func TestPromptControlV2TransitionHandoffBranchPrompts(t *testing.T) {
-	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "prompt-control-v2-benchmark.yaml"))
+func TestRequiredOutputCompletionCheckRejectsWeakAcceptanceMap(t *testing.T) {
+	dir := t.TempDir()
+	state := State{
+		ID: "acceptance_mapper",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:       "acceptance_map",
+			Path:     "acceptance-map.json",
+			Required: true,
+			Checks:   acceptanceMapIntegrityChecks(),
+		}}},
+	}
+	content := `{
+  "version": 1,
+  "source": "task_prompt",
+  "acceptance_items": [
+    {
+      "id": "ACCEPT-THING",
+      "task_text": "The feature works.",
+      "source_quote": "The feature works",
+      "behavior_surface": "config",
+      "repo_surfaces_to_verify": ["/workspace/src/feature-config"],
+      "required_validation": ["unknown", "command: behavior-check /workspace/src/feature-config"],
+      "status": "pending",
+      "validation_evidence": [],
+      "blocking_if_missing": true,
+      "notes": "bad validation"
+    }
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(dir, "acceptance-map.json"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write acceptance map: %v", err)
+	}
+
+	check := requiredOutputArtifactCompletionCheck(state, dir, "The feature works.")
+	ok, guidance, err := check()
+	if err != nil {
+		t.Fatalf("completion check: %v", err)
+	}
+	if ok {
+		t.Fatal("weak acceptance map passed")
+	}
+	for _, want := range []string{"non-repo-relative path", "placeholder validation", "absolute repository path"} {
+		if !strings.Contains(guidance, want) {
+			t.Fatalf("guidance missing %q:\n%s", want, guidance)
+		}
+	}
+}
+
+func TestRequiredOutputCompletionCheckAcceptsBehaviorAcceptanceMap(t *testing.T) {
+	dir := t.TempDir()
+	state := State{
+		ID: "acceptance_mapper",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:       "acceptance_map",
+			Path:     "acceptance-map.json",
+			Required: true,
+			Checks:   acceptanceMapIntegrityChecks(),
+		}}},
+	}
+	content := `{
+  "version": 1,
+  "source": "task_prompt",
+  "acceptance_items": [
+    {
+      "id": "ACCEPT-THING",
+      "task_text": "The feature works.",
+      "source_quote": "The feature works",
+      "behavior_surface": "config",
+      "repo_surfaces_to_verify": ["src/feature-config"],
+      "required_validation": ["run behavior-check feature-config"],
+      "status": "pending",
+      "validation_evidence": [],
+      "blocking_if_missing": true,
+      "notes": "behavior validation"
+    }
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(dir, "acceptance-map.json"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write acceptance map: %v", err)
+	}
+
+	check := requiredOutputArtifactCompletionCheck(state, dir, "The feature works.")
+	ok, guidance, err := check()
+	if err != nil {
+		t.Fatalf("completion check: %v", err)
+	}
+	if !ok || guidance != "" {
+		t.Fatalf("ok=%v guidance=%q, want success", ok, guidance)
+	}
+}
+
+func TestRequiredOutputCompletionCheckRejectsCorruptedSourceQuote(t *testing.T) {
+	dir := t.TempDir()
+	state := State{
+		ID: "acceptance_auditor",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:       "acceptance_map",
+			Path:     "acceptance-map.json",
+			Required: true,
+			Checks:   acceptanceMapIntegrityChecks(),
+		}}},
+	}
+	content := `{
+  "version": 1,
+  "source": "task_prompt",
+  "acceptance_items": [
+    {
+      "id": "ACCEPT-FRAMEWORK",
+      "task_text": "The requested feature integrates with the existing framework.",
+      "source_quote": "The requested feature integrates with the wrong framework",
+      "behavior_surface": "runtime",
+      "repo_surfaces_to_verify": ["src/feature-entrypoint"],
+      "required_validation": ["unknown"],
+      "status": "pending",
+      "validation_evidence": [],
+      "blocking_if_missing": true,
+      "notes": "typo in source quote"
+    }
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(dir, "acceptance-map.json"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write acceptance map: %v", err)
+	}
+
+	check := requiredOutputArtifactCompletionCheck(state, dir, "The requested feature integrates with the existing framework")
+	ok, guidance, err := check()
+	if err != nil {
+		t.Fatalf("completion check: %v", err)
+	}
+	if ok || !strings.Contains(guidance, "source_quote is not an exact substring") {
+		t.Fatalf("ok=%v guidance=%q, want corrupted source quote rejection", ok, guidance)
+	}
+}
+
+func TestTaskEvidenceItemLoopTransitionHandoffBranchPrompts(t *testing.T) {
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "task-evidence-item-loop.yaml"))
 	if err != nil {
 		t.Fatalf("LoadDefinitionFile: %v", err)
 	}
@@ -730,6 +864,17 @@ func readTestJSON(t *testing.T, path string, value any) {
 
 func testPersona(id string) persona.Definition {
 	return persona.Definition{ID: id, Prompt: "Persona prompt"}
+}
+
+func acceptanceMapIntegrityChecks() []ArtifactIntegrityCheck {
+	return []ArtifactIntegrityCheck{
+		{Type: "json_field_equals", Field: "source", Value: "task_prompt"},
+		{Type: "json_array_non_empty", Path: "acceptance_items"},
+		{Type: "json_each_required_fields", Path: "acceptance_items", Fields: []string{"id", "source_quote"}},
+		{Type: "json_each_string_substring_of_task_prompt", Path: "acceptance_items", Field: "source_quote"},
+		{Type: "json_each_repo_relative_paths", Path: "acceptance_items", Field: "repo_surfaces_to_verify"},
+		{Type: "json_each_behavior_validation_commands", Path: "acceptance_items", Field: "required_validation"},
+	}
 }
 
 func writeText(t *testing.T, root string, rel string, content string) {

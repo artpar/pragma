@@ -1,4 +1,4 @@
-name: prompt-control-v2-benchmark
+name: task-evidence-item-loop
 initial: surface_mapper
 states:
   - id: surface_mapper
@@ -52,6 +52,7 @@ states:
 
   - id: next_item
     persona: next_item
+    conversation: persistent
     artifacts:
       outputs:
         - id: current_item_handoff
@@ -62,7 +63,48 @@ states:
       foreach_next:
         list_path: /tmp/pragma/checklist.json
         cursor_path: /tmp/pragma/current-item.json
+        cursor_artifact_id: current_item
+        cursor_artifact_description: Current checklist item selected by the item loop.
         handoff_path: /tmp/pragma/handoff-prompts/next_item/current-item.md
+        handoff_mode: persona
+        item_contract: |
+          ```json
+          {
+            "items": [
+              {
+                "id": "stable-string-id",
+                "title": "string",
+                "description": "string",
+                "approach": "string",
+                "acceptance": ["string"],
+                "allowed_files": ["string"],
+                "forbidden_files": ["string"],
+                "coupled_edit_paths": ["string"],
+                "acceptance_check": "string",
+                "validation_command": "string",
+                "validation_deferred_until": "string",
+                "report_changed_files": ["string"],
+                "blocked_by": ["item-id"],
+                "block_reason": "string",
+                "status": "pending"
+              }
+            ]
+          }
+          ```
+
+          `acceptance`, `allowed_files`, `forbidden_files`, `coupled_edit_paths`, `report_changed_files`, and `blocked_by` must be JSON arrays.
+          Use `validation_command: "none"` only when `acceptance_check` is present or `validation_deferred_until` names what later item or surface makes validation runnable.
+          Put every path from `coupled_edit_paths` in `allowed_files`; the worker may edit only `allowed_files`.
+        dependency:
+          dependency_ids_field: blocked_by
+          dependency_reason_field: block_reason
+          deferred_dependency_field: validation_deferred_until
+          blocked_status: blocked
+          unblocked_status: pending
+          auto_block_deferred: true
+          auto_unblock_dependents: true
+          blocked_cursor_reason: No pending items remain; blocked items are waiting on declared prerequisites.
+          missing_dependency_reason: Blocked by a declared prerequisite.
         pending_status: pending
         blocked_status: blocked
         done_status: completed
@@ -132,6 +174,12 @@ states:
         cursor_path: /tmp/pragma/current-item.json
         status: completed
         event: complete
+        dependency:
+          dependency_ids_field: blocked_by
+          dependency_reason_field: block_reason
+          blocked_status: blocked
+          unblocked_status: pending
+          auto_unblock_dependents: true
 
   - id: validation_runner
     persona: validation_runner
@@ -229,6 +277,7 @@ transitions:
         path: /tmp/pragma/current-item.json
         required: true
         description: Current checklist item selected by the item loop.
+        prompt_attachments: [source_edit_transport]
       - id: current_item_handoff
         path: /tmp/pragma/handoff-prompts/next_item/current-item.md
         required: true
@@ -345,6 +394,7 @@ transitions:
         path: /tmp/pragma/current-item.json
         required: true
         description: Current checklist item selected by the item loop.
+        prompt_attachments: [source_edit_transport]
       - id: current_item_handoff
         path: /tmp/pragma/handoff-prompts/next_item/current-item.md
         required: true

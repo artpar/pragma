@@ -15,7 +15,23 @@ states:
       foreach_next:
         list_path: /tmp/pragma/play/checklist.json
         cursor_path: /tmp/pragma/play/current-item.json
+        cursor_artifact_id: current_item
+        cursor_artifact_description: Current parade item selected by the item loop.
         handoff_path: /tmp/pragma/handoff-prompts/parade_next/current-item.md
+        handoff_mode: control
+        item_contract: |
+          ```json
+          {
+            "items": [
+              {
+                "id": "stable-string-id",
+                "title": "string",
+                "description": "string",
+                "status": "pending"
+              }
+            ]
+          }
+          ```
         pending_status: pending
         done_status: completed
         item_event: item_available
