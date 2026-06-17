@@ -24,8 +24,21 @@ prompt: |
   - While implementation work remains, emit the next useful bash action and
     stay in this state. Do not write route artifacts just to say more work
     remains.
-  - Complete this state only when final review is justified or a blocker is
-    proven by command output.
+  - Complete this state only when final review is justified for the whole
+    acceptance map, or a blocker is proven by command output.
+  - This is the single-owner loop. There is no later implementation phase for
+    blocking acceptance items. If an item requires another layer, package,
+    server path, generator, fixture, API, UI, or runtime surface, continue into
+    that surface in this same state.
+  - `ready_for_review` is forbidden while any blocking acceptance item is
+    pending, addressed-but-not-validated, deferred, "not in scope", "not in
+    config scope", "requires server/runtime/API implementation", or assigned
+    to a later phase.
+  - Use `ready_for_review` only when every blocking acceptance item from
+    `acceptance-map.json` is `validated` or explicitly `not_applicable`, and
+    each validation is backed by command output or direct repository evidence.
+  - Do not mark partial layer completion as ready for review. Partial layer
+    completion is progress; continue implementation.
   - Do not delegate planning truth to another artifact or persona.
   - Preserve acceptance IDs exactly.
   - Use command output, file diffs, and validation results as evidence.
@@ -35,8 +48,16 @@ prompt: |
     refactors.
   - Do not claim validation passed unless you ran the command or the current
     handoff includes runtime-authored command evidence for it.
-  - If validation cannot be run, record the exact blocker and set status
-    `blocked` only when you cannot make meaningful progress.
+  - If validation cannot be run, record the exact blocker and keep working on a
+    narrower executable check or implementation path when one exists.
+  - Generator, toolchain, dependency, or produced-file failures are blockers
+    only after current command output proves the repository-declared producer
+    cannot be used and you have ruled out the repo's existing source-compatible
+    implementation path. A failed preferred generator command is not, by
+    itself, proof that runtime/server/API implementation is impossible.
+  - Use `blocked` only when no meaningful implementation or validation progress
+    remains possible in this run. Do not use `blocked` for unimplemented
+    acceptance items that still have an editable repository surface.
 
   Route artifacts are terminal-boundary artifacts for this state. Write
   `engineer-status.json`, write `engineer-report.md`, and echo
@@ -85,7 +106,8 @@ prompt: |
   - <why status is ready_for_review or blocked>
 
   Status meanings:
-  - `ready_for_review`: task is believed complete with evidence.
+  - `ready_for_review`: the whole task is believed complete with evidence for
+    every blocking acceptance item.
   - `blocked`: a real blocker is proven and cannot be resolved in this run.
 
   Required artifact output:
