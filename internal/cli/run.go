@@ -501,9 +501,10 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 	}
 	artifactRoot := interactiveOrchestrationArtifactRoot(rt.Deps)
 	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
-		PersonaDir:   req.PersonaDir,
-		TaskPrompt:   req.Prompt,
-		ArtifactRoot: artifactRoot,
+		PersonaDir:    req.PersonaDir,
+		TaskPrompt:    req.Prompt,
+		ArtifactRoot:  artifactRoot,
+		SeedArtifacts: req.SeedArtifacts,
 	}) {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, or...")
 		if handoff, ok := ev.(query.OrchestrationHandoffEvent); ok {
@@ -535,6 +536,8 @@ func (rt *InteractiveRuntime) recordOrchestrationArtifact(root string, ev query.
 		Path:       filepath.Clean(ev.Path),
 		Direction:  ev.Direction,
 		Root:       cleanNonEmptyPath(root),
+		Bytes:      ev.Bytes,
+		SHA256:     ev.SHA256,
 		CreatedAt:  time.Now(),
 	}
 	rt.Deps.Store.Update(func(st *app.AppState) {
@@ -1105,6 +1108,7 @@ type StandaloneOrchestrationOptions struct {
 	DefinitionPath string
 	PersonaDir     string
 	Prompt         string
+	SeedArtifacts  map[string]string
 	Stdout         io.Writer
 	Stderr         io.Writer
 }
@@ -1157,6 +1161,7 @@ func RunStandaloneOrchestration(cmd *cobra.Command, opts StandaloneOrchestration
 			DefinitionPath: opts.DefinitionPath,
 			PersonaDir:     opts.PersonaDir,
 			Prompt:         opts.Prompt,
+			SeedArtifacts:  opts.SeedArtifacts,
 		}, opts.Prompt, promptHookResult, events)
 	}()
 	observe.GlobalTrace("return: consumeStandaloneOrchestrationEvents(events, stdout, stderr)")

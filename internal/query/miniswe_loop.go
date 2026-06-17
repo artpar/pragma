@@ -2,10 +2,14 @@ package query
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -124,8 +128,46 @@ type pragmaLoopObservation struct {
 	Complete bool
 }
 
+type pragmaLoopEvidencePathKey struct{}
+type pragmaLoopCommandPolicyKey struct{}
+
+type PragmaLoopCommandEvidenceConfig struct {
+	Path        string
+	ReportPaths []string
+}
+
+type PragmaLoopCommandPolicyConfig struct {
+	DenyPatterns        []string
+	DenyMessage         string
+	RenderedInputPaths  []string
+	WritablePaths       []string
+	ProtectedWritePaths []string
+}
+
 type PragmaLoopRunOptions struct {
 	IncludePriorConversation bool
+}
+
+// WithPragmaLoopEvidencePath records shell-loop command evidence to path while
+// this context is active. The evidence file stores hashes and status metadata,
+// not full command output.
+func WithPragmaLoopEvidencePath(ctx context.Context, path string) context.Context {
+	return WithPragmaLoopCommandEvidence(ctx, PragmaLoopCommandEvidenceConfig{Path: path})
+}
+
+func WithPragmaLoopCommandEvidence(ctx context.Context, cfg PragmaLoopCommandEvidenceConfig) context.Context {
+	if strings.TrimSpace(cfg.Path) == "" {
+		return ctx
+	}
+	cfg.Path = strings.TrimSpace(cfg.Path)
+	return context.WithValue(ctx, pragmaLoopEvidencePathKey{}, cfg)
+}
+
+func WithPragmaLoopCommandPolicy(ctx context.Context, cfg PragmaLoopCommandPolicyConfig) context.Context {
+	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, pragmaLoopCommandPolicyKey{}, cfg)
 }
 
 func (engine *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
@@ -239,6 +281,13 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 			continue
 		}
 
+		if message, rejected := rejectPragmaLoopCommand(ctx, assistantTurn.Action.Bash); rejected {
+			if err := engine.appendPragmaLoopUserMessage(message); err != nil {
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+			continue
+		}
 		commandResult := executePragmaLoopCommand(ctx, workDir, assistantTurn.Action.Bash)
 		obs, err := commandResult.Observation(run.CompletionCheck)
 		if err != nil {
@@ -316,7 +365,7 @@ func (engine *Engine) buildPragmaLoopTurnRequest(run pragmaLoopRunConfig) (pragm
 		Messages:       messagesForQuery,
 		System:         run.System,
 		Temperature:    engine.config.Temperature,
-		Thinking:       engine.config.Thinking,
+		Thinking:       pragmaLoopThinkingConfig(engine.config.Thinking),
 		ResponseSchema: engine.config.ResponseSchema,
 	}
 	observe.GlobalTrace("return: pragmaLoopTurnRequest, snap.CWD, nil")
@@ -325,6 +374,17 @@ func (engine *Engine) buildPragmaLoopTurnRequest(run pragmaLoopRunConfig) (pragm
 		Model:  resolvedModel,
 		Params: params,
 	}, snap.CWD, nil
+}
+
+func pragmaLoopThinkingConfig(cfg *provider.ThinkingConfig) *provider.ThinkingConfig {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if cfg != nil {
+		observe.GlobalTrace("if: cfg != nil")
+		return cfg
+	}
+	observe.GlobalTrace("return: &provider.ThinkingConfig{Enabled: false}")
+	return &provider.ThinkingConfig{Enabled: false}
 }
 
 func (engine *Engine) completePragmaLoopAssistantTurn(ctx context.Context, request pragmaLoopTurnRequest, ch chan<- LoopEvent) (pragmaLoopAssistantTurn, error) {
@@ -422,14 +482,314 @@ func executePragmaLoopCommand(ctx context.Context, workDir, command string) prag
 		observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "if: !timedOut")
 		submitted, _ = pragmaLoopSubmitted(result)
 	}
-	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult")
-	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult{\n\tCommand:\tcommand,\n\tResult:\t\tresult,\n\tTimedOut:\ttime...")
-	return pragmaLoopCommandResult{
+	commandResult := pragmaLoopCommandResult{
 		Command:   command,
 		Result:    result,
 		TimedOut:  timedOut,
 		Submitted: submitted,
 	}
+	recordPragmaLoopCommandEvidence(ctx, commandResult)
+	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult")
+	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult{\n\tCommand:\tcommand,\n\tResult:\t\tresult,\n\tTimedOut:\ttime...")
+	return commandResult
+}
+
+func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopCommandResult) {
+	observe.TraceCtx(ctx, "query", "recordPragmaLoopCommandEvidence", "enter")
+	defer observe.TraceCtx(ctx, "query", "recordPragmaLoopCommandEvidence", "exit")
+	cfg, _ := ctx.Value(pragmaLoopEvidencePathKey{}).(PragmaLoopCommandEvidenceConfig)
+	if strings.TrimSpace(cfg.Path) == "" {
+		return
+	}
+	record := struct {
+		Timestamp          string `json:"timestamp"`
+		CommandPreview     string `json:"command_preview"`
+		CommandSHA256      string `json:"command_sha256"`
+		OutputSHA256       string `json:"output_sha256"`
+		OutputBytes        int    `json:"output_bytes"`
+		ReturnCode         int    `json:"returncode"`
+		TimedOut           bool   `json:"timed_out"`
+		Submitted          bool   `json:"submitted"`
+		CompletionSentinel bool   `json:"completion_sentinel"`
+		WritesReport       bool   `json:"writes_report"`
+	}{
+		Timestamp:          time.Now().UTC().Format(time.RFC3339Nano),
+		CommandPreview:     pragmaLoopCommandPreview(result.Command),
+		CommandSHA256:      sha256HexString(result.Command),
+		OutputSHA256:       sha256HexString(result.Result.Output),
+		OutputBytes:        len(result.Result.Output),
+		ReturnCode:         result.Result.ReturnCode,
+		TimedOut:           result.TimedOut,
+		Submitted:          result.Submitted,
+		CompletionSentinel: strings.Contains(result.Result.Output, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT") || strings.Contains(result.Command, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"),
+		WritesReport:       commandWritesDeclaredReport(result.Command, cfg.ReportPaths),
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.Path), 0o700); err != nil {
+		return
+	}
+	f, err := os.OpenFile(cfg.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(data, '\n'))
+}
+
+func commandWritesDeclaredReport(command string, reportPaths []string) bool {
+	for _, path := range reportPaths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if strings.Contains(command, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func rejectPragmaLoopCommand(ctx context.Context, command string) (string, bool) {
+	cfg, _ := ctx.Value(pragmaLoopCommandPolicyKey{}).(PragmaLoopCommandPolicyConfig)
+	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
+		return "", false
+	}
+	scannable := shellPolicyScannableText(command)
+	if path, ok := commandMutatesProtectedPath(scannable, cfg.ProtectedWritePaths); ok {
+		return fmt.Sprintf("Command was rejected because it attempts to modify runtime-authored artifact `%s`. Do not create, edit, delete, truncate, overwrite, or fabricate runtime-authored artifacts. Run real commands so the runtime can capture evidence, or edit model-authored output artifacts so they only claim evidence that exists.", path), true
+	}
+	for _, pattern := range cfg.DenyPatterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue
+		}
+		if !re.MatchString(scannable) {
+			continue
+		}
+		message := strings.TrimSpace(cfg.DenyMessage)
+		if message == "" {
+			message = "Command was rejected by the active shell policy. Choose a command allowed by the state contract."
+		}
+		return message, true
+	}
+	if blocksRenderedInputPath(scannable, cfg.RenderedInputPaths, cfg.WritablePaths) {
+		message := strings.TrimSpace(cfg.DenyMessage)
+		if message == "" {
+			message = "Command was rejected by the active shell policy. This state receives declared handoff inputs as rendered content; write declared outputs from that rendered content instead of reading handoff artifact paths again."
+		}
+		return message, true
+	}
+	return "", false
+}
+
+func commandMutatesProtectedPath(scannable string, paths []string) (string, bool) {
+	for _, line := range strings.Split(scannable, "\n") {
+		for _, path := range paths {
+			path = strings.TrimSpace(path)
+			if path == "" {
+				continue
+			}
+			if lineMutatesPath(line, path) {
+				return path, true
+			}
+		}
+	}
+	return "", false
+}
+
+func lineMutatesPath(line string, path string) bool {
+	if lineWritesPath(line, path) {
+		return true
+	}
+	if !strings.Contains(line, path) {
+		return false
+	}
+	for _, segment := range shellCommandSegments(line) {
+		if !strings.Contains(segment, path) {
+			continue
+		}
+		if shellSegmentMutatesReferencedPath(segment) {
+			return true
+		}
+	}
+	return false
+}
+
+func shellCommandSegments(line string) []string {
+	replacer := strings.NewReplacer("&&", "\n", "||", "\n", ";", "\n", "|", "\n")
+	return strings.Split(replacer.Replace(line), "\n")
+}
+
+func shellSegmentMutatesReferencedPath(segment string) bool {
+	fields := shellSegmentFields(segment)
+	if len(fields) == 0 {
+		return false
+	}
+	cmd := filepath.Base(fields[0])
+	switch cmd {
+	case "rm", "unlink", "truncate", "touch", "tee", "mv":
+		return true
+	case "sed", "perl":
+		for _, field := range fields[1:] {
+			if field == "-i" || strings.HasPrefix(field, "-i.") || strings.HasPrefix(field, "-i") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func shellSegmentFields(segment string) []string {
+	raw := strings.Fields(strings.TrimSpace(segment))
+	fields := make([]string, 0, len(raw))
+	for _, field := range raw {
+		field = strings.Trim(field, `"'`)
+		if field == "" {
+			continue
+		}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+func blocksRenderedInputPath(scannable string, inputPaths []string, writablePaths []string) bool {
+	for _, line := range strings.Split(scannable, "\n") {
+		for _, path := range inputPaths {
+			path = strings.TrimSpace(path)
+			if path == "" || !strings.Contains(line, path) {
+				continue
+			}
+			if lineWritesPath(line, path) && pathInList(path, writablePaths) {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func lineWritesPath(line string, path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	for _, op := range []string{">>", ">"} {
+		idx := strings.Index(line, op)
+		for idx >= 0 {
+			after := strings.TrimLeft(line[idx+len(op):], " \t")
+			if shellPathPrefix(after, path) {
+				return true
+			}
+			next := strings.Index(line[idx+len(op):], op)
+			if next < 0 {
+				break
+			}
+			idx += len(op) + next
+		}
+	}
+	return false
+}
+
+func shellPathPrefix(text string, path string) bool {
+	if strings.HasPrefix(text, path) {
+		return shellPathBoundary(text[len(path):])
+	}
+	if len(text) < 2 {
+		return false
+	}
+	quote := text[0]
+	if quote != '\'' && quote != '"' {
+		return false
+	}
+	rest := text[1:]
+	if !strings.HasPrefix(rest, path) {
+		return false
+	}
+	after := rest[len(path):]
+	return len(after) > 0 && after[0] == quote
+}
+
+func shellPathBoundary(text string) bool {
+	if text == "" {
+		return true
+	}
+	return strings.ContainsRune(" \t\r\n;&|)", rune(text[0]))
+}
+
+func pathInList(path string, paths []string) bool {
+	for _, candidate := range paths {
+		if strings.TrimSpace(candidate) == path {
+			return true
+		}
+	}
+	return false
+}
+
+func shellPolicyScannableText(command string) string {
+	var out []string
+	var heredocEnd string
+	for _, line := range strings.Split(command, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if heredocEnd != "" {
+			if trimmed == heredocEnd {
+				heredocEnd = ""
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		out = append(out, line)
+		if end := shellHeredocEndToken(line); end != "" {
+			heredocEnd = end
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func shellHeredocEndToken(line string) string {
+	idx := strings.Index(line, "<<")
+	if idx < 0 {
+		return ""
+	}
+	token := strings.TrimSpace(line[idx+2:])
+	if strings.HasPrefix(token, "-") {
+		token = strings.TrimSpace(strings.TrimPrefix(token, "-"))
+	}
+	fields := strings.Fields(token)
+	if len(fields) == 0 {
+		return ""
+	}
+	token = fields[0]
+	token = strings.Trim(token, `"'`)
+	if token == "" || strings.ContainsAny(token, `/\`) {
+		return ""
+	}
+	return token
+}
+
+func pragmaLoopCommandPreview(command string) string {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return ""
+	}
+	line := command
+	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+		line = line[:idx]
+	}
+	line = strings.TrimSpace(line)
+	if len(line) > 200 {
+		return line[:200] + "..."
+	}
+	return line
+}
+
+func sha256HexString(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func (result pragmaLoopCommandResult) Observation(completionCheck PragmaLoopCompletionCheck) (pragmaLoopObservation, error) {
@@ -613,10 +973,39 @@ func pragmaLoopReplayContent(content []model.ContentPart) []model.ContentPart {
 			observe.GlobalTrace("if: ok")
 			continue
 		}
+		if text, ok := part.(model.TextPart); ok {
+			observe.GlobalTrace("if: ok")
+			text.Text = stripPragmaLoopThinkBlocks(text.Text)
+			if strings.TrimSpace(text.Text) == "" {
+				continue
+			}
+			out = append(out, text)
+			continue
+		}
 		out = append(out, part)
 	}
 	observe.GlobalTrace("return: out")
 	return out
+}
+
+func stripPragmaLoopThinkBlocks(text string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for {
+		lower := strings.ToLower(text)
+		start := strings.Index(lower, "<think>")
+		if start < 0 {
+			observe.GlobalTrace("return: strings.TrimSpace(text)")
+			return strings.TrimSpace(text)
+		}
+		end := strings.Index(lower[start+len("<think>"):], "</think>")
+		if end < 0 {
+			observe.GlobalTrace("return: strings.TrimSpace(text[:start])")
+			return strings.TrimSpace(text[:start])
+		}
+		end += start + len("<think>") + len("</think>")
+		text = text[:start] + text[end:]
+	}
 }
 
 func pragmaLoopHasToolCall(content []model.ContentPart) bool {
@@ -637,14 +1026,50 @@ func pragmaLoopHasToolCall(content []model.ContentPart) bool {
 func extractPragmaLoopCommand(text string) (string, int) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	matches := extractPragmaLoopBashBlocks(text)
+	text = stripPragmaLoopThinkBlocks(text)
+	matches := extractPragmaLoopBashBlockSpans(text)
 	if len(matches) != 1 {
 		observe.GlobalTrace("if: len(matches) != 1")
 		observe.GlobalTrace("return: \"\", len(matches)")
 		return "", len(matches)
 	}
-	observe.GlobalTrace("return: strings.TrimSpace(matches[0]), 1")
-	return strings.TrimSpace(matches[0]), 1
+	lines := strings.Split(text, "\n")
+	before := strings.TrimSpace(strings.Join(lines[:matches[0].startLine], "\n"))
+	after := strings.TrimSpace(strings.Join(lines[matches[0].endLine+1:], "\n"))
+	if before != "" || after != "" {
+		observe.GlobalTrace("if: before != \"\" || after != \"\"")
+		observe.GlobalTrace("return: \"\", 2")
+		return "", 2
+	}
+	if pragmaLoopCommandContainsFenceOutsideHeredoc(matches[0].body) {
+		observe.GlobalTrace("if: pragmaLoopCommandContainsFenceOutsideHeredoc(matches[0].body)")
+		observe.GlobalTrace("return: \"\", 2")
+		return "", 2
+	}
+	observe.GlobalTrace("return: strings.TrimSpace(matches[0].body), 1")
+	return strings.TrimSpace(matches[0].body), 1
+}
+
+func pragmaLoopCommandContainsFenceOutsideHeredoc(command string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var heredocs []pragmaLoopHeredoc
+	for _, line := range strings.Split(command, "\n") {
+		if len(heredocs) > 0 {
+			if pragmaLoopHeredocEnds(line, heredocs[0]) {
+				heredocs = heredocs[1:]
+			}
+			continue
+		}
+		if strings.Contains(line, "```") {
+			observe.GlobalTrace("if: strings.Contains(line, \"```\")")
+			observe.GlobalTrace("return: true")
+			return true
+		}
+		heredocs = append(heredocs, extractPragmaLoopHeredocs(line)...)
+	}
+	observe.GlobalTrace("return: false")
+	return false
 }
 
 type pragmaLoopHeredoc struct {
@@ -652,11 +1077,29 @@ type pragmaLoopHeredoc struct {
 	stripTabs bool
 }
 
+type pragmaLoopBashBlock struct {
+	body      string
+	startLine int
+	endLine   int
+}
+
 func extractPragmaLoopBashBlocks(text string) []string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	spans := extractPragmaLoopBashBlockSpans(text)
+	blocks := make([]string, 0, len(spans))
+	for _, span := range spans {
+		blocks = append(blocks, span.body)
+	}
+	observe.GlobalTrace("return: blocks")
+	return blocks
+}
+
+func extractPragmaLoopBashBlockSpans(text string) []pragmaLoopBashBlock {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	lines := strings.Split(text, "\n")
-	var blocks []string
+	var blocks []pragmaLoopBashBlock
 	for i := 0; i < len(lines); i++ {
 		if strings.TrimSpace(lines[i]) != "```bash" {
 			continue
@@ -674,7 +1117,11 @@ func extractPragmaLoopBashBlocks(text string) []string {
 			}
 
 			if strings.TrimSpace(line) == "```" {
-				blocks = append(blocks, strings.Join(lines[start:j], "\n"))
+				blocks = append(blocks, pragmaLoopBashBlock{
+					body:      strings.Join(lines[start:j], "\n"),
+					startLine: i,
+					endLine:   j,
+				})
 				i = j
 				break
 			}
@@ -861,36 +1308,6 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	return out, result.TimedOut
 }
 
-func looksLikeSourcePath(path string) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	if path == "" || strings.HasPrefix(path, "..") || strings.Contains(path, "*") {
-		observe.GlobalTrace("if: path == \"\" || strings.HasPrefix(path, \"..\") || strings.Contains(path, \"*\")")
-		observe.GlobalTrace("return: false")
-		return false
-	}
-	switch filepath.Ext(path) {
-	case ".go", ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".rs", ".c", ".cc", ".cpp", ".h", ".hpp", ".proto", ".yaml", ".yml", ".json", ".toml", ".md":
-		observe.GlobalTrace("case: \".go\", \".py\", \".js\", \".jsx\", \".ts\", \".tsx\", \".java\", \".rs\", \".c\", \".cc\", \".cp...")
-	default:
-		observe.GlobalTrace("default")
-		return false
-	}
-	first := path
-	if idx := strings.IndexRune(path, filepath.Separator); idx >= 0 {
-		observe.GlobalTrace("if: idx >= 0")
-		first = path[:idx]
-	}
-	switch first {
-	case "cmd", "internal", "pkg", "api", "src", "lib", "server", "client", "web", "config", "configs", "tools", "test", "tests":
-		observe.GlobalTrace("case: \"cmd\", \"internal\", \"pkg\", \"api\", \"src\", \"lib\", \"server\", \"client\", \"web\", \"co...")
-		return true
-	default:
-		observe.GlobalTrace("default")
-		return !filepath.IsAbs(path) && !strings.HasPrefix(path, "/")
-	}
-}
-
 func formatPragmaLoopObservation(result pragmaLoopBashResult) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -905,11 +1322,10 @@ func formatPragmaLoopObservation(result pragmaLoopBashResult) string {
 <warning>
 The output of your last command was too long.
 Please try a different command that produces less output.
-If you're inspecting a file for patch context, use unnumbered sed -n '<start>,<end>p' path/to/file.
-Do not use nl -ba output as patch context because its first column is display-only line numbers.
-If you're using grep or find and it produced too much output, use a more selective search pattern.
-Do not pipe validation commands such as tests or builds to head or tail as proof of success.
-For large validation output, redirect full output to a log, preserve rc=$?, print useful log lines, and exit with the original rc.
+If you're inspecting a file for patch context, use a bounded file-context read without display-only line numbers.
+If a search produced too much output, use a more selective search pattern.
+Do not truncate validation commands such as tests or builds as proof of success.
+For large validation output, preserve the full output separately, print useful excerpts, and exit with the original status.
 </warning>
 <output_head>
 %s

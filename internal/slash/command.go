@@ -38,6 +38,7 @@ type OrchestrationRequest struct {
 	DefinitionPath string
 	PersonaDir     string
 	Prompt         string
+	SeedArtifacts  map[string]string
 }
 
 // Handler is the function signature for a slash command handler.

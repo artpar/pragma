@@ -907,14 +907,24 @@ func RenderArtifactContract(artifacts Artifacts) string {
 	}
 	var b strings.Builder
 	b.WriteString("## Runtime Artifact Contract\n\n")
-	if len(artifacts.Outputs) > 0 {
-		observe.GlobalTrace("if: len(artifacts.Outputs) > 0")
+	modelOutputs, runtimeOutputs := artifactOutputsByOwnership(artifacts.Outputs)
+	if len(modelOutputs) > 0 {
+		observe.GlobalTrace("if: len(modelOutputs) > 0")
 		b.WriteString("Outputs:\n")
-		for _, artifact := range artifacts.Outputs {
-			observe.GlobalTrace("range artifacts.Outputs")
+		for _, artifact := range modelOutputs {
+			observe.GlobalTrace("range modelOutputs")
 			writeArtifactLine(&b, artifact)
 		}
 		b.WriteString("\n")
+	}
+	if len(runtimeOutputs) > 0 {
+		observe.GlobalTrace("if: len(runtimeOutputs) > 0")
+		b.WriteString("Runtime-authored artifacts (not writable deliverables):\n")
+		for _, artifact := range runtimeOutputs {
+			observe.GlobalTrace("range runtimeOutputs")
+			writeArtifactLine(&b, artifact)
+		}
+		b.WriteString("Do not create, edit, delete, truncate, overwrite, or fabricate runtime-authored artifacts. To improve runtime evidence, run real commands. To fix unsupported claims, edit model-authored output artifacts.\n\n")
 	}
 	observe.GlobalTrace("return: b.String()")
 	return b.String()
@@ -932,23 +942,52 @@ func RenderStateCompletionContract(state State) string {
 	b.WriteString("## Runtime Completion Contract\n\n")
 	b.WriteString("This orchestration state does not use plain prose final answers.\n")
 	b.WriteString("When this state is complete, respond with exactly one fenced bash block and no prose outside it.\n")
-	requiredOutputs := requiredOutputArtifacts(state.Artifacts.Outputs)
-	if len(requiredOutputs) > 0 {
-		observe.GlobalTrace("if: len(requiredOutputs) > 0")
-		b.WriteString("Before completing, every required output artifact below must exist:\n")
-		for _, artifact := range requiredOutputs {
-			observe.GlobalTrace("range requiredOutputs")
+	modelRequiredOutputs, runtimeRequiredOutputs := requiredOutputArtifactsByOwnership(state.Artifacts.Outputs)
+	if len(modelRequiredOutputs) > 0 {
+		observe.GlobalTrace("if: len(modelRequiredOutputs) > 0")
+		b.WriteString("Before completing, every model-authored required output artifact below must exist:\n")
+		for _, artifact := range modelRequiredOutputs {
+			observe.GlobalTrace("range modelRequiredOutputs")
 			fmt.Fprintf(&b, "- `%s`: `%s`\n", artifact.ID, artifact.Path)
 		}
-		b.WriteString("The completion bash block may write the final required artifact content, or verify already-written artifacts, but it must end with:\n")
+	}
+	if len(runtimeRequiredOutputs) > 0 {
+		observe.GlobalTrace("if: len(runtimeRequiredOutputs) > 0")
+		b.WriteString("Runtime-authored required artifacts are checked by the runtime but are not writable deliverables:\n")
+		for _, artifact := range runtimeRequiredOutputs {
+			observe.GlobalTrace("range runtimeRequiredOutputs")
+			fmt.Fprintf(&b, "- `%s`: `%s`\n", artifact.ID, artifact.Path)
+		}
+		b.WriteString("Do not create, edit, delete, truncate, overwrite, or fabricate runtime-authored artifacts. To improve runtime evidence, run real commands. To fix unsupported claims, edit model-authored output artifacts.\n")
+	}
+	if len(modelRequiredOutputs) > 0 {
+		b.WriteString("The completion bash block may write the final model-authored artifact content, or verify already-written model-authored artifacts, but it must end with:\n")
 	} else {
-		observe.GlobalTrace("else: len(requiredOutputs) > 0")
+		observe.GlobalTrace("else: len(modelRequiredOutputs) > 0")
 		b.WriteString("After the state-specific work is complete, the completion bash block must end with:\n")
 	}
 	b.WriteString("echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\n")
 	b.WriteString("Do not emit COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT after a read-only inspection unless the state-specific work is already complete.\n")
 	observe.GlobalTrace("return: b.String()")
 	return b.String()
+}
+
+func artifactOutputsByOwnership(outputs []Artifact) ([]Artifact, []Artifact) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	modelAuthored := make([]Artifact, 0, len(outputs))
+	runtimeAuthored := make([]Artifact, 0, len(outputs))
+	for _, artifact := range outputs {
+		observe.GlobalTrace("range outputs")
+		if artifactRuntimeAuthored(artifact) {
+			observe.GlobalTrace("if: artifactRuntimeAuthored(artifact)")
+			runtimeAuthored = append(runtimeAuthored, artifact)
+			continue
+		}
+		modelAuthored = append(modelAuthored, artifact)
+	}
+	observe.GlobalTrace("return: modelAuthored, runtimeAuthored")
+	return modelAuthored, runtimeAuthored
 }
 
 func requiredOutputArtifacts(outputs []Artifact) []Artifact {
@@ -964,6 +1003,21 @@ func requiredOutputArtifacts(outputs []Artifact) []Artifact {
 	}
 	observe.GlobalTrace("return: required")
 	return required
+}
+
+func requiredOutputArtifactsByOwnership(outputs []Artifact) ([]Artifact, []Artifact) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	required := requiredOutputArtifacts(outputs)
+	observe.GlobalTrace("return: artifactOutputsByOwnership(required)")
+	return artifactOutputsByOwnership(required)
+}
+
+func artifactRuntimeAuthored(artifact Artifact) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.TrimSpace(artifact.RuntimeCapture.Type) != \"\"")
+	return strings.TrimSpace(artifact.RuntimeCapture.Type) != ""
 }
 
 func outputArtifactPath(state State, id string, artifactRoot string) (string, bool) {
@@ -1003,12 +1057,14 @@ func commandEvidenceConfig(state State, artifactRoot string) (query.PragmaLoopCo
 }
 
 func commandPolicyConfig(state State, transitionHandoff []Artifact, artifactRoot string) (query.PragmaLoopCommandPolicyConfig, bool) {
-	if state.ShellPolicy.IsZero() {
-		return query.PragmaLoopCommandPolicyConfig{}, false
-	}
 	cfg := query.PragmaLoopCommandPolicyConfig{
 		DenyPatterns: append([]string(nil), state.ShellPolicy.DenyPatterns...),
 		DenyMessage:  state.ShellPolicy.DenyMessage,
+	}
+	for _, artifact := range state.Artifacts.Outputs {
+		if artifactRuntimeAuthored(artifact) {
+			cfg.ProtectedWritePaths = append(cfg.ProtectedWritePaths, resolveArtifactPath(artifact.Path, artifactRoot))
+		}
 	}
 	if strings.TrimSpace(state.ShellPolicy.HandoffInputs) == "rendered" {
 		for _, artifact := range transitionHandoff {
@@ -1018,7 +1074,7 @@ func commandPolicyConfig(state State, transitionHandoff []Artifact, artifactRoot
 			cfg.WritablePaths = append(cfg.WritablePaths, resolveArtifactPath(artifact.Path, artifactRoot))
 		}
 	}
-	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 {
+	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
 		return query.PragmaLoopCommandPolicyConfig{}, false
 	}
 	return cfg, true
@@ -1057,37 +1113,95 @@ func requiredOutputArtifactCompletionCheckWithSnapshots(state State, artifactRoo
 	}
 	observe.GlobalTrace("return: func() (bool, string, error) {\n\tvar missing []string\n\tfor _, artifact := rang...")
 	return func() (bool, string, error) {
-		var missing []string
+		var modelMissing []string
+		var runtimeMissing []string
 		for _, artifact := range required {
 			path := resolveArtifactPath(artifact.Path, artifactRoot)
 			if _, err := os.Stat(path); err != nil {
-				missing = append(missing, fmt.Sprintf("- `%s`: `%s` (%v)", artifact.ID, path, err))
+				issue := fmt.Sprintf("- `%s`: `%s` (%v)", artifact.ID, path, err)
+				if artifactRuntimeAuthored(artifact) {
+					runtimeMissing = append(runtimeMissing, issue)
+				} else {
+					modelMissing = append(modelMissing, issue)
+				}
 			}
 		}
-		var invalid []string
+		var modelInvalid []string
+		var runtimeInvalid []string
 		for _, artifact := range required {
 			path := resolveArtifactPath(artifact.Path, artifactRoot)
 			for _, check := range artifact.Checks {
 				issues, err := validateArtifactIntegrityCheck(artifact, check, state, path, artifactRoot, taskPrompt, snapshots)
 				if err != nil {
-					invalid = append(invalid, fmt.Sprintf("- `%s`: `%s` (%v)", artifact.ID, path, err))
+					issues = []string{fmt.Sprintf("- `%s`: `%s` (%v)", artifact.ID, path, err)}
+				}
+				if len(issues) == 0 {
 					continue
 				}
-				invalid = append(invalid, issues...)
+				if artifactRuntimeAuthored(artifact) || artifactIntegrityCheckReferencesRuntimeAuthoredOutput(state, check) {
+					runtimeInvalid = append(runtimeInvalid, issues...)
+				} else {
+					modelInvalid = append(modelInvalid, issues...)
+				}
 			}
 		}
-		if len(missing) == 0 && len(invalid) == 0 {
+		if len(modelMissing) == 0 && len(runtimeMissing) == 0 && len(modelInvalid) == 0 && len(runtimeInvalid) == 0 {
 			return true, "", nil
 		}
-		var sections []string
-		if len(missing) > 0 {
-			sections = append(sections, fmt.Sprintf("Required output artifact(s) are missing:\n%s", strings.Join(missing, "\n")))
-		}
-		if len(invalid) > 0 {
-			sections = append(sections, fmt.Sprintf("Required output artifact(s) failed integrity checks:\n%s", strings.Join(invalid, "\n")))
-		}
-		return false, fmt.Sprintf("Completion was rejected because:\n%s\n\nRun another fenced bash block that fixes the output artifact(s), then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again.", strings.Join(sections, "\n\n")), nil
+		return false, completionRejectionGuidance(modelMissing, runtimeMissing, modelInvalid, runtimeInvalid), nil
 	}
+}
+
+func artifactIntegrityCheckReferencesRuntimeAuthoredOutput(state State, check ArtifactIntegrityCheck) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if strings.TrimSpace(check.ArtifactID) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(check.ArtifactID) == \"\"")
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	for _, artifact := range state.Artifacts.Outputs {
+		observe.GlobalTrace("range state.Artifacts.Outputs")
+		if artifact.ID == check.ArtifactID {
+			observe.GlobalTrace("if: artifact.ID == check.ArtifactID")
+			observe.GlobalTrace("return: artifactRuntimeAuthored(artifact)")
+			return artifactRuntimeAuthored(artifact)
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
+}
+
+func completionRejectionGuidance(modelMissing []string, runtimeMissing []string, modelInvalid []string, runtimeInvalid []string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var sections []string
+	if len(modelMissing) > 0 {
+		sections = append(sections, fmt.Sprintf("Model-authored required output artifact(s) are missing:\n%s", strings.Join(modelMissing, "\n")))
+	}
+	if len(modelInvalid) > 0 {
+		sections = append(sections, fmt.Sprintf("Model-authored required output artifact(s) failed integrity checks:\n%s", strings.Join(modelInvalid, "\n")))
+	}
+	if len(runtimeMissing) > 0 {
+		sections = append(sections, fmt.Sprintf("Runtime-authored required artifact(s) are missing:\n%s", strings.Join(runtimeMissing, "\n")))
+	}
+	if len(runtimeInvalid) > 0 {
+		sections = append(sections, fmt.Sprintf("Runtime-authored required artifact(s) failed integrity checks:\n%s", strings.Join(runtimeInvalid, "\n")))
+	}
+
+	hasModelIssues := len(modelMissing) > 0 || len(modelInvalid) > 0
+	hasRuntimeIssues := len(runtimeMissing) > 0 || len(runtimeInvalid) > 0
+	var next string
+	switch {
+	case hasModelIssues && hasRuntimeIssues:
+		next = "Run another fenced bash block that fixes model-authored output artifact(s) directly. Do not edit runtime-authored artifact files; for runtime evidence, run real commands or revise model-authored output artifacts so they only claim evidence that exists. Then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
+	case hasRuntimeIssues:
+		next = "Do not edit runtime-authored artifact files. Run real commands so the runtime can capture evidence, or revise model-authored output artifacts so they only claim evidence that exists. Then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
+	default:
+		next = "Run another fenced bash block that fixes model-authored output artifact(s), then echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
+	}
+	observe.GlobalTrace("return: fmt.Sprintf(...)")
+	return fmt.Sprintf("Completion was rejected because:\n%s\n\n%s", strings.Join(sections, "\n\n"), next)
 }
 
 func validateArtifactIntegrityCheck(artifact Artifact, check ArtifactIntegrityCheck, state State, artifactPath string, artifactRoot string, taskPrompt string, snapshots map[string][]byte) ([]string, error) {

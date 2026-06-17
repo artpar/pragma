@@ -77,6 +77,8 @@ func (p *Projection) Apply(ev query.LoopEvent, now time.Time) (query.Orchestrati
 			ArtifactID: e.ArtifactID,
 			Path:       e.Path,
 			Direction:  e.Direction,
+			Bytes:      e.Bytes,
+			SHA256:     e.SHA256,
 		})
 	case query.OrchestrationCompletedEvent:
 		observe.GlobalTrace("typecase: query.OrchestrationCompletedEvent")

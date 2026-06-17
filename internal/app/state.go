@@ -23,6 +23,8 @@ type OrchestrationArtifact struct {
 	Path       string    `json:"path"`
 	Direction  string    `json:"direction,omitempty"`
 	Root       string    `json:"root,omitempty"`
+	Bytes      int64     `json:"bytes,omitempty"`
+	SHA256     string    `json:"sha256,omitempty"`
 	CreatedAt  time.Time `json:"created_at,omitempty"`
 }
 

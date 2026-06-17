@@ -167,6 +167,8 @@ type OrchestrationHandoffEvent struct {
 	ArtifactID string
 	Path       string
 	Direction  string
+	Bytes      int64
+	SHA256     string
 }
 
 func (OrchestrationHandoffEvent) loopEventSealed() {}
@@ -220,6 +222,8 @@ type OrchestrationHandoffSnapshot struct {
 	ArtifactID string `json:"artifact_id,omitempty"`
 	Path       string `json:"path"`
 	Direction  string `json:"direction"`
+	Bytes      int64  `json:"bytes,omitempty"`
+	SHA256     string `json:"sha256,omitempty"`
 }
 
 // AgentProgressEvent carries intermediate agent execution progress.

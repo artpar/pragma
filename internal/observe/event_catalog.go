@@ -610,6 +610,8 @@ type OrchestrationHandoff struct {
 	ArtifactID string `json:"artifact_id,omitempty"`
 	Path       string `json:"path"`
 	Direction  string `json:"direction"`
+	Bytes      int64  `json:"bytes,omitempty"`
+	SHA256     string `json:"sha256,omitempty"`
 }
 
 func (OrchestrationHandoff) eventSealed() {}

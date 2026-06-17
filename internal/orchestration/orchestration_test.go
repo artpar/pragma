@@ -338,7 +338,7 @@ func TestRequiredTransitionHandoffFailsBeforeModelCall(t *testing.T) {
 	}
 	ch := make(chan query.LoopEvent, 8)
 	state := State{ID: "worker", Persona: "worker"}
-	_, _, err := runNodeEvents(context.Background(), ch, nil, NewProjection(), personaDir, Definition{Name: "test"}, state, "", "", []Artifact{
+	_, _, err := runNodeEvents(context.Background(), ch, nil, NewProjection(), personaDir, Definition{Name: "test"}, state, "", "", "", []Artifact{
 		{ID: "missing", Path: "missing.md", Required: true},
 	}, "source", EventComplete, dir)
 	if err == nil {
@@ -470,8 +470,8 @@ func TestExecuteForEachNextWritesFirstPendingItem(t *testing.T) {
 	cursorPath := filepath.Join(dir, "current-item.json")
 	writeTestChecklist(t, listPath, Checklist{
 		Items: []ChecklistItem{
-			{ID: "item-001", Title: "done", Status: "approved"},
-			{ID: "item-002", Title: "pending", Status: "pending", Acceptance: []string{"prove it"}},
+			{ID: "item-001", Status: "approved"},
+			{ID: "item-002", Status: "pending"},
 		},
 	})
 
@@ -561,7 +561,7 @@ func TestExecuteForEachNextEmitsDoneWhenNoPendingItems(t *testing.T) {
 	cursorPath := filepath.Join(dir, "current-item.json")
 	writeTestChecklist(t, listPath, Checklist{
 		Items: []ChecklistItem{
-			{ID: "item-001", Title: "done", Status: "approved"},
+			{ID: "item-001", Status: "approved"},
 		},
 	})
 
@@ -590,11 +590,11 @@ func TestExecuteMarkCurrentItemUpdatesChecklist(t *testing.T) {
 	cursorPath := filepath.Join(dir, "current-item.json")
 	writeTestChecklist(t, listPath, Checklist{
 		Items: []ChecklistItem{
-			{ID: "item-001", Title: "one", Status: "pending"},
-			{ID: "item-002", Title: "two", Status: "pending"},
+			{ID: "item-001", Status: "pending"},
+			{ID: "item-002", Status: "pending"},
 		},
 	})
-	writeTestJSON(t, cursorPath, ChecklistItem{ID: "item-002", Title: "two", Status: "pending"})
+	writeTestJSON(t, cursorPath, ChecklistItem{ID: "item-002", Status: "pending"})
 
 	event, err := ExecuteControl(State{
 		ID: "mark_item_approved",
