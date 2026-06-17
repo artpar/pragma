@@ -25,6 +25,7 @@ type State struct {
 	Persona      string      `yaml:"persona,omitempty"`
 	TaskPrompt   string      `yaml:"task_prompt,omitempty"`
 	Conversation string      `yaml:"conversation,omitempty"`
+	MaxTurns     int         `yaml:"max_turns,omitempty"`
 	Artifacts    Artifacts   `yaml:"artifacts,omitempty"`
 	Control      Control     `yaml:"control,omitempty"`
 	Event        Event       `yaml:"event,omitempty"`
@@ -450,6 +451,9 @@ func validateStateExecution(defName string, state State) error {
 	}
 	if state.Conversation == "persistent" && strings.TrimSpace(state.Persona) == "" {
 		return fmt.Errorf("orchestration %q state %q persistent conversation requires persona", defName, state.ID)
+	}
+	if state.MaxTurns < 0 {
+		return fmt.Errorf("orchestration %q state %q has invalid max_turns %d", defName, state.ID, state.MaxTurns)
 	}
 	if err := validateShellPolicy(defName, state.ID, state.ShellPolicy); err != nil {
 		return err

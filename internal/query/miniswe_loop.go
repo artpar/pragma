@@ -146,6 +146,7 @@ type PragmaLoopCommandPolicyConfig struct {
 
 type PragmaLoopRunOptions struct {
 	IncludePriorConversation bool
+	MaxTurns                 int
 }
 
 // WithPragmaLoopEvidencePath records shell-loop command evidence to path while
@@ -175,7 +176,7 @@ func (engine *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch 
 	defer observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "exit")
 	snap := engine.store.Snapshot()
 	system := model.SystemPrompt{Blocks: []model.SystemBlock{{Text: pragmaLoopSystemPrompt, Cacheable: false}}}
-	engine.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), nil, ch)
+	engine.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), nil, ch, PragmaLoopRunOptions{})
 }
 
 // PragmaLoopCompletionCheck can reject a submitted bash turn and keep the same
@@ -205,24 +206,24 @@ func (engine *Engine) RunPragmaLoopWithSystemCompletionCheckOptions(ctx context.
 			}
 		}()
 		if opts.IncludePriorConversation {
-			engine.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch)
+			engine.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch, opts)
 			return
 		}
 		startIndex := len(engine.store.Snapshot().Conversation.Messages)
-		engine.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch, startIndex)
+		engine.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch, opts, startIndex)
 	}()
 	observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystemCompletionCheck", "return: ch")
 	return ch
 }
 
-func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck, ch chan<- LoopEvent, messageStartIndexes ...int) {
+func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck, ch chan<- LoopEvent, opts PragmaLoopRunOptions, messageStartIndexes ...int) {
 	observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "exit")
 	defer func() {
 		engine.runStopHook(ch)
 	}()
 
-	run := engine.newPragmaLoopRunConfig(system, userMessage, completionCheck, messageStartIndexes...)
+	run := engine.newPragmaLoopRunConfig(system, userMessage, completionCheck, opts, messageStartIndexes...)
 	engine.setConversationSystemPrompt(run.System)
 
 	if err := engine.appendPragmaLoopInitialUserMessage(run); err != nil {
@@ -310,10 +311,13 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 	ch <- ErrorEvent{Err: fmt.Errorf("agentic loop exceeded maximum of %d turns", run.MaxTurns)}
 }
 
-func (engine *Engine) newPragmaLoopRunConfig(system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck, messageStartIndexes ...int) pragmaLoopRunConfig {
+func (engine *Engine) newPragmaLoopRunConfig(system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck, opts PragmaLoopRunOptions, messageStartIndexes ...int) pragmaLoopRunConfig {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	maxTurns := engine.config.MaxTurns
+	if opts.MaxTurns > 0 {
+		maxTurns = opts.MaxTurns
+	}
 	if maxTurns <= 0 {
 		observe.GlobalTrace("if: maxTurns <= 0")
 		maxTurns = 300

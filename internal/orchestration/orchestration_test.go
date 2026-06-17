@@ -392,6 +392,35 @@ func TestPromptDoesNotRenderDestinationStateInputs(t *testing.T) {
 	}
 }
 
+func TestStateMaxTurnsValidationAndPromptContract(t *testing.T) {
+	def := Definition{
+		Name:    "budgeted",
+		Initial: "worker",
+		States: []State{
+			{ID: "worker", Persona: "worker", MaxTurns: 7},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{{Event: EventComplete, From: []string{"worker"}, To: "done"}},
+	}
+	if _, err := NewRuntime(def); err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	system, _, err := BuildPromptWithArtifactRootChecked(def, def.States[0], testPersona("worker"), "", "", t.TempDir())
+	if err != nil {
+		t.Fatalf("BuildPromptWithArtifactRootChecked: %v", err)
+	}
+	if len(system.Blocks) == 0 || !strings.Contains(system.Blocks[0].Text, "runtime budget of 7 shell actions") {
+		t.Fatalf("system prompt missing max_turns contract:\n%+v", system.Blocks)
+	}
+
+	bad := def
+	bad.States = []State{{ID: "worker", MaxTurns: -1}, {ID: "done", Terminal: true}}
+	if _, err := NewRuntime(bad); err == nil || !strings.Contains(err.Error(), "invalid max_turns -1") {
+		t.Fatalf("NewRuntime negative max_turns err = %v", err)
+	}
+}
+
 func TestRequiredOutputCompletionCheckStillEnforcesOutputs(t *testing.T) {
 	dir := t.TempDir()
 	state := State{

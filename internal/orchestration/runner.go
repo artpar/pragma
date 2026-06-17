@@ -638,6 +638,7 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 	}
 	runOpts := query.PragmaLoopRunOptions{
 		IncludePriorConversation: stateUsesPersistentConversation(state),
+		MaxTurns:                 state.MaxTurns,
 	}
 	for ev := range engine.RunPragmaLoopWithSystemCompletionCheckOptions(ctx, system, prompt, completionCheck, runOpts) {
 		observe.TraceCtx(ctx, "orchestration", "RunStateEvents", "range engine.RunPragmaLoopWithSystemCompletionCheck(ctx, system, prompt, completion...")
@@ -942,6 +943,9 @@ func RenderStateCompletionContract(state State) string {
 	b.WriteString("## Runtime Completion Contract\n\n")
 	b.WriteString("This orchestration state does not use plain prose final answers.\n")
 	b.WriteString("When this state is complete, respond with exactly one fenced bash block and no prose outside it.\n")
+	if state.MaxTurns > 0 {
+		fmt.Fprintf(&b, "This state has a runtime budget of %d shell actions. Plan command batches so you either complete the state or write the required route artifacts before the budget is exhausted.\n", state.MaxTurns)
+	}
 	modelRequiredOutputs, runtimeRequiredOutputs := requiredOutputArtifactsByOwnership(state.Artifacts.Outputs)
 	if len(modelRequiredOutputs) > 0 {
 		observe.GlobalTrace("if: len(modelRequiredOutputs) > 0")

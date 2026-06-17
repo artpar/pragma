@@ -33,6 +33,7 @@ states:
     persona: swe_single_engineer
     task_prompt: none
     conversation: persistent
+    max_turns: 80
     artifacts:
       outputs:
         - id: engineer_status
