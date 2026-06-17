@@ -87,6 +87,7 @@ type pragmaLoopRunConfig struct {
 	CompletionCheck     PragmaLoopCompletionCheck
 	MessageStartIndexes []int
 	MaxTurns            int
+	ExplicitMaxTurns    bool
 }
 
 type pragmaLoopTurnRequest struct {
@@ -274,7 +275,8 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 		}
 		if assistantTurn.Action.Kind == pragmaLoopActionInvalid {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: actionCount > 1")
-			if err := engine.appendPragmaLoopUserMessage(fmt.Sprintf(pragmaLoopFormatErrorTemplate, assistantTurn.Action.Count)); err != nil {
+			message := appendPragmaLoopBudgetNotice(fmt.Sprintf(pragmaLoopFormatErrorTemplate, assistantTurn.Action.Count), run, turn)
+			if err := engine.appendPragmaLoopUserMessage(message); err != nil {
 				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 				ch <- ErrorEvent{Err: err}
 				return
@@ -283,7 +285,7 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 		}
 
 		if message, rejected := rejectPragmaLoopCommand(ctx, assistantTurn.Action.Bash); rejected {
-			if err := engine.appendPragmaLoopUserMessage(message); err != nil {
+			if err := engine.appendPragmaLoopUserMessage(appendPragmaLoopBudgetNotice(message, run, turn)); err != nil {
 				ch <- ErrorEvent{Err: err}
 				return
 			}
@@ -301,7 +303,7 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 			ch <- TurnCompleteEvent{Response: assistantTurn.Response, StopReason: model.StopEndTurn}
 			return
 		}
-		if err := engine.appendPragmaLoopUserMessage(obs.Text); err != nil {
+		if err := engine.appendPragmaLoopUserMessage(appendPragmaLoopBudgetNotice(obs.Text, run, turn)); err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
@@ -315,8 +317,10 @@ func (engine *Engine) newPragmaLoopRunConfig(system model.SystemPrompt, userMess
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	maxTurns := engine.config.MaxTurns
+	explicitMaxTurns := false
 	if opts.MaxTurns > 0 {
 		maxTurns = opts.MaxTurns
+		explicitMaxTurns = true
 	}
 	if maxTurns <= 0 {
 		observe.GlobalTrace("if: maxTurns <= 0")
@@ -331,7 +335,30 @@ func (engine *Engine) newPragmaLoopRunConfig(system model.SystemPrompt, userMess
 		CompletionCheck:     completionCheck,
 		MessageStartIndexes: indexes,
 		MaxTurns:            maxTurns,
+		ExplicitMaxTurns:    explicitMaxTurns,
 	}
+}
+
+func appendPragmaLoopBudgetNotice(text string, run pragmaLoopRunConfig, turn int) string {
+	if !run.ExplicitMaxTurns || run.MaxTurns <= 0 {
+		return text
+	}
+	used := turn + 1
+	remaining := run.MaxTurns - used
+	if remaining < 0 {
+		remaining = 0
+	}
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(text, "\n"))
+	fmt.Fprintf(&b, "\n\n<runtime_budget>\nState turn budget: %d/%d turns used; %d remaining.\n", used, run.MaxTurns, remaining)
+	if remaining <= 10 && remaining > 0 {
+		b.WriteString("Budget warning: finish the state-specific completion contract within the remaining turns; do not start broad new repair threads unless they are necessary to complete.\n")
+	}
+	if remaining == 0 {
+		b.WriteString("Budget exhausted: this state will stop if the previous action did not satisfy its completion contract.\n")
+	}
+	b.WriteString("</runtime_budget>")
+	return b.String()
 }
 
 func (engine *Engine) appendPragmaLoopInitialUserMessage(run pragmaLoopRunConfig) error {
