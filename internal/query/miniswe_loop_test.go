@@ -37,7 +37,10 @@ func TestRunPragmaLoopBashTimeoutUsesPragmaLoopTemplatePath(t *testing.T) {
 	pragmaLoopCommandTimeout = 50 * time.Millisecond
 	defer func() { pragmaLoopCommandTimeout = oldTimeout }()
 
-	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "echo ready; sleep 5")
+	result, timedOut, err := runPragmaLoopBash(t.Context(), t.TempDir(), "echo ready; sleep 5")
+	if err != nil {
+		t.Fatalf("runPragmaLoopBash: %v", err)
+	}
 	if !timedOut {
 		t.Fatal("command did not time out")
 	}
@@ -63,7 +66,10 @@ func TestRunPragmaLoopBashSoftWaitReturnsRunningProcess(t *testing.T) {
 		pragmaLoopCommandTimeout = oldTimeout
 	}()
 
-	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "echo before; sleep 1; echo done")
+	result, timedOut, err := runPragmaLoopBash(t.Context(), t.TempDir(), "echo before; sleep 1; echo done")
+	if err != nil {
+		t.Fatalf("runPragmaLoopBash: %v", err)
+	}
 	if timedOut {
 		t.Fatal("command hard-timed out")
 	}
@@ -101,12 +107,31 @@ func TestRunPragmaLoopBashSoftWaitReturnsRunningProcess(t *testing.T) {
 }
 
 func TestRunPragmaLoopBashUsesPipefail(t *testing.T) {
-	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), "false | true")
+	result, timedOut, err := runPragmaLoopBash(t.Context(), t.TempDir(), "false | true")
+	if err != nil {
+		t.Fatalf("runPragmaLoopBash: %v", err)
+	}
 	if timedOut {
 		t.Fatal("command timed out")
 	}
 	if result.ReturnCode == 0 {
 		t.Fatalf("return code = 0, want non-zero with pipefail; output=%q", result.Output)
+	}
+}
+
+func TestRunPragmaLoopBashReturnsShellStartupError(t *testing.T) {
+	missingWorkDir := t.TempDir() + "/missing"
+	result, timedOut, err := runPragmaLoopBash(t.Context(), missingWorkDir, "echo should-not-run")
+	if err == nil {
+		t.Fatalf("runPragmaLoopBash error = nil, want startup error; result=%+v timedOut=%v", result, timedOut)
+	}
+	if timedOut {
+		t.Fatal("timedOut = true, want false for startup error")
+	}
+	for _, want := range []string{"shell command failed before execution", "start command"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
 	}
 }
 
@@ -133,7 +158,10 @@ func TestRunPragmaLoopBashRoutesShellApplyPatch(t *testing.T) {
 		"*** End Patch",
 		"PATCH",
 	}, "\n")
-	result, timedOut := runPragmaLoopBash(t.Context(), dir, patchCommand)
+	result, timedOut, err := runPragmaLoopBash(t.Context(), dir, patchCommand)
+	if err != nil {
+		t.Fatalf("runPragmaLoopBash: %v", err)
+	}
 	if timedOut {
 		t.Fatal("command timed out")
 	}
@@ -159,11 +187,14 @@ func TestRunPragmaLoopBashAllowsDirectRepoSourceWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, timedOut := runPragmaLoopBash(t.Context(), dir, `cat > internal/example.go <<'EOF'
+	result, timedOut, err := runPragmaLoopBash(t.Context(), dir, `cat > internal/example.go <<'EOF'
 package internal
 
 const newValue = 2
 EOF`)
+	if err != nil {
+		t.Fatalf("runPragmaLoopBash: %v", err)
+	}
 	if timedOut {
 		t.Fatal("command timed out")
 	}
@@ -180,10 +211,13 @@ EOF`)
 }
 
 func TestRunPragmaLoopBashAllowsRuntimeArtifactWrites(t *testing.T) {
-	result, timedOut := runPragmaLoopBash(t.Context(), t.TempDir(), `mkdir -p /tmp/pragma && cat > /tmp/pragma/pragma-loop-artifact-test.txt <<'EOF'
+	result, timedOut, err := runPragmaLoopBash(t.Context(), t.TempDir(), `mkdir -p /tmp/pragma && cat > /tmp/pragma/pragma-loop-artifact-test.txt <<'EOF'
 artifact
 EOF
 cat /tmp/pragma/pragma-loop-artifact-test.txt`)
+	if err != nil {
+		t.Fatalf("runPragmaLoopBash: %v", err)
+	}
 	if timedOut {
 		t.Fatal("command timed out")
 	}

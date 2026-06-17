@@ -291,7 +291,11 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 			}
 			continue
 		}
-		commandResult := executePragmaLoopCommand(ctx, workDir, assistantTurn.Action.Bash)
+		commandResult, err := executePragmaLoopCommand(ctx, workDir, assistantTurn.Action.Bash)
+		if err != nil {
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 		obs, err := commandResult.Observation(run.CompletionCheck)
 		if err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: submitted")
@@ -504,10 +508,13 @@ func (engine *Engine) appendPragmaLoopAssistantTurn(turn pragmaLoopAssistantTurn
 	return engine.appendConversationMessage(assistantMsg)
 }
 
-func executePragmaLoopCommand(ctx context.Context, workDir, command string) pragmaLoopCommandResult {
+func executePragmaLoopCommand(ctx context.Context, workDir, command string) (pragmaLoopCommandResult, error) {
 	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "enter")
 	defer observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "exit")
-	result, timedOut := runPragmaLoopBash(ctx, workDir, command)
+	result, timedOut, err := runPragmaLoopBash(ctx, workDir, command)
+	if err != nil {
+		return pragmaLoopCommandResult{}, err
+	}
 	submitted := false
 	if !timedOut {
 		observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "if: !timedOut")
@@ -522,7 +529,7 @@ func executePragmaLoopCommand(ctx context.Context, workDir, command string) prag
 	recordPragmaLoopCommandEvidence(ctx, commandResult)
 	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult")
 	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult{\n\tCommand:\tcommand,\n\tResult:\t\tresult,\n\tTimedOut:\ttime...")
-	return commandResult
+	return commandResult, nil
 }
 
 func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopCommandResult) {
@@ -1285,13 +1292,13 @@ type pragmaLoopBashResult struct {
 	Output     string
 }
 
-func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool) {
+func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoopBashResult, bool, error) {
 	observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "enter")
 	defer observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "exit")
 	if patch, patchWorkDir, ok, err := applypatch.ExtractShellApplyPatch(command); err != nil {
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "if: err != nil")
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false")
-		return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false
+		return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false, nil
 	} else if ok {
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "else-if: ok")
 		applyWorkDir := workDir
@@ -1304,9 +1311,9 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 		}
 		result, err := applypatch.ApplyPatchText(ctx, patch, applyWorkDir)
 		if err != nil {
-			return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false
+			return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false, nil
 		}
-		return pragmaLoopBashResult{ReturnCode: 0, Output: result.Content}, false
+		return pragmaLoopBashResult{ReturnCode: 0, Output: result.Content}, false, nil
 	}
 	result, err := shellrun.Execute(ctx, shellrun.Options{
 		Command:            command,
@@ -1320,8 +1327,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "if: err != nil")
-		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false")
-		return pragmaLoopBashResult{ReturnCode: -1, Output: err.Error()}, false
+		return pragmaLoopBashResult{}, false, fmt.Errorf("shell command failed before execution: %w", err)
 	}
 	out := pragmaLoopBashResult{
 		ReturnCode: result.ExitCode,
@@ -1336,7 +1342,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 		out.Output += result.Err.Error()
 	}
 	observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: out, result.TimedOut")
-	return out, result.TimedOut
+	return out, result.TimedOut, nil
 }
 
 func formatPragmaLoopObservation(result pragmaLoopBashResult) string {
