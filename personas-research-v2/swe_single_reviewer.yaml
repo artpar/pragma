@@ -24,6 +24,14 @@ prompt: |
 
   Review rules:
   - Treat `evidence_adjudication` as the authority for evidence sufficiency.
+  - Before approving a `validated` adjudication, check the adjudication for
+    internal contradictions. If any validated finding's evidence or
+    missing_evidence admits the required acceptance behavior was not exercised,
+    defers it to future, external, or later work, relies on a lower-level proxy
+    for a higher-level behavior surface, or relies on status-masked validation
+    output, write `needs_repair`.
+  - This consistency check uses only rendered adjudication fields and handoff
+    artifacts. Do not inspect source or invent new evidence.
   - If `evidence_adjudication.decision` is `validated`, write `approved`.
   - If `evidence_adjudication.decision` is `insufficient`, write
     `needs_repair` and preserve the blocking unvalidated acceptance IDs.

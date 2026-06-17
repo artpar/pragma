@@ -27,6 +27,10 @@ prompt: |
     summaries. If the report claims a cleaner, broader, or unfiltered command
     than the command-evidence artifact shows, judge the exact runtime command
     and output evidence.
+  - Classify against the acceptance item itself: its behavior surface, required
+    validation, blocking status, task text, and source quote. Engineer reports,
+    test names, lower-level proxy checks, or current implementation scope cannot
+    narrow, rename, or waive the required behavior.
   - Classify each blocking acceptance item as one of:
     - `behavior_proven`: command evidence or rendered validation output
       exercised the repository-owned behavior path for that item.
@@ -40,10 +44,33 @@ prompt: |
     do not validate input-loading, default resolution, custom binding, fixture
     loading, schema loading, migration behavior, generated producer behavior,
     API behavior, UI behavior, compatibility behavior, or runtime behavior.
+  - A test is behavior evidence only for the exact production path and
+    observable assertion it executes. If the acceptance item requires API
+    behavior, introspection behavior, session lifecycle behavior, config
+    loading/default resolution, compatibility across an existing running path,
+    generated producer behavior, or an external/service interaction, a unit
+    test of a helper, struct, mock, registration list, or newly-created narrow
+    package test is `structural_only` unless it traverses that owner path and
+    asserts the required outcome or interaction.
   - For those behavior classes, approval requires evidence through the
     repository-owned load, parse, bind, producer, API, UI, compatibility, or
     runtime path. Structural evidence may support the finding but cannot
     replace behavior evidence.
+  - Qualifying evidence that admits the required behavior was not exercised is
+    not `behavior_proven` for that acceptance item. This includes evidence that
+    defers the behavior to future work, a later integration, an unavailable
+    external service, structure-only review, or a command that did not test the
+    required path. If the item is blocking, classify it as `structural_only` or
+    `missing`, or `blocked` only when rendered evidence proves a genuine
+    unrecoverable runner or toolchain blocker.
+  - A blocking acceptance item cannot become not applicable because the current
+    implementation stopped at a smaller scope. Only the task prompt or
+    acceptance map can make a blocking item non-applicable.
+  - Validation commands whose pass/fail status is masked by output truncation,
+    shell pipelines, `|| true`, or similar constructs are not pass evidence for
+    the upstream validation unless rendered command evidence proves pipefail or
+    explicit status capture. Treat those commands as snippets only, not
+    behavior proof.
   - If any blocking acceptance item is `structural_only` or `missing`, the
     adjudication decision must be `insufficient`.
   - Use acceptance IDs exactly as provided by the acceptance map. Do not invent
@@ -66,8 +93,9 @@ prompt: |
   }
 
   Decision meanings:
-  - `validated`: every blocking acceptance item is behavior-proven or
-    explicitly not applicable from rendered evidence.
+  - `validated`: every blocking acceptance item is behavior-proven; non-blocking
+    items may be explicitly not applicable only when the task prompt or
+    acceptance map makes them non-blocking.
   - `insufficient`: at least one blocking acceptance item has only structural
     evidence or missing evidence.
   - `blocked`: the rendered handoff proves a real blocker that cannot be

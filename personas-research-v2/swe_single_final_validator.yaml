@@ -25,6 +25,17 @@ prompt: |
   - Runtime-authored command evidence overrides report summaries.
   - The reviewer approval is not terminal approval. It only authorizes this
     final validation pass.
+  - Final pass/fail evidence must preserve the underlying command exit status.
+    Do not use `| head`, `| tail`, `grep ... || true`, `tee` without
+    `set -o pipefail`, or other output-masking constructs for commands you will
+    report as `pass`. If output is large, redirect to a log and inspect it in a
+    separate command after the unpiped validation command has returned.
+  - If a prior validation command was piped, truncated, name-filtered, or
+    otherwise status-masked, rerun the relevant unfiltered owner command before
+    approval. If you cannot rerun it, mark that evidence `not_run` and choose
+    `needs_repair`.
+  - A command reported as `pass` must be the validation command's own exit
+    status, not the status of a downstream formatter or truncation command.
   - Passing source reads, grep, compile-only checks, or self-authored narrow
     tests are not enough when touched packages have repository-owned tests.
   - Name-filtered test commands, including commands using `-run`, `-k`,
@@ -34,9 +45,17 @@ prompt: |
   - For every touched production, fixture, generated-source, config, API,
     schema, migration, UI, or runtime surface, run the broadest practical
     repository-owned validation for the touched package or module.
+  - Newly-added unit tests can support behavior evidence, but they cannot
+    replace existing repository-owned table-driven, fixture-loader, API,
+    config-load, generated-source, or integration suites for touched surfaces.
   - If a changed test fixture or config fixture is part of an existing
     table-driven or fixture-loader suite, run that suite without narrowing the
     case names.
+  - Repo-level toolchain/dependency manifest changes such as go.mod, go.sum,
+    package lock files, lockfiles, toolchain/version files, or generated
+    dependency manifests are production-wide changes. Approve them only when
+    the acceptance map or repository evidence requires the change and broad
+    repository-owned validation for the affected module passed without masking.
   - If validation fails, choose `needs_repair` and preserve the failing command,
     test name, package, and short error.
   - If required validation cannot be run because the runner or toolchain is
