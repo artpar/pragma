@@ -163,9 +163,15 @@ type ArtifactVerdictControl struct {
 }
 
 type ArtifactDecisionControl struct {
-	Path   string            `yaml:"path"`
-	Field  string            `yaml:"field,omitempty"`
-	Events map[string]string `yaml:"events"`
+	Path           string                     `yaml:"path"`
+	Field          string                     `yaml:"field,omitempty"`
+	Events         map[string]string          `yaml:"events"`
+	FreshArtifacts []FreshArtifactRequirement `yaml:"fresh_artifacts,omitempty"`
+}
+
+type FreshArtifactRequirement struct {
+	Path        string `yaml:"path"`
+	Description string `yaml:"description,omitempty"`
 }
 
 type Event struct {
@@ -860,6 +866,11 @@ func validateArtifactDecisionControl(defName, stateID string, control *ArtifactD
 			return fmt.Errorf("orchestration %q state %q artifact_decision decision %q has empty event", defName, stateID, decision)
 		}
 	}
+	for idx, artifact := range control.FreshArtifacts {
+		if strings.TrimSpace(artifact.Path) == "" {
+			return fmt.Errorf("orchestration %q state %q artifact_decision fresh_artifacts[%d] requires path", defName, stateID, idx)
+		}
+	}
 	observe.GlobalTrace("return: nil")
 	return nil
 }
@@ -905,6 +916,10 @@ func emittedEvents(state State) []string {
 }
 
 func ExecuteControl(state State) (string, error) {
+	return ExecuteControlWithContext(state, ControlExecutionContext{})
+}
+
+func ExecuteControlWithContext(state State, controlCtx ControlExecutionContext) (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch {
@@ -919,7 +934,7 @@ func ExecuteControl(state State) (string, error) {
 		return executeArtifactVerdict(*state.Control.ArtifactVerdict)
 	case state.Control.ArtifactDecision != nil:
 		observe.GlobalTrace("case: state.Control.ArtifactDecision != nil")
-		return executeArtifactDecision(*state.Control.ArtifactDecision)
+		return executeArtifactDecision(*state.Control.ArtifactDecision, controlCtx)
 	default:
 		observe.GlobalTrace("default")
 		return "", fmt.Errorf("state %q has no control", state.ID)
@@ -1312,10 +1327,18 @@ func executeArtifactVerdict(control ArtifactVerdictControl) (string, error) {
 	}
 }
 
-func executeArtifactDecision(control ArtifactDecisionControl) (string, error) {
+func executeArtifactDecision(control ArtifactDecisionControl, controlCtx ControlExecutionContext) (string, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	raw, err := os.ReadFile(control.Path)
+	if err := validateFreshArtifactRequirements(control.FreshArtifacts, controlCtx); err != nil {
+		return "", err
+	}
+	artifactRoot := controlCtx.ArtifactRoot
+	if strings.TrimSpace(artifactRoot) == "" {
+		artifactRoot = DefaultArtifactRoot
+	}
+	path := resolveArtifactPath(control.Path, artifactRoot)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", err")
@@ -1325,13 +1348,13 @@ func executeArtifactDecision(control ArtifactDecisionControl) (string, error) {
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"parse decision %q: %w\", control.Path, err)")
-		return "", fmt.Errorf("parse decision %q: %w", control.Path, err)
+		return "", fmt.Errorf("parse decision %q: %w", path, err)
 	}
 	event, ok := control.Events[decision]
 	if !ok {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"decision %q has unsupported value %q\", control.Path, decision)")
-		return "", fmt.Errorf("decision %q has unsupported value %q", control.Path, decision)
+		return "", fmt.Errorf("decision %q has unsupported value %q", path, decision)
 	}
 	observe.GlobalTrace("return: event, nil")
 	return event, nil

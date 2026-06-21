@@ -864,6 +864,86 @@ func TestExecuteArtifactVerdictEmitsDecisionEvent(t *testing.T) {
 	}
 }
 
+func TestArtifactDecisionFreshArtifactRejectsStalePreviousOutput(t *testing.T) {
+	dir := t.TempDir()
+	decisionPath := filepath.Join(dir, "evidence-adjudication.json")
+	writeText(t, dir, "evidence-adjudication.json", `{"decision":"validated"}`)
+	snapshot, err := snapshotArtifactFile(decisionPath)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+
+	_, err = ExecuteControlWithContext(freshDecisionRouteState(decisionPath), ControlExecutionContext{
+		ArtifactRoot: dir,
+		PreviousStateOutputs: &StateOutputRun{
+			StateID: "swe_single_evidence_adjudicator",
+			Outputs: map[string]StateOutputArtifactRun{
+				decisionPath: {
+					ArtifactID: "evidence_adjudication",
+					Path:       decisionPath,
+					Before:     snapshot,
+					After:      snapshot,
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected stale adjudication artifact to be rejected")
+	}
+	if !strings.Contains(err.Error(), "not freshly written") {
+		t.Fatalf("error = %v, want freshness rejection", err)
+	}
+}
+
+func TestArtifactDecisionFreshArtifactAcceptsNewPreviousOutput(t *testing.T) {
+	dir := t.TempDir()
+	decisionPath := filepath.Join(dir, "evidence-adjudication.json")
+	writeText(t, dir, "evidence-adjudication.json", `{"decision":"validated"}`)
+	after, err := snapshotArtifactFile(decisionPath)
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+
+	event, err := ExecuteControlWithContext(freshDecisionRouteState(decisionPath), ControlExecutionContext{
+		ArtifactRoot: dir,
+		PreviousStateOutputs: &StateOutputRun{
+			StateID: "swe_single_evidence_adjudicator",
+			Outputs: map[string]StateOutputArtifactRun{
+				decisionPath: {
+					ArtifactID: "evidence_adjudication",
+					Path:       decisionPath,
+					Before:     ArtifactFileSnapshot{Path: decisionPath},
+					After:      after,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteControlWithContext: %v", err)
+	}
+	if event != EventComplete {
+		t.Fatalf("event = %q, want complete", event)
+	}
+}
+
+func freshDecisionRouteState(decisionPath string) State {
+	return State{
+		ID: "route_evidence_adjudication",
+		Control: Control{
+			ArtifactDecision: &ArtifactDecisionControl{
+				Path:  decisionPath,
+				Field: "decision",
+				FreshArtifacts: []FreshArtifactRequirement{{
+					Path: decisionPath,
+				}},
+				Events: map[string]string{
+					"validated": EventComplete,
+				},
+			},
+		},
+	}
+}
+
 func writeTestChecklist(t *testing.T, path string, checklist Checklist) {
 	t.Helper()
 	writeTestJSON(t, path, checklist)
@@ -942,6 +1022,9 @@ func relativizeDefinitionArtifactPaths(def Definition) Definition {
 		}
 		if control := def.States[stateIdx].Control.ArtifactDecision; control != nil {
 			control.Path = rel(control.Path)
+			for idx := range control.FreshArtifacts {
+				control.FreshArtifacts[idx].Path = rel(control.FreshArtifacts[idx].Path)
+			}
 		}
 	}
 	for transitionIdx := range def.Transitions {

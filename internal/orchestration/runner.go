@@ -134,10 +134,16 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	var transitionHandoff []Artifact
 	var transitionFrom string
 	var transitionEvent string
+	var previousStateOutputs *StateOutputRun
 	for !runtime.States[runtime.FSM.Current()].Terminal {
 		observe.TraceCtx(ctx, "orchestration", "runEvents", "for: !runtime.States[runtime.FSM.Current()].Terminal")
 		stateID := runtime.FSM.Current()
 		state := runtime.States[stateID]
+		outputsBefore, err := snapshotStateOutputs(state, artifactRoot)
+		if err != nil {
+			ch <- query.ErrorEvent{Err: fmt.Errorf("snapshot outputs before state %q: %w", stateID, err)}
+			return
+		}
 		stateEngine, err := engineForOrchestrationState(engine, persistentStateEngines, state)
 		if err != nil {
 			observe.TraceCtx(ctx, "orchestration", "runEvents", "if: err != nil")
@@ -154,12 +160,22 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 				taskPrompt = ""
 			}
 		}
-		event, _, err := runNodeEvents(ctx, ch, stateEngine, projection, opts.PersonaDir, def, state, stateTaskPrompt, "", originalTaskPrompt, transitionHandoff, transitionFrom, transitionEvent, artifactRoot)
+		controlCtx := ControlExecutionContext{
+			ArtifactRoot:         artifactRoot,
+			PreviousStateOutputs: previousStateOutputs,
+		}
+		event, _, err := runNodeEventsWithControlContext(ctx, ch, stateEngine, projection, opts.PersonaDir, def, state, stateTaskPrompt, "", originalTaskPrompt, transitionHandoff, transitionFrom, transitionEvent, controlCtx, artifactRoot)
 		if err != nil {
 			observe.TraceCtx(ctx, "orchestration", "runEvents", "if: err != nil")
 			ch <- query.ErrorEvent{Err: err}
 			return
 		}
+		outputsAfter, err := snapshotStateOutputs(state, artifactRoot)
+		if err != nil {
+			ch <- query.ErrorEvent{Err: fmt.Errorf("snapshot outputs after state %q: %w", stateID, err)}
+			return
+		}
+		previousStateOutputs = newStateOutputRun(state, artifactRoot, outputsBefore, outputsAfter)
 		transition, ok := runtime.TransitionFor(stateID, event)
 		if !ok {
 			observe.TraceCtx(ctx, "orchestration", "runEvents", "if: !ok")
@@ -432,6 +448,10 @@ func RunNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 }
 
 func runNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, originalTaskPrompt string, transitionHandoff []Artifact, transitionFrom string, transitionEvent string, artifactRoots ...string) (string, string, error) {
+	return runNodeEventsWithControlContext(ctx, ch, engine, projection, personaDir, def, state, taskPrompt, handoffPrompt, originalTaskPrompt, transitionHandoff, transitionFrom, transitionEvent, ControlExecutionContext{}, artifactRoots...)
+}
+
+func runNodeEventsWithControlContext(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Engine, projection *Projection, personaDir string, def Definition, state State, taskPrompt string, handoffPrompt string, originalTaskPrompt string, transitionHandoff []Artifact, transitionFrom string, transitionEvent string, controlCtx ControlExecutionContext, artifactRoots ...string) (string, string, error) {
 	observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "enter")
 	defer observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "exit")
 	artifactRoot := DefaultArtifactRoot
@@ -445,7 +465,10 @@ func runNodeEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query
 		control := ControlName(state)
 		emitOrchestration(ch, bus, projection, query.OrchestrationStateStartedEvent{StateID: state.ID, Control: control})
 		emitOrchestration(ch, bus, projection, query.OrchestrationControlEvent{StateID: state.ID, Control: control})
-		event, err := ExecuteControl(state)
+		if strings.TrimSpace(controlCtx.ArtifactRoot) == "" {
+			controlCtx.ArtifactRoot = artifactRoot
+		}
+		event, err := ExecuteControlWithContext(state, controlCtx)
 		if err != nil {
 			observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "if: err != nil")
 			observe.TraceCtx(ctx, "orchestration", "runNodeEvents", "return: \"\", \"\", fmt.Errorf(\"control state %q failed: %w\", state.ID, err)")
@@ -856,6 +879,129 @@ func artifactDigest(path string) (int64, string, bool) {
 		return 0, "", false
 	}
 	return int64(len(data)), sha256Hex(data), true
+}
+
+type ControlExecutionContext struct {
+	ArtifactRoot         string
+	PreviousStateOutputs *StateOutputRun
+}
+
+type StateOutputRun struct {
+	StateID string
+	Outputs map[string]StateOutputArtifactRun
+}
+
+type StateOutputArtifactRun struct {
+	ArtifactID string
+	Path       string
+	Before     ArtifactFileSnapshot
+	After      ArtifactFileSnapshot
+}
+
+type ArtifactFileSnapshot struct {
+	Exists  bool
+	Path    string
+	Bytes   int64
+	SHA256  string
+	ModTime time.Time
+}
+
+func snapshotStateOutputs(state State, artifactRoot string) (map[string]ArtifactFileSnapshot, error) {
+	out := make(map[string]ArtifactFileSnapshot)
+	for _, artifact := range state.Artifacts.Outputs {
+		path := resolveArtifactPath(artifact.Path, artifactRoot)
+		snapshot, err := snapshotArtifactFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot output artifact %q at %q: %w", artifact.ID, path, err)
+		}
+		out[path] = snapshot
+	}
+	return out, nil
+}
+
+func snapshotArtifactFile(path string) (ArtifactFileSnapshot, error) {
+	snapshot := ArtifactFileSnapshot{Path: path}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return snapshot, nil
+		}
+		return snapshot, err
+	}
+	if info.IsDir() {
+		return snapshot, fmt.Errorf("is a directory")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Exists = true
+	snapshot.Bytes = int64(len(data))
+	snapshot.SHA256 = sha256Hex(data)
+	snapshot.ModTime = info.ModTime()
+	return snapshot, nil
+}
+
+func newStateOutputRun(state State, artifactRoot string, before map[string]ArtifactFileSnapshot, after map[string]ArtifactFileSnapshot) *StateOutputRun {
+	run := &StateOutputRun{
+		StateID: state.ID,
+		Outputs: make(map[string]StateOutputArtifactRun, len(state.Artifacts.Outputs)),
+	}
+	for _, artifact := range state.Artifacts.Outputs {
+		path := resolveArtifactPath(artifact.Path, artifactRoot)
+		run.Outputs[path] = StateOutputArtifactRun{
+			ArtifactID: artifact.ID,
+			Path:       path,
+			Before:     before[path],
+			After:      after[path],
+		}
+	}
+	return run
+}
+
+func validateFreshArtifactRequirements(requirements []FreshArtifactRequirement, controlCtx ControlExecutionContext) error {
+	if len(requirements) == 0 {
+		return nil
+	}
+	if controlCtx.PreviousStateOutputs == nil {
+		return fmt.Errorf("fresh artifact requirement cannot be checked without a previous state")
+	}
+	artifactRoot := controlCtx.ArtifactRoot
+	if strings.TrimSpace(artifactRoot) == "" {
+		artifactRoot = DefaultArtifactRoot
+	}
+	for _, requirement := range requirements {
+		path := resolveArtifactPath(requirement.Path, artifactRoot)
+		output, ok := controlCtx.PreviousStateOutputs.Outputs[path]
+		if !ok {
+			return fmt.Errorf("fresh artifact %q was not declared as an output of immediately preceding state %q", path, controlCtx.PreviousStateOutputs.StateID)
+		}
+		if !output.After.Exists {
+			return fmt.Errorf("fresh artifact %q was not produced by immediately preceding state %q", path, controlCtx.PreviousStateOutputs.StateID)
+		}
+		if artifactOutputFresh(output.Before, output.After) {
+			continue
+		}
+		return fmt.Errorf("fresh artifact %q was not freshly written by immediately preceding state %q (before=%s after=%s)", path, controlCtx.PreviousStateOutputs.StateID, formatArtifactSnapshot(output.Before), formatArtifactSnapshot(output.After))
+	}
+	return nil
+}
+
+func artifactOutputFresh(before ArtifactFileSnapshot, after ArtifactFileSnapshot) bool {
+	if !after.Exists {
+		return false
+	}
+	if !before.Exists {
+		return true
+	}
+	return before.SHA256 != after.SHA256 || after.ModTime.After(before.ModTime)
+}
+
+func formatArtifactSnapshot(snapshot ArtifactFileSnapshot) string {
+	if !snapshot.Exists {
+		return "missing"
+	}
+	return fmt.Sprintf("sha=%s bytes=%d mtime=%s", snapshot.SHA256, snapshot.Bytes, snapshot.ModTime.UTC().Format(time.RFC3339Nano))
 }
 
 func renderSourceEditTransport() string {

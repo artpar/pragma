@@ -64,6 +64,9 @@ states:
       artifact_decision:
         path: /tmp/pragma/single-owner/engineer-status.json
         field: status
+        fresh_artifacts:
+          - path: /tmp/pragma/single-owner/engineer-status.json
+            description: Engineer route decision from the immediately preceding engineer state.
         events:
           ready_for_review: ready_for_review
           blocked: blocked
@@ -79,6 +82,19 @@ states:
           kind: decision
           allowed_values: [validated, insufficient, blocked]
           description: Evidence sufficiency adjudication for the single-owner engineering loop.
+
+  - id: route_evidence_adjudication
+    control:
+      artifact_decision:
+        path: /tmp/pragma/single-owner/evidence-adjudication.json
+        field: decision
+        fresh_artifacts:
+          - path: /tmp/pragma/single-owner/evidence-adjudication.json
+            description: Evidence adjudication from the immediately preceding adjudicator state.
+        events:
+          validated: complete
+          insufficient: complete
+          blocked: complete
 
   - id: swe_single_reviewer
     persona: swe_single_reviewer
@@ -115,6 +131,9 @@ states:
       artifact_decision:
         path: /tmp/pragma/single-owner/review-verdict.json
         field: decision
+        fresh_artifacts:
+          - path: /tmp/pragma/single-owner/review-verdict.json
+            description: Reviewer verdict from the immediately preceding reviewer state.
         events:
           approved: approved
           needs_repair: needs_repair
@@ -125,6 +144,9 @@ states:
       artifact_decision:
         path: /tmp/pragma/single-owner/final-validation-verdict.json
         field: decision
+        fresh_artifacts:
+          - path: /tmp/pragma/single-owner/final-validation-verdict.json
+            description: Final validation verdict from the immediately preceding validator state.
         events:
           approved: approved
           needs_repair: needs_repair
@@ -177,6 +199,10 @@ transitions:
 
   - event: complete
     from: [swe_single_evidence_adjudicator]
+    to: route_evidence_adjudication
+
+  - event: complete
+    from: [route_evidence_adjudication]
     to: swe_single_reviewer
     handoff:
       - id: acceptance_map
