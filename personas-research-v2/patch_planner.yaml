@@ -80,9 +80,9 @@ prompt: |
   commands.
 
   Forbidden scope:
-  Product-story behavior, runtime services, protobuf services, generated files,
-  middleware, dependencies, RBAC, token validation, and introspection unless
-  those are listed as evidenced paths in `evidence_map`.
+  Any broad implementation surface that is not listed as an evidenced path,
+  acceptance check, validation command, generated/derived path, or producer
+  command in `evidence_map`.
 
   Generated producer route rule:
   If evidence-map names generated/derived paths and a producer command for an
@@ -93,11 +93,10 @@ prompt: |
 
   Source-dependency ordering rule:
   If one evidenced route adds or regenerates a source dependency such as a
-  protobuf enum, schema field, generated symbol, or producer-owned source value,
-  and another evidenced route consumes that dependency from config/defaulting or
-  application code, emit the producer/source-dependency route first. Consumer
-  routes that reference generated symbols must not precede the route that
-  creates those symbols.
+  schema field, generated symbol, or producer-owned source value, and another
+  evidenced route consumes that dependency from a later surface, emit the
+  producer/source-dependency route first. Consumer routes that reference
+  producer-owned symbols must not precede the route that creates those symbols.
   Absolute producer-first rule:
   Any route with `producer command:` other than `none` must be emitted before
   every route whose `producer command:` is `none`, unless a visible completed
@@ -136,13 +135,13 @@ prompt: |
   If the evidence map has a `Behavior variants:` section, copy every behavior
   variant into the route `acceptance requirements` line. Preserve the condition
   and observable expected result. Do not rewrite variants into source structure
-  such as "field exists", "config is read", "function is called", or "grep
-  passes".
+  such as "field exists", "config is read", "function is called", or
+  "structural check passes".
 
   Validation exact-copy rule:
   Copy validation commands only when they appear under `Validation commands:` in
   the evidence map or under an authority verdict. Do not invent validation
-  commands, subtest names, grep checks, or acceptance commands.
+  commands, subtest names, source-presence checks, or acceptance commands.
 
   Producer evidence exact-copy rule:
   If evidence-map contains a `Producer evidence:` section, copy the first bullet

@@ -52,18 +52,18 @@ prompt: |
   missing acceptance example id and proof surface.
 
   Clean-validation diff rule:
-  If validation status is clean, do not approve yet. First run exactly:
-  git diff --stat && git diff -- .
-  Only after diff output is visible may you write an APPROVE verdict. Do not
+  If validation status is clean, do not approve yet. First collect changed-file
+  and visible hunk evidence using the repository's current diff mechanism. Only
+  after diff evidence is visible may you write an APPROVE verdict. Do not
   approve from validation status alone.
 
   Diff hygiene rule:
   Clean validation is not enough to approve if visible diff evidence contains
   unrelated, out-of-scope, forbidden, generated, test-only, broad formatting, or
   unexplained changes. Before APPROVE, compare changed files and hunks in
-  `git diff --stat` and `git diff -- .` with the validated surfaces named in
-  validation-status. APPROVE only when every changed file and hunk is directly
-  tied to those surfaces. Otherwise write BLOCK with the out-of-scope file path.
+  visible diff evidence with the validated surfaces named in validation-status.
+  APPROVE only when every changed file and hunk is directly tied to those
+  surfaces. Otherwise write BLOCK with the out-of-scope file path.
 
   Validated-surface requirement rule:
   After clean validation and visible diff evidence, APPROVE only if
@@ -93,8 +93,8 @@ prompt: |
   or side effect, APPROVE only if the diff or validation status shows that the
   value is actually assigned, returned, persisted, emitted, or otherwise
   consumed by that surface. Do not approve from nearby declarations, config
-  reads, grep evidence, or prose saying "wired" when the visible diff does not
-  show the required flow.
+  reads, source-presence evidence, or prose saying "wired" when the visible diff
+  does not show the required flow.
 
   Exact event marker:
   The verdict file must contain either:
@@ -110,14 +110,14 @@ prompt: |
   Work method:
   1. If any failure variable is non-empty, any Commands run entry is nonzero,
      or any indexed command is missing/not run, write BLOCK.
-  2. If validation status is clean and diff evidence is not visible, run:
-     git diff --stat && git diff -- .
+  2. If validation status is clean and diff evidence is not visible, collect
+     changed-file and visible hunk evidence.
   3. Only after clean validation and visible diff evidence, write
      `final_verdict`.
   4. Stop.
 
-  Required BLOCK shell shape:
-  cat > <final_verdict path> <<'EOF'
+  Required BLOCK artifact output:
+  Write `<final_verdict path>` with this content shape:
   Findings:
   <failed tests/packages/errors/surfaces>
 
@@ -126,10 +126,9 @@ prompt: |
 
   Decision:
   BLOCK
-  EOF
 
-  Required APPROVE shell shape:
-  cat > <final_verdict path> <<'EOF'
+  Required APPROVE artifact output:
+  Write `<final_verdict path>` with this content shape:
   Findings:
   <evidence summary>
 
@@ -138,11 +137,10 @@ prompt: |
 
   Decision:
   APPROVE
-  EOF
 
   Last-mile incomplete validation gate:
   Before applying the clean-validation diff rule, parse every `Commands run`
   line. If any indexed command says `not run`, `skipped`, `not executed`,
   `none`, lacks an exit status, or has any exit status other than 0, write a
   BLOCK verdict as the next action. This gate outranks diff inspection. Do not
-  run `git diff`, inspect logs, or gather more evidence in this state.
+  collect diff evidence, inspect logs, or gather more evidence in this state.

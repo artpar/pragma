@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/artpar/pragma/internal/model"
 )
 
 func TestPragmaLoopInstancePromptIncludesTaskAndWorkdir(t *testing.T) {
@@ -291,6 +293,73 @@ func TestExtractPragmaLoopCommandParserCases(t *testing.T) {
 			wantCount: 2,
 		},
 		{
+			name: "prose before bash block rejected",
+			text: strings.Join([]string{
+				"I will run this now.",
+				"```bash",
+				"echo ok",
+				"```",
+			}, "\n"),
+			wantCount: 2,
+		},
+		{
+			name: "prose after bash block rejected",
+			text: strings.Join([]string{
+				"```bash",
+				"echo ok",
+				"```",
+				"Done.",
+			}, "\n"),
+			wantCount: 2,
+		},
+		{
+			name: "explicit think block before bash block ignored",
+			text: strings.Join([]string{
+				"<think>I need to inspect the file.</think>",
+				"",
+				"```bash",
+				"echo ok",
+				"```",
+			}, "\n"),
+			wantCount: 1,
+			want:      "echo ok",
+		},
+		{
+			name: "explicit think block after bash block ignored",
+			text: strings.Join([]string{
+				"```bash",
+				"echo ok",
+				"```",
+				"",
+				"<think>done</think>",
+			}, "\n"),
+			wantCount: 1,
+			want:      "echo ok",
+		},
+		{
+			name: "fused second bash fence inside command rejected",
+			text: strings.Join([]string{
+				"```bash",
+				"echo one",
+				"``````bash",
+				"echo two",
+				"```",
+			}, "\n"),
+			wantCount: 2,
+		},
+		{
+			name: "plain markdown fence inside command rejected",
+			text: strings.Join([]string{
+				"```bash",
+				"echo one",
+				"```json",
+				"{}",
+				"```",
+				"```",
+			}, "\n"),
+			wantCount: 2,
+		},
+		{
 			name: "double quoted heredoc delimiter",
 			text: strings.Join([]string{
 				"```bash",
@@ -346,6 +415,33 @@ func TestExtractPragmaLoopCommandParserCases(t *testing.T) {
 				t.Fatalf("command = %q, want %q", command, tt.want)
 			}
 		})
+	}
+}
+
+func TestPragmaLoopReplayContentStripsExplicitThinkBlocks(t *testing.T) {
+	content := []model.ContentPart{
+		model.TextPart{Text: strings.Join([]string{
+			"<think>hidden scratchpad</think>",
+			"",
+			"```bash",
+			"echo ok",
+			"```",
+		}, "\n")},
+	}
+
+	replay := pragmaLoopReplayContent(content)
+	if len(replay) != 1 {
+		t.Fatalf("len(replay) = %d, want 1", len(replay))
+	}
+	text, ok := replay[0].(model.TextPart)
+	if !ok {
+		t.Fatalf("replay[0] = %T, want model.TextPart", replay[0])
+	}
+	if strings.Contains(text.Text, "<think>") || strings.Contains(text.Text, "</think>") {
+		t.Fatalf("replay text still contains explicit think block: %q", text.Text)
+	}
+	if strings.TrimSpace(text.Text) != "```bash\necho ok\n```" {
+		t.Fatalf("replay text = %q", text.Text)
 	}
 }
 

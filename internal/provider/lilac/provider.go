@@ -374,7 +374,9 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 	}
 	bodyBytes := bytes.TrimSuffix(body.Bytes(), []byte("\n"))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/chat/completions", bytes.NewReader(bodyBytes))
+	reqCtx, cancel := context.WithTimeout(ctx, lilacRequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/chat/completions", bytes.NewReader(bodyBytes))
 	if err != nil {
 		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: err != nil")
 		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "return: nil, fmt.Errorf(\"lilac: create chat completion request: %w\", err)")

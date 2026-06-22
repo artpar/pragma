@@ -3,7 +3,6 @@ version: 2
 before:
   hooks:
     - go test ./...
-    - go test ./internal/archtest/ -v
     - mkdir -p completions
     - go run ./cmd/pragma/ completion bash > completions/pragma.bash
     - go run ./cmd/pragma/ completion zsh > completions/pragma.zsh

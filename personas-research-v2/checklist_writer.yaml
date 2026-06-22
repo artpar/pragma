@@ -129,8 +129,9 @@ prompt: |
   For a pending implementation item, allowed_files is the list of repository
   files the item may edit. forbidden_files is only for concrete unsafe shortcuts
   or broad surfaces from the patch plan/verdict. If allowed_files is non-empty,
-  do not put "**/*" in forbidden_files. For runtime-auth unsafe shortcuts, use
-  a concrete forbidden pattern such as "internal/server/auth/**".
+  do not put "**/*" in forbidden_files. For unsafe shortcut surfaces, use a
+  forbidden pattern only when the patch plan or verdict supplies that exact
+  path or glob.
 
   Exact forbidden-files rule:
   Do not invent forbidden file paths or glob patterns from prose such as unsafe
@@ -208,8 +209,8 @@ prompt: |
   Acceptance entries must describe observable behavior, API/output contract,
   state transition, persisted data, error behavior, or compatibility
   requirement. Do not replace behavior acceptance with only source structure
-  such as adding a field, reading config, calling a function, or grepping a
-  string, unless the patch-route behavior is purely structural.
+  such as adding a field, reading config, calling a function, or finding a
+  source literal, unless the patch-route behavior is purely structural.
 
   Input matrix preservation rule:
   When the patch plan or evidence describes different input, config, state, or
@@ -231,13 +232,14 @@ prompt: |
   Executable check quality rule:
   Prefer `acceptance_check` and `validation_command` values that exercise the
   observable behavior through an existing test, command, API, CLI, persisted
-  state, or output surface. Grep/source-presence checks may support constants,
-  declarations, and simple wiring, but they are not proof that a value reaches
-  an output, state mutation, API response, persisted record, or side effect.
-  If a route contains behavior acceptance but only grep/source checks are
+  state, or output surface. Source-presence or structural checks may support
+  constants, declarations, and simple wiring, but they are not proof that a
+  value reaches an output, state mutation, API response, persisted record, or
+  side effect. If a route contains behavior acceptance but only source-presence
+  or structural checks are
   available, keep the behavior acceptance entries and state the missing behavior
   proof in `approach` or `acceptance` instead of weakening the item to
-  grep-only acceptance.
+  source-presence-only acceptance.
 
   Producer-first ordering rule:
   When the patch plan contains any patch-route bullet with `producer command:`
@@ -320,8 +322,8 @@ prompt: |
   1. Write or preserve `checklist` as JSON.
   2. Stop.
 
-  When writing the checklist, use one heredoc shell script inside the fenced
-  bash block. The file content must have this JSON shape:
+  When writing the checklist, create the declared output artifact inside the
+  fenced bash block. The file content must have this JSON shape:
   - top-level object with `items`
   - each item has `id`, `title`, `description`, `approach`, `acceptance`,
     `allowed_files`, `forbidden_files`, and `status`

@@ -24,7 +24,7 @@ prompt: |
   - invent data shapes, object fields, enum values, or proof commands not
     grounded in `surface_map` or `repo_evidence`
   - write future-work phrases such as `by implementing`, `create a test`,
-    `add a test`, or invented `go test -run Test...` commands
+    `add a test`, or invented validation or proof commands
   - downgrade output/state/API/persisted behavior into only source-presence
     checks
   - claim visible validation proves a behavior variant when `repo_evidence`
@@ -49,10 +49,10 @@ prompt: |
   behavior variants.
 
   Source check rule:
-  Grep and file-local checks may support constants, declarations, simple wiring,
-  or fixture edits. Put them under `Source checks`. They are not behavior proof
-  that a value reaches an output, state mutation, API response, persisted
-  record, or side effect.
+  Source-presence and file-local checks may support constants, declarations,
+  simple wiring, or fixture edits. Put them under `Source checks`. They are not
+  behavior proof that a value reaches an output, state mutation, API response,
+  persisted record, or side effect.
 
   Explicit unknown rule:
   Every carried unknown from `repo_evidence` must become either:
@@ -92,7 +92,7 @@ prompt: |
   - <producer/generator command and EXIT_STATUS: 0, or none>
 
   Not evidenced:
-  - <runtime/proto/generated/middleware/dependency work not proven by evidence, or none>
+  - <unsupported work not proven by evidence, or none>
 
   Work method:
   1. Convert named task behavior into behavior variants.

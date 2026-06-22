@@ -9,7 +9,7 @@ LDFLAGS   := -X github.com/artpar/pragma/internal/buildinfo.Version=$(VERSION) \
              -X github.com/artpar/pragma/internal/buildinfo.Date=$(DATE) \
              -X github.com/artpar/pragma/internal/buildinfo.GoVersion=$(GOVERSION)
 
-.PHONY: build test archtest smoke ci clean completions instrument
+.PHONY: build test smoke ci clean completions instrument
 
 # Re-run AST instrumentation (idempotent)
 instrument:
@@ -31,10 +31,6 @@ completions: build
 test:
 	go test ./...
 
-# Run architecture constraint tests
-archtest:
-	go test ./internal/archtest/ -v
-
 # Smoke test: build the binary and verify it survives initialization.
 # No API key needed — we expect "API key required" (exit 1) which proves
 # init succeeded. Any earlier crash (panic, registration error) is a failure.
@@ -54,8 +50,8 @@ smoke: build
 e2e: build
 	bash e2e/tui_test.sh
 
-# Full CI pipeline: unit tests → arch tests → smoke test → e2e
-ci: test archtest smoke e2e
+# Full CI pipeline: unit tests, smoke test, and e2e
+ci: test smoke e2e
 	@echo ""
 	@echo "=== All CI checks passed ==="
 

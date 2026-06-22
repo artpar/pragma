@@ -122,7 +122,6 @@ internal/
   permission/         Permission types (Checker interface, Decision, Rule)
   tool/               Tool Descriptor interface, Registry, Orchestrator
   app/                AppState + thread-safe StateStore
-  archtest/           Architecture enforcement tests (go/parser scans)
 ```
 
 Every package follows a strict dependency DAG. Only provider adapters know wire formats. Everything else uses `internal/model/` types exclusively.
@@ -151,9 +150,8 @@ All observability flows through `internal/observe/EventBus`. No ad-hoc logging. 
 ## Running Tests
 
 ```bash
-go test ./...                   # all tests (11 packages)
+go test ./...                   # all tests
 go test ./internal/... -race    # with race detector
-go test ./internal/archtest/    # architecture enforcement only
 go test ./internal/query/ -v    # query loop tests (17 test cases)
 go test ./internal/config/ -v   # config merge + load tests
 ```

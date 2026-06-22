@@ -27,10 +27,10 @@ prompt: |
 
   Failed-command evidence rule:
   Failed or repeated commands prove only what failed, not how to repair it. Do
-  not infer implementation mechanics from failed sed commands, failed patches,
-  stack traces, or repeated attempts. Required repair must name the failing
-  surface and evidence needed, unless a successful source inspection proves a
-  concrete fix.
+  not infer implementation mechanics from failed edit commands, failed patches,
+  stack traces, or repeated tool attempts. Required repair must name the
+  failing surface and evidence needed, unless a successful source inspection
+  proves a concrete fix.
 
   Ambiguous scope handoff rule:
   If a changed file is outside `allowed_files` and the current item acceptance
@@ -53,8 +53,8 @@ prompt: |
   APPROVE. Do not rerun validation, inspect repository files, or apply the
   no-change implementation blocker to a completed item.
 
-  Completed item APPROVE shell shape:
-  cat > <item_verdict path> <<'EOF'
+  Completed item APPROVE artifact output:
+  Write `<item_verdict path>` with this content shape:
   Findings:
   - Current item status is completed.
   - Implementer report made no changes and recorded no blocker.
@@ -65,7 +65,6 @@ prompt: |
 
   Decision:
   APPROVE
-  EOF
 
   Visible validation failure rule:
   Any visible line containing FAIL, --- FAIL, unexpected error, panic, or
@@ -73,10 +72,11 @@ prompt: |
 
   Weak-evidence rule:
   If the item acceptance requires validation and the implementer report only
-  provides grep/search evidence, or says validation was not run, do not approve.
-  Run the exact focused validation if it is available in the item/report;
-  otherwise write a BLOCK verdict requiring that validation. When running
-  focused validation, use the exact command as written in the item/report.
+  provides source-presence or structural evidence, or says validation was not
+  run, do not approve. Run the exact focused validation if it is available in
+  the item/report; otherwise write a BLOCK verdict requiring that validation.
+  When running focused validation, use the exact command as written in the
+  item/report.
   Exception: when current_item has `validation_command`: `none` or an empty
   validation_command, has non-empty `acceptance_check`, and has
   `validation_deferred_until`, approve from the exact passing acceptance_check
@@ -107,8 +107,8 @@ prompt: |
   section names concrete repository file paths. If Changed is missing, vague,
   prose-only, says related/local files, or cannot be compared exactly to
   allowed_files and forbidden_files, write Decision: BLOCK even when validation
-  passed. Do not inspect git diff to compensate for an unauditable implementer
-  report.
+  passed. Do not inspect repository diff evidence to compensate for an
+  unauditable implementer report.
 
   Report-preserved changed-files rule:
   If current_item has `report_changed_files`, the implementer report Changed
@@ -123,8 +123,8 @@ prompt: |
   item or implementer report ran with EXIT_STATUS: 0. If the implementer report
   says validation is N/A, says generator tools were unavailable, says a manual
   generated-file patch was applied, or shows a nonzero producer status, write
-  Decision: BLOCK even if grep/search evidence finds the expected generated
-  symbol. If the current item names `generated_files`, every generated file
+  Decision: BLOCK even if source-presence or structural evidence finds the
+  expected generated symbol. If the current item names `generated_files`, every generated file
   changed by that producer and required by the current item must also be named
   in the implementer report Changed section. Required repair must say to run
   the producer command successfully, report the generated files in Changed, and
@@ -135,22 +135,23 @@ prompt: |
   repository code/config and the implementer report says Changed: No files
   changed, validation success cannot approve the item. Write Decision: BLOCK
   because the report contains no changed-file proof for the requested
-  implementation. Do not inspect git diff to compensate for a no-change
-  implementer report.
+  implementation. Do not inspect repository diff evidence to compensate for a
+  no-change implementer report.
 
   After-input review rule:
   If validation was not run, no deferred validation fields are present, and no
   exact focused validation command is available in the item/report, write
   `item_verdict` with Decision: BLOCK. Do not inspect repository files to
-  compensate for missing validation. Additional grep/search cannot satisfy
-  validation acceptance unless it is the exact current_item acceptance_check with
-  EXIT_STATUS: 0 and validation is explicitly deferred.
+  compensate for missing validation. Additional source-presence or structural
+  evidence cannot satisfy validation acceptance unless it is the exact
+  current_item acceptance_check with EXIT_STATUS: 0 and validation is explicitly
+  deferred.
 
   Behavior proof review rule:
   For each current_item acceptance entry that describes an output, state
   mutation, API response, persisted record, side effect, error behavior, input
   variant, or compatibility requirement, require behavior evidence from the
-  implementer report or exact focused validation. Source-presence greps,
+  implementer report or exact focused validation. Source-presence evidence,
   declarations, config reads, and "wired" prose are not proof that a value
   reaches an output/state/side effect. If behavior proof is missing, write
   Decision: BLOCK and require proof for the missing acceptance entry.
@@ -170,7 +171,7 @@ prompt: |
   report to account for every example id. Each example's condition, observable,
   expected result, and proof_requirement must be satisfied by behavior evidence,
   exact focused validation, or exact acceptance_check evidence. Source checks
-  and structural grep output are not enough for examples whose observable is an
+  and structural evidence are not enough for examples whose observable is an
   output, state mutation, API response, persisted record, or side effect. If an
   example's `expected` contains an exact literal, format, tag, signature, or
   error/result pair, the implementer report must show evidence for that exact
@@ -190,8 +191,8 @@ prompt: |
   3. Write `item_verdict` with the exact marker format.
   4. Stop.
 
-  Required BLOCK shell shape:
-  cat > <item_verdict path> <<'EOF'
+  Required BLOCK artifact output:
+  Write `<item_verdict path>` with this content shape:
   Findings:
   <concrete findings>
 
@@ -200,11 +201,10 @@ prompt: |
 
   Decision:
   BLOCK
-  EOF
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
 
-  Required APPROVE shell shape:
-  cat > <item_verdict path> <<'EOF'
+  Required APPROVE artifact output:
+  Write `<item_verdict path>` with this content shape:
   Findings:
   <concrete findings>
 
@@ -213,5 +213,4 @@ prompt: |
 
   Decision:
   APPROVE
-  EOF
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

@@ -202,22 +202,31 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		Stream:        detectStream(body),
 	}, 0o600)
 
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	closeDone := func() {
+		doneOnce.Do(func() {
+			close(done)
+		})
+	}
+	go func() {
+		select {
+		case <-req.Context().Done():
+			writeResponseErrorMeta(filepath.Join(captureDir, "response.meta.json"), seq, traceID, spanID, requestStart, req.Context().Err())
+		case <-done:
+		}
+	}()
+	defer closeDone()
+
 	resp, roundTripErr := t.base.RoundTrip(req)
 	if roundTripErr != nil {
 		observe.GlobalTrace("if: roundTripErr != nil")
-		completedAt := time.Now().UTC()
-		writeJSON(filepath.Join(captureDir, "response.meta.json"), responseMeta{
-			Sequence:    seq,
-			TraceID:     traceID,
-			SpanID:      spanID,
-			StartedAt:   requestStart.Format(time.RFC3339Nano),
-			CompletedAt: completedAt.Format(time.RFC3339Nano),
-			DurationMs:  completedAt.Sub(requestStart).Milliseconds(),
-			Error:       roundTripErr.Error(),
-		}, 0o600)
+		closeDone()
+		writeResponseErrorMeta(filepath.Join(captureDir, "response.meta.json"), seq, traceID, spanID, requestStart, roundTripErr)
 		observe.GlobalTrace("return: nil, roundTripErr")
 		return nil, roundTripErr
 	}
+	closeDone()
 	if resp == nil || resp.Body == nil {
 		observe.GlobalTrace("if: resp == nil || resp.Body == nil")
 		observe.GlobalTrace("return: resp, nil")
@@ -252,6 +261,22 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	observe.GlobalTrace("return: resp, nil")
 	return resp, nil
+}
+
+func writeResponseErrorMeta(path string, seq uint64, traceID, spanID string, startedAt time.Time, err error) {
+	if err == nil {
+		return
+	}
+	completedAt := time.Now().UTC()
+	writeJSON(path, responseMeta{
+		Sequence:    seq,
+		TraceID:     traceID,
+		SpanID:      spanID,
+		StartedAt:   startedAt.Format(time.RFC3339Nano),
+		CompletedAt: completedAt.Format(time.RFC3339Nano),
+		DurationMs:  completedAt.Sub(startedAt).Milliseconds(),
+		Error:       err.Error(),
+	}, 0o600)
 }
 
 func (t *Transport) prepareCaptureDir(seq uint64, traceID, spanID string) (string, bool) {

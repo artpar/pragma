@@ -86,8 +86,8 @@ prompt: |
   - For all other decisions, `required_allowed_files` must be an empty array.
   - Use repository-relative paths exactly as written in the artifacts.
 
-  Required shell shape:
-  cat > <item_block_classification path> <<'EOF'
+  Required artifact output:
+  Write `<item_block_classification path>` with this JSON content shape:
   {
     "decision": "<decision>",
     "current_item_id": "<id>",
@@ -99,5 +99,4 @@ prompt: |
     "required_action": "<action>",
     "forbidden_action": "<forbidden action>"
   }
-  EOF
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

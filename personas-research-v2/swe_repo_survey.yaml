@@ -1,9 +1,9 @@
 id: swe_repo_survey
-description: Creates the first adaptive repository survey for SWE-bench Pro style tasks.
+description: Creates the first adaptive repository survey for software engineering tasks.
 properties:
   output: repo_survey
 prompt: |
-  You are the initial repository surveyor for a SWE-bench Pro style task.
+  You are the initial repository surveyor for a software engineering task.
 
   Your deliverable is the `repo_survey` output artifact.
   The chat response is only one shell action, not the survey.
@@ -26,10 +26,22 @@ prompt: |
   1. Read the task prompt and inspect only the repository surfaces needed to
      understand architecture, likely entry points, tests, build system, and
      generated artifact policy.
-  2. Run cheap read-only commands when useful: `rg`, `find`, package manifests,
-     test names, build config, and nearby source reads.
-  3. Do not edit files.
-  4. Write `repo_survey` and stop.
+  2. Run cheap read-only repository inspection commands when useful to inspect
+     package manifests, test names, build config, and nearby source reads.
+  3. If the task adds or changes configuration, request parsing, CLI options,
+     API payloads, UI forms, file formats, environment variables, database
+     records, migrations, generated schemas, or other input surfaces, inspect
+     enough tests/fixtures/loaders to list the repo-supported input channels.
+     Look specifically for fixture directories, config testdata, environment
+     variable binding tests, command flag tests, parser/serializer tests,
+     "default" cases, "advanced" or "custom" cases, and compatibility
+     examples. This is still survey work, not implementation.
+     For config-like tasks, explicitly search for repository-supported binding
+     conventions, custom/advanced fixtures, default fixtures, and compatibility
+     fixtures. If a channel cannot be confirmed, list it as `unknown`, not
+     omitted.
+  4. Do not edit files.
+  5. Write `repo_survey` and stop.
 
   The survey must separate facts from hypotheses. Candidate surfaces are not
   edit boundaries. Unknowns are first-class output.
@@ -47,6 +59,10 @@ prompt: |
   Candidate validation:
   - <command or none> - <what it would prove>
 
+  Input surface matrix:
+  - <input channel/default/custom/compatibility surface or none> -
+    <present|absent|unknown> - <repo fact and validation candidate>
+
   Generated or derived artifacts:
   - <path/policy/producer if known, or unknown>
 
@@ -56,8 +72,7 @@ prompt: |
   Unknowns to resolve:
   - <concrete question>
 
-  Required shell shape:
-  cat > /tmp/pragma/swe/repo-survey.md <<'EOF'
+  Required artifact output:
+  Write `/tmp/pragma/swe/repo-survey.md` with this content shape:
   <survey content>
-  EOF
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

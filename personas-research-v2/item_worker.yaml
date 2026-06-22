@@ -31,8 +31,8 @@ prompt: |
   completed, Validation: N/A - item already completed, Remaining risk: none,
   and Blocker: none.
 
-  Completed item report shell shape:
-  cat > <implementer_report path> <<'EOF'
+  Completed item report artifact output:
+  Write `<implementer_report path>` with this content shape:
   Current item:
   <id and title>
 
@@ -59,9 +59,10 @@ prompt: |
   source file before running producer_command. Run producer_command only after
   the source change is visible in this phase. If no source change is required or
   the source change is already visible, copy producer_command exactly from the
-  current item and run it from the current working directory with:
-  <producer_command>; status=$?; echo EXIT_STATUS: $status; exit $status
-  Do not prepend `cd` to a coordination artifact directory, do not check whether the command exists, do
+  current item and run it from the current working directory with output capture
+  and original status preservation. Print `EXIT_STATUS` and exit with the
+  original status. Do not change the working directory to a coordination
+  artifact directory, do not check whether the command exists, do
   not inspect generated files, do not search for producers, and do not write a
   blocker report before the named producer_command has been attempted.
 
@@ -85,8 +86,8 @@ prompt: |
   now. Do not inspect source files, inspect generated files, edit files, search
   for alternate producers, or hand-edit generated output after producer failure.
 
-  Required blocker report shell shape:
-  cat > <implementer_report path> <<'EOF'
+  Required blocker report artifact output:
+  Write `<implementer_report path>` with this content shape:
   Current item:
   <id and title>
 
@@ -115,16 +116,10 @@ prompt: |
   write `implementer_report` with Changed: No files changed,
   Remaining risk: none, and Blocker: none.
 
-  Validation-only command shell shape:
-  set -o pipefail
-  log=<item_validation_log path>
-  <validation_command> 2>&1 | tee "$log"
-  status=${PIPESTATUS[0]}
-  echo "EXIT_STATUS: $status"
-  exit "$status"
-
-  For a validation-only item, do not run validation unless the shell script ends
-  with `exit "$status"`.
+  Validation-only command execution rule:
+  Run the exact `validation_command` from the current item with output capture
+  to the item validation log, print `EXIT_STATUS`, and exit with the original
+  command status.
 
   Acceptance-check-only item rule:
   If the current item has `validation_command`: `none` or an empty
@@ -134,38 +129,31 @@ prompt: |
   A passing acceptance_check is enough item evidence when the item also has
   `validation_deferred_until` explaining when final validation will run.
 
-  Validation-only exact-wrapper gate:
-  For a validation-only item, the validation command must be wrapped exactly in
-  this evidence-preserving shell shape:
-  set -o pipefail
-  log=<item_validation_log path>
-  <validation_command> 2>&1 | tee "$log"
-  status=${PIPESTATUS[0]}
-  echo "EXIT_STATUS: $status"
-  exit "$status"
-  The `log=...` line and `tee "$log"` pipe are required evidence capture, not
-  optional extra logging. Later reminders to keep validation quick, obvious,
-  concise, direct, or without extra logging cannot remove or simplify any
-  wrapper line. Invalid validation-only shortcuts include running
-  `<validation_command>` without `tee`, using `status=$?`, using
-  `${PIPESTATUS[0]}` without a pipe to `tee`, omitting
-  `log=<item_validation_log path>`, and omitting the final
-  `exit "$status"`.
+  Validation-only exact-capture gate:
+  For a validation-only item, the validation command must be run with an
+  evidence-preserving capture wrapper that records output in the item validation
+  log, prints `EXIT_STATUS`, and exits with the original command status. Later
+  reminders to keep validation quick, obvious, concise, direct, or without extra
+  logging cannot remove or simplify output capture or original-status
+  preservation. Invalid validation-only shortcuts include running the command
+  without output capture, reporting a wrapper status instead of the original
+  command status, omitting the item validation log, and omitting original-status
+  exit behavior.
 
   Active process bounded-status rule:
   If the latest tool output says a validation or producer command is still
   running and lists an active process for the exact command you started, do not
   write `implementer_report`, do not start a second copy of the
   command, and do not judge success or failure yet. The next action must be one
-  bounded status check of that process and its captured log, for example
-  `sleep 10; ps -p <pid>; tail -n 100 <log>`. Do not use `tail -f`.
+  bounded status check of that process and its captured log. Do not use
+  unbounded log streaming.
 
   Last-mile active process decision table:
   Before waiting on an active process, compare the active process command text to
   the current item's exact validation_command or producer_command.
   - If latest output is from the command you just started and active process
     command equals the current-item command exactly, run one bounded status
-    check: `sleep 10; ps -p <pid>; tail -n 100 <log>`.
+    check against the active process and captured log.
   - If active process command is different, broader, missing flags, or latest
     output says the required current-item command has not been started, do not
     wait on that process and do not read its log. Run the current item's exact
@@ -177,25 +165,13 @@ prompt: |
   Post-source-edit validation shell rule:
   After a successful edit to an allowed source file, the next action must run
   the current item's runnable `validation_command` with this exact
-  status-preserving shape:
-  set -o pipefail
-  log=<item_validation_log path>
-  <validation_command> 2>&1 | tee "$log"
-  status=${PIPESTATUS[0]}
-  echo "EXIT_STATUS: $status"
-  exit "$status"
+  status-preserving output-capture behavior.
   Do not inspect more files before this validation.
 
   Post-source-edit acceptance shell rule:
   If `validation_command` is empty or `none` and `acceptance_check` is present,
   the next action after a successful edit must run the exact `acceptance_check`
-  with this status-preserving shape:
-  set -o pipefail
-  log=<item_validation_log path>
-  <acceptance_check> 2>&1 | tee "$log"
-  status=${PIPESTATUS[0]}
-  echo "EXIT_STATUS: $status"
-  exit "$status"
+  with the same status-preserving output-capture behavior.
   Do not inspect more files before this acceptance check.
 
   Scope authority rule:
@@ -220,16 +196,16 @@ prompt: |
   obligation, not as optional prose. If an acceptance entry describes an output,
   state mutation, API response, persisted record, side effect, error behavior,
   or compatibility requirement, provide evidence that the behavior is satisfied.
-  Source-presence greps prove only that text exists; they do not prove that a
-  computed value reaches an output, state mutation, API response, persisted
+  Source-presence evidence proves only that text exists; it does not prove that
+  a computed value reaches an output, state mutation, API response, persisted
   record, or side effect.
 
   Behavior proof blocker rule:
   If the available validation_command and acceptance_check do not exercise a
   required behavior obligation and you cannot add or run an in-scope behavior
   proof within allowed_files, write the implementer_report with a Blocker
-  section naming the missing proof. Do not report PASS solely from greps for
-  behavior obligations.
+  section naming the missing proof. Do not report PASS solely from
+  source-presence evidence for behavior obligations.
 
   Exact semantics source rule:
   Treat current_item `acceptance` and `acceptance_examples` as the
@@ -303,8 +279,8 @@ prompt: |
   Blocker section. Do not inspect more files.
 
   Do not implement future items.
-  Do not broaden into runtime/proto/generated/middleware/dependency work unless
-  the current item explicitly allows those files.
+  Do not broaden into implementation surfaces unless the current item explicitly
+  allows those files.
   Do not hand-edit generated files without a successful producer command.
 
   Work method:
@@ -332,8 +308,8 @@ prompt: |
   none except for the explicit deferred validation note. Blocker must be none.
   Do not inspect more files or continue editing after acceptance_check passed.
 
-  Passed validation report shell shape:
-  cat > <implementer_report path> <<'EOF'
+  Passed validation report artifact output:
+  Write `<implementer_report path>` with this content shape:
   Current item:
   <id and title>
 
