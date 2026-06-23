@@ -25,6 +25,7 @@ import (
 	"github.com/artpar/pragma/internal/gitutil"
 	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/interactive"
+	"github.com/artpar/pragma/internal/llmconfig"
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -131,6 +132,7 @@ func RunBackground(cmd *cobra.Command) error {
 	addStringFlag("model")
 	addStringFlag("api-key")
 	addStringFlag("permission-mode")
+	addStringFlag("system-prompt")
 	addStringFlag("context-mode")
 	addStringFlag("handoff-schema")
 	addStringFlag("output-schema")
@@ -500,11 +502,14 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		return
 	}
 	artifactRoot := interactiveOrchestrationArtifactRoot(rt.Deps)
+	llmResolver, cleanupLLMResolver := makeOrchestrationLLMResolver(rt.Deps)
+	defer cleanupLLMResolver()
 	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
 		PersonaDir:    req.PersonaDir,
 		TaskPrompt:    req.Prompt,
 		ArtifactRoot:  artifactRoot,
 		SeedArtifacts: req.SeedArtifacts,
+		LLMResolver:   llmResolver,
 	}) {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, or...")
 		if handoff, ok := ev.(query.OrchestrationHandoffEvent); ok {
@@ -517,6 +522,106 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 		}
 		ch <- interactive.LoopEvent{Event: ev}
 	}
+}
+
+func makeOrchestrationLLMResolver(d *Deps) (orchestration.LLMResolver, func()) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	cache := make(map[string]provider.Provider)
+	resolver := func(ctx context.Context, llm llmconfig.Config) (orchestration.LLMRuntime, error) {
+		_ = ctx
+		providerName := strings.TrimSpace(llm.Provider)
+		if providerName == "" {
+			providerName = d.Cfg.Provider
+		}
+		modelID := strings.TrimSpace(llm.Model)
+		if modelID == "" {
+			if providerName == d.Cfg.Provider {
+				modelID = d.Cfg.Model
+			} else {
+				modelID = DefaultModelFor(providerName)
+			}
+		}
+		modelID = resolveModelAlias(providerName, modelID)
+
+		cfg := d.Cfg
+		cfg.Provider = providerName
+		cfg.Model = modelID
+		if providerName != d.Cfg.Provider {
+			cfg.APIKey = d.Creds.CredentialFor(providerName).APIKey
+			if cfg.APIKey == "" && providerName != "google-vertex" {
+				cfg.APIKey = os.Getenv(envVarForProvider(providerName))
+			}
+		}
+		if providerName != "google-vertex" && cfg.APIKey == "" {
+			return orchestration.LLMRuntime{}, fmt.Errorf("missing API key for provider %q", providerName)
+		}
+
+		cacheKey := providerName + "\x00" + ProviderBaseURL(providerName, d.Creds)
+		prov := d.Prov
+		if providerName != d.Cfg.Provider || ProviderBaseURL(providerName, d.Creds) != ProviderBaseURL(d.Cfg.Provider, d.Creds) {
+			var ok bool
+			prov, ok = cache[cacheKey]
+			if !ok {
+				created, err := CreateProvider(cfg, d.Bus)
+				if err != nil {
+					return orchestration.LLMRuntime{}, err
+				}
+				prov = created
+				cache[cacheKey] = prov
+			}
+		}
+
+		maxTokens := d.Cfg.MaxTokens
+		if llm.MaxTokens != 0 {
+			maxTokens = llm.MaxTokens
+		}
+		temperature := d.Cfg.Temperature
+		if llm.Temperature != nil {
+			temperature = llm.Temperature
+		}
+		thinking := thinkingConfigFromDefaults(d.Cfg.Thinking)
+		if llm.Thinking != nil || llm.ThinkingBudget != 0 {
+			enabled := true
+			if llm.Thinking != nil {
+				enabled = *llm.Thinking
+			}
+			thinking = &provider.ThinkingConfig{Enabled: enabled, BudgetTokens: llm.ThinkingBudget}
+		}
+		customSystemPrompt := d.EngineCfg.CustomSystemPrompt
+		if strings.TrimSpace(llm.SystemPrompt) != "" {
+			customSystemPrompt = llm.SystemPrompt
+		}
+
+		return orchestration.LLMRuntime{
+			Provider:           prov,
+			ProviderName:       providerName,
+			Model:              modelID,
+			MaxTokens:          maxTokens,
+			Temperature:        temperature,
+			Thinking:           thinking,
+			CustomSystemPrompt: customSystemPrompt,
+		}, nil
+	}
+	cleanup := func() {
+		for _, prov := range cache {
+			reportProviderCleanup(context.Background(), prov, d.Bus)
+		}
+	}
+	observe.GlobalTrace("return: resolver, cleanup")
+	return resolver, cleanup
+}
+
+func thinkingConfigFromDefaults(cfg *config.ThinkingConfig) *provider.ThinkingConfig {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if cfg == nil {
+		observe.GlobalTrace("if: cfg == nil")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	observe.GlobalTrace("return: &provider.ThinkingConfig{Enabled: cfg.Enabled, BudgetTokens: cfg.BudgetTokens}")
+	return &provider.ThinkingConfig{Enabled: cfg.Enabled, BudgetTokens: cfg.BudgetTokens}
 }
 
 func (rt *InteractiveRuntime) recordOrchestrationArtifact(root string, ev query.OrchestrationHandoffEvent) error {
@@ -1336,6 +1441,7 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 			d.EngineCfg.ResponseSchema = schemaJSON
 		} else {
 			observe.GlobalTrace("else: nativeStructuredOutput")
+			observe.GlobalTrace("return: fmt.Errorf(\"structured output requires provider support after native tools re...")
 			return fmt.Errorf("structured output requires provider support after native tools removal")
 		}
 	}
@@ -1500,6 +1606,7 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 	if nativeStructuredOutput {
 		observe.GlobalTrace("else-if: nativeStructuredOutput")
 		if text := strings.TrimSpace(nativeStructuredText.String()); text != "" {
+			observe.GlobalTrace("if: text != \"\"")
 			fmt.Fprintln(out, text)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/artpar/pragma/internal/llmconfig"
 	"github.com/artpar/pragma/internal/observe"
 	"gopkg.in/yaml.v3"
 )
@@ -12,6 +13,7 @@ type Definition struct {
 	ID          string            `yaml:"id"`
 	Description string            `yaml:"description,omitempty"`
 	Properties  map[string]string `yaml:"properties,omitempty"`
+	LLM         llmconfig.Config  `yaml:"llm,omitempty"`
 	Prompt      string            `yaml:"prompt"`
 }
 

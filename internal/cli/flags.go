@@ -25,6 +25,7 @@ func RegisterFlags(cmd *cobra.Command) {
 	pf.Bool("record", false, "record events to file")
 	pf.Int("max-turns", 0, "override default turn limit (0 = use default)")
 	pf.String("permission-mode", "", "permission mode: default, acceptEdits, bypassPermissions, dontAsk")
+	pf.String("system-prompt", "", "custom system instructions prepended to Pragma's runtime system prompt")
 
 	pf.Bool("bg", false, "run session in background (requires --prompt)")
 

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/artpar/pragma/internal/llmconfig"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/looplab/fsm"
 	"gopkg.in/yaml.v3"
@@ -20,16 +21,17 @@ const (
 
 // State is one orchestration node. Execution semantics live outside the graph.
 type State struct {
-	ID           string      `yaml:"id"`
-	Terminal     bool        `yaml:"terminal,omitempty"`
-	Persona      string      `yaml:"persona,omitempty"`
-	TaskPrompt   string      `yaml:"task_prompt,omitempty"`
-	Conversation string      `yaml:"conversation,omitempty"`
-	MaxTurns     int         `yaml:"max_turns,omitempty"`
-	Artifacts    Artifacts   `yaml:"artifacts,omitempty"`
-	Control      Control     `yaml:"control,omitempty"`
-	Event        Event       `yaml:"event,omitempty"`
-	ShellPolicy  ShellPolicy `yaml:"shell_policy,omitempty"`
+	ID           string           `yaml:"id"`
+	Terminal     bool             `yaml:"terminal,omitempty"`
+	Persona      string           `yaml:"persona,omitempty"`
+	TaskPrompt   string           `yaml:"task_prompt,omitempty"`
+	Conversation string           `yaml:"conversation,omitempty"`
+	MaxTurns     int              `yaml:"max_turns,omitempty"`
+	Artifacts    Artifacts        `yaml:"artifacts,omitempty"`
+	Control      Control          `yaml:"control,omitempty"`
+	Event        Event            `yaml:"event,omitempty"`
+	ShellPolicy  ShellPolicy      `yaml:"shell_policy,omitempty"`
+	LLM          llmconfig.Config `yaml:"llm,omitempty"`
 }
 
 type ShellPolicy struct {
@@ -39,6 +41,9 @@ type ShellPolicy struct {
 }
 
 func (p ShellPolicy) IsZero() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: len(p.DenyPatterns) == 0 && strings.TrimSpace(p.DenyMessage) == \"\" && strings...")
 	return len(p.DenyPatterns) == 0 && strings.TrimSpace(p.DenyMessage) == "" && strings.TrimSpace(p.HandoffInputs) == ""
 }
 
@@ -72,6 +77,9 @@ type ArtifactSeed struct {
 }
 
 func (s ArtifactSeed) IsZero() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.TrimSpace(s.Source) == \"\"")
 	return strings.TrimSpace(s.Source) == ""
 }
 
@@ -143,6 +151,9 @@ type DependencyControl struct {
 }
 
 func (d DependencyControl) IsZero() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.TrimSpace(d.DependencyIDsField) == \"\" &&\n\tstrings.TrimSpace(d.Depende...")
 	return strings.TrimSpace(d.DependencyIDsField) == "" &&
 		strings.TrimSpace(d.DependencyReasonField) == "" &&
 		strings.TrimSpace(d.DeferredDependencyField) == "" &&
@@ -453,15 +464,23 @@ func validateStateExecution(defName string, state State) error {
 		return fmt.Errorf("orchestration %q state %q has invalid task_prompt %q", defName, state.ID, state.TaskPrompt)
 	}
 	if state.Conversation != "" && state.Conversation != "persistent" {
+		observe.GlobalTrace("if: state.Conversation != \"\" && state.Conversation != \"persistent\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q has invalid conversation %q\", defName, ...")
 		return fmt.Errorf("orchestration %q state %q has invalid conversation %q", defName, state.ID, state.Conversation)
 	}
 	if state.Conversation == "persistent" && strings.TrimSpace(state.Persona) == "" {
+		observe.GlobalTrace("if: state.Conversation == \"persistent\" && strings.TrimSpace(state.Persona) == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q persistent conversation requires person...")
 		return fmt.Errorf("orchestration %q state %q persistent conversation requires persona", defName, state.ID)
 	}
 	if state.MaxTurns < 0 {
+		observe.GlobalTrace("if: state.MaxTurns < 0")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q has invalid max_turns %d\", defName, sta...")
 		return fmt.Errorf("orchestration %q state %q has invalid max_turns %d", defName, state.ID, state.MaxTurns)
 	}
 	if err := validateShellPolicy(defName, state.ID, state.ShellPolicy); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	if !state.Control.IsZero() {
@@ -521,6 +540,7 @@ func validateStateExecution(defName string, state State) error {
 		if state.Persona != "" && state.Control.ForEachNext == nil {
 			observe.GlobalTrace("if: state.Persona != \"\" && state.Control.ForEachNext == nil")
 			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q can only define persona with foreach...")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q control state %q can only define persona with fo...")
 			return fmt.Errorf("orchestration %q control state %q can only define persona with foreach_next", defName, state.ID)
 		}
 		if state.Persona != "" && state.Control.ForEachNext != nil {
@@ -537,22 +557,34 @@ func validateStateExecution(defName string, state State) error {
 }
 
 func validateShellPolicy(defName, stateID string, policy ShellPolicy) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch strings.TrimSpace(policy.HandoffInputs) {
 	case "", "rendered":
+		observe.GlobalTrace("case: \"\", \"rendered\"")
 	default:
+		observe.GlobalTrace("default")
 		return fmt.Errorf("orchestration %q state %q shell_policy handoff_inputs has unsupported value %q", defName, stateID, policy.HandoffInputs)
 	}
 	for idx, pattern := range policy.DenyPatterns {
+		observe.GlobalTrace("range policy.DenyPatterns")
 		if strings.TrimSpace(pattern) == "" {
+			observe.GlobalTrace("if: strings.TrimSpace(pattern) == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q shell_policy deny_patterns[%d] is empty...")
 			return fmt.Errorf("orchestration %q state %q shell_policy deny_patterns[%d] is empty", defName, stateID, idx)
 		}
 		if _, err := regexp.Compile(pattern); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q shell_policy deny_patterns[%d] is inval...")
 			return fmt.Errorf("orchestration %q state %q shell_policy deny_patterns[%d] is invalid: %w", defName, stateID, idx, err)
 		}
 	}
 	if len(policy.DenyPatterns) == 0 && strings.TrimSpace(policy.DenyMessage) != "" && strings.TrimSpace(policy.HandoffInputs) == "" {
+		observe.GlobalTrace("if: len(policy.DenyPatterns) == 0 && strings.TrimSpace(policy.DenyMessage) != \"\" ...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q shell_policy deny_message requires deny...")
 		return fmt.Errorf("orchestration %q state %q shell_policy deny_message requires deny_patterns", defName, stateID)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -573,6 +605,7 @@ func validatePersonaBackedForEachNext(defName string, state State) error {
 	if control.HandoffPath == "" {
 		observe.GlobalTrace("if: control.HandoffPath == \"\"")
 		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q persona-backed foreach_next requires handoff_path...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q persona-backed foreach_next requires ha...")
 		return fmt.Errorf("orchestration %q state %q persona-backed foreach_next requires handoff_path", defName, state.ID)
 	}
 	for _, artifact := range state.Artifacts.Outputs {
@@ -584,6 +617,7 @@ func validatePersonaBackedForEachNext(defName string, state State) error {
 		}
 	}
 	observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q persona-backed foreach_next requires a required output artifact...")
+	observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q persona-backed foreach_next requires a ...")
 	return fmt.Errorf("orchestration %q state %q persona-backed foreach_next requires a required output artifact at handoff_path %q", defName, state.ID, control.HandoffPath)
 }
 
@@ -618,61 +652,91 @@ func validateArtifactList(defName, owner string, artifacts []Artifact) error {
 			}
 		}
 		for idx, attachment := range artifact.PromptAttachments {
+			observe.GlobalTrace("range artifact.PromptAttachments")
 			if !supportedPromptAttachment(attachment) {
+				observe.GlobalTrace("if: !supportedPromptAttachment(attachment)")
+				observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q prompt_attachments[%d] has unsupp...")
 				return fmt.Errorf("orchestration %q %s artifact %q prompt_attachments[%d] has unsupported value %q", defName, owner, artifact.ID, idx, attachment)
 			}
 		}
 		if strings.TrimSpace(artifact.Seed.Source) == "" && !artifact.Seed.IsZero() {
+			observe.GlobalTrace("if: strings.TrimSpace(artifact.Seed.Source) == \"\" && !artifact.Seed.IsZero()")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q seed requires source\", defName, o...")
 			return fmt.Errorf("orchestration %q %s artifact %q seed requires source", defName, owner, artifact.ID)
 		}
 		if artifact.RuntimeCapture.Type != "" && artifact.RuntimeCapture.Type != "command_evidence" {
 			observe.GlobalTrace("if: artifact.RuntimeCapture.Type != \"\" && artifact.RuntimeCapture.Type != \"command_evidence\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q has unsupported runtime_capture t...")
 			return fmt.Errorf("orchestration %q %s artifact %q has unsupported runtime_capture type %q", defName, owner, artifact.ID, artifact.RuntimeCapture.Type)
 		}
 		for idx, check := range artifact.Checks {
 			observe.GlobalTrace("range artifact.Checks")
 			if strings.TrimSpace(check.Type) == "" {
 				observe.GlobalTrace("if: strings.TrimSpace(check.Type) == \"\"")
+				observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires type\", defName,...")
 				return fmt.Errorf("orchestration %q %s artifact %q check %d requires type", defName, owner, artifact.ID, idx)
 			}
 			if !supportedArtifactCheckType(check.Type) {
 				observe.GlobalTrace("if: !supportedArtifactCheckType(check.Type)")
+				observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d has unsupported type %q\"...")
 				return fmt.Errorf("orchestration %q %s artifact %q check %d has unsupported type %q", defName, owner, artifact.ID, idx, check.Type)
 			}
 			if check.Type == "command_evidence_support" && strings.TrimSpace(check.ArtifactID) == "" {
 				observe.GlobalTrace("if: check.Type == \"command_evidence_support\" && strings.TrimSpace(check.ArtifactID) == \"\"")
+				observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires artifact_id\", d...")
 				return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
 			}
 			if check.Type == "json_each_fields_equal_handoff_artifact" {
+				observe.GlobalTrace("if: check.Type == \"json_each_fields_equal_handoff_artifact\"")
 				if strings.TrimSpace(check.ArtifactID) == "" {
+					observe.GlobalTrace("if: strings.TrimSpace(check.ArtifactID) == \"\"")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires artifact_id\", d...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
 				}
 				if strings.TrimSpace(check.Path) == "" {
+					observe.GlobalTrace("if: strings.TrimSpace(check.Path) == \"\"")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires path\", defName,...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires path", defName, owner, artifact.ID, idx)
 				}
 				if strings.TrimSpace(check.KeyField) == "" {
+					observe.GlobalTrace("if: strings.TrimSpace(check.KeyField) == \"\"")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires key_field\", def...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires key_field", defName, owner, artifact.ID, idx)
 				}
 				if len(check.Fields) == 0 {
+					observe.GlobalTrace("if: len(check.Fields) == 0")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires fields\", defNam...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires fields", defName, owner, artifact.ID, idx)
 				}
 			}
 			if check.Type == "json_fields_equal_handoff_artifact" {
+				observe.GlobalTrace("if: check.Type == \"json_fields_equal_handoff_artifact\"")
 				if strings.TrimSpace(check.ArtifactID) == "" {
+					observe.GlobalTrace("if: strings.TrimSpace(check.ArtifactID) == \"\"")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires artifact_id\", d...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
 				}
 				if len(check.Fields) == 0 {
+					observe.GlobalTrace("if: len(check.Fields) == 0")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires fields\", defNam...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires fields", defName, owner, artifact.ID, idx)
 				}
 			}
 			if check.Type == "json_array_subset_of_handoff_text_list" {
+				observe.GlobalTrace("if: check.Type == \"json_array_subset_of_handoff_text_list\"")
 				if strings.TrimSpace(check.ArtifactID) == "" {
+					observe.GlobalTrace("if: strings.TrimSpace(check.ArtifactID) == \"\"")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires artifact_id\", d...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires artifact_id", defName, owner, artifact.ID, idx)
 				}
 				if strings.TrimSpace(check.Field) == "" {
+					observe.GlobalTrace("if: strings.TrimSpace(check.Field) == \"\"")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires field\", defName...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires field", defName, owner, artifact.ID, idx)
 				}
 				if strings.TrimSpace(check.TextField) == "" {
+					observe.GlobalTrace("if: strings.TrimSpace(check.TextField) == \"\"")
+					observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q check %d requires text_field\", de...")
 					return fmt.Errorf("orchestration %q %s artifact %q check %d requires text_field", defName, owner, artifact.ID, idx)
 				}
 			}
@@ -683,10 +747,14 @@ func validateArtifactList(defName, owner string, artifacts []Artifact) error {
 }
 
 func supportedPromptAttachment(attachment string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch attachment {
 	case "source_edit_transport":
+		observe.GlobalTrace("case: \"source_edit_transport\"")
 		return true
 	default:
+		observe.GlobalTrace("default")
 		return false
 	}
 }
@@ -739,27 +807,40 @@ func validateForEachNextControl(defName, stateID string, control *ForEachNextCon
 		return fmt.Errorf("orchestration %q state %q foreach_next requires done_event", defName, stateID)
 	}
 	if control.BlockedEvent != "" && strings.TrimSpace(control.BlockedEvent) == "" {
+		observe.GlobalTrace("if: control.BlockedEvent != \"\" && strings.TrimSpace(control.BlockedEvent) == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next has blank blocked_event\", ...")
 		return fmt.Errorf("orchestration %q state %q foreach_next has blank blocked_event", defName, stateID)
 	}
 	switch strings.TrimSpace(control.HandoffMode) {
 	case "":
+		observe.GlobalTrace("case: \"\"")
 		if strings.TrimSpace(control.HandoffPath) != "" {
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next handoff_path requires hand...")
 			return fmt.Errorf("orchestration %q state %q foreach_next handoff_path requires handoff_mode", defName, stateID)
 		}
 	case "persona", "control":
+		observe.GlobalTrace("case: \"persona\", \"control\"")
 		if strings.TrimSpace(control.HandoffPath) == "" {
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next handoff_mode requires hand...")
 			return fmt.Errorf("orchestration %q state %q foreach_next handoff_mode requires handoff_path", defName, stateID)
 		}
 	default:
+		observe.GlobalTrace("default")
 		return fmt.Errorf("orchestration %q state %q foreach_next has unsupported handoff_mode %q", defName, stateID, control.HandoffMode)
 	}
 	if strings.TrimSpace(control.CursorArtifactDescription) != "" && strings.TrimSpace(control.CursorArtifactID) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(control.CursorArtifactDescription) != \"\" && strings.TrimSpa...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next cursor_artifact_descriptio...")
 		return fmt.Errorf("orchestration %q state %q foreach_next cursor_artifact_description requires cursor_artifact_id", defName, stateID)
 	}
 	if strings.TrimSpace(control.HandoffMode) == "persona" && strings.TrimSpace(control.CursorArtifactID) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(control.HandoffMode) == \"persona\" && strings.TrimSpace(cont...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q foreach_next persona handoff_mode requi...")
 		return fmt.Errorf("orchestration %q state %q foreach_next persona handoff_mode requires cursor_artifact_id", defName, stateID)
 	}
 	if err := validateDependencyControl(defName, stateID, "foreach_next", control.Dependency); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	observe.GlobalTrace("return: nil")
@@ -790,6 +871,8 @@ func validateMarkCurrentItemControl(defName, stateID string, control *MarkCurren
 		return fmt.Errorf("orchestration %q state %q mark_current_item requires event", defName, stateID)
 	}
 	if err := validateDependencyControl(defName, stateID, "mark_current_item", control.Dependency); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	observe.GlobalTrace("return: nil")
@@ -797,24 +880,39 @@ func validateMarkCurrentItemControl(defName, stateID string, control *MarkCurren
 }
 
 func validateDependencyControl(defName, stateID, controlName string, dependency DependencyControl) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if dependency.IsZero() {
+		observe.GlobalTrace("if: dependency.IsZero()")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	if dependency.AutoBlockDeferred && strings.TrimSpace(dependency.DeferredDependencyField) == "" {
+		observe.GlobalTrace("if: dependency.AutoBlockDeferred && strings.TrimSpace(dependency.DeferredDependen...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q %s dependency auto_block_deferred requi...")
 		return fmt.Errorf("orchestration %q state %q %s dependency auto_block_deferred requires deferred_dependency_field", defName, stateID, controlName)
 	}
 	if (dependency.AutoBlockDeferred || dependency.AutoUnblockDependents) && strings.TrimSpace(dependency.DependencyIDsField) == "" {
+		observe.GlobalTrace("if: (dependency.AutoBlockDeferred || dependency.AutoUnblockDependents) && strings...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q %s dependency requires dependency_ids_f...")
 		return fmt.Errorf("orchestration %q state %q %s dependency requires dependency_ids_field", defName, stateID, controlName)
 	}
 	if dependency.AutoUnblockDependents && strings.TrimSpace(dependency.UnblockedStatus) == "" {
+		observe.GlobalTrace("if: dependency.AutoUnblockDependents && strings.TrimSpace(dependency.UnblockedSta...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q %s dependency auto_unblock_dependents r...")
 		return fmt.Errorf("orchestration %q state %q %s dependency auto_unblock_dependents requires unblocked_status", defName, stateID, controlName)
 	}
 	if dependency.AutoUnblockDependents && strings.TrimSpace(dependency.BlockedStatus) == "" {
+		observe.GlobalTrace("if: dependency.AutoUnblockDependents && strings.TrimSpace(dependency.BlockedStatu...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q %s dependency auto_unblock_dependents r...")
 		return fmt.Errorf("orchestration %q state %q %s dependency auto_unblock_dependents requires blocked_status", defName, stateID, controlName)
 	}
 	if (strings.TrimSpace(dependency.BlockedCursorReason) != "" || strings.TrimSpace(dependency.MissingDependencyReason) != "") && strings.TrimSpace(dependency.DependencyReasonField) == "" {
+		observe.GlobalTrace("if: (strings.TrimSpace(dependency.BlockedCursorReason) != \"\" || strings.TrimSpace...")
+		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q %s dependency reasons require dependenc...")
 		return fmt.Errorf("orchestration %q state %q %s dependency reasons require dependency_reason_field", defName, stateID, controlName)
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -867,7 +965,10 @@ func validateArtifactDecisionControl(defName, stateID string, control *ArtifactD
 		}
 	}
 	for idx, artifact := range control.FreshArtifacts {
+		observe.GlobalTrace("range control.FreshArtifacts")
 		if strings.TrimSpace(artifact.Path) == "" {
+			observe.GlobalTrace("if: strings.TrimSpace(artifact.Path) == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q artifact_decision fresh_artifacts[%d] r...")
 			return fmt.Errorf("orchestration %q state %q artifact_decision fresh_artifacts[%d] requires path", defName, stateID, idx)
 		}
 	}
@@ -882,8 +983,10 @@ func emittedEvents(state State) []string {
 		observe.GlobalTrace("if: state.Control.ForEachNext != nil")
 		events := []string{state.Control.ForEachNext.ItemEvent, state.Control.ForEachNext.DoneEvent}
 		if state.Control.ForEachNext.BlockedEvent != "" {
+			observe.GlobalTrace("if: state.Control.ForEachNext.BlockedEvent != \"\"")
 			events = append(events, state.Control.ForEachNext.BlockedEvent)
 		}
+		observe.GlobalTrace("return: events")
 		return events
 	}
 	if state.Control.MarkCurrentItem != nil {
@@ -916,6 +1019,9 @@ func emittedEvents(state State) []string {
 }
 
 func ExecuteControl(state State) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: ExecuteControlWithContext(state, ControlExecutionContext{})")
 	return ExecuteControlWithContext(state, ControlExecutionContext{})
 }
 
@@ -962,10 +1068,14 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 	}
 	blockedStatus := control.BlockedStatus
 	if blockedStatus == "" {
+		observe.GlobalTrace("if: blockedStatus == \"\"")
 		blockedStatus = "blocked"
 	}
 	if normalizeChecklistDependencies(&checklist, pendingStatus, blockedStatus, control.Dependency) {
+		observe.GlobalTrace("if: normalizeChecklistDependencies(&checklist, pendingStatus, blockedStatus, cont...")
 		if err := writeJSONFile(control.ListPath, checklist); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: \"\", err")
 			return "", err
 		}
 	}
@@ -973,6 +1083,7 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 	for _, item := range checklist.Items {
 		observe.GlobalTrace("range checklist.Items")
 		if item.Status == blockedStatus {
+			observe.GlobalTrace("if: item.Status == blockedStatus")
 			hasBlocked = true
 		}
 		if item.Status != pendingStatus {
@@ -985,7 +1096,10 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 			return "", err
 		}
 		if control.HandoffMode == "control" {
+			observe.GlobalTrace("if: control.HandoffMode == \"control\"")
 			if err := writeForEachControlHandoff(control.HandoffPath, item); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: \"\", err")
 				return "", err
 			}
 		}
@@ -993,15 +1107,20 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 		return control.ItemEvent, nil
 	}
 	if hasBlocked && control.BlockedEvent != "" {
+		observe.GlobalTrace("if: hasBlocked && control.BlockedEvent != \"\"")
 		blockedCursor := ChecklistItem{
 			Status: blockedStatus,
 		}
 		if strings.TrimSpace(control.Dependency.DependencyReasonField) != "" && strings.TrimSpace(control.Dependency.BlockedCursorReason) != "" {
+			observe.GlobalTrace("if: strings.TrimSpace(control.Dependency.DependencyReasonField) != \"\" && strings....")
 			setChecklistItemStringExtra(&blockedCursor, control.Dependency.DependencyReasonField, control.Dependency.BlockedCursorReason)
 		}
 		if err := writeJSONFile(control.CursorPath, blockedCursor); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: \"\", err")
 			return "", err
 		}
+		observe.GlobalTrace("return: control.BlockedEvent, nil")
 		return control.BlockedEvent, nil
 	}
 	if err := writeJSONFile(control.CursorPath, ChecklistItem{Status: doneStatus}); err != nil {
@@ -1014,11 +1133,16 @@ func executeForEachNext(control ForEachNextControl) (string, error) {
 }
 
 func writeForEachControlHandoff(path string, item ChecklistItem) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw, err := json.MarshalIndent(item, "", "  ")
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	text := "Selected item:\n\n```json\n" + string(raw) + "\n```\n"
+	observe.GlobalTrace("return: os.WriteFile(path, []byte(text), 0o600)")
 	return os.WriteFile(path, []byte(text), 0o600)
 }
 
@@ -1059,6 +1183,7 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 		return "", fmt.Errorf("current item %q not found in checklist %q", current.ID, control.ListPath)
 	}
 	if control.Dependency.AutoUnblockDependents {
+		observe.GlobalTrace("if: control.Dependency.AutoUnblockDependents")
 		unblockDependents(&checklist, current.ID, control.Dependency)
 	}
 	if err := writeJSONFile(control.ListPath, checklist); err != nil {
@@ -1077,24 +1202,33 @@ func executeMarkCurrentItem(control MarkCurrentItemControl) (string, error) {
 }
 
 func normalizeChecklistDependencies(checklist *Checklist, pendingStatus, blockedStatus string, dependency DependencyControl) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if dependency.IsZero() {
+		observe.GlobalTrace("if: dependency.IsZero()")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	ids := make(map[string]bool, len(checklist.Items))
 	for _, item := range checklist.Items {
+		observe.GlobalTrace("range checklist.Items")
 		ids[item.ID] = true
 	}
 	changed := false
 	for idx := range checklist.Items {
+		observe.GlobalTrace("range checklist.Items")
 		item := &checklist.Items[idx]
 		blockedBy := checklistItemStringArrayExtra(item, dependency.DependencyIDsField)
 		if len(blockedBy) > 0 {
+			observe.GlobalTrace("if: len(blockedBy) > 0")
 			normalized := normalizeDependencyIDs(blockedBy, item.ID, ids)
 			if !sameStringSlice(blockedBy, normalized) {
+				observe.GlobalTrace("if: !sameStringSlice(blockedBy, normalized)")
 				setChecklistItemStringArrayExtra(item, dependency.DependencyIDsField, normalized)
 				changed = true
 			}
 			if len(normalized) > 0 && item.Status != blockedStatus {
+				observe.GlobalTrace("if: len(normalized) > 0 && item.Status != blockedStatus")
 				item.Status = blockedStatus
 				changed = true
 			}
@@ -1102,46 +1236,60 @@ func normalizeChecklistDependencies(checklist *Checklist, pendingStatus, blocked
 		}
 		deferredUntil := ""
 		if dependency.AutoBlockDeferred {
+			observe.GlobalTrace("if: dependency.AutoBlockDeferred")
 			deferredUntil = checklistItemStringExtra(item, dependency.DeferredDependencyField)
 		}
 		if ids[deferredUntil] && deferredUntil != item.ID {
+			observe.GlobalTrace("if: ids[deferredUntil] && deferredUntil != item.ID")
 			setChecklistItemStringArrayExtra(item, dependency.DependencyIDsField, []string{deferredUntil})
 			item.Status = blockedStatus
 			if checklistItemStringExtra(item, dependency.DependencyReasonField) == "" && strings.TrimSpace(dependency.MissingDependencyReason) != "" {
+				observe.GlobalTrace("if: checklistItemStringExtra(item, dependency.DependencyReasonField) == \"\" && str...")
 				setChecklistItemStringExtra(item, dependency.DependencyReasonField, dependency.MissingDependencyReason)
 			}
 			changed = true
 			continue
 		}
 		if item.Status == blockedStatus && strings.TrimSpace(dependency.DependencyReasonField) != "" && checklistItemStringExtra(item, dependency.DependencyReasonField) == "" && strings.TrimSpace(dependency.MissingDependencyReason) != "" {
+			observe.GlobalTrace("if: item.Status == blockedStatus && strings.TrimSpace(dependency.DependencyReason...")
 			setChecklistItemStringExtra(item, dependency.DependencyReasonField, dependency.MissingDependencyReason)
 			changed = true
 		}
 	}
+	observe.GlobalTrace("return: changed")
 	return changed
 }
 
 func unblockDependents(checklist *Checklist, completedID string, dependency DependencyControl) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.TrimSpace(dependency.DependencyIDsField) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(dependency.DependencyIDsField) == \"\"")
 		return
 	}
 	for idx := range checklist.Items {
+		observe.GlobalTrace("range checklist.Items")
 		item := &checklist.Items[idx]
 		blockedBy := checklistItemStringArrayExtra(item, dependency.DependencyIDsField)
 		if len(blockedBy) == 0 {
+			observe.GlobalTrace("if: len(blockedBy) == 0")
 			continue
 		}
 		remaining := make([]string, 0, len(blockedBy))
 		for _, dependencyID := range blockedBy {
+			observe.GlobalTrace("range blockedBy")
 			if dependencyID != completedID {
+				observe.GlobalTrace("if: dependencyID != completedID")
 				remaining = append(remaining, dependencyID)
 			}
 		}
 		if len(remaining) == len(blockedBy) {
+			observe.GlobalTrace("if: len(remaining) == len(blockedBy)")
 			continue
 		}
 		setChecklistItemStringArrayExtra(item, dependency.DependencyIDsField, remaining)
 		if len(remaining) == 0 && item.Status == dependency.BlockedStatus && strings.TrimSpace(dependency.UnblockedStatus) != "" {
+			observe.GlobalTrace("if: len(remaining) == 0 && item.Status == dependency.BlockedStatus && strings.Tri...")
 			item.Status = dependency.UnblockedStatus
 			clearChecklistItemExtra(item, dependency.DependencyReasonField)
 		}
@@ -1149,143 +1297,202 @@ func unblockDependents(checklist *Checklist, completedID string, dependency Depe
 }
 
 func normalizeDependencyIDs(values []string, self string, ids map[string]bool) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}
 	for _, value := range values {
+		observe.GlobalTrace("range values")
 		value = strings.TrimSpace(value)
 		if value == "" || value == self || !ids[value] || seen[value] {
+			observe.GlobalTrace("if: value == \"\" || value == self || !ids[value] || seen[value]")
 			continue
 		}
 		seen[value] = true
 		out = append(out, value)
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
 func checklistItemStringExtra(item *ChecklistItem, key string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if item == nil || item.Extra == nil {
+		observe.GlobalTrace("if: item == nil || item.Extra == nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
+		observe.GlobalTrace("if: key == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	raw, ok := item.Extra[key]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: strings.TrimSpace(value)")
 	return strings.TrimSpace(value)
 }
 
 func checklistItemStringArrayExtra(item *ChecklistItem, key string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if item == nil || item.Extra == nil {
+		observe.GlobalTrace("if: item == nil || item.Extra == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
+		observe.GlobalTrace("if: key == \"\"")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	raw, ok := item.Extra[key]
 	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	var values []string
 	if err := json.Unmarshal(raw, &values); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := values[:0]
 	for _, value := range values {
+		observe.GlobalTrace("range values")
 		value = strings.TrimSpace(value)
 		if value != "" {
+			observe.GlobalTrace("if: value != \"\"")
 			out = append(out, value)
 		}
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
 func setChecklistItemStringExtra(item *ChecklistItem, key string, value string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if item == nil {
+		observe.GlobalTrace("if: item == nil")
 		return
 	}
 	key = strings.TrimSpace(key)
 	value = strings.TrimSpace(value)
 	if key == "" || value == "" {
+		observe.GlobalTrace("if: key == \"\" || value == \"\"")
 		return
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		return
 	}
 	if item.Extra == nil {
+		observe.GlobalTrace("if: item.Extra == nil")
 		item.Extra = make(map[string]json.RawMessage)
 	}
 	item.Extra[key] = raw
 }
 
 func setChecklistItemStringArrayExtra(item *ChecklistItem, key string, values []string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if item == nil {
+		observe.GlobalTrace("if: item == nil")
 		return
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
+		observe.GlobalTrace("if: key == \"\"")
 		return
 	}
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}
 	for _, value := range values {
+		observe.GlobalTrace("range values")
 		value = strings.TrimSpace(value)
 		if value == "" || seen[value] {
+			observe.GlobalTrace("if: value == \"\" || seen[value]")
 			continue
 		}
 		seen[value] = true
 		out = append(out, value)
 	}
 	if len(out) == 0 {
+		observe.GlobalTrace("if: len(out) == 0")
 		clearChecklistItemExtra(item, key)
 		return
 	}
 	raw, err := json.Marshal(out)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
 		return
 	}
 	if item.Extra == nil {
+		observe.GlobalTrace("if: item.Extra == nil")
 		item.Extra = make(map[string]json.RawMessage)
 	}
 	item.Extra[key] = raw
 }
 
 func clearDependencyFields(item *ChecklistItem, dependency DependencyControl) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	clearChecklistItemExtra(item, dependency.DependencyIDsField)
 	clearChecklistItemExtra(item, dependency.DependencyReasonField)
 }
 
 func clearChecklistItemExtra(item *ChecklistItem, key string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if item == nil || item.Extra == nil {
+		observe.GlobalTrace("if: item == nil || item.Extra == nil")
 		return
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
+		observe.GlobalTrace("if: key == \"\"")
 		return
 	}
 	delete(item.Extra, key)
 	if len(item.Extra) == 0 {
+		observe.GlobalTrace("if: len(item.Extra) == 0")
 		item.Extra = nil
 	}
 }
 
 func sameStringSlice(a, b []string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(a) != len(b) {
+		observe.GlobalTrace("if: len(a) != len(b)")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	for idx := range a {
+		observe.GlobalTrace("range a")
 		if a[idx] != b[idx] {
+			observe.GlobalTrace("if: a[idx] != b[idx]")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 	}
+	observe.GlobalTrace("return: true")
 	return true
 }
 
@@ -1331,10 +1538,13 @@ func executeArtifactDecision(control ArtifactDecisionControl, controlCtx Control
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if err := validateFreshArtifactRequirements(control.FreshArtifacts, controlCtx); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", err")
 		return "", err
 	}
 	artifactRoot := controlCtx.ArtifactRoot
 	if strings.TrimSpace(artifactRoot) == "" {
+		observe.GlobalTrace("if: strings.TrimSpace(artifactRoot) == \"\"")
 		artifactRoot = DefaultArtifactRoot
 	}
 	path := resolveArtifactPath(control.Path, artifactRoot)
@@ -1348,12 +1558,14 @@ func executeArtifactDecision(control ArtifactDecisionControl, controlCtx Control
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"parse decision %q: %w\", control.Path, err)")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"parse decision %q: %w\", path, err)")
 		return "", fmt.Errorf("parse decision %q: %w", path, err)
 	}
 	event, ok := control.Events[decision]
 	if !ok {
 		observe.GlobalTrace("if: !ok")
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"decision %q has unsupported value %q\", control.Path, decision)")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"decision %q has unsupported value %q\", path, decision)")
 		return "", fmt.Errorf("decision %q has unsupported value %q", path, decision)
 	}
 	observe.GlobalTrace("return: event, nil")

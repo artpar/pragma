@@ -27,6 +27,7 @@ type EngineConfig struct {
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
 	ResponseSchema            json.RawMessage
+	CustomSystemPrompt        string
 	ContentReplacementRecords []model.ContentReplacementRecord
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
 	SessionCheckpoint         func() error
@@ -185,6 +186,46 @@ func (engine *Engine) RebindProvider(prov provider.Provider, modelID string) {
 	engine.SetModel(modelID)
 }
 
+// BindProvider switches the engine runtime without closing the previous
+// provider. Orchestration state engines often start by sharing the root
+// provider, so scoped rebinds must not clean up dependencies they do not own.
+func (engine *Engine) BindProvider(prov provider.Provider, providerName string, modelID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	engine.provider = provider.WithAccounting(prov, engine.costTracker, engine.bus)
+	engine.config.Model = modelID
+	engine.store.Update(func(s *app.AppState) {
+		s.Provider = providerName
+		s.Model = modelID
+		s.Conversation.Provider = providerName
+		s.Conversation.Model = modelID
+	})
+}
+
+func (engine *Engine) ApplyRuntimeOptions(maxTokens int, temperature *float64, thinking *provider.ThinkingConfig, customSystemPrompt string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if maxTokens != 0 {
+		observe.GlobalTrace("if: maxTokens != 0")
+		engine.config.MaxTokens = maxTokens
+	}
+	engine.config.Temperature = temperature
+	engine.config.Thinking = thinking
+	engine.config.CustomSystemPrompt = customSystemPrompt
+	engine.store.Update(func(s *app.AppState) {
+		if maxTokens != 0 {
+			s.MaxTokens = maxTokens
+		}
+		s.Temperature = temperature
+		if thinking != nil {
+			enabled := thinking.Enabled
+			s.Thinking = &enabled
+		} else {
+			s.Thinking = nil
+		}
+	})
+}
+
 // SetModel updates the engine's fallback model for execution paths that do not
 // have an AppState model override.
 func (engine *Engine) SetModel(modelID string) {
@@ -278,6 +319,7 @@ func (engine *Engine) AppendHookContext(source string, contexts []string) error 
 		return nil
 	}
 	observe.GlobalTrace("return: engine.appendConversationMessage(model.Message{...})")
+	observe.GlobalTrace("return: engine.appendConversationMessage(model.Message{\n\tID:\t\tmodel.NewUUID(),\n\tRole:...")
 	return engine.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,

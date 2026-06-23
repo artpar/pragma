@@ -8,7 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/llmconfig"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/persona"
+	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/query"
 
 	"gopkg.in/yaml.v3"
@@ -94,6 +98,147 @@ func TestLoadArchitectImplementerProsecutorYAML(t *testing.T) {
 	}
 	if got := runtime.FSM.Current(); got != "done" {
 		t.Fatalf("final state = %q, want done", got)
+	}
+}
+
+func TestLoadStateWithLLMConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "llm.yaml")
+	if err := os.WriteFile(path, []byte(`
+name: llm-test
+initial: worker
+states:
+  - id: worker
+    persona: coder
+    llm:
+      provider: anthropic
+      model: sonnet
+      max_tokens: 2048
+      temperature: 0
+      thinking: true
+      thinking_budget: 512
+      system_prompt: Use strict output.
+  - id: done
+    terminal: true
+transitions:
+  - event: complete
+    from: [worker]
+    to: done
+`), 0o644); err != nil {
+		t.Fatalf("write orchestration: %v", err)
+	}
+
+	def, err := LoadDefinitionFile(path)
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	if len(def.States) == 0 {
+		t.Fatal("expected states")
+	}
+	state := def.States[0]
+	if state.LLM.Provider != "anthropic" {
+		t.Fatalf("provider = %q, want anthropic", state.LLM.Provider)
+	}
+	if state.LLM.Model != "sonnet" {
+		t.Fatalf("model = %q, want sonnet", state.LLM.Model)
+	}
+	if state.LLM.MaxTokens != 2048 {
+		t.Fatalf("max tokens = %d, want 2048", state.LLM.MaxTokens)
+	}
+	if state.LLM.Temperature == nil || *state.LLM.Temperature != 0 {
+		t.Fatalf("temperature = %v, want 0", state.LLM.Temperature)
+	}
+	if state.LLM.Thinking == nil || !*state.LLM.Thinking {
+		t.Fatalf("thinking = %v, want true", state.LLM.Thinking)
+	}
+	if state.LLM.ThinkingBudget != 512 {
+		t.Fatalf("thinking budget = %d, want 512", state.LLM.ThinkingBudget)
+	}
+	if state.LLM.SystemPrompt != "Use strict output." {
+		t.Fatalf("system prompt = %q", state.LLM.SystemPrompt)
+	}
+}
+
+func TestApplyStateLLMRuntimeUsesStateOverPersona(t *testing.T) {
+	baseProvider := orchestrationTestProvider{name: "base"}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "base-model", "base", "."),
+		CWD:          ".",
+		Model:        "base-model",
+		Provider:     "base",
+		MaxTokens:    1000,
+	})
+	engine := query.NewEngine(baseProvider, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "base-model",
+		MaxTokens: 1000,
+	})
+	personaTemp := 0.7
+	stateTemp := 0.1
+	thinking := false
+	var resolved llmconfig.Config
+	err := applyStateLLMRuntime(context.Background(), engine, func(_ context.Context, cfg llmconfig.Config) (LLMRuntime, error) {
+		resolved = cfg
+		return LLMRuntime{
+			Provider:           orchestrationTestProvider{name: "openai"},
+			ProviderName:       "openai",
+			Model:              cfg.Model,
+			MaxTokens:          cfg.MaxTokens,
+			Temperature:        cfg.Temperature,
+			Thinking:           &provider.ThinkingConfig{Enabled: *cfg.Thinking, BudgetTokens: cfg.ThinkingBudget},
+			CustomSystemPrompt: cfg.SystemPrompt,
+		}, nil
+	}, State{
+		ID: "worker",
+		LLM: llmconfig.Config{
+			Model:       "state-model",
+			Temperature: &stateTemp,
+		},
+	}, persona.Definition{
+		ID: "worker",
+		LLM: llmconfig.Config{
+			Provider:       "openai",
+			Model:          "persona-model",
+			MaxTokens:      4096,
+			Temperature:    &personaTemp,
+			Thinking:       &thinking,
+			ThinkingBudget: 512,
+			SystemPrompt:   "persona prompt",
+		},
+		Prompt: "Persona prompt",
+	})
+	if err != nil {
+		t.Fatalf("applyStateLLMRuntime: %v", err)
+	}
+	if resolved.Provider != "openai" {
+		t.Fatalf("resolved provider = %q, want openai", resolved.Provider)
+	}
+	if resolved.Model != "state-model" {
+		t.Fatalf("resolved model = %q, want state-model", resolved.Model)
+	}
+	if resolved.MaxTokens != 4096 {
+		t.Fatalf("resolved max tokens = %d, want 4096", resolved.MaxTokens)
+	}
+	if resolved.Temperature == nil || *resolved.Temperature != 0.1 {
+		t.Fatalf("resolved temperature = %v, want 0.1", resolved.Temperature)
+	}
+	snap := store.Snapshot()
+	if snap.Provider != "openai" || snap.Model != "state-model" {
+		t.Fatalf("store provider/model = %q/%q, want openai/state-model", snap.Provider, snap.Model)
+	}
+	if snap.MaxTokens != 4096 {
+		t.Fatalf("store max tokens = %d, want 4096", snap.MaxTokens)
+	}
+	if snap.Temperature == nil || *snap.Temperature != 0.1 {
+		t.Fatalf("store temperature = %v, want 0.1", snap.Temperature)
+	}
+	if snap.Thinking == nil || *snap.Thinking {
+		t.Fatalf("store thinking = %v, want false", snap.Thinking)
+	}
+}
+
+func TestApplyStateLLMRuntimeNoLLMIsNoopWithoutResolver(t *testing.T) {
+	if err := applyStateLLMRuntime(context.Background(), nil, nil, State{ID: "worker"}, persona.Definition{ID: "worker", Prompt: "Prompt"}); err != nil {
+		t.Fatalf("applyStateLLMRuntime: %v", err)
 	}
 }
 
@@ -1072,3 +1217,27 @@ func requireNotContains(t *testing.T, text string, needle string) {
 		t.Fatalf("expected prompt not to contain %q:\n%s", needle, text)
 	}
 }
+
+type orchestrationTestProvider struct {
+	name string
+}
+
+func (p orchestrationTestProvider) Name() string { return p.name }
+
+func (p orchestrationTestProvider) Stream(context.Context, provider.RequestParams) (<-chan provider.StreamChunk, error) {
+	ch := make(chan provider.StreamChunk)
+	close(ch)
+	return ch, nil
+}
+
+func (p orchestrationTestProvider) Complete(context.Context, provider.RequestParams) (model.Response, error) {
+	return model.Response{}, nil
+}
+
+func (p orchestrationTestProvider) SupportsFeature(provider.Feature) bool { return true }
+
+func (p orchestrationTestProvider) Pricing(string) (model.Pricing, bool) {
+	return model.Pricing{}, false
+}
+
+func (p orchestrationTestProvider) ContextWindow(string) (int, bool) { return 0, false }

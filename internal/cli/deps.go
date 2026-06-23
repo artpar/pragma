@@ -357,6 +357,10 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
 	}
+	if systemPrompt, _ := cmd.Flags().GetString("system-prompt"); strings.TrimSpace(systemPrompt) != "" {
+		observe.GlobalTrace("if: strings.TrimSpace(systemPrompt) != \"\"")
+		engineCfg.CustomSystemPrompt = systemPrompt
+	}
 	var deps *Deps
 	engineCfg.RecordContentReplacements = contentReplacementRecorder(func() *Deps { return deps })
 	if cfg.Thinking != nil && cfg.Thinking.Enabled {

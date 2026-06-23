@@ -635,8 +635,11 @@ func stripShellHeredocBodies(command string) string {
 	executable := make([]string, 0, len(lines))
 	var heredocs []shellHeredoc
 	for _, line := range lines {
+		observe.GlobalTrace("range lines")
 		if len(heredocs) > 0 {
+			observe.GlobalTrace("if: len(heredocs) > 0")
 			if shellHeredocEnds(line, heredocs[0]) {
+				observe.GlobalTrace("if: shellHeredocEnds(line, heredocs[0])")
 				heredocs = heredocs[1:]
 			}
 			continue
@@ -652,6 +655,7 @@ func shellHeredocEnds(line string, heredoc shellHeredoc) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if heredoc.stripTabs {
+		observe.GlobalTrace("if: heredoc.stripTabs")
 		line = strings.TrimLeft(line, "\t")
 	}
 	observe.GlobalTrace("return: line == heredoc.delimiter")
@@ -664,40 +668,50 @@ func extractShellHeredocs(line string) []shellHeredoc {
 	var heredocs []shellHeredoc
 	var inSingle, inDouble, escaped bool
 	for i := 0; i < len(line); i++ {
+		observe.GlobalTrace("for: i < len(line)")
 		ch := line[i]
 		if escaped {
+			observe.GlobalTrace("if: escaped")
 			escaped = false
 			continue
 		}
 		if ch == '\\' && !inSingle {
+			observe.GlobalTrace("if: ch == '\\\\' && !inSingle")
 			escaped = true
 			continue
 		}
 		if ch == '\'' && !inDouble {
+			observe.GlobalTrace("if: ch == '\\'' && !inDouble")
 			inSingle = !inSingle
 			continue
 		}
 		if ch == '"' && !inSingle {
+			observe.GlobalTrace("if: ch == '\"' && !inSingle")
 			inDouble = !inDouble
 			continue
 		}
 		if inSingle || inDouble {
+			observe.GlobalTrace("if: inSingle || inDouble")
 			continue
 		}
 		if ch == '#' {
+			observe.GlobalTrace("if: ch == '#'")
 			break
 		}
 		if ch != '<' || i+1 >= len(line) || line[i+1] != '<' {
+			observe.GlobalTrace("if: ch != '<' || i+1 >= len(line) || line[i+1] != '<'")
 			continue
 		}
 		pos := i + 2
 		stripTabs := false
 		if pos < len(line) && line[pos] == '-' {
+			observe.GlobalTrace("if: pos < len(line) && line[pos] == '-'")
 			stripTabs = true
 			pos++
 		}
 		delimiter, next, ok := readShellWord(line, pos)
 		if ok {
+			observe.GlobalTrace("if: ok")
 			heredocs = append(heredocs, shellHeredoc{
 				delimiter: delimiter,
 				stripTabs: stripTabs,
@@ -713,6 +727,7 @@ func containsExecutableApplyPatch(command string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	for _, segment := range splitShellCommandSegments(command) {
+		observe.GlobalTrace("range splitShellCommandSegments(command)")
 		word, ok := firstShellWord(segment)
 		if ok && (word == "apply_patch" || word == "applypatch") {
 			observe.GlobalTrace("return: true")
@@ -730,34 +745,43 @@ func splitShellCommandSegments(command string) []string {
 	start := 0
 	var inSingle, inDouble, escaped bool
 	for i := 0; i < len(command); i++ {
+		observe.GlobalTrace("for: i < len(command)")
 		ch := command[i]
 		if escaped {
+			observe.GlobalTrace("if: escaped")
 			escaped = false
 			continue
 		}
 		if ch == '\\' && !inSingle {
+			observe.GlobalTrace("if: ch == '\\\\' && !inSingle")
 			escaped = true
 			continue
 		}
 		if ch == '\'' && !inDouble {
+			observe.GlobalTrace("if: ch == '\\'' && !inDouble")
 			inSingle = !inSingle
 			continue
 		}
 		if ch == '"' && !inSingle {
+			observe.GlobalTrace("if: ch == '\"' && !inSingle")
 			inDouble = !inDouble
 			continue
 		}
 		if inSingle || inDouble {
+			observe.GlobalTrace("if: inSingle || inDouble")
 			continue
 		}
 		if ch == ';' || ch == '\n' || ch == '&' || ch == '|' {
+			observe.GlobalTrace("if: ch == ';' || ch == '\\n' || ch == '&' || ch == '|'")
 			if segment := strings.TrimSpace(command[start:i]); segment != "" {
+				observe.GlobalTrace("if: segment != \"\"")
 				segments = append(segments, segment)
 			}
 			start = i + 1
 		}
 	}
 	if segment := strings.TrimSpace(command[start:]); segment != "" {
+		observe.GlobalTrace("if: segment != \"\"")
 		segments = append(segments, segment)
 	}
 	observe.GlobalTrace("return: segments")
@@ -776,34 +800,41 @@ func readShellWord(line string, pos int) (string, int, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	for pos < len(line) && (line[pos] == ' ' || line[pos] == '\t') {
+		observe.GlobalTrace("for: pos < len(line) && (line[pos] == ' ' || line[pos] == '\\t')")
 		pos++
 	}
 	var b strings.Builder
 	var inSingle, inDouble, escaped bool
 	for pos < len(line) {
+		observe.GlobalTrace("for: pos < len(line)")
 		ch := line[pos]
 		if escaped {
+			observe.GlobalTrace("if: escaped")
 			b.WriteByte(ch)
 			escaped = false
 			pos++
 			continue
 		}
 		if ch == '\\' && !inSingle {
+			observe.GlobalTrace("if: ch == '\\\\' && !inSingle")
 			escaped = true
 			pos++
 			continue
 		}
 		if ch == '\'' && !inDouble {
+			observe.GlobalTrace("if: ch == '\\'' && !inDouble")
 			inSingle = !inSingle
 			pos++
 			continue
 		}
 		if ch == '"' && !inSingle {
+			observe.GlobalTrace("if: ch == '\"' && !inSingle")
 			inDouble = !inDouble
 			pos++
 			continue
 		}
 		if !inSingle && !inDouble && isShellWordTerminator(ch) {
+			observe.GlobalTrace("if: !inSingle && !inDouble && isShellWordTerminator(ch)")
 			break
 		}
 		b.WriteByte(ch)

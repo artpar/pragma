@@ -212,8 +212,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	go func() {
 		select {
 		case <-req.Context().Done():
+			observe.GlobalTrace("select: <-req.Context().Done()")
 			writeResponseErrorMeta(filepath.Join(captureDir, "response.meta.json"), seq, traceID, spanID, requestStart, req.Context().Err())
 		case <-done:
+			observe.GlobalTrace("select: <-done")
 		}
 	}()
 	defer closeDone()
@@ -264,7 +266,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func writeResponseErrorMeta(path string, seq uint64, traceID, spanID string, startedAt time.Time, err error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if err == nil {
+		observe.GlobalTrace("if: err == nil")
 		return
 	}
 	completedAt := time.Now().UTC()

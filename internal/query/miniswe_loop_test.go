@@ -1,13 +1,17 @@
 package query
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
 )
 
 func TestPragmaLoopInstancePromptIncludesTaskAndWorkdir(t *testing.T) {
@@ -261,6 +265,183 @@ func TestExtractPragmaLoopCommandKeepsNestedMarkdownFenceInHeredoc(t *testing.T)
 	if !strings.Contains(command, "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT") {
 		t.Fatalf("command lost completion marker: %q", command)
 	}
+}
+
+func TestPragmaLoopTextOnlyResponseCompletesWithoutRetry(t *testing.T) {
+	response := model.Response{
+		ID:         "resp-text-only",
+		Model:      "test-model",
+		StopReason: model.StopEndTurn,
+		Content: []model.ContentPart{
+			model.TextPart{Text: "I can help with that."},
+		},
+	}
+
+	prov := &pragmaLoopTestProvider{responses: []model.Response{response}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+		MaxTurns:  5,
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "hello"))
+
+	var sawText, sawComplete, sawTool bool
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case ErrorEvent:
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		case TextEvent:
+			if e.Text == "I can help with that." {
+				sawText = true
+			}
+		case TurnCompleteEvent:
+			sawComplete = true
+			if e.StopReason != model.StopEndTurn {
+				t.Fatalf("turn complete stop reason = %q, want %q", e.StopReason, model.StopEndTurn)
+			}
+		case ToolCallEvent, ToolResultEvent:
+			sawTool = true
+		}
+	}
+	if !sawText {
+		t.Fatal("missing TextEvent for final assistant response")
+	}
+	if !sawComplete {
+		t.Fatal("missing TurnCompleteEvent")
+	}
+	if sawTool {
+		t.Fatal("unexpected tool event for text-only response")
+	}
+	if prov.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", prov.calls)
+	}
+}
+
+func TestPragmaLoopCustomSystemPromptPrependsRuntimePrompt(t *testing.T) {
+	response := model.Response{
+		ID:         "resp-text-only",
+		Model:      "test-model",
+		StopReason: model.StopEndTurn,
+		Content: []model.ContentPart{
+			model.TextPart{Text: "done"},
+		},
+	}
+
+	prov := &pragmaLoopTestProvider{responses: []model.Response{response}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:              "test-model",
+		MaxTokens:          4096,
+		MaxTurns:           5,
+		CustomSystemPrompt: "Custom rules",
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "hello"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		}
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("provider requests = %d, want 1", len(prov.requests))
+	}
+	blocks := prov.requests[0].System.Blocks
+	if len(blocks) != 1 {
+		t.Fatalf("system blocks = %d, want 1", len(blocks))
+	}
+	text := blocks[0].Text
+	if !strings.HasPrefix(text, "Custom rules\n\nPragma loop mode is a shell-action transport.") {
+		t.Fatalf("system prompt did not prepend custom prompt:\n%s", text)
+	}
+	if !strings.Contains(text, "```bash\nyour_command_here\n```") {
+		t.Fatalf("system prompt lost shell-action format instructions:\n%s", text)
+	}
+}
+
+func TestPragmaLoopDefaultSystemPromptUnchanged(t *testing.T) {
+	engine := &Engine{}
+	system := engine.pragmaLoopSystemPrompt()
+	if len(system.Blocks) != 1 {
+		t.Fatalf("system blocks = %d, want 1", len(system.Blocks))
+	}
+	if system.Blocks[0].Text != pragmaLoopSystemPrompt {
+		t.Fatalf("default system prompt changed:\n%s", system.Blocks[0].Text)
+	}
+	if system.Blocks[0].Cacheable {
+		t.Fatal("default system prompt cacheable = true, want false")
+	}
+}
+
+func TestWithCustomSystemPromptPrependsExplicitSystemPrompt(t *testing.T) {
+	engine := &Engine{config: EngineConfig{CustomSystemPrompt: "Custom orchestration rules"}}
+	system := engine.WithCustomSystemPrompt(model.SystemPrompt{Blocks: []model.SystemBlock{
+		{Text: "Persona rules", Cacheable: true},
+	}})
+
+	if len(system.Blocks) != 2 {
+		t.Fatalf("system blocks = %d, want 2", len(system.Blocks))
+	}
+	if system.Blocks[0].Text != "Custom orchestration rules" {
+		t.Fatalf("first block = %q, want custom rules", system.Blocks[0].Text)
+	}
+	if system.Blocks[0].Cacheable {
+		t.Fatal("custom system prompt block cacheable = true, want false")
+	}
+	if system.Blocks[1].Text != "Persona rules" || !system.Blocks[1].Cacheable {
+		t.Fatalf("persona block changed: %+v", system.Blocks[1])
+	}
+}
+
+type pragmaLoopTestProvider struct {
+	responses []model.Response
+	calls     int
+	requests  []provider.RequestParams
+}
+
+func (p *pragmaLoopTestProvider) Name() string { return "test" }
+
+func (p *pragmaLoopTestProvider) Stream(context.Context, provider.RequestParams) (<-chan provider.StreamChunk, error) {
+	return nil, fmt.Errorf("Stream is not used by this test provider")
+}
+
+func (p *pragmaLoopTestProvider) Complete(_ context.Context, params provider.RequestParams) (model.Response, error) {
+	if p.calls >= len(p.responses) {
+		return model.Response{}, fmt.Errorf("no response configured for call %d", p.calls+1)
+	}
+	p.requests = append(p.requests, params)
+	response := p.responses[p.calls]
+	p.calls++
+	return response, nil
+}
+
+func (p *pragmaLoopTestProvider) SupportsFeature(provider.Feature) bool { return true }
+
+func (p *pragmaLoopTestProvider) Pricing(string) (model.Pricing, bool) { return model.Pricing{}, false }
+
+func (p *pragmaLoopTestProvider) ContextWindow(string) (int, bool) { return 200_000, true }
+
+func collectPragmaLoopEvents(ch <-chan LoopEvent) []LoopEvent {
+	var events []LoopEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+	return events
 }
 
 func TestExtractPragmaLoopCommandParserCases(t *testing.T) {

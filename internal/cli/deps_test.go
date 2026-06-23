@@ -152,6 +152,17 @@ func TestResolveProviderConfigExplicitFlagsWin(t *testing.T) {
 	}
 }
 
+func TestRegisterFlagsIncludesSystemPrompt(t *testing.T) {
+	cmd := newFlagCommand(t, "--system-prompt", "custom rules")
+	got, err := cmd.Flags().GetString("system-prompt")
+	if err != nil {
+		t.Fatalf("GetString(system-prompt): %v", err)
+	}
+	if got != "custom rules" {
+		t.Fatalf("system-prompt = %q, want custom rules", got)
+	}
+}
+
 func TestResolveProviderConfigCredentialsThenEnv(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()

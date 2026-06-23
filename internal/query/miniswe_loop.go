@@ -154,21 +154,34 @@ type PragmaLoopRunOptions struct {
 // this context is active. The evidence file stores hashes and status metadata,
 // not full command output.
 func WithPragmaLoopEvidencePath(ctx context.Context, path string) context.Context {
+	observe.TraceCtx(ctx, "query", "WithPragmaLoopEvidencePath", "enter")
+	defer observe.TraceCtx(ctx, "query", "WithPragmaLoopEvidencePath", "exit")
+	observe.TraceCtx(ctx, "query", "WithPragmaLoopEvidencePath", "return: WithPragmaLoopCommandEvidence(ctx, PragmaLoopCommandEvidenceConfig{Path: path})")
 	return WithPragmaLoopCommandEvidence(ctx, PragmaLoopCommandEvidenceConfig{Path: path})
 }
 
 func WithPragmaLoopCommandEvidence(ctx context.Context, cfg PragmaLoopCommandEvidenceConfig) context.Context {
+	observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandEvidence", "enter")
+	defer observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandEvidence", "exit")
 	if strings.TrimSpace(cfg.Path) == "" {
+		observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandEvidence", "if: strings.TrimSpace(cfg.Path) == \"\"")
+		observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandEvidence", "return: ctx")
 		return ctx
 	}
 	cfg.Path = strings.TrimSpace(cfg.Path)
+	observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandEvidence", "return: context.WithValue(ctx, pragmaLoopEvidencePathKey{}, cfg)")
 	return context.WithValue(ctx, pragmaLoopEvidencePathKey{}, cfg)
 }
 
 func WithPragmaLoopCommandPolicy(ctx context.Context, cfg PragmaLoopCommandPolicyConfig) context.Context {
+	observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "enter")
+	defer observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "exit")
 	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
+		observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "if: len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.Pro...")
+		observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "return: ctx")
 		return ctx
 	}
+	observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "return: context.WithValue(ctx, pragmaLoopCommandPolicyKey{}, cfg)")
 	return context.WithValue(ctx, pragmaLoopCommandPolicyKey{}, cfg)
 }
 
@@ -176,8 +189,39 @@ func (engine *Engine) runPragmaLoop(ctx context.Context, userMessage string, ch 
 	observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runPragmaLoop", "exit")
 	snap := engine.store.Snapshot()
-	system := model.SystemPrompt{Blocks: []model.SystemBlock{{Text: pragmaLoopSystemPrompt, Cacheable: false}}}
+	system := engine.pragmaLoopSystemPrompt()
 	engine.runPragmaLoopWithInitialPrompt(ctx, system, pragmaLoopInstancePrompt(userMessage, snap.CWD), nil, ch, PragmaLoopRunOptions{})
+}
+
+func (engine *Engine) pragmaLoopSystemPrompt() model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	systemText := pragmaLoopSystemPrompt
+	if custom := strings.TrimSpace(engine.config.CustomSystemPrompt); custom != "" {
+		observe.GlobalTrace("if: custom != \"\"")
+		systemText = custom + "\n\n" + pragmaLoopSystemPrompt
+	}
+	observe.GlobalTrace("return: model.SystemPrompt")
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: []model.SystemBlock{{Text: systemText, Cacheable: ...")
+	return model.SystemPrompt{Blocks: []model.SystemBlock{{Text: systemText, Cacheable: false}}}
+}
+
+// WithCustomSystemPrompt prepends the active custom system prompt to an
+// explicit system prompt. This is used by orchestration paths that build their
+// own persona system prompt instead of using pragmaLoopSystemPrompt.
+func (engine *Engine) WithCustomSystemPrompt(system model.SystemPrompt) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	custom := strings.TrimSpace(engine.config.CustomSystemPrompt)
+	if custom == "" {
+		observe.GlobalTrace("if: custom == \"\"")
+		return system
+	}
+	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
+	blocks = append(blocks, model.SystemBlock{Text: custom, Cacheable: false})
+	blocks = append(blocks, system.Blocks...)
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
+	return model.SystemPrompt{Blocks: blocks}
 }
 
 // PragmaLoopCompletionCheck can reject a submitted bash turn and keep the same
@@ -187,6 +231,9 @@ type PragmaLoopCompletionCheck func() (bool, string, error)
 // RunPragmaLoopWithSystemCompletionCheck runs the shell-action loop with an
 // optional completion check after a command emits the completion sentinel.
 func (engine *Engine) RunPragmaLoopWithSystemCompletionCheck(ctx context.Context, system model.SystemPrompt, userMessage string, completionCheck PragmaLoopCompletionCheck) <-chan LoopEvent {
+	observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystemCompletionCheck", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystemCompletionCheck", "exit")
+	observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystemCompletionCheck", "return: engine.RunPragmaLoopWithSystemCompletionCheckOptions(ctx, system, userMessage...")
 	return engine.RunPragmaLoopWithSystemCompletionCheckOptions(ctx, system, userMessage, completionCheck, PragmaLoopRunOptions{})
 }
 
@@ -207,6 +254,7 @@ func (engine *Engine) RunPragmaLoopWithSystemCompletionCheckOptions(ctx context.
 			}
 		}()
 		if opts.IncludePriorConversation {
+			observe.TraceCtx(ctx, "query", "Engine.RunPragmaLoopWithSystemCompletionCheckOptions", "if: opts.IncludePriorConversation")
 			engine.runPragmaLoopWithInitialPrompt(ctx, system, userMessage, completionCheck, ch, opts)
 			return
 		}
@@ -285,7 +333,9 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 		}
 
 		if message, rejected := rejectPragmaLoopCommand(ctx, assistantTurn.Action.Bash); rejected {
+			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: rejected")
 			if err := engine.appendPragmaLoopUserMessage(appendPragmaLoopBudgetNotice(message, run, turn)); err != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 				ch <- ErrorEvent{Err: err}
 				return
 			}
@@ -293,6 +343,7 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 		}
 		commandResult, err := executePragmaLoopCommand(ctx, workDir, assistantTurn.Action.Bash)
 		if err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
 		}
@@ -323,6 +374,7 @@ func (engine *Engine) newPragmaLoopRunConfig(system model.SystemPrompt, userMess
 	maxTurns := engine.config.MaxTurns
 	explicitMaxTurns := false
 	if opts.MaxTurns > 0 {
+		observe.GlobalTrace("if: opts.MaxTurns > 0")
 		maxTurns = opts.MaxTurns
 		explicitMaxTurns = true
 	}
@@ -344,24 +396,32 @@ func (engine *Engine) newPragmaLoopRunConfig(system model.SystemPrompt, userMess
 }
 
 func appendPragmaLoopBudgetNotice(text string, run pragmaLoopRunConfig, turn int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if !run.ExplicitMaxTurns || run.MaxTurns <= 0 {
+		observe.GlobalTrace("if: !run.ExplicitMaxTurns || run.MaxTurns <= 0")
+		observe.GlobalTrace("return: text")
 		return text
 	}
 	used := turn + 1
 	remaining := run.MaxTurns - used
 	if remaining < 0 {
+		observe.GlobalTrace("if: remaining < 0")
 		remaining = 0
 	}
 	var b strings.Builder
 	b.WriteString(strings.TrimRight(text, "\n"))
 	fmt.Fprintf(&b, "\n\n<runtime_budget>\nState turn budget: %d/%d turns used; %d remaining.\n", used, run.MaxTurns, remaining)
 	if remaining <= 10 && remaining > 0 {
+		observe.GlobalTrace("if: remaining <= 10 && remaining > 0")
 		b.WriteString("Budget warning: finish the state-specific completion contract within the remaining turns; do not start broad new repair threads unless they are necessary to complete.\n")
 	}
 	if remaining == 0 {
+		observe.GlobalTrace("if: remaining == 0")
 		b.WriteString("Budget exhausted: this state will stop if the previous action did not satisfy its completion contract.\n")
 	}
 	b.WriteString("</runtime_budget>")
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 
@@ -416,6 +476,7 @@ func pragmaLoopThinkingConfig(cfg *provider.ThinkingConfig) *provider.ThinkingCo
 	defer observe.GlobalTrace("exit")
 	if cfg != nil {
 		observe.GlobalTrace("if: cfg != nil")
+		observe.GlobalTrace("return: cfg")
 		return cfg
 	}
 	observe.GlobalTrace("return: &provider.ThinkingConfig{Enabled: false}")
@@ -445,10 +506,7 @@ func (engine *Engine) completePragmaLoopAssistantTurn(ctx context.Context, reque
 			}
 		case pragmaLoopActionFinal:
 			observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "case: pragmaLoopActionFinal")
-			if noActionRetries >= pragmaLoopMaxNoActionRetries {
-				observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "return: pragmaLoopAssistantTurn{}, fmt.Errorf(\"model returned no bash action after %d...")
-				return pragmaLoopAssistantTurn{}, fmt.Errorf("model returned no bash action after %d retries", pragmaLoopMaxNoActionRetries)
-			}
+			return turn, nil
 		default:
 			observe.TraceCtx(ctx, "query", "Engine.completePragmaLoopAssistantTurn", "default")
 			return turn, nil
@@ -513,6 +571,8 @@ func executePragmaLoopCommand(ctx context.Context, workDir, command string) (pra
 	defer observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "exit")
 	result, timedOut, err := runPragmaLoopBash(ctx, workDir, command)
 	if err != nil {
+		observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "if: err != nil")
+		observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult{}, err")
 		return pragmaLoopCommandResult{}, err
 	}
 	submitted := false
@@ -529,6 +589,7 @@ func executePragmaLoopCommand(ctx context.Context, workDir, command string) (pra
 	recordPragmaLoopCommandEvidence(ctx, commandResult)
 	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult")
 	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: pragmaLoopCommandResult{\n\tCommand:\tcommand,\n\tResult:\t\tresult,\n\tTimedOut:\ttime...")
+	observe.TraceCtx(ctx, "query", "executePragmaLoopCommand", "return: commandResult, nil")
 	return commandResult, nil
 }
 
@@ -537,6 +598,7 @@ func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopComma
 	defer observe.TraceCtx(ctx, "query", "recordPragmaLoopCommandEvidence", "exit")
 	cfg, _ := ctx.Value(pragmaLoopEvidencePathKey{}).(PragmaLoopCommandEvidenceConfig)
 	if strings.TrimSpace(cfg.Path) == "" {
+		observe.TraceCtx(ctx, "query", "recordPragmaLoopCommandEvidence", "if: strings.TrimSpace(cfg.Path) == \"\"")
 		return
 	}
 	record := struct {
@@ -564,13 +626,16 @@ func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopComma
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
+		observe.TraceCtx(ctx, "query", "recordPragmaLoopCommandEvidence", "if: err != nil")
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(cfg.Path), 0o700); err != nil {
+		observe.TraceCtx(ctx, "query", "recordPragmaLoopCommandEvidence", "if: err != nil")
 		return
 	}
 	f, err := os.OpenFile(cfg.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
+		observe.TraceCtx(ctx, "query", "recordPragmaLoopCommandEvidence", "if: err != nil")
 		return
 	}
 	defer f.Close()
@@ -578,255 +643,382 @@ func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopComma
 }
 
 func commandWritesDeclaredReport(command string, reportPaths []string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, path := range reportPaths {
+		observe.GlobalTrace("range reportPaths")
 		path = strings.TrimSpace(path)
 		if path == "" {
+			observe.GlobalTrace("if: path == \"\"")
 			continue
 		}
 		if strings.Contains(command, path) {
+			observe.GlobalTrace("if: strings.Contains(command, path)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func rejectPragmaLoopCommand(ctx context.Context, command string) (string, bool) {
+	observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "enter")
+	defer observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "exit")
 	cfg, _ := ctx.Value(pragmaLoopCommandPolicyKey{}).(PragmaLoopCommandPolicyConfig)
 	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.Pro...")
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: \"\", false")
 		return "", false
 	}
 	scannable := shellPolicyScannableText(command)
 	if path, ok := commandMutatesProtectedPath(scannable, cfg.ProtectedWritePaths); ok {
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: ok")
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: fmt.Sprintf(\"Command was rejected because it attempts to modify runtime-autho...")
 		return fmt.Sprintf("Command was rejected because it attempts to modify runtime-authored artifact `%s`. Do not create, edit, delete, truncate, overwrite, or fabricate runtime-authored artifacts. Run real commands so the runtime can capture evidence, or edit model-authored output artifacts so they only claim evidence that exists.", path), true
 	}
 	for _, pattern := range cfg.DenyPatterns {
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "range cfg.DenyPatterns")
 		re, err := regexp.Compile(pattern)
 		if err != nil {
+			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: err != nil")
 			continue
 		}
 		if !re.MatchString(scannable) {
+			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: !re.MatchString(scannable)")
 			continue
 		}
 		message := strings.TrimSpace(cfg.DenyMessage)
 		if message == "" {
+			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: message == \"\"")
 			message = "Command was rejected by the active shell policy. Choose a command allowed by the state contract."
 		}
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: message, true")
 		return message, true
 	}
 	if blocksRenderedInputPath(scannable, cfg.RenderedInputPaths, cfg.WritablePaths) {
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: blocksRenderedInputPath(scannable, cfg.RenderedInputPaths, cfg.WritablePaths)")
 		message := strings.TrimSpace(cfg.DenyMessage)
 		if message == "" {
+			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: message == \"\"")
 			message = "Command was rejected by the active shell policy. This state receives declared handoff inputs as rendered content; write declared outputs from that rendered content instead of reading handoff artifact paths again."
 		}
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: message, true")
 		return message, true
 	}
+	observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: \"\", false")
 	return "", false
 }
 
 func commandMutatesProtectedPath(scannable string, paths []string) (string, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, line := range strings.Split(scannable, "\n") {
+		observe.GlobalTrace("range strings.Split(scannable, \"\\n\")")
 		for _, path := range paths {
+			observe.GlobalTrace("range paths")
 			path = strings.TrimSpace(path)
 			if path == "" {
+				observe.GlobalTrace("if: path == \"\"")
 				continue
 			}
 			if lineMutatesPath(line, path) {
+				observe.GlobalTrace("if: lineMutatesPath(line, path)")
+				observe.GlobalTrace("return: path, true")
 				return path, true
 			}
 		}
 	}
+	observe.GlobalTrace("return: \"\", false")
 	return "", false
 }
 
 func lineMutatesPath(line string, path string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if lineWritesPath(line, path) {
+		observe.GlobalTrace("if: lineWritesPath(line, path)")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	if !strings.Contains(line, path) {
+		observe.GlobalTrace("if: !strings.Contains(line, path)")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	for _, segment := range shellCommandSegments(line) {
+		observe.GlobalTrace("range shellCommandSegments(line)")
 		if !strings.Contains(segment, path) {
+			observe.GlobalTrace("if: !strings.Contains(segment, path)")
 			continue
 		}
 		if shellSegmentMutatesReferencedPath(segment) {
+			observe.GlobalTrace("if: shellSegmentMutatesReferencedPath(segment)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func shellCommandSegments(line string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	replacer := strings.NewReplacer("&&", "\n", "||", "\n", ";", "\n", "|", "\n")
+	observe.GlobalTrace("return: strings.Split(replacer.Replace(line), \"\\n\")")
 	return strings.Split(replacer.Replace(line), "\n")
 }
 
 func shellSegmentMutatesReferencedPath(segment string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	fields := shellSegmentFields(segment)
 	if len(fields) == 0 {
+		observe.GlobalTrace("if: len(fields) == 0")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	cmd := filepath.Base(fields[0])
 	switch cmd {
 	case "rm", "unlink", "truncate", "touch", "tee", "mv":
+		observe.GlobalTrace("case: \"rm\", \"unlink\", \"truncate\", \"touch\", \"tee\", \"mv\"")
 		return true
 	case "sed", "perl":
+		observe.GlobalTrace("case: \"sed\", \"perl\"")
 		for _, field := range fields[1:] {
 			if field == "-i" || strings.HasPrefix(field, "-i.") || strings.HasPrefix(field, "-i") {
+				observe.GlobalTrace("if: field == \"-i\" || strings.HasPrefix(field, \"-i.\") || strings.HasPrefix(field, ...")
+				observe.GlobalTrace("return: true")
 				return true
 			}
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func shellSegmentFields(segment string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	raw := strings.Fields(strings.TrimSpace(segment))
 	fields := make([]string, 0, len(raw))
 	for _, field := range raw {
+		observe.GlobalTrace("range raw")
 		field = strings.Trim(field, `"'`)
 		if field == "" {
+			observe.GlobalTrace("if: field == \"\"")
 			continue
 		}
 		fields = append(fields, field)
 	}
+	observe.GlobalTrace("return: fields")
 	return fields
 }
 
 func blocksRenderedInputPath(scannable string, inputPaths []string, writablePaths []string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, line := range strings.Split(scannable, "\n") {
+		observe.GlobalTrace("range strings.Split(scannable, \"\\n\")")
 		for _, path := range inputPaths {
+			observe.GlobalTrace("range inputPaths")
 			path = strings.TrimSpace(path)
 			if path == "" || !strings.Contains(line, path) {
+				observe.GlobalTrace("if: path == \"\" || !strings.Contains(line, path)")
 				continue
 			}
 			if lineWritesPath(line, path) && pathInList(path, writablePaths) {
+				observe.GlobalTrace("if: lineWritesPath(line, path) && pathInList(path, writablePaths)")
 				continue
 			}
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func lineWritesPath(line string, path string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	path = strings.TrimSpace(path)
 	if path == "" {
+		observe.GlobalTrace("if: path == \"\"")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	for _, op := range []string{">>", ">"} {
+		observe.GlobalTrace("range []string{\">>\", \">\"}")
 		idx := strings.Index(line, op)
 		for idx >= 0 {
+			observe.GlobalTrace("for: idx >= 0")
 			after := strings.TrimLeft(line[idx+len(op):], " \t")
 			if shellPathPrefix(after, path) {
+				observe.GlobalTrace("if: shellPathPrefix(after, path)")
+				observe.GlobalTrace("return: true")
 				return true
 			}
 			next := strings.Index(line[idx+len(op):], op)
 			if next < 0 {
+				observe.GlobalTrace("if: next < 0")
 				break
 			}
 			idx += len(op) + next
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func shellPathPrefix(text string, path string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if strings.HasPrefix(text, path) {
+		observe.GlobalTrace("if: strings.HasPrefix(text, path)")
+		observe.GlobalTrace("return: shellPathBoundary(text[len(path):])")
 		return shellPathBoundary(text[len(path):])
 	}
 	if len(text) < 2 {
+		observe.GlobalTrace("if: len(text) < 2")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	quote := text[0]
 	if quote != '\'' && quote != '"' {
+		observe.GlobalTrace("if: quote != '\\'' && quote != '\"'")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	rest := text[1:]
 	if !strings.HasPrefix(rest, path) {
+		observe.GlobalTrace("if: !strings.HasPrefix(rest, path)")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	after := rest[len(path):]
+	observe.GlobalTrace("return: len(after) > 0 && after[0] == quote")
 	return len(after) > 0 && after[0] == quote
 }
 
 func shellPathBoundary(text string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if text == "" {
+		observe.GlobalTrace("if: text == \"\"")
+		observe.GlobalTrace("return: true")
 		return true
 	}
+	observe.GlobalTrace("return: strings.ContainsRune(\" \\t\\r\\n;&|)\", rune(text[0]))")
 	return strings.ContainsRune(" \t\r\n;&|)", rune(text[0]))
 }
 
 func pathInList(path string, paths []string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, candidate := range paths {
+		observe.GlobalTrace("range paths")
 		if strings.TrimSpace(candidate) == path {
+			observe.GlobalTrace("if: strings.TrimSpace(candidate) == path")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
 func shellPolicyScannableText(command string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var out []string
 	var heredocEnd string
 	for _, line := range strings.Split(command, "\n") {
+		observe.GlobalTrace("range strings.Split(command, \"\\n\")")
 		trimmed := strings.TrimSpace(line)
 		if heredocEnd != "" {
+			observe.GlobalTrace("if: heredocEnd != \"\"")
 			if trimmed == heredocEnd {
+				observe.GlobalTrace("if: trimmed == heredocEnd")
 				heredocEnd = ""
 			}
 			continue
 		}
 		if strings.HasPrefix(trimmed, "#") {
+			observe.GlobalTrace("if: strings.HasPrefix(trimmed, \"#\")")
 			continue
 		}
 		out = append(out, line)
 		if end := shellHeredocEndToken(line); end != "" {
+			observe.GlobalTrace("if: end != \"\"")
 			heredocEnd = end
 		}
 	}
+	observe.GlobalTrace("return: strings.Join(out, \"\\n\")")
 	return strings.Join(out, "\n")
 }
 
 func shellHeredocEndToken(line string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	idx := strings.Index(line, "<<")
 	if idx < 0 {
+		observe.GlobalTrace("if: idx < 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	token := strings.TrimSpace(line[idx+2:])
 	if strings.HasPrefix(token, "-") {
+		observe.GlobalTrace("if: strings.HasPrefix(token, \"-\")")
 		token = strings.TrimSpace(strings.TrimPrefix(token, "-"))
 	}
 	fields := strings.Fields(token)
 	if len(fields) == 0 {
+		observe.GlobalTrace("if: len(fields) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	token = fields[0]
 	token = strings.Trim(token, `"'`)
 	if token == "" || strings.ContainsAny(token, `/\`) {
+		observe.GlobalTrace("if: token == \"\" || strings.ContainsAny(token, `/\\`)")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: token")
 	return token
 }
 
 func pragmaLoopCommandPreview(command string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	command = strings.TrimSpace(command)
 	if command == "" {
+		observe.GlobalTrace("if: command == \"\"")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	line := command
 	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+		observe.GlobalTrace("if: idx >= 0")
 		line = line[:idx]
 	}
 	line = strings.TrimSpace(line)
 	if len(line) > 200 {
+		observe.GlobalTrace("if: len(line) > 200")
+		observe.GlobalTrace("return: line[:200] + \"...\"")
 		return line[:200] + "..."
 	}
+	observe.GlobalTrace("return: line")
 	return line
 }
 
 func sha256HexString(value string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	sum := sha256.Sum256([]byte(value))
+	observe.GlobalTrace("return: fmt.Sprintf(\"%x\", sum[:])")
 	return fmt.Sprintf("%x", sum[:])
 }
 
@@ -1015,6 +1207,7 @@ func pragmaLoopReplayContent(content []model.ContentPart) []model.ContentPart {
 			observe.GlobalTrace("if: ok")
 			text.Text = stripPragmaLoopThinkBlocks(text.Text)
 			if strings.TrimSpace(text.Text) == "" {
+				observe.GlobalTrace("if: strings.TrimSpace(text.Text) == \"\"")
 				continue
 			}
 			out = append(out, text)
@@ -1030,6 +1223,7 @@ func stripPragmaLoopThinkBlocks(text string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	for {
+		observe.GlobalTrace("for: true")
 		lower := strings.ToLower(text)
 		start := strings.Index(lower, "<think>")
 		if start < 0 {
@@ -1093,8 +1287,11 @@ func pragmaLoopCommandContainsFenceOutsideHeredoc(command string) bool {
 	defer observe.GlobalTrace("exit")
 	var heredocs []pragmaLoopHeredoc
 	for _, line := range strings.Split(command, "\n") {
+		observe.GlobalTrace("range strings.Split(command, \"\\n\")")
 		if len(heredocs) > 0 {
+			observe.GlobalTrace("if: len(heredocs) > 0")
 			if pragmaLoopHeredocEnds(line, heredocs[0]) {
+				observe.GlobalTrace("if: pragmaLoopHeredocEnds(line, heredocs[0])")
 				heredocs = heredocs[1:]
 			}
 			continue
@@ -1127,6 +1324,7 @@ func extractPragmaLoopBashBlocks(text string) []string {
 	spans := extractPragmaLoopBashBlockSpans(text)
 	blocks := make([]string, 0, len(spans))
 	for _, span := range spans {
+		observe.GlobalTrace("range spans")
 		blocks = append(blocks, span.body)
 	}
 	observe.GlobalTrace("return: blocks")
@@ -1139,22 +1337,28 @@ func extractPragmaLoopBashBlockSpans(text string) []pragmaLoopBashBlock {
 	lines := strings.Split(text, "\n")
 	var blocks []pragmaLoopBashBlock
 	for i := 0; i < len(lines); i++ {
+		observe.GlobalTrace("for: i < len(lines)")
 		if strings.TrimSpace(lines[i]) != "```bash" {
+			observe.GlobalTrace("if: strings.TrimSpace(lines[i]) != \"```bash\"")
 			continue
 		}
 
 		start := i + 1
 		var heredocs []pragmaLoopHeredoc
 		for j := start; j < len(lines); j++ {
+			observe.GlobalTrace("for: j < len(lines)")
 			line := lines[j]
 			if len(heredocs) > 0 {
+				observe.GlobalTrace("if: len(heredocs) > 0")
 				if pragmaLoopHeredocEnds(line, heredocs[0]) {
+					observe.GlobalTrace("if: pragmaLoopHeredocEnds(line, heredocs[0])")
 					heredocs = heredocs[1:]
 				}
 				continue
 			}
 
 			if strings.TrimSpace(line) == "```" {
+				observe.GlobalTrace("if: strings.TrimSpace(line) == \"```\"")
 				blocks = append(blocks, pragmaLoopBashBlock{
 					body:      strings.Join(lines[start:j], "\n"),
 					startLine: i,
@@ -1175,6 +1379,7 @@ func pragmaLoopHeredocEnds(line string, heredoc pragmaLoopHeredoc) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if heredoc.stripTabs {
+		observe.GlobalTrace("if: heredoc.stripTabs")
 		line = strings.TrimLeft(line, "\t")
 	}
 	observe.GlobalTrace("return: line == heredoc.delimiter")
@@ -1187,41 +1392,51 @@ func extractPragmaLoopHeredocs(line string) []pragmaLoopHeredoc {
 	var heredocs []pragmaLoopHeredoc
 	var inSingle, inDouble, escaped bool
 	for i := 0; i < len(line); i++ {
+		observe.GlobalTrace("for: i < len(line)")
 		ch := line[i]
 		if escaped {
+			observe.GlobalTrace("if: escaped")
 			escaped = false
 			continue
 		}
 		if ch == '\\' && !inSingle {
+			observe.GlobalTrace("if: ch == '\\\\' && !inSingle")
 			escaped = true
 			continue
 		}
 		if ch == '\'' && !inDouble {
+			observe.GlobalTrace("if: ch == '\\'' && !inDouble")
 			inSingle = !inSingle
 			continue
 		}
 		if ch == '"' && !inSingle {
+			observe.GlobalTrace("if: ch == '\"' && !inSingle")
 			inDouble = !inDouble
 			continue
 		}
 		if inSingle || inDouble {
+			observe.GlobalTrace("if: inSingle || inDouble")
 			continue
 		}
 		if ch == '#' {
+			observe.GlobalTrace("if: ch == '#'")
 			break
 		}
 		if ch != '<' || i+1 >= len(line) || line[i+1] != '<' {
+			observe.GlobalTrace("if: ch != '<' || i+1 >= len(line) || line[i+1] != '<'")
 			continue
 		}
 
 		pos := i + 2
 		stripTabs := false
 		if pos < len(line) && line[pos] == '-' {
+			observe.GlobalTrace("if: pos < len(line) && line[pos] == '-'")
 			stripTabs = true
 			pos++
 		}
 		delimiter, next, ok := readPragmaLoopShellWord(line, pos)
 		if ok {
+			observe.GlobalTrace("if: ok")
 			heredocs = append(heredocs, pragmaLoopHeredoc{
 				delimiter: delimiter,
 				stripTabs: stripTabs,
@@ -1237,35 +1452,42 @@ func readPragmaLoopShellWord(line string, pos int) (string, int, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	for pos < len(line) && (line[pos] == ' ' || line[pos] == '\t') {
+		observe.GlobalTrace("for: pos < len(line) && (line[pos] == ' ' || line[pos] == '\\t')")
 		pos++
 	}
 
 	var b strings.Builder
 	var inSingle, inDouble, escaped bool
 	for pos < len(line) {
+		observe.GlobalTrace("for: pos < len(line)")
 		ch := line[pos]
 		if escaped {
+			observe.GlobalTrace("if: escaped")
 			b.WriteByte(ch)
 			escaped = false
 			pos++
 			continue
 		}
 		if ch == '\\' && !inSingle {
+			observe.GlobalTrace("if: ch == '\\\\' && !inSingle")
 			escaped = true
 			pos++
 			continue
 		}
 		if ch == '\'' && !inDouble {
+			observe.GlobalTrace("if: ch == '\\'' && !inDouble")
 			inSingle = !inSingle
 			pos++
 			continue
 		}
 		if ch == '"' && !inSingle {
+			observe.GlobalTrace("if: ch == '\"' && !inSingle")
 			inDouble = !inDouble
 			pos++
 			continue
 		}
 		if !inSingle && !inDouble && isPragmaLoopShellWordTerminator(ch) {
+			observe.GlobalTrace("if: !inSingle && !inDouble && isPragmaLoopShellWordTerminator(ch)")
 			break
 		}
 		b.WriteByte(ch)
@@ -1298,6 +1520,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	if patch, patchWorkDir, ok, err := applypatch.ExtractShellApplyPatch(command); err != nil {
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "if: err != nil")
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false")
+		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false, nil")
 		return pragmaLoopBashResult{ReturnCode: 1, Output: err.Error()}, false, nil
 	} else if ok {
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "else-if: ok")
@@ -1327,6 +1550,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "if: err != nil")
+		observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: pragmaLoopBashResult{}, false, fmt.Errorf(\"shell command failed before execut...")
 		return pragmaLoopBashResult{}, false, fmt.Errorf("shell command failed before execution: %w", err)
 	}
 	out := pragmaLoopBashResult{
@@ -1342,6 +1566,7 @@ func runPragmaLoopBash(ctx context.Context, workDir, command string) (pragmaLoop
 		out.Output += result.Err.Error()
 	}
 	observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: out, result.TimedOut")
+	observe.TraceCtx(ctx, "query", "runPragmaLoopBash", "return: out, result.TimedOut, nil")
 	return out, result.TimedOut, nil
 }
 
