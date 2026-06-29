@@ -163,6 +163,34 @@ func TestRegisterFlagsIncludesSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestRegisterFlagsIncludesLoop(t *testing.T) {
+	cmd := newFlagCommand(t, "--loop", "provider-tools")
+	got, err := cmd.Flags().GetString("loop")
+	if err != nil {
+		t.Fatalf("GetString(loop): %v", err)
+	}
+	if got != "provider-tools" {
+		t.Fatalf("loop = %q, want provider-tools", got)
+	}
+}
+
+func TestResolveProviderConfigRejectsInvalidLoop(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LILAC_API_KEY", "env-key")
+	t.Chdir(work)
+
+	cmd := newFlagCommand(t, "--loop", "bogus")
+	_, err := SetupDepsWithOptions(cmd, SetupDepsOptions{})
+	if err == nil {
+		t.Fatal("SetupDepsWithOptions error = nil, want invalid loop mode")
+	}
+	if got := err.Error(); got != `invalid loop mode "bogus"; expected pragma or provider-tools` {
+		t.Fatalf("error = %q", got)
+	}
+}
+
 func TestResolveProviderConfigCredentialsThenEnv(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()
@@ -213,6 +241,21 @@ func TestResolveProviderConfigEnvFallback(t *testing.T) {
 	}
 	if resolved.Model != DefaultModelFor("openai") {
 		t.Fatalf("Model = %q, want OpenAI default", resolved.Model)
+	}
+}
+
+func TestLilacDefaultAndAliasesUseMiniMaxM3(t *testing.T) {
+	if got := DefaultModelFor("lilac"); got != "minimaxai/minimax-m3" {
+		t.Fatalf("DefaultModelFor(lilac) = %q, want minimaxai/minimax-m3", got)
+	}
+	if got := SecondaryModelFor("lilac"); got != "minimaxai/minimax-m3" {
+		t.Fatalf("SecondaryModelFor(lilac) = %q, want minimaxai/minimax-m3", got)
+	}
+	if got := resolveModelAlias("lilac", "minimax"); got != "minimaxai/minimax-m3" {
+		t.Fatalf("resolveModelAlias(lilac, minimax) = %q, want minimaxai/minimax-m3", got)
+	}
+	if got := resolveModelAlias("lilac", "m2.7"); got != "minimaxai/minimax-m2.7" {
+		t.Fatalf("resolveModelAlias(lilac, m2.7) = %q, want minimaxai/minimax-m2.7", got)
 	}
 }
 

@@ -32,7 +32,9 @@ func orchestrationRunCmd() *cobra.Command {
 	}
 	cmd.Flags().String("prompt", "", "Task prompt")
 	cmd.Flags().String("persona-dir", "personas", "Directory containing persona YAML files")
-	cmd.Flags().StringArray("seed-artifact", nil, "Seed artifact content as source=path")
+	cmd.Flags().StringArray("seed-artifact", nil, "Seed artifact content as target=path, where target is a declared seed source, artifact id, or artifact path")
+	cmd.Flags().String("start-at-state", "", "Start execution at the named orchestration state")
+	cmd.Flags().String("stop-after-state", "", "Stop after completing the named orchestration state")
 	return cmd
 }
 
@@ -40,6 +42,8 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 	taskPrompt, _ := cmd.Flags().GetString("prompt")
 	personaDir, _ := cmd.Flags().GetString("persona-dir")
 	seedArtifactFlags, _ := cmd.Flags().GetStringArray("seed-artifact")
+	startAtState, _ := cmd.Flags().GetString("start-at-state")
+	stopAfterState, _ := cmd.Flags().GetString("stop-after-state")
 	seedArtifacts, err := readSeedArtifactFiles(seedArtifactFlags)
 	if err != nil {
 		return err
@@ -49,6 +53,8 @@ func runOrchestration(cmd *cobra.Command, args []string) error {
 		PersonaDir:     personaDir,
 		Prompt:         taskPrompt,
 		SeedArtifacts:  seedArtifacts,
+		StartAtState:   startAtState,
+		StopAfterState: stopAfterState,
 	})
 }
 
@@ -62,7 +68,7 @@ func readSeedArtifactFiles(values []string) (map[string]string, error) {
 		source = strings.TrimSpace(source)
 		path = strings.TrimSpace(path)
 		if !ok || source == "" || path == "" {
-			return nil, fmt.Errorf("--seed-artifact requires source=path")
+			return nil, fmt.Errorf("--seed-artifact requires target=path")
 		}
 		content, err := os.ReadFile(path)
 		if err != nil {

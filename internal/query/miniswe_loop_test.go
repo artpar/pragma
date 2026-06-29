@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -326,6 +327,328 @@ func TestPragmaLoopTextOnlyResponseCompletesWithoutRetry(t *testing.T) {
 	}
 }
 
+func TestPragmaLoopNoActionFinalRunsCompletionCheck(t *testing.T) {
+	responses := []model.Response{
+		{
+			ID:         "resp-no-action",
+			Model:      "test-model",
+			StopReason: model.StopEndTurn,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "I am done."},
+			},
+		},
+		{
+			ID:         "resp-repair",
+			Model:      "test-model",
+			StopReason: model.StopEndTurn,
+			Content: []model.ContentPart{
+				model.TextPart{Text: "```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\n```"},
+			},
+		},
+	}
+
+	prov := &pragmaLoopTestProvider{responses: responses}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+		MaxTurns:  5,
+	})
+
+	checkCalls := 0
+	events := collectPragmaLoopEvents(engine.RunPragmaLoopWithSystemCompletionCheck(
+		t.Context(),
+		model.SystemPrompt{},
+		"write the report",
+		func() (bool, string, error) {
+			checkCalls++
+			if checkCalls == 1 {
+				return false, "worker_report was not freshly written", nil
+			}
+			return true, "", nil
+		},
+	))
+
+	var sawComplete bool
+	for _, ev := range events {
+		switch ev.(type) {
+		case ErrorEvent:
+			t.Fatalf("unexpected ErrorEvent: %#v", ev)
+		case TurnCompleteEvent:
+			sawComplete = true
+		}
+	}
+	if !sawComplete {
+		t.Fatal("missing TurnCompleteEvent")
+	}
+	if checkCalls != 2 {
+		t.Fatalf("completion check calls = %d, want 2", checkCalls)
+	}
+	if prov.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", prov.calls)
+	}
+	if len(prov.requests) != 2 {
+		t.Fatalf("requests = %d, want 2", len(prov.requests))
+	}
+	second := fmt.Sprint(prov.requests[1].Messages)
+	if !strings.Contains(second, "worker_report was not freshly written") {
+		t.Fatalf("second request missing rejection guidance: %s", second)
+	}
+}
+
+func TestPragmaLoopFinalTextOnlyDoesNotExecuteBash(t *testing.T) {
+	response := model.Response{
+		ID:         "resp-final-text",
+		Model:      "test-model",
+		StopReason: model.StopEndTurn,
+		Content: []model.ContentPart{
+			model.TextPart{Text: "```bash\necho should-not-run\n```\nBLOCK"},
+		},
+	}
+
+	prov := &pragmaLoopTestProvider{responses: []model.Response{response}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+		MaxTurns:  5,
+	})
+
+	completionCheckCalled := false
+	events := collectPragmaLoopEvents(engine.RunPragmaLoopWithSystemCompletionCheckOptions(
+		t.Context(),
+		model.SystemPrompt{},
+		"return a verdict",
+		func() (bool, string, error) {
+			completionCheckCalled = true
+			return false, "should not be called", nil
+		},
+		PragmaLoopRunOptions{FinalTextOnly: true},
+	))
+
+	var sawText, sawComplete bool
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case ErrorEvent:
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		case TextEvent:
+			if strings.Contains(e.Text, "BLOCK") {
+				sawText = true
+			}
+		case TurnCompleteEvent:
+			sawComplete = true
+		case ToolCallEvent, ToolResultEvent:
+			t.Fatalf("unexpected tool event: %#v", ev)
+		}
+	}
+	if !sawText {
+		t.Fatal("missing final text")
+	}
+	if !sawComplete {
+		t.Fatal("missing TurnCompleteEvent")
+	}
+	if completionCheckCalled {
+		t.Fatal("completion check should not run for final-text-only mode")
+	}
+	if prov.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", prov.calls)
+	}
+}
+
+func TestPragmaLoopFinalTextOnlyRetriesInvalidFinalText(t *testing.T) {
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		{
+			ID:         "resp-empty",
+			Model:      "test-model",
+			StopReason: model.StopMaxTokens,
+			Content:    []model.ContentPart{model.ThinkingPart{Text: "reasoning without final answer"}},
+		},
+		{
+			ID:         "resp-block",
+			Model:      "test-model",
+			StopReason: model.StopEndTurn,
+			Content:    []model.ContentPart{model.TextPart{Text: "BLOCK"}},
+		},
+	}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:     "test-model",
+		MaxTokens: 4096,
+		MaxTurns:  5,
+	})
+
+	checkCalls := 0
+	events := collectPragmaLoopEvents(engine.RunPragmaLoopWithSystemCompletionCheckOptions(
+		t.Context(),
+		model.SystemPrompt{},
+		"return a verdict",
+		nil,
+		PragmaLoopRunOptions{
+			FinalTextOnly: true,
+			FinalTextCheck: func(text string) (bool, string, error) {
+				checkCalls++
+				if strings.TrimSpace(text) == "BLOCK" {
+					return true, "", nil
+				}
+				return false, "Return exactly BLOCK.", nil
+			},
+		},
+	))
+
+	var sawText, sawComplete bool
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case ErrorEvent:
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		case TextEvent:
+			if e.Text == "BLOCK" {
+				sawText = true
+			}
+			if strings.Contains(e.Text, "reasoning without final answer") {
+				t.Fatalf("invalid hidden reasoning leaked as text event: %q", e.Text)
+			}
+		case TurnCompleteEvent:
+			sawComplete = true
+		}
+	}
+	if !sawText || !sawComplete {
+		t.Fatalf("sawText=%v sawComplete=%v, want both true", sawText, sawComplete)
+	}
+	if checkCalls != 2 {
+		t.Fatalf("final text check calls = %d, want 2", checkCalls)
+	}
+	if prov.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", prov.calls)
+	}
+	second := fmt.Sprint(prov.requests[1].Messages)
+	if !strings.Contains(second, "Return exactly BLOCK.") {
+		t.Fatalf("second request missing correction: %s", second)
+	}
+}
+
+func TestPragmaLoopCommandPolicyRequiresPattern(t *testing.T) {
+	ctx := WithPragmaLoopCommandPolicy(t.Context(), PragmaLoopCommandPolicyConfig{
+		RequirePatterns: []string{`/tmp/pragma/survey\.md`},
+		DenyMessage:     "write the survey artifact",
+	})
+	message, rejected := rejectPragmaLoopCommand(ctx, "pwd && ls")
+	if !rejected {
+		t.Fatal("expected command to be rejected")
+	}
+	if message != "write the survey artifact" {
+		t.Fatalf("message = %q", message)
+	}
+
+	_, rejected = rejectPragmaLoopCommand(ctx, "pwd > /tmp/pragma/survey.md")
+	if rejected {
+		t.Fatal("expected command with required artifact path to pass")
+	}
+}
+
+func TestPragmaLoopCommandPolicyDeniesForbiddenWorkerCommands(t *testing.T) {
+	ctx := WithPragmaLoopCommandPolicy(t.Context(), PragmaLoopCommandPolicyConfig{
+		DenyPatterns: []string{
+			`(^|[;&|[:space:]])go[[:space:]]+(build|test|generate)\b`,
+			`(^|[;&|[:space:]])git[[:space:]]+(checkout|restore|reset|clean)\b`,
+			`(^|[;&|[:space:]])git[[:space:]]+show[[:space:]]+[^;&|[:space:]]+:`,
+			`(^|[;&|[:space:]])git[[:space:]]+cat-file\b`,
+			`(^|[;&|[:space:]])sed[[:space:]]+-i\b`,
+			`(^|[;&|[:space:]])perl[[:space:]]+-pi\b`,
+			`(^|[;&|[:space:]])patch([[:space:]]|$)`,
+		},
+		DenyMessage: "worker command denied",
+	})
+
+	for _, command := range []string{
+		"cd /app && go build ./internal/config/ 2>&1 | head -30",
+		"cd /app && git checkout internal/config/authentication.go",
+		"git checkout -- internal/config/authentication.go rpc/flipt/auth/auth.proto",
+		"cd /app && git show HEAD:internal/config/authentication.go > /tmp/original_auth.go && cp /tmp/original_auth.go internal/config/authentication.go",
+		"cd /app && git cat-file blob HEAD:internal/config/authentication.go > internal/config/authentication.go",
+		"sed -i 's/old/new/' /app/internal/config/authentication.go",
+		"sed -i 's/METHOD_OIDC = 2;/METHOD_OIDC = 2;\\n  METHOD_KUBERNETES = 3;/' /app/rpc/flipt/auth/auth.proto && grep -A 6 \"enum Method\" /app/rpc/flipt/auth/auth.proto",
+		"perl -pi -e 's/old/new/' /app/internal/config/authentication.go",
+		"cd /app && perl -pi -e 's/old/new/' /app/internal/config/authentication.go && grep new /app/internal/config/authentication.go",
+		"cd /app && patch -p1 < /tmp/k8s_auth_patch.txt",
+	} {
+		message, rejected := rejectPragmaLoopCommand(ctx, command)
+		if !rejected {
+			t.Fatalf("expected command to be rejected: %s", command)
+		}
+		if message != "worker command denied" {
+			t.Fatalf("message = %q", message)
+		}
+	}
+}
+
+func TestCommandLooksLikeRepoMutation(t *testing.T) {
+	reportPath := "/tmp/pragma/swe/worker-report.md"
+	cases := []struct {
+		name    string
+		command string
+		want    bool
+	}{
+		{
+			name:    "temp move into app source",
+			command: "awk '{ print }' /app/internal/config/authentication.go > /tmp/authentication.go.tmp && mv /tmp/authentication.go.tmp /app/internal/config/authentication.go",
+			want:    true,
+		},
+		{
+			name:    "python source write",
+			command: "python3 - <<'PY'\nfrom pathlib import Path\nPath('/app/rpc/flipt/auth/auth.proto').write_text('x')\nPY",
+			want:    true,
+		},
+		{
+			name:    "coordination artifact report",
+			command: "cat > /tmp/pragma/swe/worker-report.md <<'EOF'\n# Worker Report\nEOF",
+			want:    false,
+		},
+		{
+			name:    "source mutation plus report write",
+			command: "python3 - <<'PY'\nfrom pathlib import Path\nPath('/app/internal/config/authentication.go').write_text('x')\nPath('/tmp/pragma/swe/worker-report.md').write_text('report')\nPY",
+			want:    true,
+		},
+		{
+			name:    "read only source",
+			command: "sed -n '1,80p' /app/internal/config/authentication.go",
+			want:    false,
+		},
+		{
+			name:    "read only source with stderr redirection",
+			command: "ls /app/internal/config/testdata/ && grep -l \"oidc\\|token\" /app/internal/config/testdata/*.yaml 2>/dev/null | head -5",
+			want:    false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := commandLooksLikeRepoMutation(tc.command, []string{reportPath}); got != tc.want {
+				t.Fatalf("commandLooksLikeRepoMutation() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPragmaLoopCustomSystemPromptPrependsRuntimePrompt(t *testing.T) {
 	response := model.Response{
 		ID:         "resp-text-only",
@@ -435,6 +758,114 @@ func (p *pragmaLoopTestProvider) SupportsFeature(provider.Feature) bool { return
 func (p *pragmaLoopTestProvider) Pricing(string) (model.Pricing, bool) { return model.Pricing{}, false }
 
 func (p *pragmaLoopTestProvider) ContextWindow(string) (int, bool) { return 200_000, true }
+
+func TestProviderToolsLoopExecutesBashToolCall(t *testing.T) {
+	callInput, err := json.Marshal(map[string]string{"cmd": "printf provider-tools-ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		{
+			Content: []model.ContentPart{
+				model.ToolCallPart{ID: "call-1", Name: "Bash", Input: callInput},
+			},
+			StopReason: model.StopToolUse,
+		},
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "done"}},
+			StopReason: model.StopEndTurn,
+		},
+	}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	costTracker := model.NewCostTracker(0)
+	engine := NewEngine(prov, store, costTracker, observe.NewEventBus(16), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModeProviderTools,
+		MaxTokens: 4096,
+		MaxTurns:  5,
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "hello"))
+
+	var sawToolCall, sawToolResult, sawFinal bool
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case ErrorEvent:
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		case ToolCallEvent:
+			if e.Call.Name == "Bash" {
+				sawToolCall = true
+			}
+		case ToolResultEvent:
+			if strings.Contains(e.Result.Content, "provider-tools-ok") {
+				sawToolResult = true
+			}
+		case TurnCompleteEvent:
+			sawFinal = true
+		}
+	}
+	if !sawToolCall {
+		t.Fatal("missing Bash ToolCallEvent")
+	}
+	if !sawToolResult {
+		t.Fatal("missing Bash ToolResultEvent output")
+	}
+	if !sawFinal {
+		t.Fatal("missing final TurnCompleteEvent")
+	}
+	if prov.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", prov.calls)
+	}
+	if len(prov.requests) != 2 || len(prov.requests[0].Tools) == 0 {
+		t.Fatalf("provider tools were not sent: %#v", prov.requests)
+	}
+	if entries := costTracker.Snapshot(); len(entries) != 2 {
+		t.Fatalf("cost entries = %d, want one per provider call", len(entries))
+	}
+}
+
+func TestProviderToolsLoopHonorsCustomSystemPrompt(t *testing.T) {
+	prov := &pragmaLoopTestProvider{responses: []model.Response{{
+		Content:    []model.ContentPart{model.TextPart{Text: "done"}},
+		StopReason: model.StopEndTurn,
+	}}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:              "test-model",
+		LoopMode:           LoopModeProviderTools,
+		MaxTokens:          4096,
+		MaxTurns:           5,
+		CustomSystemPrompt: "Custom provider-tools rules",
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "hello"))
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		}
+	}
+	if len(prov.requests) != 1 {
+		t.Fatalf("provider requests = %d, want 1", len(prov.requests))
+	}
+	blocks := prov.requests[0].System.Blocks
+	if len(blocks) == 0 || blocks[0].Text != "Custom provider-tools rules" {
+		t.Fatalf("system blocks = %#v, want custom prompt first", blocks)
+	}
+}
 
 func collectPragmaLoopEvents(ch <-chan LoopEvent) []LoopEvent {
 	var events []LoopEvent

@@ -39,8 +39,7 @@ The active default conversation loop is the Pragma shell-action loop:
 ```text
 InteractiveRuntime.RunInput or RunNonInteractive
   -> query.Engine.Run
-  -> Engine.runLoop
-  -> Engine.runPragmaLoop
+  -> Engine.runPragmaLoop by default
   -> provider.Provider.Complete
   -> parse exactly one fenced bash block
   -> runPragmaLoopBash
@@ -48,9 +47,9 @@ InteractiveRuntime.RunInput or RunNonInteractive
   -> repeat until final answer or completion sentinel
 ```
 
-The registry/orchestrator tool system still exists and is used by several
-runtime surfaces, but `Engine.Run` currently routes to `runPragmaLoop` rather
-than the older native provider tool-call loop.
+`Engine.Run` can also use the stable native provider tool-calling loop with
+`--loop provider-tools`; that path sends Bash and apply_patch schemas through
+the provider's native tool-call interface.
 
 ## Entry Points
 

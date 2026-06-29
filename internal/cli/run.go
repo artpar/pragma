@@ -133,6 +133,7 @@ func RunBackground(cmd *cobra.Command) error {
 	addStringFlag("api-key")
 	addStringFlag("permission-mode")
 	addStringFlag("system-prompt")
+	addStringFlag("loop")
 	addStringFlag("context-mode")
 	addStringFlag("handoff-schema")
 	addStringFlag("output-schema")
@@ -505,11 +506,13 @@ func (rt *InteractiveRuntime) runOrchestration(ctx context.Context, req slash.Or
 	llmResolver, cleanupLLMResolver := makeOrchestrationLLMResolver(rt.Deps)
 	defer cleanupLLMResolver()
 	for ev := range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, orchestration.RunOptions{
-		PersonaDir:    req.PersonaDir,
-		TaskPrompt:    req.Prompt,
-		ArtifactRoot:  artifactRoot,
-		SeedArtifacts: req.SeedArtifacts,
-		LLMResolver:   llmResolver,
+		PersonaDir:     req.PersonaDir,
+		TaskPrompt:     req.Prompt,
+		ArtifactRoot:   artifactRoot,
+		SeedArtifacts:  req.SeedArtifacts,
+		LLMResolver:    llmResolver,
+		StartAtState:   req.StartAtState,
+		StopAfterState: req.StopAfterState,
 	}) {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.runOrchestration", "range orchestration.RunFileEventsWithOptions(ctx, rt.Engine, req.DefinitionPath, or...")
 		if handoff, ok := ev.(query.OrchestrationHandoffEvent); ok {
@@ -1214,6 +1217,8 @@ type StandaloneOrchestrationOptions struct {
 	PersonaDir     string
 	Prompt         string
 	SeedArtifacts  map[string]string
+	StartAtState   string
+	StopAfterState string
 	Stdout         io.Writer
 	Stderr         io.Writer
 }
@@ -1267,6 +1272,8 @@ func RunStandaloneOrchestration(cmd *cobra.Command, opts StandaloneOrchestration
 			PersonaDir:     opts.PersonaDir,
 			Prompt:         opts.Prompt,
 			SeedArtifacts:  opts.SeedArtifacts,
+			StartAtState:   opts.StartAtState,
+			StopAfterState: opts.StopAfterState,
 		}, opts.Prompt, promptHookResult, events)
 	}()
 	observe.GlobalTrace("return: consumeStandaloneOrchestrationEvents(events, stdout, stderr)")
@@ -1441,8 +1448,8 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 			d.EngineCfg.ResponseSchema = schemaJSON
 		} else {
 			observe.GlobalTrace("else: nativeStructuredOutput")
-			observe.GlobalTrace("return: fmt.Errorf(\"structured output requires provider support after native tools re...")
-			return fmt.Errorf("structured output requires provider support after native tools removal")
+			observe.GlobalTrace("return: fmt.Errorf(\"structured output requires provider support\")")
+			return fmt.Errorf("structured output requires provider support")
 		}
 	}
 

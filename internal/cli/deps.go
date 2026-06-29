@@ -352,10 +352,21 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	prov = provider.WithAccounting(prov, costTracker, bus)
 	engineCfg := query.EngineConfig{
 		Model:                     cfg.Model,
+		LoopMode:                  query.LoopModePragma,
 		MaxTokens:                 cfg.MaxTokens,
 		MaxTurns:                  cfg.MaxTurns,
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
+	}
+	if loopMode, _ := cmd.Flags().GetString("loop"); strings.TrimSpace(loopMode) != "" {
+		observe.GlobalTrace("if: strings.TrimSpace(loopMode) != \"\"")
+		switch loopMode {
+		case query.LoopModePragma, query.LoopModeProviderTools:
+			engineCfg.LoopMode = loopMode
+		default:
+			observe.GlobalTrace("default: invalid loop mode")
+			return nil, fmt.Errorf("invalid loop mode %q; expected %s or %s", loopMode, query.LoopModePragma, query.LoopModeProviderTools)
+		}
 	}
 	if systemPrompt, _ := cmd.Flags().GetString("system-prompt"); strings.TrimSpace(systemPrompt) != "" {
 		observe.GlobalTrace("if: strings.TrimSpace(systemPrompt) != \"\"")
@@ -659,7 +670,7 @@ func DefaultModelFor(providerName string) string {
 		return "gemini-2.5-flash"
 	case "lilac":
 		observe.GlobalTrace("case: \"lilac\"")
-		return "minimaxai/minimax-m2.7"
+		return "minimaxai/minimax-m3"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-sonnet-4-6-20250514"
@@ -682,7 +693,7 @@ func SecondaryModelFor(providerName string) string {
 		return "gemini-2.5-flash"
 	case "lilac":
 		observe.GlobalTrace("case: \"lilac\"")
-		return "minimaxai/minimax-m2.7"
+		return "minimaxai/minimax-m3"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
@@ -703,10 +714,13 @@ var modelAliases = map[string]map[string]string{
 		"pro":   "gemini-2.5-pro",
 	},
 	"lilac": {
-		"gemma": "google/gemma-4-31b-it",
-		"glm":   "zai-org/glm-5.1",
-		"k2.5":  "moonshotai/kimi-k2.5",
-		"kimi":  "moonshotai/kimi-k2.6",
+		"gemma":   "google/gemma-4-31b-it",
+		"glm":     "zai-org/glm-5.1",
+		"k2.5":    "moonshotai/kimi-k2.5",
+		"kimi":    "moonshotai/kimi-k2.6",
+		"m2.7":    "minimaxai/minimax-m2.7",
+		"m3":      "minimaxai/minimax-m3",
+		"minimax": "minimaxai/minimax-m3",
 	},
 }
 

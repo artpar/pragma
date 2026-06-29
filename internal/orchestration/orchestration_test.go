@@ -3,8 +3,11 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -159,8 +162,808 @@ transitions:
 	}
 }
 
+func TestLoadStateWithFinalTextRuntimeCapture(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "final-text.yaml")
+	if err := os.WriteFile(path, []byte(`
+name: final-text-test
+initial: gate
+states:
+  - id: gate
+    persona: gate
+    artifacts:
+      outputs:
+        - id: verdict
+          path: verdict.txt
+          required: true
+          runtime_capture:
+            type: final_text
+  - id: done
+    terminal: true
+transitions:
+  - event: complete
+    from: [gate]
+    to: done
+`), 0o644); err != nil {
+		t.Fatalf("write orchestration: %v", err)
+	}
+
+	def, err := LoadDefinitionFile(path)
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	if got := def.States[0].Artifacts.Outputs[0].RuntimeCapture.Type; got != "final_text" {
+		t.Fatalf("runtime capture = %q, want final_text", got)
+	}
+}
+
+func TestLoadStateWithShellPolicyRequirePatterns(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "require-pattern.yaml")
+	if err := os.WriteFile(path, []byte(`
+name: require-pattern-test
+initial: survey
+states:
+  - id: survey
+    persona: survey
+    shell_policy:
+      require_patterns:
+        - /tmp/pragma/survey\.md
+      deny_message: write the survey artifact
+  - id: done
+    terminal: true
+transitions:
+  - event: complete
+    from: [survey]
+    to: done
+`), 0o644); err != nil {
+		t.Fatalf("write orchestration: %v", err)
+	}
+
+	def, err := LoadDefinitionFile(path)
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	if got := def.States[0].ShellPolicy.RequirePatterns; len(got) != 1 || got[0] != `/tmp/pragma/survey\.md` {
+		t.Fatalf("require patterns = %#v", got)
+	}
+}
+
+func TestLoadArtifactMaxBytes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "max-bytes.yaml")
+	if err := os.WriteFile(path, []byte(`
+name: max-bytes-test
+initial: audit
+states:
+  - id: audit
+    persona: audit
+    artifacts:
+      inputs:
+        - id: large_context
+          path: context.md
+          max_bytes: 128
+  - id: done
+    terminal: true
+transitions:
+  - event: complete
+    from: [audit]
+    to: done
+`), 0o644); err != nil {
+		t.Fatalf("write orchestration: %v", err)
+	}
+
+	def, err := LoadDefinitionFile(path)
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	if got := def.States[0].Artifacts.Inputs[0].MaxBytes; got != 128 {
+		t.Fatalf("max bytes = %d, want 128", got)
+	}
+}
+
+func TestCaptureFinalTextArtifacts(t *testing.T) {
+	root := t.TempDir()
+	state := State{
+		ID: "gate",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:             "verdict",
+			Path:           "verdict.txt",
+			AllowedValues:  []string{"PASS", "BLOCK"},
+			RuntimeCapture: ArtifactRuntimeCapture{Type: "final_text"},
+		}}},
+	}
+
+	if err := captureFinalTextArtifacts(state, root, "<think>hidden reasoning</think>\n\nBLOCK\n\n"); err != nil {
+		t.Fatalf("captureFinalTextArtifacts: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "verdict.txt"))
+	if err != nil {
+		t.Fatalf("read verdict: %v", err)
+	}
+	if got := string(data); got != "BLOCK\n" {
+		t.Fatalf("captured text = %q, want BLOCK newline", got)
+	}
+}
+
+func TestFinalTextStatePromptDoesNotUseShellContract(t *testing.T) {
+	state := State{
+		ID:      "gate",
+		Persona: "gate",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:             "verdict",
+			Path:           "verdict.txt",
+			Required:       true,
+			RuntimeCapture: ArtifactRuntimeCapture{Type: "final_text"},
+		}}},
+	}
+	system, prompt, err := BuildPromptWithArtifactRootChecked(
+		Definition{Name: "test"},
+		state,
+		persona.Definition{ID: "gate", Prompt: "Return PASS or BLOCK."},
+		"",
+		"handoff",
+		t.TempDir(),
+	)
+	if err != nil {
+		t.Fatalf("BuildPromptWithArtifactRootChecked: %v", err)
+	}
+	text := system.Blocks[0].Text
+	if strings.Contains(text, "shell-action transport") || strings.Contains(text, "fenced bash block") {
+		t.Fatalf("final_text prompt contains shell contract: %s", text)
+	}
+	if strings.Contains(prompt, "Response Output Gate") || strings.Contains(prompt, "```bash") {
+		t.Fatalf("final_text user prompt contains shell response gate: %s", prompt)
+	}
+	if !strings.Contains(text, "captures the assistant final text") {
+		t.Fatalf("final_text prompt missing final text contract: %s", text)
+	}
+}
+
+func TestRunEventsStopAfterStateStopsBeforeTransition(t *testing.T) {
+	root := t.TempDir()
+	verdictPath := filepath.Join(root, "verdict.txt")
+	if err := os.WriteFile(verdictPath, []byte("PASS\n"), 0o600); err != nil {
+		t.Fatalf("write verdict: %v", err)
+	}
+	def := Definition{
+		Name:    "stop-after-test",
+		Initial: "gate",
+		States: []State{
+			{
+				ID: "gate",
+				Control: Control{ArtifactVerdict: &ArtifactVerdictControl{
+					Path:         verdictPath,
+					Approve:      "PASS",
+					Block:        "BLOCK",
+					ApproveEvent: "pass",
+					BlockEvent:   "block",
+				}},
+			},
+			{ID: "worker", Persona: "worker"},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: "pass", From: []string{"gate"}, To: "worker"},
+			{Event: "block", From: []string{"gate"}, To: "done"},
+			{Event: EventComplete, From: []string{"worker"}, To: "done"},
+		},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "base-model", "base", "."),
+		CWD:          ".",
+		Model:        "base-model",
+		Provider:     "base",
+		MaxTokens:    1000,
+	})
+	engine := query.NewEngine(&orchestrationTestProvider{name: "base"}, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "base-model",
+		MaxTokens: 1000,
+	})
+
+	var started []string
+	var transitions []query.OrchestrationTransitionEvent
+	for ev := range RunEventsWithOptions(t.Context(), engine, def, RunOptions{
+		ArtifactRoot:   root,
+		StopAfterState: "gate",
+	}) {
+		switch e := ev.(type) {
+		case query.ErrorEvent:
+			t.Fatalf("unexpected error: %v", e.Err)
+		case query.OrchestrationStateStartedEvent:
+			started = append(started, e.StateID)
+		case query.OrchestrationTransitionEvent:
+			transitions = append(transitions, e)
+		}
+	}
+
+	if strings.Join(started, ",") != "gate" {
+		t.Fatalf("started states = %v, want only gate", started)
+	}
+	if len(transitions) != 0 {
+		t.Fatalf("transitions = %#v, want none", transitions)
+	}
+}
+
+func TestRunEventsStartAtState(t *testing.T) {
+	root := t.TempDir()
+	verdictPath := filepath.Join(root, "verdict.txt")
+	if err := os.WriteFile(verdictPath, []byte("BLOCK\n"), 0o600); err != nil {
+		t.Fatalf("write verdict: %v", err)
+	}
+	def := Definition{
+		Name:    "start-at-test",
+		Initial: "survey",
+		States: []State{
+			{ID: "survey", Persona: "survey"},
+			{
+				ID: "gate",
+				Control: Control{ArtifactVerdict: &ArtifactVerdictControl{
+					Path:         verdictPath,
+					Approve:      "PASS",
+					Block:        "BLOCK",
+					ApproveEvent: "pass",
+					BlockEvent:   "block",
+				}},
+			},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"survey"}, To: "gate"},
+			{Event: "pass", From: []string{"gate"}, To: "done"},
+			{Event: "block", From: []string{"gate"}, To: "done"},
+		},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "base-model", "base", "."),
+		CWD:          ".",
+		Model:        "base-model",
+		Provider:     "base",
+		MaxTokens:    1000,
+	})
+	engine := query.NewEngine(&orchestrationTestProvider{name: "base"}, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "base-model",
+		MaxTokens: 1000,
+	})
+
+	var started []string
+	var transitions []query.OrchestrationTransitionEvent
+	for ev := range RunEventsWithOptions(t.Context(), engine, def, RunOptions{
+		ArtifactRoot: root,
+		StartAtState: "gate",
+	}) {
+		switch e := ev.(type) {
+		case query.ErrorEvent:
+			t.Fatalf("unexpected error: %v", e.Err)
+		case query.OrchestrationStateStartedEvent:
+			started = append(started, e.StateID)
+		case query.OrchestrationTransitionEvent:
+			transitions = append(transitions, e)
+		}
+	}
+
+	if strings.Join(started, ",") != "gate" {
+		t.Fatalf("started states = %v, want only gate", started)
+	}
+	if len(transitions) != 1 || transitions[0].From != "gate" || transitions[0].Event != "block" || transitions[0].To != "done" {
+		t.Fatalf("transitions = %#v, want gate --block--> done", transitions)
+	}
+}
+
+func TestRunEventsStartAtStateRejectsUnknownState(t *testing.T) {
+	def := Definition{
+		Name:    "start-at-test",
+		Initial: "survey",
+		States: []State{
+			{ID: "survey", Persona: "survey"},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"survey"}, To: "done"},
+		},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "base-model", "base", "."),
+		CWD:          ".",
+		Model:        "base-model",
+		Provider:     "base",
+		MaxTokens:    1000,
+	})
+	engine := query.NewEngine(&orchestrationTestProvider{name: "base"}, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "base-model",
+		MaxTokens: 1000,
+	})
+
+	var err error
+	for ev := range RunEventsWithOptions(t.Context(), engine, def, RunOptions{
+		ArtifactRoot: t.TempDir(),
+		StartAtState: "missing",
+	}) {
+		if e, ok := ev.(query.ErrorEvent); ok {
+			err = e.Err
+		}
+	}
+	if err == nil {
+		t.Fatal("expected missing start state error")
+	}
+	if !strings.Contains(err.Error(), `start state "missing" not found`) {
+		t.Fatalf("error = %v, want missing start state", err)
+	}
+}
+
+func TestRunEventsStopAfterStateRejectsUnknownState(t *testing.T) {
+	def := Definition{
+		Name:    "stop-after-test",
+		Initial: "survey",
+		States: []State{
+			{ID: "survey", Persona: "survey"},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"survey"}, To: "done"},
+		},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "base-model", "base", "."),
+		CWD:          ".",
+		Model:        "base-model",
+		Provider:     "base",
+		MaxTokens:    1000,
+	})
+	engine := query.NewEngine(&orchestrationTestProvider{name: "base"}, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "base-model",
+		MaxTokens: 1000,
+	})
+
+	var err error
+	for ev := range RunEventsWithOptions(t.Context(), engine, def, RunOptions{
+		ArtifactRoot:   t.TempDir(),
+		StopAfterState: "missing",
+	}) {
+		if e, ok := ev.(query.ErrorEvent); ok {
+			err = e.Err
+		}
+	}
+	if err == nil {
+		t.Fatal("expected missing stop-after state error")
+	}
+	if !strings.Contains(err.Error(), `stop-after state "missing" not found`) {
+		t.Fatalf("error = %v, want missing stop-after state", err)
+	}
+}
+
+func TestRunEventsStartAtStatePreservesIncomingHandoff(t *testing.T) {
+	root := t.TempDir()
+	personaDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(personaDir, "gate.yaml"), []byte("id: gate\nprompt: Inspect handoff evidence and finish.\n"), 0o600); err != nil {
+		t.Fatalf("write persona: %v", err)
+	}
+	def := Definition{
+		Name:    "start-at-handoff-test",
+		Initial: "survey",
+		States: []State{
+			{ID: "survey", Persona: "survey"},
+			{ID: "gate", Persona: "gate"},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"survey"}, To: "gate", Handoff: []Artifact{{
+				ID:       "survey_report",
+				Path:     "survey/report.md",
+				Required: true,
+			}}},
+			{Event: EventComplete, From: []string{"gate"}, To: "done"},
+		},
+	}
+	prov := &orchestrationTestProvider{
+		name: "base",
+		responses: []model.Response{{
+			Model:      "base-model",
+			Content:    []model.ContentPart{model.TextPart{Text: "done"}},
+			StopReason: model.StopEndTurn,
+		}},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "base-model", "base", "."),
+		CWD:          ".",
+		Model:        "base-model",
+		Provider:     "base",
+		MaxTokens:    1000,
+	})
+	engine := query.NewEngine(prov, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "base-model",
+		MaxTokens: 1000,
+	})
+
+	for ev := range RunEventsWithOptions(t.Context(), engine, def, RunOptions{
+		ArtifactRoot: root,
+		PersonaDir:   personaDir,
+		StartAtState: "gate",
+		SeedArtifacts: map[string]string{
+			"survey_report": "seeded survey evidence\n",
+		},
+	}) {
+		if e, ok := ev.(query.ErrorEvent); ok {
+			t.Fatalf("unexpected error: %v", e.Err)
+		}
+	}
+	if len(prov.requests) == 0 {
+		t.Fatal("provider was not called")
+	}
+	var requestText strings.Builder
+	for _, msg := range prov.requests[0].Messages {
+		for _, part := range msg.Content {
+			if text, ok := part.(model.TextPart); ok {
+				requestText.WriteString(text.Text)
+			}
+		}
+	}
+	if !strings.Contains(requestText.String(), "seeded survey evidence") {
+		t.Fatalf("first request missing seeded transition handoff:\n%s", requestText.String())
+	}
+}
+
+func TestMaterializeSeedArtifactsByArtifactID(t *testing.T) {
+	root := t.TempDir()
+	def := Definition{
+		Name:    "seed-test",
+		Initial: "worker",
+		States: []State{
+			{
+				ID: "worker",
+				Artifacts: Artifacts{Outputs: []Artifact{{
+					ID:   "worker_report",
+					Path: "swe/worker-report.md",
+				}}},
+			},
+			{ID: "done", Terminal: true},
+		},
+		Transitions: []Transition{
+			{
+				Event: EventComplete,
+				From:  []string{"worker"},
+				To:    "done",
+				Handoff: []Artifact{{
+					ID:   "worker_report",
+					Path: "swe/worker-report.md",
+				}},
+			},
+		},
+	}
+
+	writes, err := materializeSeedArtifacts(def, root, RunOptions{
+		SeedArtifacts: map[string]string{
+			"worker_report": "seeded report\n",
+		},
+	})
+	if err != nil {
+		t.Fatalf("materializeSeedArtifacts: %v", err)
+	}
+	if len(writes) != 1 {
+		t.Fatalf("writes = %#v, want one write", writes)
+	}
+	path := filepath.Join(root, "swe", "worker-report.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read seeded artifact: %v", err)
+	}
+	if string(data) != "seeded report\n" {
+		t.Fatalf("seeded artifact = %q", data)
+	}
+}
+
+func TestMaterializeSeedArtifactsRejectsUnknownTarget(t *testing.T) {
+	_, err := materializeSeedArtifacts(Definition{
+		Name:    "seed-test",
+		Initial: "worker",
+		States:  []State{{ID: "worker"}},
+	}, t.TempDir(), RunOptions{
+		SeedArtifacts: map[string]string{
+			"missing_artifact": "content",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected unknown seed target error")
+	}
+	if !strings.Contains(err.Error(), `seed artifact target "missing_artifact" does not match`) {
+		t.Fatalf("error = %v, want unknown seed target", err)
+	}
+}
+
+func TestRequiredOutputCompletionCheckRejectsStaleSeededOutput(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "swe", "engineering-context.md")
+	writeText(t, root, "swe/engineering-context.md", "old context\n")
+	before, err := snapshotArtifactFile(path)
+	if err != nil {
+		t.Fatalf("snapshotArtifactFile: %v", err)
+	}
+	state := State{
+		ID: "theory",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:       "engineering_context",
+			Path:     "swe/engineering-context.md",
+			Required: true,
+		}}},
+	}
+
+	check := requiredOutputArtifactCompletionCheckWithSnapshots(
+		state,
+		root,
+		"",
+		nil,
+		map[string]ArtifactFileSnapshot{path: before},
+	)
+	ok, guidance, err := check()
+	if err != nil {
+		t.Fatalf("completion check: %v", err)
+	}
+	if ok {
+		t.Fatal("expected stale seeded output to be rejected")
+	}
+	if !strings.Contains(guidance, "not freshly written") {
+		t.Fatalf("guidance = %q, want stale output guidance", guidance)
+	}
+}
+
+func TestRenderTransitionHandoffMaxBytesPreservesSnapshot(t *testing.T) {
+	root := t.TempDir()
+	writeText(t, root, "large.md", "0123456789abcdef\n")
+	handoff, reads, err := RenderTransitionHandoff(State{ID: "audit"}, []Artifact{{
+		ID:          "large_context",
+		Path:        "large.md",
+		Description: "Large context.",
+		MaxBytes:    8,
+	}}, root, true)
+	if err != nil {
+		t.Fatalf("RenderTransitionHandoff: %v", err)
+	}
+	if !strings.Contains(handoff, "truncated to first 8 of 17 bytes") {
+		t.Fatalf("handoff missing truncation marker:\n%s", handoff)
+	}
+	if !strings.Contains(handoff, "01234567") {
+		t.Fatalf("handoff missing rendered prefix:\n%s", handoff)
+	}
+	if strings.Contains(handoff, "89abcdef") {
+		t.Fatalf("handoff included content beyond max_bytes:\n%s", handoff)
+	}
+	if len(reads) != 1 || string(reads[0].Content) != "0123456789abcdef\n" {
+		t.Fatalf("snapshot reads = %#v, want full content", reads)
+	}
+}
+
+func TestValidateFreshRequiredModelOutputsRejectsStaleSeededOutput(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "swe", "worker-report.md")
+	writeText(t, root, "swe/worker-report.md", "old report\n")
+	before, err := snapshotArtifactFile(path)
+	if err != nil {
+		t.Fatalf("snapshotArtifactFile before: %v", err)
+	}
+	after, err := snapshotArtifactFile(path)
+	if err != nil {
+		t.Fatalf("snapshotArtifactFile after: %v", err)
+	}
+	state := State{
+		ID: "worker",
+		Artifacts: Artifacts{Outputs: []Artifact{{
+			ID:       "worker_report",
+			Path:     "swe/worker-report.md",
+			Required: true,
+		}}},
+	}
+
+	err = validateFreshRequiredModelOutputs(
+		state,
+		root,
+		map[string]ArtifactFileSnapshot{path: before},
+		map[string]ArtifactFileSnapshot{path: after},
+	)
+	if err == nil {
+		t.Fatal("expected stale seeded output to be rejected after state")
+	}
+	if !strings.Contains(err.Error(), "not freshly written") {
+		t.Fatalf("error = %v, want stale output guidance", err)
+	}
+}
+
+func TestRunEventsFinalTextGateCapturesAndRoutes(t *testing.T) {
+	root := t.TempDir()
+	verdictPath := filepath.Join(root, "validation-gate.txt")
+	personaDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(personaDir, "gate.yaml"), []byte("id: gate\nprompt: Return PASS or BLOCK.\n"), 0o600); err != nil {
+		t.Fatalf("write persona: %v", err)
+	}
+	def := Definition{
+		Name:    "final-text-gate-test",
+		Initial: "gate",
+		States: []State{
+			{
+				ID:      "gate",
+				Persona: "gate",
+				Artifacts: Artifacts{Outputs: []Artifact{{
+					ID:            "validation_gate",
+					Path:          verdictPath,
+					Required:      true,
+					AllowedValues: []string{"PASS", "BLOCK"},
+					RuntimeCapture: ArtifactRuntimeCapture{
+						Type: "final_text",
+					},
+				}}},
+			},
+			{
+				ID: "route_gate",
+				Control: Control{ArtifactVerdict: &ArtifactVerdictControl{
+					Path:         verdictPath,
+					Approve:      "PASS",
+					Block:        "BLOCK",
+					ApproveEvent: "pass",
+					BlockEvent:   "block",
+				}},
+			},
+			{ID: "approved", Terminal: true},
+			{ID: "blocked", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"gate"}, To: "route_gate"},
+			{Event: "pass", From: []string{"route_gate"}, To: "approved"},
+			{Event: "block", From: []string{"route_gate"}, To: "blocked"},
+		},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "gate-model", "test", "."),
+		CWD:          ".",
+		Model:        "gate-model",
+		Provider:     "test",
+		MaxTokens:    1000,
+	})
+	engine := query.NewEngine(&orchestrationTestProvider{
+		name: "test",
+		responses: []model.Response{{
+			Model:      "gate-model",
+			Content:    []model.ContentPart{model.TextPart{Text: "<think>hidden</think>\nBLOCK"}},
+			StopReason: model.StopEndTurn,
+		}},
+	}, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "gate-model",
+		MaxTokens: 1000,
+	})
+
+	var transitions []query.OrchestrationTransitionEvent
+	for ev := range RunEventsWithOptions(t.Context(), engine, def, RunOptions{
+		ArtifactRoot: root,
+		PersonaDir:   personaDir,
+	}) {
+		switch e := ev.(type) {
+		case query.ErrorEvent:
+			t.Fatalf("unexpected error: %v", e.Err)
+		case query.OrchestrationTransitionEvent:
+			transitions = append(transitions, e)
+		}
+	}
+
+	data, err := os.ReadFile(verdictPath)
+	if err != nil {
+		t.Fatalf("read validation gate artifact: %v", err)
+	}
+	if got := string(data); got != "BLOCK\n" {
+		t.Fatalf("validation gate artifact = %q, want BLOCK newline", got)
+	}
+	if len(transitions) < 2 {
+		t.Fatalf("transitions = %#v, want gate and block route", transitions)
+	}
+	last := transitions[len(transitions)-1]
+	if last.From != "route_gate" || last.Event != "block" || last.To != "blocked" {
+		t.Fatalf("last transition = %#v, want route_gate --block--> blocked", last)
+	}
+}
+
+func TestRunEventsFinalTextGateRetriesMissingAllowedValue(t *testing.T) {
+	root := t.TempDir()
+	verdictPath := filepath.Join(root, "validation-gate.txt")
+	personaDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(personaDir, "gate.yaml"), []byte("id: gate\nprompt: Return PASS or BLOCK.\n"), 0o600); err != nil {
+		t.Fatalf("write persona: %v", err)
+	}
+	def := Definition{
+		Name:    "final-text-gate-retry-test",
+		Initial: "gate",
+		States: []State{
+			{
+				ID:       "gate",
+				Persona:  "gate",
+				MaxTurns: 3,
+				Artifacts: Artifacts{Outputs: []Artifact{{
+					ID:            "validation_gate",
+					Path:          verdictPath,
+					Required:      true,
+					AllowedValues: []string{"PASS", "BLOCK"},
+					RuntimeCapture: ArtifactRuntimeCapture{
+						Type: "final_text",
+					},
+				}}},
+			},
+			{
+				ID: "route_gate",
+				Control: Control{ArtifactVerdict: &ArtifactVerdictControl{
+					Path:         verdictPath,
+					Approve:      "PASS",
+					Block:        "BLOCK",
+					ApproveEvent: "pass",
+					BlockEvent:   "block",
+				}},
+			},
+			{ID: "approved", Terminal: true},
+			{ID: "blocked", Terminal: true},
+		},
+		Transitions: []Transition{
+			{Event: EventComplete, From: []string{"gate"}, To: "route_gate"},
+			{Event: "pass", From: []string{"route_gate"}, To: "approved"},
+			{Event: "block", From: []string{"route_gate"}, To: "blocked"},
+		},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: model.NewConversation(model.SystemPrompt{}, "gate-model", "test", "."),
+		CWD:          ".",
+		Model:        "gate-model",
+		Provider:     "test",
+		MaxTokens:    1000,
+	})
+	prov := &orchestrationTestProvider{
+		name: "test",
+		responses: []model.Response{
+			{
+				Model:      "gate-model",
+				Content:    []model.ContentPart{model.ThinkingPart{Text: "reasoning ended before final answer"}},
+				StopReason: model.StopMaxTokens,
+			},
+			{
+				Model:      "gate-model",
+				Content:    []model.ContentPart{model.TextPart{Text: "BLOCK"}},
+				StopReason: model.StopEndTurn,
+			},
+		},
+	}
+	engine := query.NewEngine(prov, store, model.NewCostTracker(0), nil, query.EngineConfig{
+		Model:     "gate-model",
+		MaxTokens: 1000,
+	})
+
+	var transitions []query.OrchestrationTransitionEvent
+	for ev := range RunEventsWithOptions(t.Context(), engine, def, RunOptions{
+		ArtifactRoot: root,
+		PersonaDir:   personaDir,
+	}) {
+		switch e := ev.(type) {
+		case query.ErrorEvent:
+			t.Fatalf("unexpected error: %v", e.Err)
+		case query.OrchestrationTransitionEvent:
+			transitions = append(transitions, e)
+		}
+	}
+
+	data, err := os.ReadFile(verdictPath)
+	if err != nil {
+		t.Fatalf("read validation gate artifact: %v", err)
+	}
+	if got := string(data); got != "BLOCK\n" {
+		t.Fatalf("validation gate artifact = %q, want BLOCK newline", got)
+	}
+	if prov.calls != 2 {
+		t.Fatalf("provider calls = %d, want retry then success", prov.calls)
+	}
+	second := fmt.Sprint(prov.requests[1].Messages)
+	if !strings.Contains(second, "Final text for artifact `validation_gate` was empty") {
+		t.Fatalf("second request missing allowed-value correction: %s", second)
+	}
+	last := transitions[len(transitions)-1]
+	if last.From != "route_gate" || last.Event != "block" || last.To != "blocked" {
+		t.Fatalf("last transition = %#v, want route_gate --block--> blocked", last)
+	}
+}
+
 func TestApplyStateLLMRuntimeUsesStateOverPersona(t *testing.T) {
-	baseProvider := orchestrationTestProvider{name: "base"}
+	baseProvider := &orchestrationTestProvider{name: "base"}
 	store := app.NewStateStore(app.AppState{
 		Conversation: model.NewConversation(model.SystemPrompt{}, "base-model", "base", "."),
 		CWD:          ".",
@@ -179,7 +982,7 @@ func TestApplyStateLLMRuntimeUsesStateOverPersona(t *testing.T) {
 	err := applyStateLLMRuntime(context.Background(), engine, func(_ context.Context, cfg llmconfig.Config) (LLMRuntime, error) {
 		resolved = cfg
 		return LLMRuntime{
-			Provider:           orchestrationTestProvider{name: "openai"},
+			Provider:           &orchestrationTestProvider{name: "openai"},
 			ProviderName:       "openai",
 			Model:              cfg.Model,
 			MaxTokens:          cfg.MaxTokens,
@@ -1009,6 +1812,81 @@ func TestExecuteArtifactVerdictEmitsDecisionEvent(t *testing.T) {
 	}
 }
 
+func TestExecuteArtifactVerdictAcceptsBareVerdict(t *testing.T) {
+	dir := t.TempDir()
+	verdictPath := filepath.Join(dir, "verdict.txt")
+	if err := os.WriteFile(verdictPath, []byte("BLOCK\n"), 0o600); err != nil {
+		t.Fatalf("write verdict: %v", err)
+	}
+
+	event, err := ExecuteControl(State{
+		ID: "route_verdict",
+		Control: Control{
+			ArtifactVerdict: &ArtifactVerdictControl{
+				Path:         verdictPath,
+				Approve:      "PASS",
+				Block:        "BLOCK",
+				ApproveEvent: "pass",
+				BlockEvent:   "block",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteControl: %v", err)
+	}
+	if event != "block" {
+		t.Fatalf("event = %q, want block", event)
+	}
+}
+
+func TestSWEBenchProValidationGateBlockRoutesToTheoryKeeper(t *testing.T) {
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "swe-bench-pro-engineering-loop.yaml"))
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	runtime, err := NewRuntime(def)
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	state, ok := runtime.States["route_validation_gate"]
+	if !ok {
+		t.Fatal("missing route_validation_gate state")
+	}
+	if state.Control.ArtifactVerdict == nil {
+		t.Fatal("route_validation_gate missing artifact_verdict control")
+	}
+	control := state.Control.ArtifactVerdict
+	if control.Approve != "PASS" || control.Block != "BLOCK" {
+		t.Fatalf("validation gate values approve=%q block=%q, want PASS/BLOCK", control.Approve, control.Block)
+	}
+	if control.ApproveEvent != "pass" || control.BlockEvent != "block" {
+		t.Fatalf("validation gate events approve=%q block=%q, want pass/block", control.ApproveEvent, control.BlockEvent)
+	}
+
+	verdictPath := filepath.Join(t.TempDir(), "validation-gate.txt")
+	if err := os.WriteFile(verdictPath, []byte("BLOCK\n"), 0o600); err != nil {
+		t.Fatalf("write verdict: %v", err)
+	}
+	state.Control.ArtifactVerdict.Path = verdictPath
+
+	event, err := ExecuteControl(state)
+	if err != nil {
+		t.Fatalf("ExecuteControl: %v", err)
+	}
+	if event != "block" {
+		t.Fatalf("event = %q, want block", event)
+	}
+
+	runtime.FSM.SetState("route_validation_gate")
+	if err := runtime.FSM.Event(context.Background(), event); err != nil {
+		t.Fatalf("FSM.Event(%q): %v", event, err)
+	}
+	if got := runtime.FSM.Current(); got != "swe_theory_keeper" {
+		t.Fatalf("state after block = %q, want swe_theory_keeper", got)
+	}
+}
+
 func TestArtifactDecisionFreshArtifactRejectsStalePreviousOutput(t *testing.T) {
 	dir := t.TempDir()
 	decisionPath := filepath.Join(dir, "evidence-adjudication.json")
@@ -1116,6 +1994,1139 @@ func readTestJSON(t *testing.T, path string, value any) {
 	}
 }
 
+func TestValidateMarkdownCandidateSurfacesConcrete(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	writeText(t, root, "internal/config/authentication.go", "package config\n")
+	report := filepath.Join(root, "repo-survey.md")
+	if err := os.WriteFile(report, []byte(`# Repository Survey
+
+Candidate surfaces:
+- internal/config/authentication.go - observed config surface
+- internal/authn/ or internal/auth/ - guessed auth package
+- ui/ - guessed frontend surface
+- internal/config/config.go - new method should be added here
+`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "repo_survey"},
+		ArtifactIntegrityCheck{Type: "markdown_candidate_surfaces_concrete"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "guessed instead of concrete") {
+		t.Fatalf("issues missing guessed surface failure:\n%s", got)
+	}
+	if !strings.Contains(got, "not present in the current repository") {
+		t.Fatalf("issues missing absent path failure:\n%s", got)
+	}
+	if !strings.Contains(got, "implementation instruction") {
+		t.Fatalf("issues missing implementation instruction failure:\n%s", got)
+	}
+	if strings.Contains(got, "internal/config/authentication.go") {
+		t.Fatalf("issues unexpectedly rejected existing path:\n%s", got)
+	}
+}
+
+func TestValidateJSONStringArrayValuesInTaskOrHandoff(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "acceptance-map.json")
+	if err := os.WriteFile(report, []byte(`{
+  "acceptance_items": [
+    {
+      "id": "ACCEPT-1",
+      "repo_surfaces_to_verify": [
+        "internal/config/authentication.go",
+        "internal/authn",
+        "unknown"
+      ]
+    }
+  ]
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "acceptance_map"},
+		ArtifactIntegrityCheck{
+			Type:       "json_each_string_array_values_in_task_or_handoff",
+			Path:       "acceptance_items",
+			Field:      "repo_surfaces_to_verify",
+			ArtifactID: "repo_survey",
+		},
+		State{},
+		report,
+		root,
+		"The task names internal/config/authentication.go explicitly.",
+		map[string][]byte{
+			"repo_survey": []byte("Candidate surfaces:\n- internal/config/authentication.go - observed config file\n"),
+		},
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "internal/authn") {
+		t.Fatalf("issues missing ungrounded surface:\n%s", got)
+	}
+	if strings.Contains(got, "internal/config/authentication.go") {
+		t.Fatalf("issues unexpectedly rejected grounded surface:\n%s", got)
+	}
+	if strings.Contains(got, "unknown") {
+		t.Fatalf("issues unexpectedly rejected unknown:\n%s", got)
+	}
+}
+
+func TestValidateJSONArrayMaxItems(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "slice-plan.json")
+	if err := os.WriteFile(report, []byte(`{
+  "acceptance_ids": ["ACCEPT-1", "ACCEPT-2", "ACCEPT-3", "ACCEPT-4"]
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "slice_plan"},
+		ArtifactIntegrityCheck{Type: "json_array_max_items", Field: "acceptance_ids", Value: "3"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "maximum is 3") {
+		t.Fatalf("issues missing max-items failure:\n%s", got)
+	}
+}
+
+func TestValidateJSONNoUnprovenGeneratedOutputsInApprovedEditPaths(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "slice-plan.json")
+	if err := os.WriteFile(report, []byte(`{
+  "approved_edit_paths": ["internal/config/authentication.go", "rpc/flipt/auth/auth.pb.go"],
+  "suspected_coupled_paths": ["rpc/flipt/auth/auth.proto"],
+  "generated_policy": "auth.pb.go is source of truth for enum values; protoc unavailable; manual enum addition is correct"
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "slice_plan"},
+		ArtifactIntegrityCheck{Type: "json_no_unproven_generated_outputs_in_approved_edit_paths"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "auth.pb.go") || !strings.Contains(got, "source-of-truth proof") {
+		t.Fatalf("issues missing generated-output failure:\n%s", got)
+	}
+}
+
+func TestValidateJSONNoUnprovenGeneratedOutputsAllowsProvenSourceOfTruth(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "slice-plan.json")
+	if err := os.WriteFile(report, []byte(`{
+  "approved_edit_paths": ["rpc/flipt/auth/auth.pb.go"],
+  "generated_policy": "Original task and repository documentation make this generated file the source of truth for this change."
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "slice_plan"},
+		ArtifactIntegrityCheck{Type: "json_no_unproven_generated_outputs_in_approved_edit_paths"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateJSONWorkerTrackTargetedValidationRejectsDiscoveryWithCommand(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "slice-plan.json")
+	if err := os.WriteFile(report, []byte(`{
+  "worker_track": "discovery",
+  "mode": "discovery",
+  "targeted_validation": "go build ./internal/config/..."
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "slice_plan"},
+		ArtifactIntegrityCheck{Type: "json_worker_track_targeted_validation_consistent"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "worker_track is discovery") || !strings.Contains(got, "go build ./internal/config/...") {
+		t.Fatalf("issues missing worker-track/targeted-validation failure:\n%s", got)
+	}
+}
+
+func TestValidateJSONWorkerTrackTargetedValidationAllowsImplementationValidation(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "slice-plan.json")
+	if err := os.WriteFile(report, []byte(`{
+  "worker_track": "implementation",
+  "mode": "validation",
+  "targeted_validation": "go build ./internal/config/..."
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "slice_plan"},
+		ArtifactIntegrityCheck{Type: "json_worker_track_targeted_validation_consistent"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateJSONWorkerTrackTargetedValidationRejectsValidationWithoutCommand(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "slice-plan.json")
+	if err := os.WriteFile(report, []byte(`{
+  "worker_track": "discovery",
+  "mode": "validation",
+  "targeted_validation": "none"
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "slice_plan"},
+		ArtifactIntegrityCheck{Type: "json_worker_track_targeted_validation_consistent"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "mode validation") || !strings.Contains(got, "targeted_validation is none") {
+		t.Fatalf("issues missing validation-without-command failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownNoGeneratedOutputEditRecommendations(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Scope request
+- paths: ["rpc/flipt/auth/auth.pb.go"]
+- evidence: Request scope expansion for adding the missing enum to rpc/flipt/auth/auth.pb.go.
+## Next validation suggestion
+- Request scope expansion to add METHOD_KUBERNETES=3 to rpc/flipt/auth/auth.pb.go enum, or obtain clean-baseline protobuf regeneration evidence from external tooling.
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_no_generated_output_edit_recommendations"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "generated output") {
+		t.Fatalf("issues missing generated-output recommendation failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownNoGeneratedOutputEditRecommendationsAllowsProhibition(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Worker Contract
+- Worker must not: edit rpc/flipt/auth/auth.pb.go for enum additions.
+- Scope signal: source-of-truth or producer/toolchain repair required; generated output hand edits are not a valid validation recommendation.
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_no_generated_output_edit_recommendations"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateMarkdownNoForbiddenWorkerCommandsRejectsBuildFromWorker(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Actions taken
+- Edited internal/config/authentication.go
+
+## Validation run by worker
+- Command: go build ./internal/config/...
+- Status: 1
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_no_forbidden_worker_commands", ArtifactID: "plan_audit"},
+		State{},
+		report,
+		root,
+		"",
+		map[string][]byte{
+			"plan_audit": []byte(`## Worker Contract
+- Worker must run before reporting: no producer, build, lint, or test commands; targeted validation owns go build ./internal/config/... after the worker report.
+`),
+		},
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "forbidden") || !strings.Contains(got, "go build") {
+		t.Fatalf("issues missing forbidden worker command failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownNoForbiddenWorkerCommandsRejectsRollbackFromWorker(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Actions taken
+- Ran: git checkout -- internal/config/authentication.go rpc/flipt/auth/auth.proto
+
+## Validation run by worker
+- none
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_no_forbidden_worker_commands", ArtifactID: "plan_audit"},
+		State{},
+		report,
+		root,
+		"",
+		map[string][]byte{
+			"plan_audit": []byte(`## Worker Contract
+- Worker must run before reporting: no producer, build, lint, or test commands; targeted validation owns none after the worker report.
+- Worker must not: rollback/history restore commands.
+`),
+		},
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "forbidden") || !strings.Contains(got, "git checkout") {
+		t.Fatalf("issues missing rollback worker command failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownNoForbiddenWorkerCommandsAllowsScopeOnlyReport(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Actions taken
+- Inspected internal/config/authentication.go
+
+## Scope request
+- status: requested
+- paths: ["rpc/flipt/auth/auth.proto"]
+- evidence: source-of-truth enum missing outside approved edit paths
+
+## Validation run by worker
+- none
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_no_forbidden_worker_commands", ArtifactID: "plan_audit"},
+		State{},
+		report,
+		root,
+		"",
+		map[string][]byte{
+			"plan_audit": []byte(`## Worker Contract
+- Worker must run before reporting: no producer, build, lint, or test commands; targeted validation owns none after the worker report.
+`),
+		},
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateCommandEvidenceRepoMutationLimitRejectsMutationSpiral(t *testing.T) {
+	root := t.TempDir()
+	evidence := filepath.Join(root, "worker-command-evidence.jsonl")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- internal/config/authentication.go
+
+## Blocker
+- none
+`)
+	writeText(t, root, "worker-command-evidence.jsonl", strings.Join([]string{
+		`{"command_preview":"edit proto","command_sha256":"a","output_sha256":"oa","repo_mutation":true}`,
+		`{"command_preview":"edit config","command_sha256":"b","output_sha256":"ob","repo_mutation":true}`,
+		`{"command_preview":"repair config","command_sha256":"c","output_sha256":"oc","repo_mutation":true}`,
+		`{"command_preview":"write report","command_sha256":"d","output_sha256":"od","writes_report":true,"repo_mutation":false}`,
+		"",
+	}, "\n"))
+
+	issues, err := validateCommandEvidenceRepoMutationLimit(
+		Artifact{ID: "worker_report"},
+		filepath.Join(root, "worker-report.md"),
+		ArtifactIntegrityCheck{Type: "command_evidence_repo_mutation_limit", ArtifactID: "worker_command_evidence", Value: "2"},
+		evidence,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "3 repository mutation commands") || !strings.Contains(got, "exceeding limit 2") {
+		t.Fatalf("issues missing mutation limit failure:\n%s", got)
+	}
+}
+
+func TestValidateCommandEvidenceRepoMutationLimitAllowsTwoMutations(t *testing.T) {
+	root := t.TempDir()
+	evidence := filepath.Join(root, "worker-command-evidence.jsonl")
+	writeText(t, root, "worker-command-evidence.jsonl", strings.Join([]string{
+		`{"command_preview":"edit proto","command_sha256":"a","output_sha256":"oa","repo_mutation":true}`,
+		`{"command_preview":"edit config","command_sha256":"b","output_sha256":"ob","repo_mutation":true}`,
+		`{"command_preview":"write report","command_sha256":"c","output_sha256":"oc","writes_report":true,"repo_mutation":false}`,
+		"",
+	}, "\n"))
+
+	issues, err := validateCommandEvidenceRepoMutationLimit(
+		Artifact{ID: "worker_report"},
+		filepath.Join(root, "worker-report.md"),
+		ArtifactIntegrityCheck{Type: "command_evidence_repo_mutation_limit", ArtifactID: "worker_command_evidence", Value: "2"},
+		evidence,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateCommandEvidenceRepoMutationLimitAllowsExplicitBlocker(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	evidence := filepath.Join(root, "worker-command-evidence.jsonl")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- internal/config/authentication.go
+
+## Acceptance coverage
+- acceptance_ids_addressed: none
+
+## Blocker
+- Mutation budget exceeded while applying the approved source edit; source repair needs a fresh plan.
+`)
+	writeText(t, root, "worker-command-evidence.jsonl", strings.Join([]string{
+		`{"command_preview":"edit one","command_sha256":"a","output_sha256":"oa","repo_mutation":true}`,
+		`{"command_preview":"edit two","command_sha256":"b","output_sha256":"ob","repo_mutation":true}`,
+		`{"command_preview":"edit three","command_sha256":"c","output_sha256":"oc","repo_mutation":true}`,
+		`{"command_preview":"write report","command_sha256":"d","output_sha256":"od","writes_report":true,"repo_mutation":false}`,
+		"",
+	}, "\n"))
+
+	issues, err := validateCommandEvidenceRepoMutationLimit(
+		Artifact{ID: "worker_report"},
+		report,
+		ArtifactIntegrityCheck{Type: "command_evidence_repo_mutation_limit", ArtifactID: "worker_command_evidence", Value: "2"},
+		evidence,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateMarkdownWorkerBlockerValidationNoCommandsRejectsBuild(t *testing.T) {
+	worker := []byte(`# Worker Report
+
+## Acceptance coverage
+- acceptance_ids_addressed: none
+
+## Blocker
+- Source edit exceeded mutation budget.
+`)
+	validation := []byte(`# Targeted Validation
+
+## Commands run
+- go build ./...
+`)
+
+	issues := validateMarkdownWorkerBlockerValidationNoCommands(
+		Artifact{ID: "targeted_validation"},
+		validation,
+		"worker_report",
+		worker,
+	)
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "explicit blocker") || !strings.Contains(got, "go build") {
+		t.Fatalf("issues missing blocker validation failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownWorkerBlockerValidationNoCommandsAllowsNone(t *testing.T) {
+	worker := []byte(`# Worker Report
+
+## Acceptance coverage
+- acceptance_ids_addressed: none
+
+## Blocker
+- Source edit exceeded mutation budget.
+`)
+	validation := []byte(`# Targeted Validation
+
+## Commands run
+- none
+`)
+
+	issues := validateMarkdownWorkerBlockerValidationNoCommands(
+		Artifact{ID: "targeted_validation"},
+		validation,
+		"worker_report",
+		worker,
+	)
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateCommandEvidenceClaimedChangesRejectsNoRepoMutation(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	evidence := filepath.Join(root, "worker-command-evidence.jsonl")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Actions taken
+- Applied fixes to server.go and config.go.
+
+## Changed files
+- internal/server/auth/method/kubernetes/server.go
+- internal/server/auth/method/kubernetes/config.go
+`)
+	writeText(t, root, "worker-command-evidence.jsonl", strings.Join([]string{
+		`{"command_preview":"cat server.go","command_sha256":"a","output_sha256":"oa","repo_mutation":false}`,
+		`{"command_preview":"write report","command_sha256":"b","output_sha256":"ob","writes_report":true,"repo_mutation":false}`,
+		"",
+	}, "\n"))
+
+	issues, err := validateCommandEvidenceClaimedChanges(
+		Artifact{ID: "worker_report"},
+		report,
+		ArtifactIntegrityCheck{Type: "command_evidence_claimed_changes", ArtifactID: "worker_command_evidence"},
+		evidence,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "reports changed files") || !strings.Contains(got, "no non-report repository mutation command") {
+		t.Fatalf("issues missing claimed-change failure:\n%s", got)
+	}
+}
+
+func TestValidateCommandEvidenceClaimedChangesAllowsRepoMutation(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	evidence := filepath.Join(root, "worker-command-evidence.jsonl")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- internal/config/authentication.go
+`)
+	writeText(t, root, "worker-command-evidence.jsonl", strings.Join([]string{
+		`{"command_preview":"python3 /tmp/patch.py","command_sha256":"a","output_sha256":"oa","repo_mutation":true}`,
+		`{"command_preview":"write report","command_sha256":"b","output_sha256":"ob","writes_report":true,"repo_mutation":false}`,
+		"",
+	}, "\n"))
+
+	issues, err := validateCommandEvidenceClaimedChanges(
+		Artifact{ID: "worker_report"},
+		report,
+		ArtifactIntegrityCheck{Type: "command_evidence_claimed_changes", ArtifactID: "worker_command_evidence"},
+		evidence,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateCommandEvidenceNonReportLimitRejectsDiscoveryOverread(t *testing.T) {
+	root := t.TempDir()
+	evidence := filepath.Join(root, "worker-command-evidence.jsonl")
+	writeText(t, root, "worker-command-evidence.jsonl", strings.Join([]string{
+		`{"command_preview":"cat internal/config/authentication.go","command_sha256":"a","output_sha256":"oa","repo_mutation":false}`,
+		`{"command_preview":"sed -n '1,100p' internal/config/authentication.go","command_sha256":"b","output_sha256":"ob","repo_mutation":false}`,
+		`{"command_preview":"write report","command_sha256":"c","output_sha256":"oc","writes_report":true,"repo_mutation":false}`,
+		"",
+	}, "\n"))
+
+	issues, err := validateCommandEvidenceNonReportLimit(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "command_evidence_non_report_limit", ArtifactID: "worker_command_evidence", Value: "1"},
+		evidence,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "2 non-report inspection commands") || !strings.Contains(got, "exceeding limit 1") {
+		t.Fatalf("issues missing overread failure:\n%s", got)
+	}
+}
+
+func TestValidateCommandEvidenceNonReportLimitAllowsSingleInspection(t *testing.T) {
+	root := t.TempDir()
+	evidence := filepath.Join(root, "worker-command-evidence.jsonl")
+	writeText(t, root, "worker-command-evidence.jsonl", strings.Join([]string{
+		`{"command_preview":"cat internal/config/authentication.go","command_sha256":"a","output_sha256":"oa","repo_mutation":false}`,
+		`{"command_preview":"write report","command_sha256":"b","output_sha256":"ob","writes_report":true,"repo_mutation":false}`,
+		"",
+	}, "\n"))
+
+	issues, err := validateCommandEvidenceNonReportLimit(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "command_evidence_non_report_limit", ArtifactID: "worker_command_evidence", Value: "1"},
+		evidence,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateMarkdownScopeRequestRequiresNoChangedFilesRejectsPartialEdit(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- internal/config/authentication.go
+
+## Scope request
+- status: requested
+- paths: ["rpc/flipt/auth/auth.proto"]
+- evidence: source-of-truth enum missing outside approved edit paths
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_scope_request_requires_no_changed_files"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "requests scope expansion") || !strings.Contains(got, "internal/config/authentication.go") {
+		t.Fatalf("issues missing partial-edit scope failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownScopeRequestRequiresNoChangedFilesAllowsCleanScopeRequest(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- none
+
+## Scope request
+- status: requested
+- paths: ["rpc/flipt/auth/auth.proto"]
+- evidence: source-of-truth enum missing outside approved edit paths
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_scope_request_requires_no_changed_files"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func TestValidateMarkdownScopeRequestRequiresCleanWorktreeRejectsTrackedDiff(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	runGit(t, root, "init")
+	writeText(t, root, "tracked.go", "package tracked\n")
+	runGit(t, root, "add", "tracked.go")
+	writeText(t, root, "tracked.go", "package tracked\n\nconst Changed = true\n")
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- none
+
+## Scope request
+- status: requested
+- paths: ["rpc/flipt/auth/auth.proto"]
+- evidence: source-of-truth enum missing outside approved edit paths
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_scope_request_requires_clean_worktree"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "current worktree has changes") || !strings.Contains(got, "tracked.go") {
+		t.Fatalf("issues missing dirty worktree failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownScopeBlockerRequiresNoChangedFiles(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- internal/config/authentication.go
+
+## Scope adherence
+- approved_paths_touched: internal/config/authentication.go
+- forbidden_scope_touched: rpc/flipt/auth/auth.pb.go
+
+## Blocker
+- Missing enum requires proto source discovery and producer discovery before this slice can proceed.
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_scope_request_requires_no_changed_files"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "requests scope expansion") || !strings.Contains(got, "internal/config/authentication.go") {
+		t.Fatalf("issues missing changed-file scope blocker failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownScopeBlockerRequiresCleanWorktree(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	runGit(t, root, "init")
+	writeText(t, root, "tracked.go", "package tracked\n")
+	runGit(t, root, "add", "tracked.go")
+	writeText(t, root, "tracked.go", "package tracked\n\nconst Changed = true\n")
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- internal/config/authentication.go
+
+## Scope adherence
+- approved_paths_touched: internal/config/authentication.go
+- forbidden_scope_touched: rpc/flipt/auth/auth.pb.go
+
+## Blocker
+- Incoherent edit references a generated enum outside approved paths; scope expansion is required before this slice can proceed.
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_scope_request_requires_clean_worktree"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "current worktree has changes") || !strings.Contains(got, "tracked.go") {
+		t.Fatalf("issues missing dirty worktree scope blocker failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownScopeRequestRequiresCleanWorktreeRejectsUntrackedResidue(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	runGit(t, root, "init")
+	writeText(t, root, "internal/config/authentication.go.orig", "left by failed patch\n")
+	writeText(t, root, "internal/config/authentication.go.rej", "failed hunk\n")
+	report := filepath.Join(root, "worker-report.md")
+	writeText(t, root, "worker-report.md", `# Worker Report
+
+## Changed files
+- none
+
+## Scope request
+- status: requested
+- paths: ["rpc/flipt/auth/auth.proto"]
+- evidence: source-of-truth enum missing outside approved edit paths
+`)
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_scope_request_requires_clean_worktree"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "current worktree has changes") ||
+		!strings.Contains(got, "internal/config/authentication.go.orig") ||
+		!strings.Contains(got, "internal/config/authentication.go.rej") {
+		t.Fatalf("issues missing untracked residue failure:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownScopeRequestRequiresCleanWorktreeAllowsCleanRepo(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(repo)
+	runGit(t, repo, "init")
+	report := filepath.Join(root, "worker-report.md")
+	if err := os.WriteFile(report, []byte(`# Worker Report
+
+## Changed files
+- none
+
+## Scope request
+- status: requested
+- paths: ["rpc/flipt/auth/auth.proto"]
+- evidence: source-of-truth enum missing outside approved edit paths
+`), 0o644); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "worker_report"},
+		ArtifactIntegrityCheck{Type: "markdown_scope_request_requires_clean_worktree"},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
+}
+
+func TestSWEBenchEngineeringWorkerShellPolicyDeniesUnsafeCommands(t *testing.T) {
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "swe-bench-pro-engineering-loop.yaml"))
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	var worker State
+	for _, state := range def.States {
+		if state.ID == "swe_engineering_worker" {
+			worker = state
+			break
+		}
+	}
+	if worker.ID == "" {
+		t.Fatal("missing swe_engineering_worker")
+	}
+	cfg, ok := commandPolicyConfig(worker, nil, t.TempDir())
+	if !ok {
+		t.Fatal("missing command policy config")
+	}
+	for _, command := range []string{
+		"cd /app && git checkout internal/config/authentication.go",
+		"git checkout -- internal/config/authentication.go rpc/flipt/auth/auth.proto",
+		"cd /app && git show HEAD:internal/config/authentication.go > /tmp/original_auth.go && cp /tmp/original_auth.go internal/config/authentication.go",
+		"cd /app && git cat-file blob HEAD:internal/config/authentication.go > internal/config/authentication.go",
+		"sed -i '304a\\\ntext' /app/internal/config/authentication.go",
+		"sed -i 's/METHOD_OIDC = 2;/METHOD_OIDC = 2;\\n  METHOD_KUBERNETES = 3;/' /app/rpc/flipt/auth/auth.proto && grep -A 6 \"enum Method\" /app/rpc/flipt/auth/auth.proto",
+		"perl -pi -e 's/old/new/' /app/internal/config/authentication.go",
+		"cd /app && perl -pi -e 's/old/new/' /app/internal/config/authentication.go && grep new /app/internal/config/authentication.go",
+		"cd /app && patch -p1 < /tmp/k8s_auth_patch.txt",
+	} {
+		matched := false
+		for _, pattern := range cfg.DenyPatterns {
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				t.Fatalf("compile %q: %v", pattern, err)
+			}
+			if re.MatchString(command) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Fatalf("expected command to match a deny pattern: %q; deny patterns=%v", command, cfg.DenyPatterns)
+		}
+	}
+}
+
+func TestSWEBenchAcceptanceAuditorShellPolicyDeniesStdinSources(t *testing.T) {
+	def, err := LoadDefinitionFile(filepath.Join("..", "..", "orchestrations", "swe-bench-pro-engineering-loop.yaml"))
+	if err != nil {
+		t.Fatalf("LoadDefinitionFile: %v", err)
+	}
+	var auditor State
+	for _, state := range def.States {
+		if state.ID == "swe_acceptance_auditor" {
+			auditor = state
+			break
+		}
+	}
+	if auditor.ID == "" {
+		t.Fatal("missing swe_acceptance_auditor")
+	}
+	cfg, ok := commandPolicyConfig(auditor, nil, t.TempDir())
+	if !ok {
+		t.Fatal("missing command policy config")
+	}
+	for _, command := range []string{
+		"cp /dev/stdin /tmp/pragma/swe/acceptance-map.json",
+		"cat - > /tmp/pragma/swe/acceptance-map.json",
+	} {
+		matched := false
+		for _, pattern := range cfg.DenyPatterns {
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				t.Fatalf("compile %q: %v", pattern, err)
+			}
+			if re.MatchString(command) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Fatalf("expected command to match a deny pattern: %q; deny patterns=%v", command, cfg.DenyPatterns)
+		}
+	}
+}
+
+func TestValidateJSONRequiredFields(t *testing.T) {
+	root := t.TempDir()
+	report := filepath.Join(root, "slice-plan.json")
+	if err := os.WriteFile(report, []byte(`{
+  "slice_id": "config-prereq",
+  "acceptance_ids": [],
+  "targeted_validation": "go test ./internal/config"
+}`), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	issues, err := validateArtifactIntegrityCheck(
+		Artifact{ID: "slice_plan"},
+		ArtifactIntegrityCheck{
+			Type:   "json_required_fields",
+			Fields: []string{"slice_id", "worker_track", "acceptance_ids", "targeted_validation"},
+		},
+		State{},
+		report,
+		root,
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, `missing required field "worker_track"`) {
+		t.Fatalf("issues missing absent-field failure:\n%s", got)
+	}
+	if !strings.Contains(got, `required field "acceptance_ids" is empty`) {
+		t.Fatalf("issues missing empty-array failure:\n%s", got)
+	}
+	if strings.Contains(got, "slice_id") || strings.Contains(got, "targeted_validation") {
+		t.Fatalf("issues unexpectedly rejected present non-empty fields:\n%s", got)
+	}
+}
+
+func TestValidateMarkdownValidationCoverageConsistent(t *testing.T) {
+	issues := validateMarkdownValidationCoverageConsistent(
+		Artifact{ID: "targeted_validation"},
+		[]byte(`# Targeted Validation
+
+## Acceptance coverage
+- planned_acceptance_ids: ["ACCEPT-ONE", "ACCEPT-TWO"]
+- validated_acceptance_ids: none
+- insufficient_acceptance_ids: none - discovery only
+
+## Result
+- not_applicable
+`),
+	)
+	got := strings.Join(issues, "\n")
+	if !strings.Contains(got, "lists neither validated_acceptance_ids nor insufficient_acceptance_ids") {
+		t.Fatalf("issues missing empty coverage failure:\n%s", got)
+	}
+	if !strings.Contains(got, "result is not_applicable but insufficient_acceptance_ids is empty") {
+		t.Fatalf("issues missing non-pass insufficient failure:\n%s", got)
+	}
+
+	issues = validateMarkdownValidationCoverageConsistent(
+		Artifact{ID: "targeted_validation"},
+		[]byte(`# Targeted Validation
+
+## Acceptance coverage
+- planned_acceptance_ids: ["ACCEPT-ONE", "ACCEPT-TWO"]
+- validated_acceptance_ids: none
+- insufficient_acceptance_ids: ["ACCEPT-ONE", "ACCEPT-TWO"]
+
+## Result
+- insufficient
+`),
+	)
+	if len(issues) != 0 {
+		t.Fatalf("unexpected issues for insufficient coverage:\n%s", strings.Join(issues, "\n"))
+	}
+
+	issues = validateMarkdownValidationCoverageConsistent(
+		Artifact{ID: "targeted_validation"},
+		[]byte(`# Targeted Validation
+
+## Commands run
+- go build ./internal/config/...: EXIT_STATUS: 0
+
+## Acceptance coverage
+- planned_acceptance_ids: ACCEPT-K8S-AUTH-CONFIG-STRUCT, ACCEPT-K8S-AUTH-DEFAULTS, ACCEPT-K8S-AUTH-FRAMEWORK-INTEGRATION
+- validated_acceptance_ids: ACCEPT-K8S-AUTH-CONFIG-STRUCT, ACCEPT-K8S-AUTH-DEFAULTS, ACCEPT-K8S-AUTH-FRAMEWORK-INTEGRATION
+- insufficient_acceptance_ids: none
+
+## Result
+- pass
+`),
+	)
+	got = strings.Join(issues, "\n")
+	if !strings.Contains(got, "compile/static commands cannot prove behavior-sensitive acceptance IDs") ||
+		!strings.Contains(got, "ACCEPT-K8S-AUTH-DEFAULTS") ||
+		!strings.Contains(got, "ACCEPT-K8S-AUTH-FRAMEWORK-INTEGRATION") {
+		t.Fatalf("issues missing weak validation failure:\n%s", got)
+	}
+	if strings.Contains(got, "ACCEPT-K8S-AUTH-CONFIG-STRUCT") {
+		t.Fatalf("compile-only struct claim should remain allowed:\n%s", got)
+	}
+}
+
 func testPersona(id string) persona.Definition {
 	return persona.Definition{ID: id, Prompt: "Persona prompt"}
 }
@@ -1219,25 +3230,37 @@ func requireNotContains(t *testing.T, text string, needle string) {
 }
 
 type orchestrationTestProvider struct {
-	name string
+	name      string
+	responses []model.Response
+	calls     int
+	requests  []provider.RequestParams
 }
 
-func (p orchestrationTestProvider) Name() string { return p.name }
+func (p *orchestrationTestProvider) Name() string { return p.name }
 
-func (p orchestrationTestProvider) Stream(context.Context, provider.RequestParams) (<-chan provider.StreamChunk, error) {
+func (p *orchestrationTestProvider) Stream(context.Context, provider.RequestParams) (<-chan provider.StreamChunk, error) {
 	ch := make(chan provider.StreamChunk)
 	close(ch)
 	return ch, nil
 }
 
-func (p orchestrationTestProvider) Complete(context.Context, provider.RequestParams) (model.Response, error) {
+func (p *orchestrationTestProvider) Complete(_ context.Context, params provider.RequestParams) (model.Response, error) {
+	p.requests = append(p.requests, params)
+	if len(p.responses) > 0 {
+		if p.calls >= len(p.responses) {
+			return model.Response{}, fmt.Errorf("no response configured for call %d", p.calls+1)
+		}
+		response := p.responses[p.calls]
+		p.calls++
+		return response, nil
+	}
 	return model.Response{}, nil
 }
 
-func (p orchestrationTestProvider) SupportsFeature(provider.Feature) bool { return true }
+func (p *orchestrationTestProvider) SupportsFeature(provider.Feature) bool { return true }
 
-func (p orchestrationTestProvider) Pricing(string) (model.Pricing, bool) {
+func (p *orchestrationTestProvider) Pricing(string) (model.Pricing, bool) {
 	return model.Pricing{}, false
 }
 
-func (p orchestrationTestProvider) ContextWindow(string) (int, bool) { return 0, false }
+func (p *orchestrationTestProvider) ContextWindow(string) (int, bool) { return 0, false }

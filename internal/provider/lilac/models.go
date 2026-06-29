@@ -26,11 +26,13 @@ type ModelInfo struct {
 //	Kimi K2.5: HuggingFace moonshotai/Kimi-K2.5 config.json (max_position_embeddings: 262144)
 //	           OpenRouter: max output 65,535
 //	Kimi K2.6: Lilac docs (2026-05-08) — 262K context, image input, tools, reasoning
-//	MiniMax M2.7: Lilac model details (2026-05-19) — 204.8K context, text input/output, tools, reasoning
+//	MiniMax M2.7: Lilac model details — 204.8K context, text input/output, tools, reasoning
 //	              Max output selected as 131,072 from provider-reported usage notes.
+//	MiniMax M3:   Lilac docs (2026-06-29) — 1,048,576 context, image/video input, tools, reasoning
+//	              Max output from Models.dev Lilac catalog.
 //	Gemma 4:   HuggingFace google/gemma-4-31b-it config.json (text_config.max_position_embeddings: 262144)
 //	           Google AI docs: 256K context. No official max output stated.
-//	Pricing:   https://docs.getlilac.com/inference/models (2026-05-08 for K2.6)
+//	Pricing:   https://docs.getlilac.com/inference/models (2026-06-29)
 var registry = map[string]ModelInfo{
 	"zai-org/glm-5.1": {
 		ID:                "zai-org/glm-5.1",
@@ -63,6 +65,15 @@ var registry = map[string]ModelInfo{
 		MaxContext:        204800,
 		MaxOutput:         131072,
 		Pricing:           model.Pricing{InputPerMToken: 0.30, OutputPerMToken: 1.20, CacheReadPerMToken: 0.055},
+		SupportsToolUse:   true,
+		SupportsReasoning: true,
+	},
+	"minimaxai/minimax-m3": {
+		ID:                "minimaxai/minimax-m3",
+		MaxContext:        1048576,
+		MaxOutput:         1048576,
+		Pricing:           model.Pricing{InputPerMToken: 0.28, OutputPerMToken: 1.10, CacheReadPerMToken: 0.05},
+		SupportsVision:    true,
 		SupportsToolUse:   true,
 		SupportsReasoning: true,
 	},

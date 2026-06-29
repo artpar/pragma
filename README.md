@@ -18,7 +18,7 @@ go run ./cmd/pragma -p "Explain Go channels" \
 
 ## Status
 
-**Pragma loop baseline** — pragma is runnable. The default query loop currently follows the Pragma single bash action loop. The older provider tool-calling loop is retained only for comparison and can be enabled with `PRAGMA_LEGACY_TOOL_LOOP=1`.
+**Pragma loop baseline** — pragma is runnable. The default query loop currently follows the Pragma single bash action loop. The stable provider tool-calling loop is available with `--loop provider-tools`.
 
 ## Constraint Decay / SWE Benchmark
 
@@ -31,7 +31,7 @@ PRAGMA_PATH=/Users/artpar/workspace/code/pragma \
 AGENT=pragma_agent \
 TASK=node/node-express-openapi-unconstrained.json \
 LLM_API_KEY="$LILAC_API_KEY" \
-LLM_MODEL=minimaxai/minimax-m2.7 \
+LLM_MODEL=minimaxai/minimax-m3 \
 tools/run_miniswe_with_capture.sh
 ```
 
@@ -42,7 +42,7 @@ Default Pragma benchmark settings from the adapter:
 | Setting | Value |
 |---|---|
 | Provider | `lilac` |
-| Model | `$LLM_MODEL`, default `minimaxai/minimax-m2.7` |
+| Model | `$LLM_MODEL`, default `minimaxai/minimax-m3` |
 | Permission mode | `bypassPermissions` |
 | Context mode | `chat` |
 | Allowed tools | `Bash` |

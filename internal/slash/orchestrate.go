@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const orchestrateUsage = "Usage: /orchestrate <orchestration.yaml> --persona-dir <persona-dir> --prompt <task prompt>"
+const orchestrateUsage = "Usage: /orchestrate <orchestration.yaml> --persona-dir <persona-dir> [--start-at-state <state>] [--stop-after-state <state>] --prompt <task prompt>"
 
 func handleOrchestrate(_ context.Context, args string, _ Deps) (Result, error) {
 	observe.GlobalTrace("enter")
@@ -66,6 +66,28 @@ func parseOrchestrateArgs(args string) (OrchestrationRequest, error) {
 		case strings.HasPrefix(field, "--persona-dir="):
 			observe.GlobalTrace("case: strings.HasPrefix(field, \"--persona-dir=\")")
 			req.PersonaDir = strings.TrimPrefix(field, "--persona-dir=")
+		case field == "--start-at-state":
+			observe.GlobalTrace("case: field == \"--start-at-state\"")
+			i++
+			if i >= len(fields) {
+				observe.GlobalTrace("return: OrchestrationRequest{}, fmt.Errorf(\"missing value for --start-at-state\")")
+				return OrchestrationRequest{}, fmt.Errorf("missing value for --start-at-state")
+			}
+			req.StartAtState = fields[i]
+		case strings.HasPrefix(field, "--start-at-state="):
+			observe.GlobalTrace("case: strings.HasPrefix(field, \"--start-at-state=\")")
+			req.StartAtState = strings.TrimPrefix(field, "--start-at-state=")
+		case field == "--stop-after-state":
+			observe.GlobalTrace("case: field == \"--stop-after-state\"")
+			i++
+			if i >= len(fields) {
+				observe.GlobalTrace("return: OrchestrationRequest{}, fmt.Errorf(\"missing value for --stop-after-state\")")
+				return OrchestrationRequest{}, fmt.Errorf("missing value for --stop-after-state")
+			}
+			req.StopAfterState = fields[i]
+		case strings.HasPrefix(field, "--stop-after-state="):
+			observe.GlobalTrace("case: strings.HasPrefix(field, \"--stop-after-state=\")")
+			req.StopAfterState = strings.TrimPrefix(field, "--stop-after-state=")
 		case field == "--prompt":
 			observe.GlobalTrace("case: field == \"--prompt\"")
 			i++
@@ -107,6 +129,8 @@ func parseOrchestrateArgs(args string) (OrchestrationRequest, error) {
 type OrchestrateCompletionState struct {
 	HasDefinition bool
 	HasPersonaDir bool
+	HasStartAt    bool
+	HasStopAfter  bool
 	HasPrompt     bool
 	CurrentRole   string
 }
@@ -116,6 +140,8 @@ func ParseOrchestrateCompletionState(args []string, currentIndex int) Orchestrat
 	defer observe.GlobalTrace("exit")
 	state := OrchestrateCompletionState{}
 	expectPersona := false
+	expectStartAt := false
+	expectStopAfter := false
 	inPrompt := false
 	for i, arg := range args {
 		observe.GlobalTrace("range args")
@@ -128,6 +154,14 @@ func ParseOrchestrateCompletionState(args []string, currentIndex int) Orchestrat
 			observe.GlobalTrace("case: expectPersona")
 			role = "persona"
 			expectPersona = false
+		case expectStartAt:
+			observe.GlobalTrace("case: expectStartAt")
+			role = "state"
+			expectStartAt = false
+		case expectStopAfter:
+			observe.GlobalTrace("case: expectStopAfter")
+			role = "state"
+			expectStopAfter = false
 		case arg == "--persona-dir":
 			observe.GlobalTrace("case: arg == \"--persona-dir\"")
 			role = "flag"
@@ -137,6 +171,24 @@ func ParseOrchestrateCompletionState(args []string, currentIndex int) Orchestrat
 			observe.GlobalTrace("case: strings.HasPrefix(arg, \"--persona-dir=\")")
 			role = "flag"
 			state.HasPersonaDir = true
+		case arg == "--start-at-state":
+			observe.GlobalTrace("case: arg == \"--start-at-state\"")
+			role = "flag"
+			state.HasStartAt = true
+			expectStartAt = true
+		case strings.HasPrefix(arg, "--start-at-state="):
+			observe.GlobalTrace("case: strings.HasPrefix(arg, \"--start-at-state=\")")
+			role = "flag"
+			state.HasStartAt = true
+		case arg == "--stop-after-state":
+			observe.GlobalTrace("case: arg == \"--stop-after-state\"")
+			role = "flag"
+			state.HasStopAfter = true
+			expectStopAfter = true
+		case strings.HasPrefix(arg, "--stop-after-state="):
+			observe.GlobalTrace("case: strings.HasPrefix(arg, \"--stop-after-state=\")")
+			role = "flag"
+			state.HasStopAfter = true
 		case arg == "--prompt":
 			observe.GlobalTrace("case: arg == \"--prompt\"")
 			role = "flag"
@@ -177,8 +229,16 @@ func (s OrchestrateCompletionState) FlagCandidates() []string {
 	}
 	if !s.HasPrompt {
 		observe.GlobalTrace("if: !s.HasPrompt")
-		observe.GlobalTrace("return: []string{\"--prompt\"}")
-		return []string{"--prompt"}
+		flags := []string{}
+		if !s.HasStartAt {
+			flags = append(flags, "--start-at-state")
+		}
+		if !s.HasStopAfter {
+			flags = append(flags, "--stop-after-state")
+		}
+		flags = append(flags, "--prompt")
+		observe.GlobalTrace("return: flags")
+		return flags
 	}
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -191,6 +251,12 @@ func OrchestrateFlagDetail(flag string) string {
 	case "--persona-dir":
 		observe.GlobalTrace("case: \"--persona-dir\"")
 		return "persona directory"
+	case "--start-at-state":
+		observe.GlobalTrace("case: \"--start-at-state\"")
+		return "orchestration state to start from"
+	case "--stop-after-state":
+		observe.GlobalTrace("case: \"--stop-after-state\"")
+		return "orchestration state to stop after"
 	case "--prompt":
 		observe.GlobalTrace("case: \"--prompt\"")
 		return "task prompt"

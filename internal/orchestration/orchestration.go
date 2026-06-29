@@ -35,16 +35,17 @@ type State struct {
 }
 
 type ShellPolicy struct {
-	DenyPatterns  []string `yaml:"deny_patterns,omitempty"`
-	DenyMessage   string   `yaml:"deny_message,omitempty"`
-	HandoffInputs string   `yaml:"handoff_inputs,omitempty"`
+	DenyPatterns    []string `yaml:"deny_patterns,omitempty"`
+	RequirePatterns []string `yaml:"require_patterns,omitempty"`
+	DenyMessage     string   `yaml:"deny_message,omitempty"`
+	HandoffInputs   string   `yaml:"handoff_inputs,omitempty"`
 }
 
 func (p ShellPolicy) IsZero() bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: len(p.DenyPatterns) == 0 && strings.TrimSpace(p.DenyMessage) == \"\" && strings...")
-	return len(p.DenyPatterns) == 0 && strings.TrimSpace(p.DenyMessage) == "" && strings.TrimSpace(p.HandoffInputs) == ""
+	return len(p.DenyPatterns) == 0 && len(p.RequirePatterns) == 0 && strings.TrimSpace(p.DenyMessage) == "" && strings.TrimSpace(p.HandoffInputs) == ""
 }
 
 type Artifacts struct {
@@ -64,6 +65,7 @@ type Artifact struct {
 	Path              string                   `yaml:"path"`
 	Required          bool                     `yaml:"required,omitempty"`
 	Description       string                   `yaml:"description,omitempty"`
+	MaxBytes          int                      `yaml:"max_bytes,omitempty"`
 	Kind              string                   `yaml:"kind,omitempty"`
 	AllowedValues     []string                 `yaml:"allowed_values,omitempty"`
 	PromptAttachments []string                 `yaml:"prompt_attachments,omitempty"`
@@ -579,10 +581,21 @@ func validateShellPolicy(defName, stateID string, policy ShellPolicy) error {
 			return fmt.Errorf("orchestration %q state %q shell_policy deny_patterns[%d] is invalid: %w", defName, stateID, idx, err)
 		}
 	}
-	if len(policy.DenyPatterns) == 0 && strings.TrimSpace(policy.DenyMessage) != "" && strings.TrimSpace(policy.HandoffInputs) == "" {
+	for idx, pattern := range policy.RequirePatterns {
+		observe.GlobalTrace("range policy.RequirePatterns")
+		if strings.TrimSpace(pattern) == "" {
+			observe.GlobalTrace("if: strings.TrimSpace(pattern) == \"\"")
+			return fmt.Errorf("orchestration %q state %q shell_policy require_patterns[%d] is empty", defName, stateID, idx)
+		}
+		if _, err := regexp.Compile(pattern); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			return fmt.Errorf("orchestration %q state %q shell_policy require_patterns[%d] is invalid: %w", defName, stateID, idx, err)
+		}
+	}
+	if len(policy.DenyPatterns) == 0 && len(policy.RequirePatterns) == 0 && strings.TrimSpace(policy.DenyMessage) != "" && strings.TrimSpace(policy.HandoffInputs) == "" {
 		observe.GlobalTrace("if: len(policy.DenyPatterns) == 0 && strings.TrimSpace(policy.DenyMessage) != \"\" ...")
 		observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q shell_policy deny_message requires deny...")
-		return fmt.Errorf("orchestration %q state %q shell_policy deny_message requires deny_patterns", defName, stateID)
+		return fmt.Errorf("orchestration %q state %q shell_policy deny_message requires deny_patterns or require_patterns", defName, stateID)
 	}
 	observe.GlobalTrace("return: nil")
 	return nil
@@ -643,6 +656,10 @@ func validateArtifactList(defName, owner string, artifacts []Artifact) error {
 			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q requires path\", defName, owner, a...")
 			return fmt.Errorf("orchestration %q %s artifact %q requires path", defName, owner, artifact.ID)
 		}
+		if artifact.MaxBytes < 0 {
+			observe.GlobalTrace("if: artifact.MaxBytes < 0")
+			return fmt.Errorf("orchestration %q %s artifact %q max_bytes must be non-negative", defName, owner, artifact.ID)
+		}
 		for _, value := range artifact.AllowedValues {
 			observe.GlobalTrace("range artifact.AllowedValues")
 			if strings.TrimSpace(value) == "" {
@@ -664,7 +681,7 @@ func validateArtifactList(defName, owner string, artifacts []Artifact) error {
 			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q seed requires source\", defName, o...")
 			return fmt.Errorf("orchestration %q %s artifact %q seed requires source", defName, owner, artifact.ID)
 		}
-		if artifact.RuntimeCapture.Type != "" && artifact.RuntimeCapture.Type != "command_evidence" {
+		if artifact.RuntimeCapture.Type != "" && artifact.RuntimeCapture.Type != "command_evidence" && artifact.RuntimeCapture.Type != "final_text" {
 			observe.GlobalTrace("if: artifact.RuntimeCapture.Type != \"\" && artifact.RuntimeCapture.Type != \"command_evidence\"")
 			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q has unsupported runtime_capture t...")
 			return fmt.Errorf("orchestration %q %s artifact %q has unsupported runtime_capture type %q", defName, owner, artifact.ID, artifact.RuntimeCapture.Type)
@@ -764,17 +781,32 @@ func supportedArtifactCheckType(checkType string) bool {
 	defer observe.GlobalTrace("exit")
 	switch checkType {
 	case "json_field_equals",
+		"json_required_fields",
 		"json_array_non_empty",
+		"json_array_max_items",
 		"json_each_required_fields",
 		"json_each_string_substring_of_task_prompt",
 		"json_each_repo_relative_paths",
+		"json_each_string_array_values_in_task_or_handoff",
 		"json_each_behavior_validation_commands",
 		"json_each_fields_equal_handoff_artifact",
 		"json_fields_equal_handoff_artifact",
 		"json_array_subset_of_handoff_text_list",
+		"json_no_unproven_generated_outputs_in_approved_edit_paths",
+		"json_worker_track_targeted_validation_consistent",
+		"markdown_candidate_surfaces_concrete",
 		"markdown_constraints_supported_by_claims",
+		"markdown_no_generated_output_edit_recommendations",
+		"markdown_no_forbidden_worker_commands",
+		"markdown_scope_request_requires_no_changed_files",
+		"markdown_scope_request_requires_clean_worktree",
+		"markdown_validation_coverage_consistent",
+		"markdown_worker_blocker_validation_no_commands",
 		"text_forbid_contains",
-		"command_evidence_support":
+		"command_evidence_support",
+		"command_evidence_claimed_changes",
+		"command_evidence_non_report_limit",
+		"command_evidence_repo_mutation_limit":
 		observe.GlobalTrace("return: true")
 		return true
 	default:
@@ -1628,6 +1660,12 @@ func parseDecision(text string) (string, error) {
 		}
 		observe.GlobalTrace("return: \"\", fmt.Errorf(\"decision marker has no value\")")
 		return "", fmt.Errorf("decision marker has no value")
+	}
+	trimmed := strings.TrimSpace(text)
+	if trimmed != "" && !strings.Contains(trimmed, "\n") {
+		observe.GlobalTrace("if: trimmed != \"\" && !strings.Contains(trimmed, \"\\n\")")
+		observe.GlobalTrace("return: trimmed, nil")
+		return trimmed, nil
 	}
 	observe.GlobalTrace("return: \"\", fmt.Errorf(\"missing Decision: marker\")")
 	return "", fmt.Errorf("missing Decision: marker")

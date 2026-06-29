@@ -26,7 +26,12 @@ func (engine *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEv
 				ch <- ErrorEvent{Err: fmt.Errorf("query loop panic: %v", r)}
 			}
 		}()
-		engine.runPragmaLoop(ctx, userMessage, ch)
+		switch engine.config.LoopMode {
+		case LoopModeProviderTools:
+			engine.runProviderToolsLoop(ctx, userMessage, ch)
+		default:
+			engine.runPragmaLoop(ctx, userMessage, ch)
+		}
 	}()
 	observe.TraceCtx(ctx, "query", "Engine.Run", "return: ch")
 	return ch

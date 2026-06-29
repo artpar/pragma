@@ -14,9 +14,9 @@ import (
 	"github.com/artpar/pragma/internal/skill"
 )
 
-// RegisterTools now only constructs the active shell-loop engine. The native
-// tool registry/orchestrator surface was removed; apply_patch remains handled
-// directly by the Pragma bash loop.
+// RegisterTools constructs the query engine. The active loop mode decides
+// whether tools are expressed through the Pragma shell loop or provider-native
+// tool calls.
 func RegisterTools(d *Deps, _ permission.Prompter) (*query.Engine, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

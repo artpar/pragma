@@ -26,8 +26,8 @@ func TestParse(t *testing.T) {
 		{"/unknown", "unknown", "", true}, // Parse succeeds; Execute checks existence
 		{"not a command", "", "", false},
 		{"", "", "", false},
-		{"/", "", "", false},       // bare slash
-		{"/ ", "", "", false},      // slash + space only — TrimSpace reduces to bare slash
+		{"/", "", "", false},            // bare slash
+		{"/ ", "", "", false},           // slash + space only — TrimSpace reduces to bare slash
 		{"hello /world", "", "", false}, // slash not at start
 	}
 
@@ -115,5 +115,39 @@ func TestRegistryCommands(t *testing.T) {
 		if cmds[i].Name < cmds[i-1].Name {
 			t.Errorf("commands not sorted: %s before %s", cmds[i-1].Name, cmds[i].Name)
 		}
+	}
+}
+
+func TestParseOrchestrateArgsWithReplayFlags(t *testing.T) {
+	req, err := parseOrchestrateArgs("flow.yaml --persona-dir personas --start-at-state gate --stop-after-state route --prompt solve it")
+	if err != nil {
+		t.Fatalf("parseOrchestrateArgs: %v", err)
+	}
+	if req.DefinitionPath != "flow.yaml" {
+		t.Fatalf("definition = %q", req.DefinitionPath)
+	}
+	if req.PersonaDir != "personas" {
+		t.Fatalf("persona dir = %q", req.PersonaDir)
+	}
+	if req.StartAtState != "gate" {
+		t.Fatalf("start at state = %q", req.StartAtState)
+	}
+	if req.StopAfterState != "route" {
+		t.Fatalf("stop after state = %q", req.StopAfterState)
+	}
+	if req.Prompt != "solve it" {
+		t.Fatalf("prompt = %q", req.Prompt)
+	}
+}
+
+func TestOrchestrateCompletionSuggestsReplayFlagsBeforePrompt(t *testing.T) {
+	state := ParseOrchestrateCompletionState([]string{"flow.yaml", "--persona-dir", "personas"}, 3)
+	got := strings.Join(state.FlagCandidates(), ",")
+	want := "--start-at-state,--stop-after-state,--prompt"
+	if got != want {
+		t.Fatalf("flag candidates = %q, want %q", got, want)
+	}
+	if detail := OrchestrateFlagDetail("--start-at-state"); detail != "orchestration state to start from" {
+		t.Fatalf("start flag detail = %q", detail)
 	}
 }

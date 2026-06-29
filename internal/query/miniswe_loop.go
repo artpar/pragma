@@ -139,6 +139,7 @@ type PragmaLoopCommandEvidenceConfig struct {
 
 type PragmaLoopCommandPolicyConfig struct {
 	DenyPatterns        []string
+	RequirePatterns     []string
 	DenyMessage         string
 	RenderedInputPaths  []string
 	WritablePaths       []string
@@ -148,6 +149,8 @@ type PragmaLoopCommandPolicyConfig struct {
 type PragmaLoopRunOptions struct {
 	IncludePriorConversation bool
 	MaxTurns                 int
+	FinalTextOnly            bool
+	FinalTextCheck           PragmaLoopFinalTextCheck
 }
 
 // WithPragmaLoopEvidencePath records shell-loop command evidence to path while
@@ -176,7 +179,7 @@ func WithPragmaLoopCommandEvidence(ctx context.Context, cfg PragmaLoopCommandEvi
 func WithPragmaLoopCommandPolicy(ctx context.Context, cfg PragmaLoopCommandPolicyConfig) context.Context {
 	observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "enter")
 	defer observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "exit")
-	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
+	if len(cfg.DenyPatterns) == 0 && len(cfg.RequirePatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
 		observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "if: len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.Pro...")
 		observe.TraceCtx(ctx, "query", "WithPragmaLoopCommandPolicy", "return: ctx")
 		return ctx
@@ -227,6 +230,7 @@ func (engine *Engine) WithCustomSystemPrompt(system model.SystemPrompt) model.Sy
 // PragmaLoopCompletionCheck can reject a submitted bash turn and keep the same
 // loop running with a corrective user observation.
 type PragmaLoopCompletionCheck func() (bool, string, error)
+type PragmaLoopFinalTextCheck func(string) (bool, string, error)
 
 // RunPragmaLoopWithSystemCompletionCheck runs the shell-action loop with an
 // optional completion check after a command emits the completion sentinel.
@@ -281,6 +285,58 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 		return
 	}
 
+	if opts.FinalTextOnly {
+		observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: opts.FinalTextOnly")
+		for turnIdx := 0; turnIdx < run.MaxTurns; turnIdx++ {
+			request, _, err := engine.buildPragmaLoopTurnRequest(run)
+			if err != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+			ch <- ModelRequestEvent{Model: request.Model, Attempt: turnIdx + 1}
+			response, err := engine.completePragmaLoopResponse(ctx, request.Params, ch)
+			if err != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+			ch <- ModelResponseEvent{Model: request.Model, StopReason: response.StopReason}
+			turn := classifyPragmaLoopAssistantTurn(response)
+			if err := engine.appendPragmaLoopAssistantTurn(turn); err != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+			if engine.autoTracker != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: engine.autoTracker != nil")
+				engine.autoTracker.IncrementTurn()
+			}
+			if opts.FinalTextCheck != nil {
+				ok, message, err := opts.FinalTextCheck(turn.Text)
+				if err != nil {
+					ch <- ErrorEvent{Err: err}
+					return
+				}
+				if !ok {
+					if strings.TrimSpace(message) == "" {
+						message = "Final text was rejected because it did not match the required output contract. Return only the required final text."
+					}
+					if err := engine.appendPragmaLoopUserMessage(appendPragmaLoopBudgetNotice(message, run, turnIdx)); err != nil {
+						ch <- ErrorEvent{Err: err}
+						return
+					}
+					continue
+				}
+			}
+			emitPragmaLoopResponseText(response, ch)
+			ch <- TurnCompleteEvent{Response: response, StopReason: model.StopEndTurn}
+			return
+		}
+		ch <- ErrorEvent{Err: fmt.Errorf("final text did not satisfy the required output contract after %d turns", run.MaxTurns)}
+		return
+	}
+
 	for turn := 0; turn < run.MaxTurns; turn++ {
 		observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "for: turn < maxTurns")
 		if err := ctx.Err(); err != nil {
@@ -318,6 +374,26 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 
 		if assistantTurn.Action.Kind == pragmaLoopActionFinal {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: actionCount == 0")
+			if run.CompletionCheck != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: completionCheck != nil for final action")
+				ok, message, err := run.CompletionCheck()
+				if err != nil {
+					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: completionCheck err")
+					ch <- ErrorEvent{Err: err}
+					return
+				}
+				if !ok {
+					if strings.TrimSpace(message) == "" {
+						message = "Completion was rejected because required output artifacts are missing. Create the missing artifacts and echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
+					}
+					if err := engine.appendPragmaLoopUserMessage(appendPragmaLoopBudgetNotice(message, run, turn)); err != nil {
+						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
+						ch <- ErrorEvent{Err: err}
+						return
+					}
+					continue
+				}
+			}
 			ch <- TurnCompleteEvent{Response: assistantTurn.Response, StopReason: model.StopEndTurn}
 			return
 		}
@@ -612,6 +688,7 @@ func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopComma
 		Submitted          bool   `json:"submitted"`
 		CompletionSentinel bool   `json:"completion_sentinel"`
 		WritesReport       bool   `json:"writes_report"`
+		RepoMutation       bool   `json:"repo_mutation"`
 	}{
 		Timestamp:          time.Now().UTC().Format(time.RFC3339Nano),
 		CommandPreview:     pragmaLoopCommandPreview(result.Command),
@@ -623,6 +700,7 @@ func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopComma
 		Submitted:          result.Submitted,
 		CompletionSentinel: strings.Contains(result.Result.Output, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT") || strings.Contains(result.Command, "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"),
 		WritesReport:       commandWritesDeclaredReport(result.Command, cfg.ReportPaths),
+		RepoMutation:       commandLooksLikeRepoMutation(result.Command, cfg.ReportPaths),
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
@@ -640,6 +718,60 @@ func recordPragmaLoopCommandEvidence(ctx context.Context, result pragmaLoopComma
 	}
 	defer f.Close()
 	_, _ = f.Write(append(data, '\n'))
+}
+
+func commandLooksLikeRepoMutation(command string, reportPaths []string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	lower := strings.ToLower(strings.Join(strings.Fields(command), " "))
+	if lower == "" {
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	if strings.Contains(lower, "/tmp/pragma/swe/") && !strings.Contains(lower, "/app/") && !strings.Contains(lower, " internal/") && !strings.Contains(lower, " rpc/") {
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	for _, marker := range []string{
+		"sed -i",
+		"perl -pi",
+		"patch ",
+		"> /app/",
+		">> /app/",
+		"mv /tmp/",
+		"cp /tmp/",
+		"os.replace(",
+		".write(",
+		"write_text(",
+	} {
+		observe.GlobalTrace("range markers")
+		if strings.Contains(lower, marker) {
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	for _, pathMarker := range []string{
+		" internal/",
+		" rpc/",
+		" cmd/",
+		" pkg/",
+		" go.mod",
+		" go.sum",
+		"/app/internal/",
+		"/app/rpc/",
+		"/app/cmd/",
+		"/app/pkg/",
+		"/app/go.mod",
+		"/app/go.sum",
+	} {
+		observe.GlobalTrace("range path markers")
+		if strings.Contains(lower, pathMarker) && (strings.Contains(lower, " mv ") || strings.Contains(lower, " cp ") || strings.Contains(lower, "os.replace(") || strings.Contains(lower, ".write(")) {
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
 }
 
 func commandWritesDeclaredReport(command string, reportPaths []string) bool {
@@ -666,7 +798,7 @@ func rejectPragmaLoopCommand(ctx context.Context, command string) (string, bool)
 	observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "enter")
 	defer observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "exit")
 	cfg, _ := ctx.Value(pragmaLoopCommandPolicyKey{}).(PragmaLoopCommandPolicyConfig)
-	if len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
+	if len(cfg.DenyPatterns) == 0 && len(cfg.RequirePatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.ProtectedWritePaths) == 0 {
 		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: len(cfg.DenyPatterns) == 0 && len(cfg.RenderedInputPaths) == 0 && len(cfg.Pro...")
 		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: \"\", false")
 		return "", false
@@ -692,6 +824,25 @@ func rejectPragmaLoopCommand(ctx context.Context, command string) (string, bool)
 		if message == "" {
 			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: message == \"\"")
 			message = "Command was rejected by the active shell policy. Choose a command allowed by the state contract."
+		}
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: message, true")
+		return message, true
+	}
+	for _, pattern := range cfg.RequirePatterns {
+		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "range cfg.RequirePatterns")
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: err != nil")
+			continue
+		}
+		if re.MatchString(scannable) {
+			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: re.MatchString(scannable)")
+			continue
+		}
+		message := strings.TrimSpace(cfg.DenyMessage)
+		if message == "" {
+			observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "if: message == \"\"")
+			message = fmt.Sprintf("Command was rejected because it does not satisfy required shell policy pattern %q.", pattern)
 		}
 		observe.TraceCtx(ctx, "query", "rejectPragmaLoopCommand", "return: message, true")
 		return message, true

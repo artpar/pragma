@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,12 +20,18 @@ import zipfile
 
 DEFAULT_PRO_REPO = Path("/Users/artpar/workspace/code/SWE-bench_Pro-os")
 DEFAULT_INSTANCE_ID = "instance_flipt-io__flipt-507170da0f7f4da330f6732bffdf11c4df7fc192"
-DEFAULT_BUF_URL = "https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64"
+DEFAULT_BUF_VERSION = "v1.28.1"
+DEFAULT_BUF_URL = f"https://github.com/bufbuild/buf/releases/download/{DEFAULT_BUF_VERSION}/buf-Linux-x86_64"
 DEFAULT_PROTOBUF_RELEASE_API = "https://api.github.com/repos/protocolbuffers/protobuf/releases/latest"
-DEFAULT_PROTOC_GEN_GO_VERSION = "v1.36.6"
-DEFAULT_PROTOC_GEN_GO_GRPC_VERSION = "v1.5.1"
-DEFAULT_GRPC_GATEWAY_VERSION = "v2.29.0"
-DEFAULT_ORCHESTRATION = "/pragma/orchestrations/prompt-control-v2-benchmark.yaml"
+DEFAULT_PROTOC_VERSION = "23.4"
+DEFAULT_PROTOC_URL = (
+    f"https://github.com/protocolbuffers/protobuf/releases/download/v{DEFAULT_PROTOC_VERSION}/"
+    f"protoc-{DEFAULT_PROTOC_VERSION}-linux-x86_64.zip"
+)
+DEFAULT_PROTOC_GEN_GO_VERSION = "v1.31.0"
+DEFAULT_PROTOC_GEN_GO_GRPC_VERSION = "v1.3.0"
+DEFAULT_GRPC_GATEWAY_VERSION = "v2.15.2"
+DEFAULT_ORCHESTRATION = "/pragma/orchestrations/swe-bench-pro-engineering-loop.yaml"
 DEFAULT_PERSONA_DIR = "/pragma/personas-research-v2"
 
 
@@ -140,6 +147,31 @@ def base_url_env_var(provider: str) -> str:
         "lilac": "LILAC_BASE_URL",
         "openai": "OPENAI_BASE_URL",
     }.get(provider, "")
+
+
+def docker_host_base_url(value: str) -> str:
+    if not value:
+        return value
+    return (
+        value.replace("://127.0.0.1:", "://host.docker.internal:")
+        .replace("://localhost:", "://host.docker.internal:")
+    )
+
+
+def provider_env_exports(primary_provider: str, primary_api_key: str, primary_base_url: str) -> dict[str, str]:
+    exports: dict[str, str] = {}
+    for provider in ("anthropic", "google", "groq", "lilac", "openai"):
+        credential_key, credential_base_url = read_pragma_provider_credentials(provider)
+        key_env = api_key_env_var(provider)
+        value = primary_api_key if provider == primary_provider else os.getenv(key_env, "") or credential_key
+        if value:
+            exports[key_env] = value
+        base_env = base_url_env_var(provider)
+        if base_env:
+            base_value = primary_base_url if provider == primary_provider else os.getenv(base_env, "") or credential_base_url
+            if base_value:
+                exports[base_env] = docker_host_base_url(base_value)
+    return exports
 
 
 def dockerhub_image(row: dict[str, object], dockerhub_username: str) -> str:
@@ -280,12 +312,26 @@ def prepare_grpc_gateway_includes(bin_dir: Path, version: str) -> None:
         destination.chmod(destination.stat().st_mode | stat.S_IWUSR)
 
 
+def generator_toolchain_cache_dir(repo_root: Path, args: argparse.Namespace) -> Path:
+    if args.generator_toolchain_dir:
+        return Path(args.generator_toolchain_dir).resolve()
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "buf_url": args.buf_url,
+                "protoc_url": args.protoc_url or "latest",
+                "protoc_gen_go_version": args.protoc_gen_go_version,
+                "protoc_gen_go_grpc_version": args.protoc_gen_go_grpc_version,
+                "grpc_gateway_version": args.grpc_gateway_version,
+            },
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:12]
+    return repo_root / ".pragma" / "toolchains" / f"swebench-pro-linux-amd64-{fingerprint}"
+
+
 def prepare_generator_toolchain(repo_root: Path, args: argparse.Namespace) -> Path:
-    toolchain_dir = (
-        Path(args.generator_toolchain_dir)
-        if args.generator_toolchain_dir
-        else repo_root / ".pragma" / "toolchains" / "swebench-pro-linux-amd64"
-    ).resolve()
+    toolchain_dir = generator_toolchain_cache_dir(repo_root, args).resolve()
     bin_dir = toolchain_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
 
@@ -343,8 +389,32 @@ def pragma_extra_args(args: argparse.Namespace) -> list[str]:
         orchestration,
         "--persona-dir",
         persona_dir,
+        *(["--start-at-state", args.start_at_state] if args.start_at_state else []),
+        *(["--stop-after-state", args.stop_after_state] if args.stop_after_state else []),
+        *sum((["--seed-artifact", seed] for seed in getattr(args, "container_seed_artifacts", [])), []),
         *env_extra_args,
     ]
+
+
+def prepare_container_seed_artifacts(output_dir: Path, seed_artifacts: list[str]) -> list[str]:
+    if not seed_artifacts:
+        return []
+    seed_dir = output_dir / "seed-artifacts"
+    seed_dir.mkdir(parents=True, exist_ok=True)
+    container_args: list[str] = []
+    for index, value in enumerate(seed_artifacts):
+        target, sep, source = value.partition("=")
+        target = target.strip()
+        source = source.strip()
+        if not sep or not target or not source:
+            raise SystemExit("--seed-artifact requires target=path")
+        source_path = Path(source).expanduser()
+        if not source_path.exists() or not source_path.is_file():
+            raise SystemExit(f"seed artifact file not found: {source_path}")
+        destination = seed_dir / f"{index:03d}-{source_path.name}"
+        shutil.copy2(source_path, destination)
+        container_args.append(f"{target}=/pragma-out/seed-artifacts/{destination.name}")
+    return container_args
 
 
 def shell_join_args(args: list[str]) -> str:
@@ -451,6 +521,12 @@ def read_existing_run(output_dir: Path) -> tuple[str, dict[str, object], Path]:
     return instance_id, row, pred_path
 
 
+def read_agent_status(status_path: Path) -> str:
+    if not status_path.exists():
+        return "missing"
+    return status_path.read_text(encoding="utf-8").strip()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--swe-bench-pro-path", type=Path, default=DEFAULT_PRO_REPO)
@@ -459,7 +535,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--dockerhub-username", default="jefzda")
     parser.add_argument("--provider", default=os.getenv("LLM_PROVIDER", "lilac"))
-    parser.add_argument("--model", default=os.getenv("LLM_MODEL", "minimaxai/minimax-m2.7"))
+    parser.add_argument("--model", default=os.getenv("LLM_MODEL", "minimaxai/minimax-m3"))
     parser.add_argument("--base-url", default=os.getenv("LLM_BASE_URL", ""))
     parser.add_argument("--max-turns", default=os.getenv("PRAGMA_MAX_TURNS", "250"))
     parser.add_argument("--temperature", default=os.getenv("PRAGMA_TEMPERATURE", "0"))
@@ -488,7 +564,7 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("SWE_BENCH_GENERATOR_TOOLCHAIN_DIR"),
     )
     parser.add_argument("--buf-url", default=os.getenv("SWE_BENCH_BUF_URL", DEFAULT_BUF_URL))
-    parser.add_argument("--protoc-url", default=os.getenv("SWE_BENCH_PROTOC_URL", ""))
+    parser.add_argument("--protoc-url", default=os.getenv("SWE_BENCH_PROTOC_URL", DEFAULT_PROTOC_URL))
     parser.add_argument(
         "--protoc-gen-go-version",
         default=os.getenv("SWE_BENCH_PROTOC_GEN_GO_VERSION", DEFAULT_PROTOC_GEN_GO_VERSION),
@@ -508,12 +584,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--orchestration",
         default=os.getenv("PRAGMA_ORCHESTRATION", DEFAULT_ORCHESTRATION),
-        help="container path to orchestration YAML; defaults to prompt-control v2 benchmark orchestration",
+        help="container path to orchestration YAML; defaults to the SWE-bench Pro engineering loop",
     )
     parser.add_argument(
         "--persona-dir",
         default=os.getenv("PRAGMA_PERSONA_DIR", DEFAULT_PERSONA_DIR),
         help="container path to persona YAML directory for orchestration runs",
+    )
+    parser.add_argument(
+        "--stop-after-state",
+        default=os.getenv("PRAGMA_STOP_AFTER_STATE", ""),
+        help="stop the orchestration after completing the named state; intended for state-contract checks",
+    )
+    parser.add_argument(
+        "--start-at-state",
+        default=os.getenv("PRAGMA_START_AT_STATE", ""),
+        help="start orchestration execution at the named state; intended for seeded replay/state-contract checks",
+    )
+    parser.add_argument(
+        "--seed-artifact",
+        action="append",
+        default=[],
+        help="seed orchestration artifact content from a host file as target=path; target is passed to Pragma and the file is copied under /pragma-out",
     )
     parser.add_argument(
         "--direct",
@@ -526,6 +618,16 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.start_at_state and args.direct:
+        raise SystemExit("--start-at-state requires orchestration mode and cannot be combined with --direct")
+    if args.seed_artifact and args.direct:
+        raise SystemExit("--seed-artifact requires orchestration mode and cannot be combined with --direct")
+    if args.stop_after_state and args.evaluate:
+        raise SystemExit("--stop-after-state cannot be combined with --evaluate")
+    if args.start_at_state and args.evaluate:
+        raise SystemExit("--start-at-state cannot be combined with --evaluate")
+    if args.seed_artifact and args.evaluate:
+        raise SystemExit("--seed-artifact cannot be combined with --evaluate")
     repo_root = Path(__file__).resolve().parents[1]
     pro_repo = args.swe_bench_pro_path
     sample_jsonl = args.sample_jsonl or pro_repo / "helper_code" / "sweap_eval_full_v2.jsonl"
@@ -543,18 +645,14 @@ def main() -> None:
         maybe_evaluate(pro_repo, output_dir, row, pred_path, "pragma", args.dockerhub_username)
         return
 
+    args.container_seed_artifacts = prepare_container_seed_artifacts(output_dir, args.seed_artifact)
     row = read_sample(sample_jsonl, args.instance_id)
     config_api_key, config_base_url = read_pragma_provider_credentials(args.provider)
     provider_api_key_env = api_key_env_var(args.provider)
-    provider_base_url_env = base_url_env_var(args.provider)
     api_key = os.getenv("LLM_API_KEY") or os.getenv(provider_api_key_env) or config_api_key
     default_base_url = "https://api.getlilac.com/v1" if args.provider == "lilac" else ""
     base_url = args.base_url or config_base_url or default_base_url
-    provider_base_url_export = (
-        f'export {shlex.quote(provider_base_url_env)}="$LLM_BASE_URL"'
-        if provider_base_url_env and base_url
-        else "true"
-    )
+    provider_exports = provider_env_exports(args.provider, api_key, base_url)
     image = dockerhub_image(row, args.dockerhub_username)
     prompt = format_problem_statement(row)
     prompt_path = output_dir / "prompt.txt"
@@ -571,6 +669,9 @@ def main() -> None:
                 "run_mode": "direct" if args.direct else "orchestration",
                 "orchestration": "" if args.direct else args.orchestration,
                 "persona_dir": "" if args.direct else args.persona_dir,
+                "start_at_state": args.start_at_state,
+                "stop_after_state": args.stop_after_state,
+                "seed_artifacts": args.seed_artifact,
             },
             indent=2,
         ),
@@ -588,6 +689,10 @@ def main() -> None:
     if not args.direct:
         print(f"orchestration={args.orchestration}")
         print(f"persona_dir={args.persona_dir}")
+        if args.start_at_state:
+            print(f"start_at_state={args.start_at_state}")
+        if args.stop_after_state:
+            print(f"stop_after_state={args.stop_after_state}")
     if toolchain_dir is not None:
         print(f"generator_toolchain={toolchain_dir}")
     if args.prepare_only:
@@ -606,8 +711,6 @@ cd /app
 if [ -x /preprocess.sh ]; then /preprocess.sh; fi
 mkdir -p /tmp/pragma-home /pragma-out/raw-http-pragma
 export HOME=/tmp/pragma-home
-export {shlex.quote(provider_api_key_env)}="$LLM_API_KEY"
-{provider_base_url_export}
 export PRAGMA_RAW_HTTP_CAPTURE_DIR=/pragma-out/raw-http-pragma
 if [ -d /pragma-toolchain/bin ]; then
   export PATH="/pragma-toolchain/bin:$PATH"
@@ -651,7 +754,9 @@ exit 0
         f"LLM_API_KEY={api_key}",
     ]
     if base_url:
-        env_args.extend(["-e", f"LLM_BASE_URL={base_url}"])
+        env_args.extend(["-e", f"LLM_BASE_URL={docker_host_base_url(base_url)}"])
+    for name, value in sorted(provider_exports.items()):
+        env_args.extend(["-e", f"{name}={value}"])
     if not api_key:
         raise SystemExit(
             f"set LLM_API_KEY or {provider_api_key_env}, or add providers.{args.provider}.api_key to ~/.pragma/credentials.yml"
@@ -684,11 +789,14 @@ exit 0
         ],
         repo_root,
     )
-    print(f"agent_status={status_path.read_text(encoding='utf-8').strip() if status_path.exists() else 'missing'}")
+    agent_status = read_agent_status(status_path)
+    print(f"agent_status={agent_status}")
     print(f"pred_path={pred_path}")
     print(f"raw_http_dir={raw_http_dir}")
     if toolchain_dir is not None:
         print(f"toolchain_preflight={toolchain_preflight_path}")
+    if agent_status != "0":
+        raise SystemExit(f"Pragma agent failed with status {agent_status}; leaving patch for inspection and skipping evaluation")
     if args.evaluate:
         maybe_evaluate(pro_repo, output_dir, row, pred_path, "pragma", args.dockerhub_username)
 

@@ -19,9 +19,15 @@ import (
 // the engine stops to prevent runaway tool-calling loops.
 const DefaultMaxTurns = 100
 
+const (
+	LoopModePragma        = "pragma"
+	LoopModeProviderTools = "provider-tools"
+)
+
 // EngineConfig holds query engine parameters derived from config + CLI flags.
 type EngineConfig struct {
 	Model                     string
+	LoopMode                  string
 	MaxTokens                 int
 	MaxTurns                  int // 0 means use DefaultMaxTurns
 	Temperature               *float64

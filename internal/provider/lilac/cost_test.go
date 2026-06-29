@@ -100,7 +100,7 @@ func TestStreamUsageEstimation(t *testing.T) {
 	})
 
 	t.Run("pricing_lookup_works_for_all_models", func(t *testing.T) {
-		models := []string{"moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6", "minimaxai/minimax-m2.7", "zai-org/glm-5.1", "google/gemma-4-31b-it"}
+		models := []string{"moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6", "minimaxai/minimax-m2.7", "minimaxai/minimax-m3", "zai-org/glm-5.1", "google/gemma-4-31b-it"}
 		for _, m := range models {
 			pricing, ok := p.Pricing(m)
 			if !ok {
@@ -145,6 +145,40 @@ func TestStreamUsageEstimation(t *testing.T) {
 		}
 		if info.SupportsVision {
 			t.Error("expected SupportsVision=false")
+		}
+	})
+
+	t.Run("minimax_m3_registry", func(t *testing.T) {
+		info, ok := LookupModel("minimaxai/minimax-m3")
+		if !ok {
+			t.Fatal("model not found for minimaxai/minimax-m3")
+		}
+		if info.ID != "minimaxai/minimax-m3" {
+			t.Errorf("expected ID minimaxai/minimax-m3, got %q", info.ID)
+		}
+		if info.MaxContext != 1048576 {
+			t.Errorf("expected MaxContext=1048576, got %d", info.MaxContext)
+		}
+		if info.MaxOutput != 1048576 {
+			t.Errorf("expected MaxOutput=1048576, got %d", info.MaxOutput)
+		}
+		if info.Pricing.InputPerMToken != 0.28 {
+			t.Errorf("expected input=0.28, got %.3f", info.Pricing.InputPerMToken)
+		}
+		if info.Pricing.OutputPerMToken != 1.10 {
+			t.Errorf("expected output=1.10, got %.3f", info.Pricing.OutputPerMToken)
+		}
+		if info.Pricing.CacheReadPerMToken != 0.05 {
+			t.Errorf("expected cache_read=0.05, got %.3f", info.Pricing.CacheReadPerMToken)
+		}
+		if !info.SupportsVision {
+			t.Error("expected SupportsVision=true")
+		}
+		if !info.SupportsToolUse {
+			t.Error("expected SupportsToolUse=true")
+		}
+		if !info.SupportsReasoning {
+			t.Error("expected SupportsReasoning=true")
 		}
 	})
 
@@ -260,6 +294,17 @@ func TestEnsureMaxTokens(t *testing.T) {
 		p.ensureMaxTokens(&params)
 		if params.MaxTokens != 131072 {
 			t.Errorf("expected MaxTokens=131072, got %d", params.MaxTokens)
+		}
+	})
+
+	t.Run("sets_max_tokens_for_minimax_m3", func(t *testing.T) {
+		params := provider.RequestParams{
+			Model:     "minimaxai/minimax-m3",
+			MaxTokens: 0,
+		}
+		p.ensureMaxTokens(&params)
+		if params.MaxTokens != 1048576 {
+			t.Errorf("expected MaxTokens=1048576, got %d", params.MaxTokens)
 		}
 	})
 
