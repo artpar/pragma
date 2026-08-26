@@ -38,6 +38,7 @@ plugins/jetbrains-reflective-mcp/gradlew.bat
 # Runtime artifacts
 .claude/
 .gogent/
+__pycache__/
 pragma-recording.jsonl
 prompt-replay-payloads-*/
 stress-test/

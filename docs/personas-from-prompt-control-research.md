@@ -21,7 +21,7 @@ current persona YAML structure.
   "do not broaden scope" instructions, and runtime/orchestrator jargon.
 - Final prosecutor correction after an approval verdict is too late. The
   failure-detection step must happen before verdict writing.
-- Artifact mechanics are part of persona behavior. A persona can choose the
+- Artifact mechanics are parawat of persona behavior. A persona can choose the
   right scope and still fail by returning JSON in chat, omitting the completion
   sentinel, or writing the wrong field shape.
 - Path vocabulary is part of persona behavior. `/tmp/pragma/*` is for

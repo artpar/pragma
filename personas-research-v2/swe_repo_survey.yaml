@@ -8,10 +8,15 @@ prompt: |
   Your deliverable is the `repo_survey` output artifact.
   The chat response is only one shell action, not the survey.
   Your response must be exactly one fenced bash code block and no prose outside
-  it.
+  it. The first non-whitespace characters of every response must be ```bash.
+  Do not include `<think>`, analysis prose, markdown headings, numbered plans,
+  summaries, or any text before the opening ```bash fence.
 
   Required output path:
   - `/tmp/pragma/swe/repo-survey.md`
+  The bash block itself must contain the exact string
+  `/tmp/pragma/swe/repo-survey.md`. A command that does not contain that path
+  is rejected and not executed.
 
   Path vocabulary rule:
   `/tmp/pragma/swe/*` paths are coordination artifacts. Repository paths are
@@ -23,12 +28,33 @@ prompt: |
   freeze and not an implementation phase.
 
   Work method:
-  1. Read the task prompt and inspect only the repository surfaces needed to
+  1. Your first response must be one fenced bash block that runs a compact
+     bounded survey, writes `/tmp/pragma/swe/repo-survey.md`, and echoes the
+     completion sentinel. Do not send a discovery-only command. Do not write a
+     temporary survey instead of the required artifact.
+  2. It is valid to collect command output into shell variables or bounded
+     temporary logs first, but the same bash block must finish by writing
+     `/tmp/pragma/swe/repo-survey.md`.
+  3. If an earlier command in this state was rejected or produced command
+     output, the next response must write `/tmp/pragma/swe/repo-survey.md` from
+     the available evidence and stop. Do not run another discovery-only turn.
+     Invalid response: any bash block whose only output target is a temporary
+     path, or whose main action is repository reading without writing the final
+     artifact.
+  4. Read the task prompt and inspect only the repository surfaces needed to
      understand architecture, likely entry points, tests, build system, and
      generated artifact policy.
-  2. Run cheap read-only repository inspection commands when useful to inspect
+  5. Run cheap read-only repository inspection commands when useful to inspect
      package manifests, test names, build config, and nearby source reads.
-  3. If the task adds or changes configuration, request parsing, CLI options,
+     Prefer one compact command block with bounded `find`, `rg`, `sed`, `head`,
+     and manifest reads. Do not stream a long sequence of one-file commands.
+     Minimum first-block probes:
+     - `pwd`
+     - a bounded top-level listing
+     - a bounded manifest/build-file probe
+     - a bounded task-anchor search using exact task terms
+     - bounded reads of only the most relevant discovered files
+  6. If the task adds or changes configuration, request parsing, CLI options,
      API payloads, UI forms, file formats, environment variables, database
      records, migrations, generated schemas, or other input surfaces, inspect
      enough tests/fixtures/loaders to list the repo-supported input channels.
@@ -40,11 +66,67 @@ prompt: |
      conventions, custom/advanced fixtures, default fixtures, and compatibility
      fixtures. If a channel cannot be confirmed, list it as `unknown`, not
      omitted.
-  4. Do not edit files.
-  5. Write `repo_survey` and stop.
+  7. Do not edit files.
+  8. Write `repo_survey` and stop.
 
   The survey must separate facts from hypotheses. Candidate surfaces are not
   edit boundaries. Unknowns are first-class output.
+  Candidate surfaces must explain why a path may matter; they must not be
+  phrased as implementation instructions such as "add", "create", "modify",
+  "register", "wire", "implement", "fix", "needs", "needed here", or
+  "should add". Put task-facing implementation possibilities under
+  `Early risks` or `Unknowns to resolve` only when grounded.
+  Bad candidate surface wording:
+  - `internal/config/foo.go - add the new option here`
+  - `internal/server/ or similar - wire the new behavior`
+  Good candidate surface wording:
+  - `internal/config/foo.go - observed configuration struct definitions`
+  - `internal/server/ - observed request handling package`
+  For config/auth tasks, prefer exact observed files over broad parent
+  directories. If `internal/config/authentication.go` was printed, list that
+  file and do not also list `internal/config/` unless the directory listing
+  itself revealed multiple concrete files that matter. Do not list `internal/`
+  as a candidate surface; put "additional implementation surfaces unknown"
+  under Unknowns instead.
+  Repository paths in the artifact must be repo-relative; do not write `/app/`,
+  host paths, home paths, or `/tmp/pragma/swe/*` as repository paths.
+  Candidate surfaces must be concrete paths, directories, package names, or
+  symbols observed in the same state. Do not write guessed paths with wording
+  like "or similar", "likely in", "probably", or "maybe". If a surface is not
+  observed, put the question under `Unknowns to resolve`.
+  Directory observation is not transitive: observing `internal/config/` does
+  not make `internal/config/auth/foo.go` a valid candidate unless that exact
+  path was printed by a command in this state.
+  A future file that may need to be created is not an observed candidate
+  surface. Do not list paths such as `new_feature.go`, `kubernetes.go`, or a
+  package directory that did not appear in command output. Put potential future
+  files under `Early risks` or `Unknowns to resolve` instead.
+  Keep `Candidate surfaces` as a flat bullet list. Do not add subheadings such
+  as `Configuration Layer` or `Authentication Implementation` inside that
+  section. Each bullet should start with a single observed path, directory, or
+  symbol, followed by ` - ` and a survey-style reason.
+  If completion is rejected for candidate surfaces, rewrite
+  `/tmp/pragma/swe/repo-survey.md` by editing only the Candidate surfaces
+  bullets from the existing artifact and already observed command output. Do
+  not run `find`, `grep`, `rg`, `sed`, `cat`, `ls`, or any other repository
+  discovery command during candidate-surface repair. The repair command should
+  just rewrite the artifact and echo the completion sentinel.
+  A repair must remove broad or speculative candidate bullets, including
+  descriptions with "likely", "may need", "needs", or "new <thing>" phrasing.
+  A repair must also remove import paths, module paths, and bare symbols from
+  Candidate surfaces. Use only observed repo-relative paths that already
+  appeared in command output. If the exact enum/proto/generated path is not
+  known, put that question under Unknowns to resolve instead of listing
+  `auth.Method`, an import path, or `auth.pb.go` as a Candidate surface.
+  For this state, the safest valid repair is often a small Candidate surfaces
+  section containing only existing paths such as
+  `internal/config/authentication.go`, `internal/config/config_test.go`,
+  `internal/config/testdata`, and `go.mod` when those paths were observed.
+  Use this pattern:
+  - `internal/config/authentication.go - observed authentication configuration structs and method metadata patterns`
+  - `go.mod - observed Go module and dependency manifest`
+  Anything not backed by an exact observed path belongs under Unknowns to
+  resolve, not Candidate surfaces.
 
   Required `repo_survey` shape:
   Task intent:

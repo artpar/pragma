@@ -42,6 +42,11 @@ func TestAutoDetectProvider(t *testing.T) {
 			want:    "openai",
 		},
 		{
+			name:    "OPENROUTER_API_KEY env var only",
+			envVars: map[string]string{"OPENROUTER_API_KEY": "sk-or-xxx"},
+			want:    "openrouter",
+		},
+		{
 			name:    "GROQ_API_KEY env var only",
 			envVars: map[string]string{"GROQ_API_KEY": "gsk-xxx"},
 			want:    "groq",
@@ -97,7 +102,7 @@ func TestAutoDetectProvider(t *testing.T) {
 	}
 
 	// All env vars that autoDetectProvider checks
-	allEnvVars := []string{"ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "LILAC_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY"}
+	allEnvVars := []string{"ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "LILAC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY"}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -256,6 +261,18 @@ func TestLilacDefaultAndAliasesUseMiniMaxM3(t *testing.T) {
 	}
 	if got := resolveModelAlias("lilac", "m2.7"); got != "minimaxai/minimax-m2.7" {
 		t.Fatalf("resolveModelAlias(lilac, m2.7) = %q, want minimaxai/minimax-m2.7", got)
+	}
+}
+
+func TestOpenRouterDefaultsToGLM53Flash(t *testing.T) {
+	if got := DefaultModelFor("openrouter"); got != "z-ai/glm-5.3-flash" {
+		t.Fatalf("DefaultModelFor(openrouter) = %q, want z-ai/glm-5.3-flash", got)
+	}
+	if got := DefaultBaseURLFor("openrouter"); got != "https://openrouter.ai/api/v1" {
+		t.Fatalf("DefaultBaseURLFor(openrouter) = %q", got)
+	}
+	if got := envVarForProvider("openrouter"); got != "OPENROUTER_API_KEY" {
+		t.Fatalf("envVarForProvider(openrouter) = %q", got)
 	}
 }
 

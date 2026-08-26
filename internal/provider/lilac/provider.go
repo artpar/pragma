@@ -195,6 +195,20 @@ func lilacClassify(err error) shared.ErrorClassification {
 			ErrorType: "timeout",
 		}
 	}
+	if isRetryableLilacDecodeError(err) {
+		return shared.ErrorClassification{
+			Wrapped:   err,
+			Retryable: true,
+			ErrorType: "decode",
+		}
+	}
+	if isRetryableLilacConnectionError(err) {
+		return shared.ErrorClassification{
+			Wrapped:   err,
+			Retryable: true,
+			ErrorType: "connection",
+		}
+	}
 	observe.GlobalTrace("return: lilacStatusClassify(err)")
 	return lilacStatusClassify(err)
 }
@@ -218,6 +232,21 @@ func isRetryableLilacTimeout(err error) bool {
 	observe.GlobalTrace("return: strings.Contains(err.Error(), \"Client.Timeout exceeded while awaiting headers\")")
 
 	return strings.Contains(err.Error(), "Client.Timeout exceeded while awaiting headers")
+}
+
+func isRetryableLilacConnectionError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "unexpected EOF") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "no such host")
+}
+
+func isRetryableLilacDecodeError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "decode chat completion response") &&
+		(strings.Contains(msg, "unexpected end of JSON input") ||
+			strings.Contains(msg, "unexpected EOF"))
 }
 
 func (p *Provider) ensureMaxTokens(params *provider.RequestParams) {

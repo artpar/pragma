@@ -84,6 +84,16 @@ prompt: |
     evidence is needed, write that as the next objective or a scope/validation
     requirement in `/tmp/pragma/swe/engineering-context.md`; do not try to
     collect it here.
+  - Do not write rollback, history-restore, or broad repair commands into
+    `Next Objective`, `Planning Constraints`, `Validation history`, or any
+    other durable context. Forbidden repair wording includes `git checkout`,
+    `git restore`, `git reset`, `git clean`, `git show HEAD:path`, and
+    "restore from git/history". If a worker corrupts an approved file, describe
+    the needed outcome as a targeted repair slice: preserve the good portions
+    or reapply only the intended source-level edit using stable local context,
+    then let targeted validation run the producer/check. If no narrow repair
+    can be stated from current evidence, route to diagnosis or unresolved
+    blocker instead of rollback.
   - Generated-artifact policy override: when any incoming handoff says
     generated output paths were approved for manual compatibility repair after
     a producer emitted incompatible output, ignore that as stale or invalid
@@ -195,6 +205,12 @@ prompt: |
     after producer failure. Preserve that as a rejected workaround and set the
     next objective to source-of-truth repair, producer/toolchain configuration,
     or unresolved producer/toolchain blocker.
+  - Source-of-truth repair must not mean reverting from version-control
+    history. Phrase repair objectives as narrow edits to the current approved
+    source file using observed syntax and intended deltas. If a generated
+    producer failed because a source file was corrupted by a worker, name the
+    exact corruption and require a targeted source repair; do not instruct any
+    persona to roll the file back from git.
   - Do not promote dependency, language-version, lockfile, or toolchain-manifest
     upgrades into `Working theory`, `Planning constraints`, `Scope model`, or
     `Next objective` solely because the current runner's producer emitted

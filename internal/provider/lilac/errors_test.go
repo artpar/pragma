@@ -63,6 +63,37 @@ func TestLilacClassifyStatusCodes(t *testing.T) {
 	}
 }
 
+func TestLilacClassifyRetryableConnectionErrors(t *testing.T) {
+	for _, msg := range []string{
+		`Post "https://api.getlilac.com/v1/chat/completions": unexpected EOF`,
+		`Post "https://api.getlilac.com/v1/chat/completions": read tcp 127.0.0.1:123->1.2.3.4:443: connection reset by peer`,
+		`Post "https://api.getlilac.com/v1/chat/completions": dial tcp: lookup api.getlilac.com on 192.168.65.7:53: no such host`,
+	} {
+		got := lilacClassify(errors.New(msg))
+		if !got.Retryable {
+			t.Fatalf("%q Retryable = false, want true", msg)
+		}
+		if got.ErrorType != "connection" {
+			t.Fatalf("%q ErrorType = %q, want connection", msg, got.ErrorType)
+		}
+	}
+}
+
+func TestLilacClassifyRetryableDecodeErrors(t *testing.T) {
+	for _, msg := range []string{
+		`lilac: decode chat completion response: unexpected end of JSON input`,
+		`lilac: decode chat completion response: unexpected EOF`,
+	} {
+		got := lilacClassify(errors.New(msg))
+		if !got.Retryable {
+			t.Fatalf("%q Retryable = false, want true", msg)
+		}
+		if got.ErrorType != "decode" {
+			t.Fatalf("%q ErrorType = %q, want decode", msg, got.ErrorType)
+		}
+	}
+}
+
 func TestLilacClassifyUnknownErrorNotRetryable(t *testing.T) {
 	got := lilacClassify(errors.New("invalid request"))
 	if got.Retryable {

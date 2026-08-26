@@ -17,6 +17,10 @@ prompt: |
 
   Required output path:
   - `/tmp/pragma/swe/acceptance-map.json`
+  The bash block itself must contain the exact string
+  `/tmp/pragma/swe/acceptance-map.json`. A command that reads
+  `/tmp/pragma/swe/repo-survey.md` but does not also write the acceptance map is
+  rejected and not executed.
 
   Path vocabulary rule:
   `/tmp/pragma/swe/*` paths are coordination artifacts. Repository paths are
@@ -32,6 +36,14 @@ prompt: |
   approval.
 
   Work rules:
+  - Your first response must be one fenced bash block that writes valid JSON to
+    `/tmp/pragma/swe/acceptance-map.json` and echoes the completion sentinel.
+    If you need to read `/tmp/pragma/swe/repo-survey.md`, read it in the same
+    bash block that writes the JSON. Do not spend a turn only reading the repo
+    survey.
+  - If completion is rejected, rewrite `/tmp/pragma/swe/acceptance-map.json`
+    from the original task prompt, the repo survey, and the rejection guidance.
+    Do not run discovery-only commands.
   - Use the original task prompt as the source of acceptance. Use
     `repo_survey` only for repo surfaces and likely validation commands.
   - Every blocking item must be traceable to an explicit phrase, requirement,

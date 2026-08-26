@@ -29,6 +29,40 @@ python3 tools/run_swebench_pro_instance.py \
   --evaluate
 ```
 
+For the Minimax + VibeThink SWE-bench Pro engineering loop, do not use an
+autonomous `--evaluate` run as the process-discovery step. The manual baseline
+trace at `docs/swe-bench-pro-vibethink-minimax-manual-trace.md` must exist and
+the early state contracts must be checked before the first full autonomous
+attempt.
+
+For state-contract checks, stop after one named state and inspect the artifacts:
+
+```bash
+python3 tools/run_swebench_pro_instance.py \
+  --instance-id instance_flipt-io__flipt-0fd09def402258834b9d6c0eaa6d3b4ab93b4446 \
+  --pull-image \
+  --stop-after-state swe_repo_survey
+```
+
+`--stop-after-state` cannot be combined with `--evaluate`.
+
+To replay a later orchestration state from already-seeded or existing artifacts,
+use `--start-at-state` and keep it in validation mode:
+
+```bash
+python3 tools/run_swebench_pro_instance.py \
+  --instance-id instance_flipt-io__flipt-0fd09def402258834b9d6c0eaa6d3b4ab93b4446 \
+  --start-at-state route_validation_gate \
+  --stop-after-state route_validation_gate
+```
+
+`--start-at-state` also cannot be combined with `--evaluate`.
+
+For non-Docker local replay, seed declared handoff artifacts with
+`orchestration run --seed-artifact <artifact-id-or-path>=<local-file>`.
+The replayed state must freshly write its required model-authored outputs;
+seeded stale outputs are rejected.
+
 For evaluating an already-generated run directory:
 
 ```bash
@@ -39,9 +73,9 @@ python3 tools/run_swebench_pro_instance.py \
 
 ## Default Runner Configuration
 
-As of the current source, the runner defaults to the prompt-control v2
-orchestration path. Do not re-add older environment shims unless intentionally
-testing legacy behavior.
+As of the current source, the runner defaults to the SWE-bench Pro engineering
+loop. Do not re-add older environment shims unless intentionally testing legacy
+behavior.
 
 Default values from `tools/run_swebench_pro_instance.py`:
 
@@ -58,9 +92,10 @@ Default values from `tools/run_swebench_pro_instance.py`:
 | Permission mode | `bypassPermissions` |
 | Allowed tools | `Bash` |
 | Run mode | `orchestration` |
-| Orchestration | `/pragma/orchestrations/prompt-control-v2-benchmark.yaml` |
+| Orchestration | `/pragma/orchestrations/swe-bench-pro-engineering-loop.yaml` |
 | Persona dir | `/pragma/personas-research-v2` |
 | Generator toolchain | enabled |
+| Generator defaults | `buf` v1.28.1, `protoc` 23.4, `protoc-gen-go` v1.31.0, `protoc-gen-go-grpc` v1.3.0, grpc-gateway v2.15.2 |
 | Docker platform | `linux/amd64` |
 | DockerHub namespace | `jefzda` |
 
@@ -70,13 +105,20 @@ Credential resolution:
 2. provider-specific env var, for example `LILAC_API_KEY`
 3. `providers.<provider>.api_key` in `~/.pragma/credentials.yml`
 
-For Lilac, the runner exports:
+The runner exports provider-specific credentials and base URLs for the default
+provider plus any persona override providers present in the environment or
+`~/.pragma/credentials.yml`. For the default Lilac/Minimax plus local
+VibeThink setup, use:
 
 ```bash
-LILAC_API_KEY="$LLM_API_KEY"
-LILAC_BASE_URL="$LLM_BASE_URL"
+LILAC_API_KEY=...
+OPENAI_API_KEY=dummy
+OPENAI_BASE_URL=http://127.0.0.1:8080/v1
 PRAGMA_RAW_HTTP_CAPTURE_DIR=/pragma-out/raw-http-pragma
 ```
+
+Local host base URLs using `127.0.0.1` or `localhost` are rewritten to
+`host.docker.internal` for the benchmark container.
 
 ## What the Runner Does
 
@@ -85,7 +127,7 @@ The runner:
 1. Reads the selected SWE-bench Pro row.
 2. Writes `prompt.txt` and `metadata.json`.
 3. Cross-builds Pragma as a Linux amd64 binary into the run directory.
-4. Prepares or reuses `.pragma/toolchains/swebench-pro-linux-amd64`.
+4. Prepares or reuses a fingerprinted `.pragma/toolchains/swebench-pro-linux-amd64-*` cache.
 5. Pulls the selected `jefzda/sweap-images:*` image when `--pull-image` is set.
 6. Starts Docker with `/app` as the repo working directory.
 7. Runs `/preprocess.sh` when present.
@@ -107,7 +149,7 @@ timeout 7200 /pragma-bin \
   --max-turns 250 \
   orchestration \
   run \
-  /pragma/orchestrations/prompt-control-v2-benchmark.yaml \
+  /pragma/orchestrations/swe-bench-pro-engineering-loop.yaml \
   --persona-dir \
   /pragma/personas-research-v2 \
   --prompt "$(cat /pragma-out/prompt.txt)" \
@@ -276,7 +318,7 @@ Use explicit overrides only for intentional experiments:
 python3 tools/run_swebench_pro_instance.py \
   --instance-id <instance_id> \
   --pull-image \
-  --orchestration /pragma/orchestrations/prompt-control-v2-benchmark.yaml \
+  --orchestration /pragma/orchestrations/swe-bench-pro-engineering-loop.yaml \
   --persona-dir /pragma/personas-research-v2
 ```
 
@@ -389,6 +431,10 @@ Use this for a new one-instance Pragma SWE-bench Pro test.
 cd /Users/artpar/workspace/code/pragma
 
 python3 tools/run_swebench_pro_instance.py --prepare-only
+
+# For the engineering-loop orchestration, verify
+# docs/swe-bench-pro-vibethink-minimax-manual-trace.md and early state
+# contracts before running --evaluate.
 
 python3 tools/run_swebench_pro_instance.py \
   --instance-id instance_flipt-io__flipt-05d7234fa582df632f70a7cd10194d61bd7043b9 \

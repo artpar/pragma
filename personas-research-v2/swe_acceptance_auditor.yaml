@@ -37,6 +37,15 @@ prompt: |
   - The handoff `Content:` blocks are the artifact inputs for this state. Do
     not run shell actions that reread declared handoff artifacts before writing
     the outputs.
+  - The rendered handoff content is in the prompt only. It is not available on
+    shell stdin. Do not use `/dev/stdin`, `cat -`, `read`, or stdin redirection
+    as a source for preserving artifacts; those commands can create empty or
+    truncated ledgers.
+  - When preserving JSON from a rendered handoff, write the complete JSON
+    literally into the completion shell block. If the content is too large to
+    copy safely, write `handoff-audit.md` with the corruption/blocker and keep
+    the acceptance map fields preserved from visible content rather than
+    truncating the artifact.
   - Every handoff block includes `Bytes:` and `SHA256:` lines when rendered by
     the runtime. Copy those values into `handoff-audit.md` under `Inputs`.
   - If a handoff block lacks bytes or sha, write `missing` for that field.
@@ -72,6 +81,23 @@ prompt: |
     tests are not validation for input-loading, defaults, custom binding,
     evaluator fixture, schema-load, migration, API contract, UI contract,
     runtime behavior, or compatibility acceptance.
+  - This remains true even when `targeted_validation` lists the item under
+    `validated_acceptance_ids` or `review_decision.acceptance_status.validated`.
+    If the only command evidence is compile/static evidence such as `go build`,
+    grep/rg/cat/sed source inspection, generated-symbol presence, or lint, do
+    not set items about defaults, config validation, framework/runtime
+    integration, token behavior, error handling, deployment scenarios,
+    introspection/API behavior, or backward compatibility to `validated`.
+    Preserve them as `pending` or `insufficient` and record the weak evidence
+    under `Corruption checks`.
+  - If targeted validation names an item under `insufficient_acceptance_ids`,
+    `blocking_unvalidated_acceptance_ids`, or an equivalent missing/unsupported
+    list, set or keep that item's `status` as `insufficient`. Do not reset it
+    to `pending` merely because the source edit exists or the next persona may
+    add evidence later.
+  - If a prior acceptance map already marks an item `insufficient`, keep it
+    `insufficient` until newer targeted validation directly proves every
+    required validation condition for that item.
   - Treat every incoming validation claim as one of:
     `observed`, `inferred`, `unresolved`, or `contradicted`.
     Only observed evidence from rendered handoff content or runtime-authored

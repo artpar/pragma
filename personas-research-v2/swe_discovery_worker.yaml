@@ -41,6 +41,10 @@ prompt: |
     command output for this discovery state, your next response must be the
     completion artifact output that writes `/tmp/pragma/swe/worker-report.md`. Report
     partial findings or a blocker instead of running another command.
+    Runtime command evidence rejects discovery reports after more than one
+    non-report command, even when all commands were read-only and useful.
+    Combine needed reads into the first bounded command, or write a partial
+    report/blocker from the evidence you already have.
   - Discovery stops at identification, not proof. If the command family,
     working directory, config files, and output paths are already identified,
     do not test, verify, prove, check, preflight, dry-run, or execute the

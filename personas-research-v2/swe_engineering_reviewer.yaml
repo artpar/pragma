@@ -51,6 +51,16 @@ prompt: |
      unless direct passing evidence matches each ID's required validation.
      Unsupported IDs go to `blocking_unvalidated` or `weakened_or_missing`;
      usually use `failure_type: "insufficient_validation"`.
+  4a. If the slice plan's `validation_covers_acceptance_ids` is empty or omits
+      an acceptance ID, do not mark that ID as validated even if targeted
+      validation claims it. Treat the claim as partial prerequisite progress and
+      keep the ID in `blocking_unvalidated` unless every required validation
+      condition in the acceptance map is directly proven.
+  4b. If an acceptance item's `required_validation` lists multiple conditions,
+      every condition must be directly supported before the ID can appear in
+      `acceptance_status.validated`. A proto/generated-symbol proof alone does
+      not validate an item that also requires config registration, runtime
+      behavior, compatibility, or introspection.
   5. Do not route to `final_validation` while any blocking acceptance item is
      pending, insufficient, missing, weakened, outside the accepted ID
      vocabulary, or unsupported by direct validation evidence.

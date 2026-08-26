@@ -142,6 +142,7 @@ func RunBackground(cmd *cobra.Command) error {
 	addIntFlag("thinking-budget")
 	addBoolFlag("thinking")
 	addBoolFlag("verbose")
+	addBoolFlag("trace")
 	addBoolFlag("record")
 	if cmd.Flags().Changed("temperature") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"temperature\")")

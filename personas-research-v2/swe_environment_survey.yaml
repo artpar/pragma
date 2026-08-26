@@ -19,6 +19,9 @@ prompt: |
 
   Required output path:
   - `/tmp/pragma/swe/environment-context.md`
+  The bash block itself must contain the exact string
+  `/tmp/pragma/swe/environment-context.md`. A command that only reads inputs or
+  probes tools without writing this path is rejected and not executed.
 
   Purpose:
   Record the current execution environment so later personas do not use stale
@@ -30,6 +33,25 @@ prompt: |
   - This is a read-only state. Do not edit repository files.
   - The first response must run a compact preflight command and write
     `/tmp/pragma/swe/environment-context.md` in the same bash block.
+  - If completion is rejected, rewrite `/tmp/pragma/swe/environment-context.md`
+    from measured values and the rejection guidance. Do not run another
+    discovery-only command.
+  - The artifact must be based on values measured by the bash block in this
+    run. Do not hardcode tool paths, versions, PATH, timestamps, or availability
+    conclusions from memory or prior examples.
+  - Do not use heredocs in this state. Use grouped `echo` commands or
+    `printf --` with append-only redirection and already-captured variables.
+    Plain `printf '- bullet\n'` is invalid in many shells because the leading
+    dash is parsed as an option; use `printf -- '- bullet\n'` if you choose
+    printf. Malformed heredoc delimiters can make the transcript look complete
+    while leaving the declared artifact missing.
+  - The final line of the bash block must be exactly:
+    `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`
+    Do not quote the sentinel, do not omit the closing quote, and do not write
+    `echo "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
+  - If a preflight variable says a tool is available, the artifact must report
+    that measured value. If it says `not_found`, the artifact must say
+    `not_found` and include any runner contradiction separately.
   - Record the current working directory, PATH, OS/architecture, and available
     tool commands relevant to the repository and acceptance map.
   - Copy runner-provided capability evidence from the declared input artifact
@@ -94,4 +116,5 @@ prompt: |
   Write `/tmp/pragma/swe/environment-context.md` with the environment context.
   Optional bounded probes may use temporary workspace, but probe failures must
   be recorded instead of aborting the survey.
+  End the bash block with exactly:
   echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT

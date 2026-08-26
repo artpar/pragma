@@ -31,6 +31,12 @@ The Pragma runner uses that virtualenv automatically for `--evaluate` when it ex
 
 ## One-Instance Patch Generation
 
+Before running an autonomous full SWE-bench Pro attempt for the Minimax +
+VibeThink engineering loop, keep the manual-first gate intact. The baseline
+trace for the selected Flipt Kubernetes instance is
+`docs/swe-bench-pro-vibethink-minimax-manual-trace.md`; use it to judge the
+early FSM states before launching `--evaluate`.
+
 Set a model API key, then run one instance. The runner uses `LLM_API_KEY`, then `LILAC_API_KEY`, then `providers.lilac.api_key` from `~/.pragma/credentials.yml`.
 
 ```bash
@@ -57,23 +63,30 @@ The runner:
 The generator toolchain is enabled by default and cached under:
 
 ```text
-.pragma/toolchains/swebench-pro-linux-amd64
+.pragma/toolchains/swebench-pro-linux-amd64-<fingerprint>
 ```
 
 It provides:
 
-- `buf`
-- `protoc`
-- `protoc-gen-go`
-- `protoc-gen-go-grpc`
-- `protoc-gen-grpc-gateway`
-- `protoc-gen-openapiv2`
+- `buf` v1.28.1
+- `protoc` 23.4
+- `protoc-gen-go` v1.31.0
+- `protoc-gen-go-grpc` v1.3.0
+- `protoc-gen-grpc-gateway` v2.15.2
+- `protoc-gen-openapiv2` v2.15.2
 - grpc-gateway OpenAPI annotation protos under `/pragma-toolchain/include`
 
 Each real run writes `toolchain-preflight.log` in the run output directory so
 the benchmark artifact records which generator binaries were visible inside the
 container. Disable this behavior with `--no-generator-toolchain` or
 `SWE_BENCH_GENERATOR_TOOLCHAIN=0`.
+
+The default generator stack is intentionally pinned to a Go 1.18/grpc v1.53
+compatible era. Newer `protoc-gen-go` releases can emit Go 1.20-only
+`unsafe.StringData` code, and newer `protoc-gen-go-grpc` releases can emit
+stubs requiring newer grpc APIs. The cache fingerprint includes the selected
+generator URLs and versions so a version change cannot silently reuse an
+incompatible toolchain directory.
 
 Tool versions and download sources can be overridden with:
 
@@ -98,16 +111,31 @@ Default Pragma settings:
 | Max turns | `$PRAGMA_MAX_TURNS`, default `250` |
 | Agent timeout | `$PRAGMA_AGENT_TIMEOUT`, default `7200` seconds |
 
-The runner defaults to the prompt-control v2 orchestration:
+The runner defaults to the SWE-bench Pro engineering-loop orchestration:
 
 | Setting | Default |
 |---|---|
-| Orchestration | `$PRAGMA_ORCHESTRATION`, default `/pragma/orchestrations/prompt-control-v2-benchmark.yaml` |
+| Orchestration | `$PRAGMA_ORCHESTRATION`, default `/pragma/orchestrations/swe-bench-pro-engineering-loop.yaml` |
 | Persona dir | `$PRAGMA_PERSONA_DIR`, default `/pragma/personas-research-v2` |
 
 Use `--direct` only when intentionally running the non-orchestrated Pragma loop.
 Extra Pragma flags can still be appended through `PRAGMA_EXTRA_ARGS`, but do
 not put `orchestration run` there; use `--orchestration` and `--persona-dir`.
+
+The engineering loop can use Minimax through Lilac as the default LLM while
+specific personas override to another provider/model. For the current
+VibeThink validation gate, start the local OpenAI-compatible VibeThink server
+on the host, then export:
+
+```bash
+export LILAC_API_KEY=...
+export OPENAI_API_KEY=dummy
+export OPENAI_BASE_URL=http://127.0.0.1:8080/v1
+```
+
+The runner passes provider-specific credentials and base URLs into Docker. Host
+URLs using `127.0.0.1` or `localhost` are rewritten to `host.docker.internal`
+for the benchmark container.
 
 For orchestration runs, the runner mounts the repo-local YAML directories into
 the benchmark container:
@@ -118,8 +146,37 @@ the benchmark container:
 | `personas/` | `/pragma/personas` |
 | `personas-research-v2/` | `/pragma/personas-research-v2` |
 
-To test the prompt-control v2 persona set from scratch on the Flipt Kubernetes
-task, run the benchmark normally:
+For state-contract validation before a full run, stop the orchestration after a
+named state and inspect the generated artifacts instead of evaluating:
+
+```bash
+tools/run_swebench_pro_instance.py \
+  --instance-id instance_flipt-io__flipt-0fd09def402258834b9d6c0eaa6d3b4ab93b4446 \
+  --pull-image \
+  --stop-after-state swe_repo_survey
+```
+
+For replaying a later state from already-seeded or existing artifacts, start at
+that state and optionally stop after the next contract boundary:
+
+```bash
+tools/run_swebench_pro_instance.py \
+  --instance-id instance_flipt-io__flipt-0fd09def402258834b9d6c0eaa6d3b4ab93b4446 \
+  --start-at-state route_validation_gate \
+  --stop-after-state route_validation_gate
+```
+
+`--start-at-state` and `--stop-after-state` are validation/debug modes and
+cannot be combined with `--evaluate`.
+
+Replay states that require handoff files can seed declared artifacts with
+`orchestration run --seed-artifact <artifact-id-or-path>=<local-file>`.
+Required model-authored outputs must be freshly written by the replayed state;
+pre-existing seeded outputs alone do not satisfy completion.
+
+To test the Minimax + VibeThink engineering-loop persona set from scratch on
+the Flipt Kubernetes task, first verify the manual trace and early state
+contracts, then run the benchmark:
 
 ```bash
 tools/run_swebench_pro_instance.py \
@@ -152,6 +209,10 @@ Important files:
 | `raw-http-pragma/` | Raw LLM HTTP captures |
 
 ## Evaluate One Prediction
+
+For the engineering-loop orchestration, do not use `--evaluate` as the first
+source of process discovery. Complete the manual baseline trace and early
+state-contract checks first, then evaluate.
 
 Add `--evaluate` to run the official local-Docker evaluator after patch generation:
 

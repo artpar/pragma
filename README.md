@@ -108,6 +108,32 @@ Add `--evaluate` to run the official local-Docker evaluator on the generated pat
 | `--verbose` | Verbose event logging to stderr |
 | `--record` | Record events to `pragma-recording.jsonl` |
 
+### Try GLM-5.3-Flash through OpenRouter
+
+```bash
+mkdir -p ~/.pragma
+touch ~/.pragma/credentials.yml
+chmod 600 ~/.pragma/credentials.yml
+$EDITOR ~/.pragma/credentials.yml
+```
+
+```yaml
+providers:
+  openrouter:
+    api_key: your-new-openrouter-key
+```
+
+Then run:
+
+```bash
+go run ./cmd/pragma --provider openrouter --model z-ai/glm-5.3-flash \
+  --prompt 'Inspect this repository and suggest one high-impact improvement.'
+```
+
+Pragma uses OpenRouter's OpenAI-compatible endpoint automatically. Set
+`OPENROUTER_API_KEY` or `OPENROUTER_BASE_URL` only when you need a temporary
+credential or endpoint override.
+
 ## Architecture
 
 ```

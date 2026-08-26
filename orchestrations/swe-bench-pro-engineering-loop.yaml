@@ -3,16 +3,28 @@ initial: swe_repo_survey
 states:
   - id: swe_repo_survey
     persona: swe_repo_survey
+    max_turns: 10
+    shell_policy:
+      require_patterns:
+        - '/tmp/pragma/swe/repo-survey\.md'
+      deny_message: This state must combine bounded repository inspection with writing `/tmp/pragma/swe/repo-survey.md` in the same shell action. Do not run discovery-only shell actions.
     artifacts:
       outputs:
         - id: repo_survey
           path: /tmp/pragma/swe/repo-survey.md
           required: true
           description: Initial task, repository, validation, and uncertainty survey.
+          checks:
+            - type: markdown_candidate_surfaces_concrete
 
   - id: swe_acceptance_mapper
     persona: swe_acceptance_mapper
     task_prompt: full
+    max_turns: 5
+    shell_policy:
+      require_patterns:
+        - '/tmp/pragma/swe/acceptance-map\.json'
+      deny_message: This state must write `/tmp/pragma/swe/acceptance-map.json` in the same shell action. If reading handoff artifacts, read them and write the acceptance map in one bounded command.
     artifacts:
       outputs:
         - id: acceptance_map
@@ -34,6 +46,10 @@ states:
             - type: json_each_repo_relative_paths
               path: acceptance_items
               field: repo_surfaces_to_verify
+            - type: json_each_string_array_values_in_task_or_handoff
+              path: acceptance_items
+              field: repo_surfaces_to_verify
+              artifact_id: repo_survey
             - type: json_each_behavior_validation_commands
               path: acceptance_items
               field: required_validation
@@ -41,6 +57,13 @@ states:
   - id: swe_environment_survey
     persona: swe_environment_survey
     task_prompt: none
+    max_turns: 7
+    shell_policy:
+      require_patterns:
+        - '/tmp/pragma/swe/environment-context\.md'
+      deny_patterns:
+        - "<<"
+      deny_message: This state must write `/tmp/pragma/swe/environment-context.md` in the same shell action and must not use heredocs for measured environment artifacts. Capture values into variables or temporary logs, then write expanded measured facts with printf or append-only echo.
     artifacts:
       outputs:
         - id: environment_context
@@ -65,6 +88,9 @@ states:
     task_prompt: none
     shell_policy:
       handoff_inputs: rendered
+      deny_patterns:
+        - '/dev/stdin'
+        - '(^|[;&|[:space:]])cat[[:space:]]+-([[:space:]]|$)'
       deny_message: This state receives declared handoff inputs as rendered content. Write declared outputs from the rendered handoff blocks instead of reading handoff artifact paths again.
     artifacts:
       outputs:
@@ -103,12 +129,39 @@ states:
   - id: swe_slice_planner
     persona: swe_slice_planner
     task_prompt: none
+    max_turns: 5
+    shell_policy:
+      require_patterns:
+        - '/tmp/pragma/swe/slice-plan\.json'
+      deny_message: This state must write `/tmp/pragma/swe/slice-plan.json` in the same shell action. Do not run discovery-only commands in the planner state.
     artifacts:
       outputs:
         - id: slice_plan
           path: /tmp/pragma/swe/slice-plan.json
           required: true
           description: One thin vertical slice of engineering work or discovery.
+          checks:
+            - type: json_required_fields
+              fields:
+                - slice_id
+                - worker_track
+                - mode
+                - objective
+                - theory_link
+                - acceptance_ids
+                - missing_acceptance_ids
+                - approved_edit_paths
+                - read_only_paths
+                - expected_observable
+                - targeted_validation
+                - scope_policy
+                - worker_stop_condition
+                - stop_condition
+            - type: json_array_max_items
+              field: acceptance_ids
+              value: "3"
+            - type: json_no_unproven_generated_outputs_in_approved_edit_paths
+            - type: json_worker_track_targeted_validation_consistent
 
   - id: swe_slice_plan_auditor
     persona: swe_slice_plan_auditor
@@ -125,6 +178,8 @@ states:
               fields:
                 - acceptance_ids
                 - missing_acceptance_ids
+            - type: json_no_unproven_generated_outputs_in_approved_edit_paths
+            - type: json_worker_track_targeted_validation_consistent
         - id: plan_audit
           path: /tmp/pragma/swe/plan-audit.md
           required: true
@@ -133,6 +188,21 @@ states:
   - id: swe_engineering_worker
     persona: swe_engineering_worker
     task_prompt: none
+    shell_policy:
+      deny_patterns:
+        - '(^|[;&|[:space:]])git[[:space:]]+(checkout|restore|reset|clean)\b'
+        - '(^|[;&|[:space:]])git[[:space:]]+show[[:space:]]+[^;&|[:space:]]+:'
+        - '(^|[;&|[:space:]])git[[:space:]]+cat-file\b'
+        - '(^|[;&|[:space:]])go[[:space:]]+(build|test|generate)\b'
+        - '(^|[;&|[:space:]])protoc\b'
+        - '(^|[;&|[:space:]])buf[[:space:]]+(generate|lint)\b'
+        - '(^|[;&|[:space:]])(pytest|cargo|mvn|gradle)[[:space:]]+(test|build)\b'
+        - '(^|[;&|[:space:]])(npm|pnpm|yarn)[[:space:]]+(test|run[[:space:]]+(test|lint)|lint)\b'
+        - '(^|[;&|[:space:]])make[[:space:]]+(test|lint)\b'
+        - '(^|[;&|[:space:]])sed[[:space:]]+-i\b'
+        - '(^|[;&|[:space:]])perl[[:space:]]+-pi\b'
+        - '(^|[;&|[:space:]])patch([[:space:]]|$)'
+      deny_message: Worker state must not run rollback, producer, build, lint, test, GNU patch, or brittle in-place stream-edit commands. Use a targeted patch/replacement command, or write `/tmp/pragma/swe/worker-report.md` with the blocker or scope request instead.
     artifacts:
       outputs:
         - id: worker_report
@@ -142,11 +212,21 @@ states:
           checks:
             - type: text_forbid_contains
               value: "task_completion_claim_allowed: true"
+            - type: markdown_no_generated_output_edit_recommendations
+            - type: markdown_scope_request_requires_no_changed_files
+            - type: markdown_scope_request_requires_clean_worktree
+            - type: markdown_no_forbidden_worker_commands
+              artifact_id: plan_audit
             - type: command_evidence_support
               artifact_id: worker_command_evidence
               sections:
                 - "Actions taken:"
                 - "Validation run by worker:"
+            - type: command_evidence_claimed_changes
+              artifact_id: worker_command_evidence
+            - type: command_evidence_repo_mutation_limit
+              artifact_id: worker_command_evidence
+              value: "2"
         - id: worker_validation_log
           path: /tmp/pragma/swe/worker-validation.log
           description: Optional focused command log produced by the worker.
@@ -178,11 +258,15 @@ states:
           checks:
             - type: text_forbid_contains
               value: "task_completion_claim_allowed: true"
+            - type: markdown_no_generated_output_edit_recommendations
             - type: command_evidence_support
               artifact_id: worker_command_evidence
               sections:
                 - "Actions taken:"
                 - "Validation run by worker:"
+            - type: command_evidence_non_report_limit
+              artifact_id: worker_command_evidence
+              value: "1"
         - id: worker_command_evidence
           path: /tmp/pragma/swe/worker-command-evidence.jsonl
           required: true
@@ -199,6 +283,11 @@ states:
           path: /tmp/pragma/swe/targeted-validation.md
           required: true
           description: Targeted validation result for the latest slice.
+          checks:
+            - type: markdown_no_generated_output_edit_recommendations
+            - type: markdown_validation_coverage_consistent
+            - type: markdown_worker_blocker_validation_no_commands
+              artifact_id: worker_report
 
   - id: swe_engineering_reviewer
     persona: swe_engineering_reviewer
@@ -216,6 +305,29 @@ states:
               artifact_id: targeted_validation
               field: acceptance_status.validated
               text_field: validated_acceptance_ids
+
+  - id: swe_validation_gate
+    persona: swe_validation_gate
+    task_prompt: none
+    artifacts:
+      outputs:
+        - id: validation_gate
+          path: /tmp/pragma/swe/validation-gate.txt
+          required: true
+          kind: verdict
+          allowed_values: [PASS, BLOCK]
+          runtime_capture:
+            type: final_text
+          description: Reasoning-only gate verdict on whether targeted validation covers the current slice acceptance IDs.
+
+  - id: route_validation_gate
+    control:
+      artifact_verdict:
+        path: /tmp/pragma/swe/validation-gate.txt
+        approve: PASS
+        block: BLOCK
+        approve_event: pass
+        block_event: block
 
   - id: route_review_decision
     control:
@@ -418,14 +530,17 @@ transitions:
       - id: engineering_context
         path: /tmp/pragma/swe/engineering-context.md
         required: true
+        max_bytes: 6000
         description: Current living theory and scope model.
       - id: environment_context
         path: /tmp/pragma/swe/environment-context.md
         required: true
+        max_bytes: 2500
         description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
       - id: acceptance_map
         path: /tmp/pragma/swe/acceptance-map.json
         required: true
+        max_bytes: 6000
         description: Current task-derived acceptance map and validation status.
       - id: slice_plan
         path: /tmp/pragma/swe/slice-plan.json
@@ -434,6 +549,7 @@ transitions:
       - id: handoff_audit
         path: /tmp/pragma/swe/handoff-audit.md
         required: true
+        max_bytes: 2500
         description: Exact handoff hashes, acceptance-map field changes, and corruption checks.
 
   - event: complete
@@ -505,7 +621,7 @@ transitions:
 
   - event: complete
     from: [swe_targeted_validator]
-    to: swe_engineering_reviewer
+    to: swe_validation_gate
     handoff:
       - id: engineering_context
         path: /tmp/pragma/swe/engineering-context.md
@@ -535,6 +651,84 @@ transitions:
         path: /tmp/pragma/swe/targeted-validation.md
         required: true
         description: Targeted validation evidence for the slice.
+
+  - event: complete
+    from: [swe_validation_gate]
+    to: route_validation_gate
+
+  - event: pass
+    from: [route_validation_gate]
+    to: swe_engineering_reviewer
+    handoff: &validation_gate_pass_handoff
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Current living theory and scope model.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map and validation status.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Current thin vertical slice plan.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        required: true
+        description: Work, discoveries, changed files, and scope requests from the slice.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        required: true
+        description: Runtime-authored worker command hashes, statuses, and completion markers.
+      - id: targeted_validation
+        path: /tmp/pragma/swe/targeted-validation.md
+        required: true
+        description: Targeted validation evidence for the slice.
+      - id: validation_gate
+        path: /tmp/pragma/swe/validation-gate.txt
+        required: true
+        description: Reasoning-only PASS verdict for targeted validation coverage.
+
+  - event: block
+    from: [route_validation_gate]
+    to: swe_theory_keeper
+    handoff:
+      - id: engineering_context
+        path: /tmp/pragma/swe/engineering-context.md
+        required: true
+        description: Previous living context to update.
+      - id: acceptance_map
+        path: /tmp/pragma/swe/acceptance-map.json
+        required: true
+        description: Current task-derived acceptance map to refresh from validation gate evidence.
+      - id: environment_context
+        path: /tmp/pragma/swe/environment-context.md
+        required: true
+        description: Current runner environment, runner capability evidence, tool availability, producer preflight facts, and capability contradictions.
+      - id: slice_plan
+        path: /tmp/pragma/swe/slice-plan.json
+        required: true
+        description: Latest slice plan.
+      - id: worker_report
+        path: /tmp/pragma/swe/worker-report.md
+        required: true
+        description: Latest work and discovery report.
+      - id: worker_command_evidence
+        path: /tmp/pragma/swe/worker-command-evidence.jsonl
+        required: true
+        description: Runtime-authored command evidence for the latest worker state.
+      - id: targeted_validation
+        path: /tmp/pragma/swe/targeted-validation.md
+        required: true
+        description: Latest targeted validation result.
+      - id: validation_gate
+        path: /tmp/pragma/swe/validation-gate.txt
+        required: true
+        description: Reasoning-only BLOCK verdict showing targeted validation coverage is insufficient.
 
   - event: complete
     from: [swe_engineering_reviewer]

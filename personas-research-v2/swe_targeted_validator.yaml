@@ -51,6 +51,19 @@ prompt: |
       generated output hand edits are not a valid validation recommendation.`
       The next validation suggestion must request clean-baseline producer
       evidence or unresolved runner/producer contract evidence.
+  - Exact-command gate: when running commands, run only the exact
+    `slice_plan.targeted_validation` command. Do not prepend capability probes,
+    source inspections, grep checks, producer repairs, regeneration commands,
+    diff commands, or cleanup commands unless those commands are literally part
+    of `slice_plan.targeted_validation`. If those extra commands seem required
+    before validation can be meaningful, write `Result: insufficient` instead.
+  - Producer-mutation gate: a producer or regeneration command such as
+    `protoc`, `buf generate`, `go generate`, migration generation, codegen, or
+    schema generation is allowed in this state only when it is literally in
+    `slice_plan.targeted_validation`. Never run a producer command to repair
+    the worktree before a compile/build/test command. If generated files are
+    stale and the producer command is not assigned by the slice plan, write an
+    insufficient report with a source-of-truth/producer repair signal.
   - Invalid first response: any command whose main purpose is reading
     `/tmp/pragma/swe/*`.
   - Valid first response when worker evidence already includes the exact
@@ -71,6 +84,18 @@ prompt: |
     write `/tmp/pragma/swe/targeted-validation.md` immediately with `Result:
     insufficient`, `insufficient_acceptance_ids`, and the missing validation
     command.
+  - Worker-no-edit gate: when `slice_plan.mode` is `edit`, `refactor`, or
+    `producer`, `worker_track` is `implementation`, and `worker_report` says
+    `Changed files` is `none`, write `/tmp/pragma/swe/targeted-validation.md`
+    immediately with `Result: insufficient`. Do not run the targeted command,
+    producer commands, source reads, or diff checks first; the planned
+    implementation did not happen.
+  - Worker-blocker gate: when `worker_report` contains a blocker or scope
+    request saying a generated output is stale, a producer repair is required,
+    or implementation cannot proceed, write the insufficient artifact
+    immediately. Do not run the producer or mutate generated output from the
+    validator unless that exact producer command is already the whole assigned
+    `slice_plan.targeted_validation` for this slice.
   - Valid first response when the exact targeted validation has not already
     been run: run the exact targeted command and capture its exit status, then
     write `/tmp/pragma/swe/targeted-validation.md` in the same bash block
@@ -162,8 +187,11 @@ prompt: |
     producer success alone does not validate acceptance IDs that require
     compilation, config loading, generated producer evidence, runtime behavior,
     or evaluator-facing behavior.
-  - If no targeted command exists for an edit slice, write an insufficient
-    validation result and name the missing command.
+  - If no targeted command exists for a slice with planned acceptance IDs,
+    write an insufficient validation result, put every planned acceptance ID
+    in `insufficient_acceptance_ids`, and name the missing command or evidence
+    under `missing_validation`. This applies to discovery slices too: discovery
+    may produce useful evidence, but it does not validate acceptance IDs.
   - If the targeted command does not cover a blocking acceptance ID named by
     the slice, write `Result: insufficient` even when the command passed.
   - If worker evidence already exists and is insufficient, write the validation
@@ -193,6 +221,13 @@ prompt: |
     generated files need edit scope. It may say the source-of-truth file,
     producer configuration, producer version, dependency/toolchain constraint,
     or blocker evidence needs scope/theory repair.
+  - The next validation suggestion must not request scope expansion to add,
+    edit, patch, or manually repair a generated-looking output such as
+    `*.pb.go`, `*.pb.gw.go`, `*.gen.go`, `*_generated.go`,
+    `*.generated.go`, `*.swagger.json`, or a path under `generated/`. If the
+    generated output lacks a needed symbol, recommend source-of-truth/producer
+    discovery, producer configuration repair, clean-baseline producer evidence,
+    or unresolved producer/toolchain blocker evidence instead.
   - If a producer emits generated output requiring newer language or dependency
     versions than the repository declares, do not recommend project dependency,
     lockfile, language-version, or toolchain-manifest expansion from that fact

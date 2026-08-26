@@ -15,6 +15,18 @@ import (
 )
 
 func main() {
+	root := newRootCommand()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := root.ExecuteContext(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "pragma",
 		Short:         "AI coding assistant",
@@ -40,13 +52,7 @@ func main() {
 
 	cli.RegisterFlags(root)
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+	return root
 }
 
 func versionCmd() *cobra.Command {

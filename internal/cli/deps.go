@@ -29,6 +29,7 @@ import (
 	groqprov "github.com/artpar/pragma/internal/provider/groq"
 	lilacprov "github.com/artpar/pragma/internal/provider/lilac"
 	oaiprov "github.com/artpar/pragma/internal/provider/openai"
+	openrouterprov "github.com/artpar/pragma/internal/provider/openrouter"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/session"
 )
@@ -125,13 +126,21 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		cfg.MaxTokens = 16384
 	}
 	bus := observe.NewEventBus(1024)
-	restoreGlobalBus := observe.InstallGlobalBus(bus)
+	traceEnabled, _ := cmd.Flags().GetBool("trace")
+	if os.Getenv("PRAGMA_FLOW_TRACE") == "1" {
+		traceEnabled = true
+	}
 	var traceFilter *observe.TraceFilter
 	if traceFilterEnv := os.Getenv("PRAGMA_TRACE_FILTER"); traceFilterEnv != "" {
-		observe.GlobalTrace("if: traceFilter != \"\"")
+		traceEnabled = true
 		traceFilter = observe.ParseTraceFilter(traceFilterEnv)
 	}
-	restoreTraceFilter := observe.InstallTraceFilter(traceFilter)
+	restoreGlobalBus := func() {}
+	restoreTraceFilter := func() {}
+	if traceEnabled {
+		restoreGlobalBus = observe.InstallGlobalBus(bus)
+		restoreTraceFilter = observe.InstallTraceFilter(traceFilter)
+	}
 	restoreTraceGlobals := func() {
 		restoreTraceFilter()
 		restoreGlobalBus()
@@ -144,10 +153,17 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	}
 	logger := observe.NewLogger(os.Stderr, logLevel, observe.FormatText, nil)
 
-	// Per-execution log file: ~/.pragma/logs/<timestamp>.jsonl
-	// Always enabled, captures everything at LevelTrace in JSON format.
+	// Per-execution log file: ~/.pragma/logs/<timestamp>.jsonl. Normal runs
+	// retain operational events without emitting function-by-function traces.
 	var cleanupFns []func()
 	var logFilePath string
+	fileLogLevel := observe.LevelInfo
+	if cfg.Verbose {
+		fileLogLevel = observe.LevelDebug
+	}
+	if traceEnabled {
+		fileLogLevel = observe.LevelTrace
+	}
 	if pragmaHome, homeErr := config.PragmaHome(); homeErr == nil {
 		observe.GlobalTrace("if: homeErr == nil")
 		logsDir := filepath.Join(pragmaHome, "logs")
@@ -158,7 +174,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 			logFile, logErr := os.Create(logFilePath)
 			if logErr == nil {
 				observe.GlobalTrace("if: logErr == nil")
-				fileLogger := observe.NewLogger(logFile, observe.LevelTrace, observe.FormatJSON, nil)
+				fileLogger := observe.NewLogger(logFile, fileLogLevel, observe.FormatJSON, nil)
 				bus.Subscribe(fileLogger)
 				cleanupFns = append(cleanupFns, func() { logFile.Close() })
 			}
@@ -631,6 +647,9 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) (provider.Provider
 			opts = append(opts, oaiprov.WithBaseURL(baseURL))
 		}
 		return oaiprov.New(cfg.APIKey, bus, opts...)
+	case "openrouter":
+		observe.GlobalTrace("case: \"openrouter\"")
+		return openrouterprov.New(cfg.APIKey, bus, resolveBaseURL("OPENROUTER_BASE_URL", "openrouter"))
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		var opts []googleprov.Option
@@ -665,6 +684,9 @@ func DefaultModelFor(providerName string) string {
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "gpt-4o"
+	case "openrouter":
+		observe.GlobalTrace("case: \"openrouter\"")
+		return openrouterprov.DefaultModel
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "gemini-2.5-flash"
@@ -688,6 +710,9 @@ func SecondaryModelFor(providerName string) string {
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "gpt-4o-mini"
+	case "openrouter":
+		observe.GlobalTrace("case: \"openrouter\"")
+		return openrouterprov.DefaultModel
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "gemini-2.5-flash"
@@ -796,6 +821,9 @@ func DefaultBaseURLFor(provider string) string {
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "https://api.openai.com/v1"
+	case "openrouter":
+		observe.GlobalTrace("case: \"openrouter\"")
+		return openrouterprov.DefaultBaseURL
 	case "groq":
 		observe.GlobalTrace("case: \"groq\"")
 		return "https://api.groq.com/openai/v1"
@@ -815,6 +843,9 @@ func baseURLEnvVarForProvider(provider string) string {
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "OPENAI_BASE_URL"
+	case "openrouter":
+		observe.GlobalTrace("case: \"openrouter\"")
+		return "OPENROUTER_BASE_URL"
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "GOOGLE_BASE_URL"
@@ -830,7 +861,7 @@ type selectedProvider struct {
 }
 
 // knownProviders is the list of all supported provider names.
-var knownProviders = []string{"anthropic", "openai", "google", "google-vertex", "groq", "lilac"}
+var knownProviders = []string{"anthropic", "openai", "openrouter", "google", "google-vertex", "groq", "lilac"}
 
 // pickAvailableProvider collects providers that have an API key (from credentials
 // or env vars) and either auto-selects or prompts the user to choose.
@@ -921,6 +952,7 @@ func autoDetectProvider(creds config.Credentials) string {
 		{"anthropic", "ANTHROPIC_API_KEY"},
 		{"google", "GOOGLE_API_KEY"},
 		{"openai", "OPENAI_API_KEY"},
+		{"openrouter", "OPENROUTER_API_KEY"},
 		{"groq", "GROQ_API_KEY"},
 	}
 
@@ -954,6 +986,9 @@ func envVarForProvider(provider string) string {
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "OPENAI_API_KEY"
+	case "openrouter":
+		observe.GlobalTrace("case: \"openrouter\"")
+		return "OPENROUTER_API_KEY"
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "GOOGLE_API_KEY"

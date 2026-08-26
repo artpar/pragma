@@ -20,6 +20,10 @@ prompt: |
 
   Required output path:
   - `/tmp/pragma/swe/slice-plan.json`
+  The bash block itself must contain the exact string
+  `/tmp/pragma/swe/slice-plan.json`. A command that only reads inputs or
+  inspects repository files without writing this path is rejected and not
+  executed.
 
   Path vocabulary rule:
   `/tmp/pragma/swe/*` paths are coordination artifacts. Repository paths are
@@ -30,6 +34,9 @@ prompt: |
   implementation, refactor, producer regeneration, or validation preparation.
   It must be small enough for targeted validation and rich enough to update the
   working theory.
+  A normal slice may include at most three `acceptance_ids`. If more than three
+  acceptance items are related, choose the smallest prerequisite slice and list
+  the rest in `missing_acceptance_ids`.
 
   Planning rules:
   - Hard JSON validity gates:
@@ -64,6 +71,20 @@ prompt: |
     not downgrade an edit/producer slice to discovery solely because older
     evidence said the tool was missing. Keep the producer command in
     `targeted_validation` and let the worker run it.
+  - A thin slice is not the same as one file. If a pending acceptance item
+    requires a coherent feature surface whose already observed source-of-truth,
+    registration, adapter, or config paths are tightly coupled, plan the
+    smallest coherent vertical bundle instead of a single-file slice that is
+    expected to stop immediately for scope expansion. Put every observed
+    required source path in `approved_edit_paths`, keep uncertain paths in
+    `suspected_coupled_paths`, and keep `acceptance_ids` capped at the related
+    acceptance IDs. Do this only from observed handoff evidence; do not guess
+    paths.
+  - Do not plan an implementation slice whose expected first outcome is merely
+    discovering that an observed required source-of-truth declaration,
+    registration point, adapter, or config path is outside `approved_edit_paths`.
+    Either include that observed path in the implementation envelope or plan a
+    no-edit discovery/blocker slice to prove the path first.
   - If `engineering_context` contains a `Planning constraints` entry named
     `producer_discovery_required`, obey it as a hard constraint. The next plan
     must be generated-producer discovery, not runtime/server/API discovery or
@@ -76,6 +97,9 @@ prompt: |
   - Your first response in this state must write
     `/tmp/pragma/swe/slice-plan.json` and echo
     `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
+  - If completion is rejected because the slice is too broad, rewrite
+    `/tmp/pragma/swe/slice-plan.json` by narrowing `acceptance_ids` to the
+    smallest useful subset. Do not inspect repository files in this state.
   - Discovery is a planned worker slice, not an action performed by this
     planner. If the next useful step needs repository inspection, write a
     discovery-mode slice with `worker_track: "discovery"` and name what to
@@ -89,6 +113,21 @@ prompt: |
     and set `worker_track` to `implementation`.
   - If generated files are involved, include the source-of-truth path and
     producer command only when known.
+  - Never plan rollback, history-restore, or broad repair commands as a worker
+    objective, stop condition, scope policy, or validation suggestion. This
+    includes `git checkout`, `git restore`, `git reset`, `git clean`,
+    `git show HEAD:path`, and "restore from git/history". If the current
+    context says a worker corrupted an approved source file, plan either a
+    narrow source repair slice that applies only the intended delta using
+    stable local syntax, or a diagnosis/unresolved slice if the narrow repair
+    cannot be specified from evidence.
+  - Never put generated-looking outputs such as `*.pb.go`, `*.pb.gw.go`,
+    `*.gen.go`, `*_generated.go`, `*.generated.go`, `*.swagger.json`, or paths
+    under `generated/` in `approved_edit_paths` unless original task text or
+    repository documentation proves that exact generated file is the source of
+    truth. Producer/tool unavailability, missing `protoc`, dependency friction,
+    or convenience is not source-of-truth proof; plan producer/source-of-truth
+    discovery or an unresolved producer blocker instead.
   - If a pending blocking item requires generated artifacts and the producer
     command is unknown or only described generically, plan a discovery-mode
     slice to identify the source-of-truth file, generated outputs, and exact

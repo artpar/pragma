@@ -37,6 +37,12 @@ prompt: |
   or Worker Contract line may require producer/build/lint/test execution,
   success, confirmation, verification, exit status, or "works". Rewrite those
   fields to command/path identification only before writing output.
+  A plan with a concrete `targeted_validation` command is not a discovery
+  slice even if `approved_edit_paths` is empty. Preserve `worker_track:
+  "implementation"` for validation-only or no-edit prerequisite slices that
+  must route through the implementation worker before targeted validation.
+  Do not rewrite such a plan to `worker_track: "discovery"` or
+  `targeted_validation: "none"`.
   If the proposed plan has nonempty `acceptance_ids` and those IDs exist in
   `acceptance-map.json`, your output must keep them nonempty. Empty
   `validation_covers_acceptance_ids` means "linked but not validated", not
@@ -45,6 +51,20 @@ prompt: |
   If `targeted_validation` is not `none`, the Worker Contract must not say the
   worker runs producer/build/lint/test commands before reporting. It must assign
   those commands to targeted validation after the worker report.
+  Generated-output hard stop:
+  - A generated-looking path such as `*.pb.go`, `*.pb.gw.go`, `*.gen.go`,
+    `*_generated.go`, `*.generated.go`, `*.swagger.json`, or a path under a
+    `generated/` directory is invalid in `approved_edit_paths` unless the
+    original task text or repository documentation proves that exact generated
+    file is the source of truth for this change.
+  - Producer/tool unavailability, missing `protoc`, dependency friction, or
+    convenience is never source-of-truth proof. Do not preserve or write a
+    `generated_policy` that says manual generated edits are correct because the
+    producer is unavailable.
+  - If a proposed plan approves such a generated file without proof, remove it
+    from `approved_edit_paths`, keep it in `suspected_coupled_paths`, and
+    rewrite the slice to producer/source-of-truth discovery or an unresolved
+    producer blocker. Do not route an implementation worker to hand-edit it.
 
   Algorithm:
   1. Copy the proposed JSON.
@@ -52,6 +72,20 @@ prompt: |
      - `discovery` only for no-edit discovery/context-repair slices.
      - `implementation` for any slice that may edit or run a producer/build/
        lint/test/validation command.
+     - `implementation` also applies to validation-only slices with no edit
+       paths when `targeted_validation` names a concrete command.
+  2a. Coherent vertical-slice audit:
+     - If an implementation plan's objective requires an observed
+       source-of-truth declaration, registration point, adapter, or config
+       path outside `approved_edit_paths`, and the handoff identifies that path
+       as necessary rather than speculative, either add the observed path to
+       `approved_edit_paths` or rewrite the slice to a no-edit
+       discovery/blocker slice. Do not preserve a plan whose likely first
+       worker result is a scope-expansion request for an already known
+       prerequisite.
+     - Keep the bundle small and acceptance-linked. Do not add uncertain,
+       unobserved, generated-output, test, or convenience paths to approved
+       edits.
   3. If `generated_policy` names a producer command and generated outputs are
      in `suspected_coupled_paths`, `targeted_validation` must not be `none`.
      Set it to run that producer command after the worker report. Use the
@@ -110,7 +144,14 @@ prompt: |
      to a no-edit producer-discovery or unresolved-blocker slice unless the
      handoff includes original task text, repository configuration, or
      clean-baseline producer evidence proving that project upgrade is intended.
-  11. If `targeted_validation` is not `none`, set both `worker_stop_condition`
+  11. Rollback repair rule: if a plan objective, scope policy, stop condition,
+     or validation suggestion includes rollback/history restore commands or
+     wording such as `git checkout`, `git restore`, `git reset`, `git clean`,
+     `git show HEAD:path`, or "restore from git/history", rewrite it. A repair
+     slice may only use a targeted source edit based on observed local syntax
+     and the intended delta, or it must become a diagnosis/unresolved blocker
+     if that narrow repair is not evidenced.
+  12. If `targeted_validation` is not `none`, set both `worker_stop_condition`
      and `stop_condition` exactly to:
      `Stop after the approved edit is applied and confirmed with source inspection or changed-file evidence, or after a scope/blocker report is written; targeted validation remains pending.`
      The Worker Contract must also assign all producer/build/check commands in

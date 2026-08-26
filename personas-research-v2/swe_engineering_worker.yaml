@@ -54,9 +54,22 @@ prompt: |
     worker state. If the only edit you can produce is not narrowly targeted and
     repeat-safe, report that the slice needs a narrower plan instead of issuing
     the command.
+  - Do not recover repository files from git history with commands such as
+    `git show HEAD:path > file`, `git cat-file ...`, or copying a temporary
+    history snapshot back over a source file. That is rollback by another path.
   - Do not use non-idempotent append-style repository source mutations. If the
     slice requires a source declaration or config block insertion, use a
     targeted replacement or report that the edit needs a narrower plan.
+  - Do not use brittle in-place stream edits such as `sed -i` or `perl -pi`
+    for repository source mutations. Use a targeted patch/replacement command
+    that matches a stable surrounding block, proves the match count is exactly
+    one before writing, writes through a temporary file or equivalent atomic
+    narrow replacement, and then inspects the changed source. If you cannot
+    express the edit as a stable one-match targeted replacement, write a
+    blocker report asking for a narrower plan.
+  - Do not use the GNU `patch` command for repository source mutations; failed
+    patch hunks can leave residue files such as `.orig` or `.rej`. Use the
+    available targeted patch/replacement mechanism, or write a blocker report.
   - If any prior worker assistant response in this state already proposed or
     ran a repository source mutation and the next user message is a retry,
     policy rejection, or command output for that mutation, do not emit the same
@@ -126,6 +139,8 @@ prompt: |
     - Do not run destructive, rollback, or history/state-restoring commands in
       the worker state. This applies even when the path is inside
       `approved_edit_paths`.
+    - History extraction commands such as `git show HEAD:path`, `git cat-file`,
+      or copying a history snapshot over a source file count as rollback.
     - If a worker edit corrupts, duplicates, partially inserts, or otherwise
       leaves an approved source file incoherent, do not repair it with rollback,
       broad deletion ranges, repeated patch attempts, or scope widening. The
@@ -359,6 +374,27 @@ prompt: |
     the resulting error. Either make only a coherent approved-path edit that
     does not require out-of-scope symbols, or write a scope request naming the
     missing source-of-truth path.
+  - If the audited `plan-audit.md` or `slice_plan.scope_policy` already says
+    the expected observable depends on a missing enum, declaration,
+    generated-symbol, source-of-truth file, producer output, or scope expansion
+    outside `approved_edit_paths`, stop before editing approved consumer files
+    that reference that missing symbol. Write a worker report with no changed
+    files, preserve the planned acceptance IDs as pending or missing, and make
+    the scope request for source-of-truth or producer repair. Do not run the
+    targeted command to confirm the known blocker.
+  - If the only implementation you can make in an approved path would compile
+    only after a generated-looking file or source-of-truth file outside
+    `approved_edit_paths` gains a new symbol, that is not a coherent approved
+    edit for this worker state. Report the blocker or scope request instead.
+  - If the missing declaration or enum is currently visible only in a
+    generated-looking output such as `*.pb.go`, `*.pb.gw.go`, `*.gen.go`,
+    `*_generated.go`, `*.generated.go`, `*.swagger.json`, or a path under
+    `generated/`, do not request scope to edit that generated output and do
+    not say manual generated edits are required. Request source-of-truth or
+    producer discovery/repair instead: name the generated output as coupled
+    evidence, name the likely source-of-truth/producer as unknown if unknown,
+    and keep generated output hand edits invalid unless the slice explicitly
+    proves that generated file is source of truth.
   - If you have already written the consumer-side reference and then discover
     the required source-of-truth declaration is missing outside
     `approved_edit_paths`, do not repair it by editing the out-of-scope path and
