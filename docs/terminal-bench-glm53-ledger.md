@@ -150,3 +150,9 @@ Pre-result infrastructure notes:
   prevents the precommitted frozen control from reaching an official verifier.
   Do not claim a benchmark improvement from E002 without renewed exact-model
   capacity and comparable verifier outcomes.
+- Champion disposition: the candidate was removed from the checked-out product
+  by `4317af7` because a provisional change must not become the foundation for
+  further experiments. The complete candidate remains recoverable at
+  `97c1963` for reevaluation when exact-model capacity is restored. The current
+  product behavior therefore matches `START_BASELINE`; evaluation scaffolding
+  and the append-only experiment history remain committed separately.
