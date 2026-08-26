@@ -60,6 +60,13 @@ Pre-result infrastructure notes:
   allowed at most 8,703. The other two queued trials were cancelled. These six
   outcomes are excluded as infrastructure/configuration failures. The fixed
   maximum output was reduced to 8,192 before any valid baseline task result.
+- With 8,192 output tokens, two concurrent trials were accepted, but the
+  zero-credit account's in-flight authorization only sustained one request
+  budget. `fix-git` made seven useful model turns, then received transient HTTP
+  402 `in_flight_budget_exhausted` while `regex-log` held the other request.
+  Pragma terminated instead of honoring the returned 120-second Retry-After.
+  The job was cancelled and excluded as an infrastructure/harness interaction.
+  All comparable development evaluations are serial from D01-v3 onward.
 
 ## Experiments
 
