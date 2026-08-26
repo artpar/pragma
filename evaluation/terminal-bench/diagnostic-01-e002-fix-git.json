@@ -1,0 +1,18 @@
+{
+  "job_name": "pragma-glm53-e002-d01-fix-git",
+  "jobs_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/jobs",
+  "n_concurrent_trials": 1,
+  "agents": [
+    {
+      "name": "tools.harbor_pragma_agent:PragmaAgent",
+      "model_name": "z-ai/glm-5.3",
+      "override_timeout_sec": 1800,
+      "kwargs": {
+        "bundle_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/bundles/E002"
+      }
+    }
+  ],
+  "tasks": [
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/fix-git"}
+  ]
+}

@@ -131,3 +131,7 @@ Pre-result infrastructure notes:
   same workspace and reaches the official verifier.
 - Reject if classification conflates the two 402 forms, ignores Retry-After,
   destroys workspace state, or fails the frozen task without a distinct cause.
+- Candidate commit: `97c196340a0ba4cbf785909d97ac701fee2eb4d4`.
+- Deterministic result: transient 402 classifies as retryable rate-limit with a
+  120-second delay; permanent credit 402 remains non-retryable; standard 429
+  behavior is preserved; `go test ./...` passed.
