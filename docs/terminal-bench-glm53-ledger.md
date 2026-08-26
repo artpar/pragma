@@ -96,3 +96,9 @@ Pre-result infrastructure notes:
   meaningful regression.
 - Promotion status before implementation: PROVISIONAL; mechanical evidence may
   retain it temporarily, but benchmark controls require provider capacity.
+- Candidate commit: `caf03c5f7591c214595dcd48d9fda5e91b13d115`.
+- Deterministic result: focused OpenRouter/CLI/compaction tests and `go test
+  ./...` passed; exact-model smoke returned `E001_OK` without the false unknown
+  model warning.
+- D01 baseline result available so far: `fix-git` reward 1.0, no exception,
+  START_BASELINE, 109 seconds wall clock.
