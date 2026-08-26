@@ -135,3 +135,18 @@ Pre-result infrastructure notes:
 - Deterministic result: transient 402 classifies as retryable rate-limit with a
   120-second delay; permanent credit 402 remains non-retryable; standard 429
   behavior is preserved; `go test ./...` passed.
+- Frozen-control execution: no verifier result. On `fix-git`, the candidate
+  preserved the recovered commit on a branch, then received the exact transient
+  402. The recording contains `APIRetryScheduled` with `delay_ms: 120000` and a
+  retryable `APIRequestFailed` at attempt 1, proving the changed branch executed
+  in the ordinary CLI path. Attempt 2 ran after 120 seconds in the same Harbor
+  trial and workspace, but OpenRouter then returned a distinct permanent 402:
+  `limit_source: openrouter_credits`, with only 3,160 of the requested 4,096
+  output tokens affordable. Pragma correctly classified that response as
+  non-retryable. Harbor reported a runtime exception and did not invoke the
+  verifier; this is excluded from task reward evidence.
+- Decision: PROVISIONAL. The live provider trace validates both halves of the
+  classifier and the Retry-After behavior, but depleted provider authorization
+  prevents the precommitted frozen control from reaching an official verifier.
+  Do not claim a benchmark improvement from E002 without renewed exact-model
+  capacity and comparable verifier outcomes.
