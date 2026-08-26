@@ -11,7 +11,7 @@ Official Terminal-Bench verifier rewards are the primary outcome.
 - Temperature: `0`
 - Other sampling parameters: provider defaults (Pragma sends none)
 - Advertised context limit: 1,048,576 tokens
-- Maximum output: 8,192 tokens
+- Maximum output: 4,096 tokens
 - Tool protocol: provider-native tool calls; Pragma `Bash` and `apply_patch`
 - Pragma product path: ordinary non-interactive CLI with `--loop provider-tools`
 - Turn limit: 100 model turns
@@ -67,6 +67,11 @@ Pre-result infrastructure notes:
   Pragma terminated instead of honoring the returned 120-second Retry-After.
   The job was cancelled and excluded as an infrastructure/harness interaction.
   All comparable development evaluations are serial from D01-v3 onward.
+- The first serial launch still requested 8,192 output tokens after the
+  promotional allowance had fallen to 7,859; three requests were rejected
+  before model execution and the job was cancelled. The fixed per-turn maximum
+  was reduced to 4,096. D01 is thereafter launched one task at a time so an
+  infrastructure rejection cannot cascade through the panel.
 
 ## Experiments
 
