@@ -102,3 +102,32 @@ Pre-result infrastructure notes:
   model warning.
 - D01 baseline result available so far: `fix-git` reward 1.0, no exception,
   START_BASELINE, 109 seconds wall clock.
+- D01 candidate result: no verifier result. E001 correctly completed and checked
+  the merge in the workspace, then an additional model request received
+  transient 402 `in_flight_budget_exhausted`; Pragma terminated. This is an
+  infrastructure/harness failure, not a verified task fail or pass.
+- Decision: PROVISIONAL. The mechanical defect is removed, but the frozen
+  control did not produce a comparable verifier outcome. Do not stack E001 into
+  the next isolated candidate.
+
+### E002 — retry transient OpenRouter in-flight budget responses (precommitted)
+
+- Parent champion product: `d0423f86d800d23d2241ca403c5b5f794285f34e`
+  (`START_BASELINE`; evaluation-only commits remain in history).
+- Observed failure: three GLM-5.3 task executions preserved workspace work but
+  terminated when OpenRouter returned HTTP 402 with reason
+  `in_flight_budget_exhausted` and `Retry-After: 120`. Pragma classified the
+  response as permanent `request_failed`. Ordinary permanent 402 responses
+  instead reported `limit_source: openrouter_credits` and fewer affordable
+  tokens.
+- Hypothesis: an OpenRouter-specific classifier that retries only the explicit
+  transient in-flight reason and honors its Retry-After value will allow active
+  work to continue without retrying permanent insufficient-credit errors.
+- Harness mechanism: provider error classification and existing bounded retry.
+- Diagnostic: focused classification tests for transient and permanent 402s.
+- Frozen control: `fix-git` first; remaining D01 tasks as capacity permits.
+- Expected observable change: transient 402 is retryable with a 120-second
+  delay; permanent credit 402 remains non-retryable; the task resumes in the
+  same workspace and reaches the official verifier.
+- Reject if classification conflates the two 402 forms, ignores Retry-After,
+  destroys workspace state, or fails the frozen task without a distinct cause.
