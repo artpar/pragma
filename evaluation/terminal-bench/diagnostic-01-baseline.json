@@ -1,5 +1,5 @@
 {
-  "job_name": "pragma-glm53-start-baseline-d01",
+  "job_name": "pragma-glm53-start-baseline-d01-v2",
   "jobs_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/jobs",
   "n_concurrent_trials": 2,
   "agents": [

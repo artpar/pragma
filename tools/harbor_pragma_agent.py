@@ -95,7 +95,7 @@ class PragmaAgent(BaseAgent):
                 "--model",
                 shlex.quote(model),
                 "--temperature 0",
-                "--max-tokens 65536",
+                "--max-tokens 8192",
                 "--max-turns 100",
                 "--permission-mode bypassPermissions",
                 "--record",

@@ -11,7 +11,7 @@ Official Terminal-Bench verifier rewards are the primary outcome.
 - Temperature: `0`
 - Other sampling parameters: provider defaults (Pragma sends none)
 - Advertised context limit: 1,048,576 tokens
-- Maximum output: 65,536 tokens
+- Maximum output: 8,192 tokens
 - Tool protocol: provider-native tool calls; Pragma `Bash` and `apply_patch`
 - Pragma product path: ordinary non-interactive CLI with `--loop provider-tools`
 - Turn limit: 100 model turns
@@ -51,6 +51,36 @@ Purpose: establish task-completion evidence and expose the earliest observable
 harness defects in the normal product path. This panel is diagnostic baseline
 evidence, not promotion evidence for a candidate that has not yet been defined.
 
+Pre-result infrastructure notes:
+
+- The first Harbor launch did not add the repository to `PYTHONPATH`; it failed
+  while importing the custom adapter, before task setup or any model call.
+- The next launch requested 65,536 maximum output tokens. OpenRouter rejected
+  all four model requests with HTTP 402 because the credential's authorization
+  allowed at most 8,703. The other two queued trials were cancelled. These six
+  outcomes are excluded as infrastructure/configuration failures. The fixed
+  maximum output was reduced to 8,192 before any valid baseline task result.
+
 ## Experiments
 
-No product candidate has yet been precommitted.
+### E001 — exact OpenRouter model identity and context (precommitted)
+
+- Parent champion: `d0423f86d800d23d2241ca403c5b5f794285f34e`
+- Observed failure: normal runs of `z-ai/glm-5.3` warn that the model is
+  unknown, report no authoritative context window, fall back to a 200K
+  compaction budget, and select `z-ai/glm-5.3-flash` as OpenRouter's secondary
+  compaction model.
+- Hypothesis: registering the exact model and using the active OpenRouter model
+  for compaction will remove the false warning, budget the advertised 1,048,576
+  context correctly, and prevent a hidden model switch without changing tool or
+  task behavior.
+- Harness mechanism: OpenRouter model metadata and compaction-model selection.
+- Diagnostic: focused provider/CLI tests plus an exact-model smoke invocation.
+- Frozen controls: all six D01 tasks, unchanged.
+- Expected observable change: exact model is the OpenRouter default/listed
+  model, `ContextWindow("z-ai/glm-5.3")` returns `(1048576, true)`, and OpenRouter
+  compaction resolves to the active model rather than Flash.
+- Reject if any deterministic assertion fails or later frozen controls show a
+  meaningful regression.
+- Promotion status before implementation: PROVISIONAL; mechanical evidence may
+  retain it temporarily, but benchmark controls require provider capacity.
