@@ -1,4 +1,4 @@
-"""Harbor adapter that runs Pragma's single-owner engineering orchestration."""
+"""Minimal Harbor adapter for Pragma's normal provider-tools product path."""
 
 import os
 import shlex
@@ -12,8 +12,28 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 
+def _openrouter_api_key() -> str | None:
+    """Resolve the benchmark credential without copying host config to a task."""
+    if value := os.environ.get("OPENROUTER_API_KEY"):
+        return value
+    credentials = Path.home() / ".pragma" / "credentials.yml"
+    try:
+        lines = credentials.read_text().splitlines()
+    except OSError:
+        return None
+    in_openrouter = False
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if raw_line.startswith("  ") and not raw_line.startswith("    "):
+            in_openrouter = stripped == "openrouter:"
+            continue
+        if in_openrouter and raw_line.startswith("    ") and stripped.startswith("api_key:"):
+            return stripped.split(":", 1)[1].strip().strip("'\"") or None
+    return None
+
+
 class PragmaAgent(BaseAgent):
-    """Upload a prebuilt Pragma bundle and run it inside the task container."""
+    """Upload a prebuilt Pragma binary and run one ordinary CLI session."""
 
     def __init__(self, *args, bundle_dir: str, **kwargs):
         super().__init__(*args, **kwargs)
@@ -32,8 +52,7 @@ class PragmaAgent(BaseAgent):
     async def setup(self, environment: BaseEnvironment) -> None:
         required = (
             self.bundle_dir / "pragma",
-            self.bundle_dir / "swe-single-owner-engineering-loop.yaml",
-            self.bundle_dir / "personas",
+            self.bundle_dir / "ca-certificates.crt",
         )
         missing = [str(path) for path in required if not path.exists()]
         if missing:
@@ -41,11 +60,7 @@ class PragmaAgent(BaseAgent):
 
         await environment.exec("mkdir -p /opt/pragma", user="root")
         await environment.upload_file(required[0], "/opt/pragma/pragma")
-        await environment.upload_file(
-            required[1], "/opt/pragma/swe-single-owner-engineering-loop.yaml"
-        )
-        await environment.upload_dir(required[2], "/opt/pragma/personas")
-        await environment.upload_file(certifi.where(), "/opt/pragma/ca-certificates.crt")
+        await environment.upload_file(required[1], "/opt/pragma/ca-certificates.crt")
         result = await environment.exec(
             "chmod 0755 /opt/pragma/pragma && /opt/pragma/pragma version",
             user="root",
@@ -60,26 +75,32 @@ class PragmaAgent(BaseAgent):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
+        api_key = _openrouter_api_key()
         if not api_key:
             raise RuntimeError("OPENROUTER_API_KEY is required by the Pragma adapter")
 
-        model = self.model_name or "z-ai/glm-5.3-flash"
+        model = self.model_name or "z-ai/glm-5.3"
+        log_dir = self.environment_logs_dir.as_posix()
         command = " ".join(
             [
+                "set -o pipefail;",
+                "mkdir -p",
+                shlex.quote(log_dir),
+                ";",
                 "/opt/pragma/pragma",
-                "orchestration run",
-                "/opt/pragma/swe-single-owner-engineering-loop.yaml",
-                "--persona-dir /opt/pragma/personas",
                 "--prompt",
                 shlex.quote(instruction),
+                "--loop provider-tools",
                 "--provider openrouter",
                 "--model",
                 shlex.quote(model),
-                "--temperature 1",
+                "--temperature 0",
                 "--max-tokens 65536",
+                "--max-turns 100",
                 "--permission-mode bypassPermissions",
                 "--record",
+                "2>&1 | tee",
+                shlex.quote(f"{log_dir}/pragma-output.log"),
             ]
         )
         result = await environment.exec(
@@ -87,6 +108,7 @@ class PragmaAgent(BaseAgent):
             cwd="/app",
             env={
                 "OPENROUTER_API_KEY": api_key,
+                "HOME": f"{log_dir}/home",
                 "SSL_CERT_FILE": "/opt/pragma/ca-certificates.crt",
             },
         )
