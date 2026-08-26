@@ -25,7 +25,7 @@ Official Terminal-Bench verifier rewards are the primary outcome.
 
 ## Starting point
 
-- `START_BASELINE`: `d0423f86d800d23d2241ca403c5b5f794285f34e`
+- `START_BASELINE`: `d0423f8f1a388422ad73c5006760cd04753a1f28`
 - Baseline deterministic checks: `go test ./...` passed.
 - Provider smoke: exact output `GLM53_PRAGMA_OK` was returned by
   `z-ai/glm-5.3` through the provider-tools loop.
@@ -77,7 +77,7 @@ Pre-result infrastructure notes:
 
 ### E001 — exact OpenRouter model identity and context (precommitted)
 
-- Parent champion: `d0423f86d800d23d2241ca403c5b5f794285f34e`
+- Parent champion: `d0423f8f1a388422ad73c5006760cd04753a1f28`
 - Observed failure: normal runs of `z-ai/glm-5.3` warn that the model is
   unknown, report no authoritative context window, fall back to a 200K
   compaction budget, and select `z-ai/glm-5.3-flash` as OpenRouter's secondary
@@ -112,7 +112,7 @@ Pre-result infrastructure notes:
 
 ### E002 — retry transient OpenRouter in-flight budget responses (precommitted)
 
-- Parent champion product: `d0423f86d800d23d2241ca403c5b5f794285f34e`
+- Parent champion product: `d0423f8f1a388422ad73c5006760cd04753a1f28`
   (`START_BASELINE`; evaluation-only commits remain in history).
 - Observed failure: three GLM-5.3 task executions preserved workspace work but
   terminated when OpenRouter returned HTTP 402 with reason
