@@ -11,7 +11,8 @@ import (
 
 const (
 	DefaultBaseURL = "https://openrouter.ai/api/v1"
-	DefaultModel   = "z-ai/glm-5.3-flash"
+	DefaultModel   = "z-ai/glm-5.3"
+	FlashModel     = "z-ai/glm-5.3-flash"
 )
 
 // Provider reuses the OpenAI-compatible wire adapter while reporting the
@@ -47,10 +48,13 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 }
 
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
-	if modelID == DefaultModel || modelID == "stealth/ox-alpha" {
+	switch modelID {
+	case DefaultModel, "stealth/ox-alpha":
 		return 1_048_576, true
+	case FlashModel:
+		return 1_310_720, true
 	}
 	return p.Provider.ContextWindow(modelID)
 }
 
-func (p *Provider) ListModels() []string { return []string{DefaultModel} }
+func (p *Provider) ListModels() []string { return []string{DefaultModel, FlashModel} }
