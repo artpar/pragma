@@ -1877,7 +1877,7 @@ func RunListSessions() error {
 func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	secondaryModel := SecondaryModelFor(d.Cfg.Provider, d.Cfg.Model)
+	secondaryModel := SecondaryModelFor(d.Cfg.Provider)
 	compactor := compact.NewService(d.Prov, d.Bus, d.CostTracker, secondaryModel)
 
 	disableAutoCompact := os.Getenv("DISABLE_AUTO_COMPACT") == "1" || os.Getenv("DISABLE_AUTO_COMPACT") == "true"

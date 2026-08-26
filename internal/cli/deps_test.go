@@ -168,13 +168,6 @@ func TestRegisterFlagsIncludesSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestSecondaryModelForOpenRouterPreservesActiveModel(t *testing.T) {
-	const active = "z-ai/glm-5.3"
-	if got := SecondaryModelFor("openrouter", active); got != active {
-		t.Fatalf("SecondaryModelFor(openrouter, %q) = %q, want active model", active, got)
-	}
-}
-
 func TestRegisterFlagsIncludesLoop(t *testing.T) {
 	cmd := newFlagCommand(t, "--loop", "provider-tools")
 	got, err := cmd.Flags().GetString("loop")
@@ -271,9 +264,9 @@ func TestLilacDefaultAndAliasesUseMiniMaxM3(t *testing.T) {
 	}
 }
 
-func TestOpenRouterDefaultsToGLM53(t *testing.T) {
-	if got := DefaultModelFor("openrouter"); got != "z-ai/glm-5.3" {
-		t.Fatalf("DefaultModelFor(openrouter) = %q, want z-ai/glm-5.3", got)
+func TestOpenRouterDefaultsToGLM53Flash(t *testing.T) {
+	if got := DefaultModelFor("openrouter"); got != "z-ai/glm-5.3-flash" {
+		t.Fatalf("DefaultModelFor(openrouter) = %q, want z-ai/glm-5.3-flash", got)
 	}
 	if got := DefaultBaseURLFor("openrouter"); got != "https://openrouter.ai/api/v1" {
 		t.Fatalf("DefaultBaseURLFor(openrouter) = %q", got)

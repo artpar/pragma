@@ -699,10 +699,8 @@ func DefaultModelFor(providerName string) string {
 	}
 }
 
-// SecondaryModelFor returns the model for summarization tasks. OpenRouter is a
-// model router rather than a model family, so an explicit active model must be
-// preserved instead of silently switching providers/models during compaction.
-func SecondaryModelFor(providerName string, activeModels ...string) string {
+// SecondaryModelFor returns the fast/cheap model for summarization tasks.
+func SecondaryModelFor(providerName string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch providerName {
@@ -714,9 +712,6 @@ func SecondaryModelFor(providerName string, activeModels ...string) string {
 		return "gpt-4o-mini"
 	case "openrouter":
 		observe.GlobalTrace("case: \"openrouter\"")
-		if len(activeModels) > 0 && strings.TrimSpace(activeModels[0]) != "" {
-			return activeModels[0]
-		}
 		return openrouterprov.DefaultModel
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
