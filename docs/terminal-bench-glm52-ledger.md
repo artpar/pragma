@@ -68,3 +68,10 @@ Pre-result configuration calibration:
   calibrated once to 16,384. The 4,096 run is retained as configuration evidence
   but is not comparable baseline task evidence. All subsequent baseline and
   candidate runs use 16,384.
+
+Baseline results:
+
+- `regex-log`: reward 1.0, no exception, official verifier, 7m19s wall clock.
+  The agent made 14 model requests (13 tool-use, one end-turn), created the
+  deliverable, identified and repaired an IPv4-pattern error, and used 39,019
+  output tokens. This is the first comparable GLM-5.2 baseline result.
