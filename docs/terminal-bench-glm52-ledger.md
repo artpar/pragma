@@ -129,3 +129,36 @@ reached the official verifier and none had a Harbor or provider exception.
 - Reject if the reasoning still disappears, deterministic tests fail, or the
   candidate causes a repeatable verified regression on a previously solved
   control. A changed-looking trajectory alone is not promotion evidence.
+- Candidate commit: `90d90c5` (`Preserve Lilac reasoning across tool turns`).
+  The product change is one field assignment; its focused existing provider
+  integration test now asserts both the thinking and text parts. `go test
+  ./...` passes. Linux amd64 candidate bundle SHA-256:
+  `0db4ddc1d1e5366a0030a24100e7c62f147756099850b33a787b7b5c01e5928c`.
+- Mechanical diagnostic: exact-model normal CLI smoke completed
+  `E001_REASONING_OK`. The first recorded response contained an 83-character
+  thinking part plus a tool call; the next recorded request contained that
+  thinking part and tool call in its assistant message. This directly confirms
+  the predicted response and continuation-context change.
+- Frozen-control results at the candidate:
+  - `cancel-async-tasks`: reward 1.0, no exception, official verifier, 1m19s
+    wall clock (baseline 0.0). Eight model responses, 2,807 output tokens.
+  - `fix-git`: reward 1.0, no exception, official verifier, 1m09s wall clock
+    (baseline 1.0). Sixteen model responses, 2,002 output tokens.
+  - `regex-log`: reward 1.0, no exception, official verifier, 4m58s wall clock
+    (baseline 1.0). Twelve model responses, 21,857 output tokens; its first
+    response included 12,655 tokens and the preserved thinking part.
+  - `adaptive-rejection-sampler`: candidate reward 0.0, no exception, official
+    verifier, 10m59s. Two identical 150-second provider timeouts were retried;
+    the third response used all 16,384 output tokens as reasoning and ended at
+    `max_tokens` without creating `ars.R`. START_BASELINE was stopped without a
+    verifier result after three identical timeouts on the same fourth request,
+    so this task is not a comparable E001 outcome and provides no promotion
+    credit or regression evidence. It does expose a separate completion-budget
+    limitation for later investigation.
+- Decision: **ACCEPTED** as the new product champion on mechanically strong
+  harness evidence, with supportive but not independently conclusive benchmark
+  evidence. E001 deterministically stops Lilac response/context loss, preserves
+  both previously solved controls, and changed the diagnostic failure to an
+  official pass. The single-run diagnostic gain is not by itself a claim that
+  Pragma solves materially more tasks; later unseen and broad checkpoints must
+  confirm cumulative task-success value.
