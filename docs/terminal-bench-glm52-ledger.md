@@ -198,3 +198,34 @@ other fixed settings remain unchanged.
 - Reject if slow responses still fail to complete, the response completes but
   again contains no action at 32,768 tokens, or a previously solved control has
   a repeatable verified regression. Latency alone is not promotion evidence.
+- Candidate commit: `5f469c1` (`Allow slow Lilac reasoning responses`). The
+  product change raised only Lilac's request timeout from 150 to 360 seconds and
+  added a focused timeout test. `go test ./...` passed. Linux amd64 candidate
+  bundle SHA-256:
+  `2026d77e56f81f17973b12c91a96b0466d84da9d9837303edc62622cab544520`.
+- Parent-champion v2 calibration:
+  - `bn-fit-modify`: reward 1.0, no exception, official verifier, 3m56s wall
+    clock; all 9 verifier tests passed.
+  - `adaptive-rejection-sampler`: reward 0.0, `AgentTimeoutError`, official
+    verifier, 30m41s wall clock. After the setup tool calls, the identical
+    fourth request hit the 150-second deadline ten times and never admitted a
+    response before Harbor's 1,800-second agent timeout.
+- Candidate v2 results:
+  - `adaptive-rejection-sampler`: reward 0.0, no exception, official verifier,
+    7m56s wall clock. The decisive fourth request crossed the old 150-second
+    boundary and completed once after 4m57s, mechanically confirming the
+    timeout change. It then used all 32,768 output tokens, stopped at
+    `max_tokens`, emitted no action, and did not create `ars.R`.
+  - `bn-fit-modify`: reward 1.0, no exception, official verifier, 2m51s wall
+    clock.
+  - `regex-log`: reward 1.0, no exception, official verifier, 4m40s wall clock.
+  - `cancel-async-tasks`: reward 0.0, no exception, official verifier, 1m49s
+    wall clock. Three of six verifier tests passed; the three cancellation cases
+    printed only one of two required cleanup markers. Its prior pass is in the
+    non-comparable v1 inference regime, so this is not called a repeatable v2
+    regression.
+- Decision: **REJECTED**. The candidate fixed the narrow transport symptom but
+  hit the precommitted rejection condition: the newly admitted diagnostic
+  response exhausted the doubled completion budget without content or a tool
+  action, so it delivered no task-success value. Commit `921adc1` reverts only
+  the E002 product change; E001 remains the accepted champion.
