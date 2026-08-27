@@ -102,3 +102,30 @@ D01 aggregate: four official passes and two official zeros (4/6). One zero is
 an ordinary task failure (`cancel-async-tasks`); one is separately classified as
 an environment/verifier execution failure (`path-tracing`). All six trials
 reached the official verifier and none had a Harbor or provider exception.
+
+## E001 — preserve Lilac reasoning across tool turns (precommitted)
+
+- Parent product champion: `GLM52_START_BASELINE`
+  (`3804be0581de202606f60d729aacc65d572559cd`); evaluation-only commits through
+  `8d0d13b` do not change the bundled product.
+- Observed failure: a live GLM-5.2 response contained a non-empty string in
+  Lilac's `message.reasoning`. `completionMessage` decoded it successfully, but
+  `completionResponse.toAnyLLM` copied only role, content, and tool calls. The
+  shared converter therefore could not emit a `model.ThinkingPart`, and later
+  provider-tools requests omitted that portion of the assistant turn. This is
+  deterministic category **A** response/context loss.
+- Hypothesis: copying the already-decoded reasoning into the any-llm message
+  will preserve it as a thinking part and in subsequent provider turns, without
+  changing ordinary text or tool-call parsing.
+- Smallest mechanism: assign only the decoded reasoning field during Lilac
+  completion conversion and add a focused conversion test.
+- Diagnostic: deterministic unit test plus an exact-model normal-path smoke
+  whose recording must contain a thinking part.
+- Frozen controls: `cancel-async-tasks` (known model-error diagnostic),
+  `fix-git` and `regex-log` (previously solved unrelated controls), and
+  `adaptive-rejection-sampler` (the lexicographically first previously unseen
+  task, selected before its result). Obtain a comparable START_BASELINE result
+  for the new task before using its candidate result.
+- Reject if the reasoning still disappears, deterministic tests fail, or the
+  candidate causes a repeatable verified regression on a previously solved
+  control. A changed-looking trajectory alone is not promotion evidence.
