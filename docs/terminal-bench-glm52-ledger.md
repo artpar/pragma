@@ -492,3 +492,37 @@ other fixed settings remain unchanged.
   policy, not accepted as a benchmark hill-climb gain**. E005 remains the last
   task-performance champion by evidence; the current product additionally
   carries E006's 360-second timeout. Do not claim reward improvement from E006.
+
+## E007 — continue reasoning-only max-token responses (precommitted)
+
+- Parent product state: commit `fc34636`, comprising E005 plus the explicitly
+  retained E006 timeout; accepted E004 remains the evaluation adapter.
+- Observed failure: E002 `adaptive-rejection-sampler` and E006
+  `circuit-fibsqrt` each returned `stop=max_tokens` after consuming the fixed
+  32,768-token output budget without a tool call or final answer. The provider
+  tools loop appended the partial assistant reasoning, emitted
+  `TurnCompleteEvent`, and Pragma exited 0 despite unfinished task work.
+- Hypothesis: when and only when a response stops at `max_tokens` with no tool
+  call, preserving that assistant content and appending a neutral user
+  continuation marker will let the same GLM 5.2 session resume active work
+  instead of falsely terminating. The existing 100-turn bound prevents an
+  infinite continuation loop.
+- Smallest mechanism: special-case `StopMaxTokens` in the provider-tools loop;
+  append `Continue from the truncated response.` as a user message and advance
+  to the next turn. Do not change prompts, tools, model settings, output budget,
+  ordinary end-turn handling, complete tool-call handling, or evaluator logic.
+- Deterministic gate: a scripted provider must prove that a reasoning-only
+  max-token response is preserved into the next request, the neutral marker is
+  appended, subsequent tool use executes, and a normal final response still
+  terminates. Existing provider-tools tests and `go test ./...` must pass.
+- Diagnostics: rerun `circuit-fibsqrt` and
+  `adaptive-rejection-sampler`, the two observed max-token failures. Require at
+  minimum a subsequent model request after the max-token response; official
+  verifier reward is the only task-success signal.
+- Frozen promotion controls: solved `fix-git` plus `compile-compcert`, the next
+  lexicographically selected previously unseen task. Obtain a current-parent
+  result for the new control before candidate evaluation and a START result when
+  practical. Reject if the predicted continuation does not occur, ordinary
+  final completion regresses, the candidate loses a verified parent control,
+  or continued requests merely add cost/latency without credible completion
+  evidence. A diagnostic flip alone remains insufficient broad evidence.
