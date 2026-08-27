@@ -325,26 +325,21 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 }
 
 type chatCompletionRequest struct {
-	Messages           []providers.Message       `json:"messages"`
-	Model              string                    `json:"model"`
-	MaxTokens          *int                      `json:"max_tokens,omitempty"`
-	Temperature        *temperatureParam         `json:"temperature,omitempty"`
-	TopP               *float64                  `json:"top_p,omitempty"`
-	Stop               []string                  `json:"stop,omitempty"`
-	Tools              []providers.Tool          `json:"tools,omitempty"`
-	ToolChoice         any                       `json:"tool_choice,omitempty"`
-	ParallelToolCalls  *bool                     `json:"parallel_tool_calls,omitempty"`
-	ResponseFormat     *providers.ResponseFormat `json:"response_format,omitempty"`
-	ReasoningEffort    providers.ReasoningEffort `json:"reasoning_effort,omitempty"`
-	Seed               *int                      `json:"seed,omitempty"`
-	User               string                    `json:"user,omitempty"`
-	Stream             bool                      `json:"stream,omitempty"`
-	StreamOptions      *providers.StreamOptions  `json:"stream_options,omitempty"`
-	ChatTemplateKwargs *chatTemplateKwargs       `json:"chat_template_kwargs,omitempty"`
-}
-
-type chatTemplateKwargs struct {
-	ClearThinking *bool `json:"clear_thinking,omitempty"`
+	Messages          []providers.Message       `json:"messages"`
+	Model             string                    `json:"model"`
+	MaxTokens         *int                      `json:"max_tokens,omitempty"`
+	Temperature       *temperatureParam         `json:"temperature,omitempty"`
+	TopP              *float64                  `json:"top_p,omitempty"`
+	Stop              []string                  `json:"stop,omitempty"`
+	Tools             []providers.Tool          `json:"tools,omitempty"`
+	ToolChoice        any                       `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                     `json:"parallel_tool_calls,omitempty"`
+	ResponseFormat    *providers.ResponseFormat `json:"response_format,omitempty"`
+	ReasoningEffort   providers.ReasoningEffort `json:"reasoning_effort,omitempty"`
+	Seed              *int                      `json:"seed,omitempty"`
+	User              string                    `json:"user,omitempty"`
+	Stream            bool                      `json:"stream,omitempty"`
+	StreamOptions     *providers.StreamOptions  `json:"stream_options,omitempty"`
 }
 
 type temperatureParam float64
@@ -392,10 +387,6 @@ func (p *Provider) completeDirect(ctx context.Context, params providers.Completi
 		User:              params.User,
 		Stream:            params.Stream,
 		StreamOptions:     params.StreamOptions,
-	}
-	if params.Model == "zai-org/glm-5.2" {
-		clearThinking := false
-		reqBody.ChatTemplateKwargs = &chatTemplateKwargs{ClearThinking: &clearThinking}
 	}
 	if len(reqBody.Tools) == 0 && reqBody.ToolChoice == nil {
 		observe.TraceCtx(ctx, "lilac", "Provider.completeDirect", "if: len(reqBody.Tools) == 0 && reqBody.ToolChoice == nil")
