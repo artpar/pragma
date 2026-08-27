@@ -390,3 +390,27 @@ other fixed settings remain unchanged.
   defects are closed, normal-path warnings and cost accounting are corrected,
   and both integration controls pass. Product champion is `7a4a82a`; accepted
   E004 remains the active evaluation adapter.
+
+## B01 — six-task unseen broad checkpoint under v2 (precommitted)
+
+- Objective: compare the current champion against `GLM52_START_BASELINE` on a
+  broader, untouched panel under the same GLM 5.2 v2 inference regime. This is
+  the first aggregate product comparison after the fixed-model switch.
+- Selection: the next six lexicographically ordered tasks not previously used in
+  GLM 5.2 development: `build-pov-ray`, `caffe-cifar-10`, `chess-best-move`,
+  `circuit-fibsqrt`, `cobol-modernization`, and `code-from-image`. Selection was
+  frozen before any result.
+- Arms: START binary SHA-256
+  `a67186ddb18989c4685f04e4cac64ac2c10fb253aed6a47777d198dca0ecbb6c`
+  versus champion E005 binary SHA-256
+  `90188f2cc29dc84df89a7e4057890653c0853a0f12dcdb60860cf31a7792d9e4`.
+  Both use the accepted E004 adapter, exact `zai-org/glm-5.2`, max output
+  32,768, temperature 0, provider tools, 100 turns, 1,800-second task timeout,
+  serial execution, and unchanged official verifiers.
+- Run START_BASELINE first. Preserve official rewards and exceptions unchanged;
+  classify environment/verifier incompatibilities separately. Do not use
+  trajectory aesthetics or partial local tests as score substitutions.
+- Interpret aggregate paired official outcomes, task-level flips, exceptions,
+  and verifier compatibility. A single stochastic flip is not a broad success
+  claim; materially better reliability requires a directional panel result with
+  no systematic new failure mode.
