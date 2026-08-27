@@ -23,6 +23,11 @@ def _is_provider_tools_turn_limit(output: str) -> bool:
     return _PROVIDER_TOOLS_TURN_LIMIT.search(output) is not None
 
 
+def _is_fatal_pragma_exit(return_code: int, output: str) -> bool:
+    """Keep ordinary failures fatal while allowing completed turn-budget exhaustion."""
+    return return_code != 0 and not _is_provider_tools_turn_limit(output)
+
+
 def _provider_api_key(provider_name: str) -> str | None:
     """Resolve a provider credential without copying host config to a task."""
     env_name = f"{provider_name.upper()}_API_KEY"
@@ -141,7 +146,6 @@ class PragmaAgent(BaseAgent):
             "pragma_stdout_tail": (result.stdout or "")[-4000:],
             "pragma_stderr_tail": (result.stderr or "")[-4000:],
         }
-        if result.return_code != 0:
-            output = result.stderr or result.stdout or "Pragma returned no output"
-            if not _is_provider_tools_turn_limit(output):
-                raise RuntimeError(f"Pragma exited with {result.return_code}: {output[-4000:]}")
+        output = result.stderr or result.stdout or "Pragma returned no output"
+        if _is_fatal_pragma_exit(result.return_code, output):
+            raise RuntimeError(f"Pragma exited with {result.return_code}: {output[-4000:]}")
