@@ -468,3 +468,27 @@ other fixed settings remain unchanged.
   the fixed 1,800-second task budget, exhaust 32,768 output tokens without an
   action, or introduce a verified regression. Provider-reliability evidence and
   task-solving evidence must be reported separately.
+
+### E006 observed outcome
+
+- Product commit `6424eb4` changes only `lilacRequestTimeout` from 150 to 360
+  seconds and adds the focused constant regression test. `go test ./...`
+  passes. Linux amd64 binary SHA-256:
+  `d57beb3c445044515a80a3e5c1c77ff23ccddee5edc4d07abd75367b88563691`;
+  pinned CA SHA-256 remains
+  `bc363a289a53946a9e18092dc1f2f8cfabdc9d293f49bb1fd10f4c8d55f1c214`.
+- Isolated job `pragma-lilac-glm52-e006-timeout-v2` reran the censored
+  `circuit-fibsqrt` path. After two quick tool-use responses, the third request
+  remained in flight beyond the old 150-second boundary and returned before
+  360 seconds with zero timeout/retry events. Agent execution lasted 309.5
+  seconds, returned code 0, retained exact-model pricing with total cost
+  `$0.105950`, and reached the unchanged official verifier.
+- The third response stopped at the fixed 32,768-token maximum. Official reward
+  remained 0.0: file existence and size passed, while functional correctness
+  failed. Thus the larger timeout converts this observed retry storm into one
+  completed response, but that response does not improve task success and
+  illustrates the previously observed cost/latency tradeoff.
+- Decision: **RETAINED by explicit user direction as a provider-reliability
+  policy, not accepted as a benchmark hill-climb gain**. E005 remains the last
+  task-performance champion by evidence; the current product additionally
+  carries E006's 360-second timeout. Do not claim reward improvement from E006.
