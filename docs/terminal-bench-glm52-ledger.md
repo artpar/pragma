@@ -370,3 +370,23 @@ other fixed settings remain unchanged.
   score delta is attributed to metadata alone.
 - Reject if metadata is wrong, warnings/cost remain broken, tests fail, or a
   solved control has a verified regression.
+- Candidate commit: `7a4a82a` (`Register Lilac GLM-5.2 metadata`). The change is
+  one exact registry entry plus focused assertions covering lookup, listing,
+  limits, pricing, and capabilities. `go test ./...` passes. Linux amd64 binary
+  SHA-256:
+  `90188f2cc29dc84df89a7e4057890653c0853a0f12dcdb60860cf31a7792d9e4`;
+  pinned CA SHA-256:
+  `bc363a289a53946a9e18092dc1f2f8cfabdc9d293f49bb1fd10f4c8d55f1c214`.
+- Live mechanical diagnostic: the exact-model `fix-git` run printed neither the
+  unknown-model warning nor the missing-pricing warning and reported a nonzero
+  total cost of `$0.014065` instead of `$0.000000`.
+- Candidate v2 controls:
+  - `fix-git`: reward 1.0, no exception, official verifier, 48s wall clock.
+  - `build-pmars`: reward 1.0, no exception, official verifier, 2m14s wall
+    clock; all 4 verifier tests passed. This is a previously unseen task and
+    broadens champion evidence, but no causal score gain is attributed to
+    metadata whose inference request remains fixed.
+- Decision: **ACCEPTED** as the new product champion. The deterministic registry
+  defects are closed, normal-path warnings and cost accounting are corrected,
+  and both integration controls pass. Product champion is `7a4a82a`; accepted
+  E004 remains the active evaluation adapter.
