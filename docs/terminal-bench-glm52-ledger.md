@@ -75,3 +75,4 @@ Baseline results:
   The agent made 14 model requests (13 tool-use, one end-turn), created the
   deliverable, identified and repaired an IPv4-pattern error, and used 39,019
   output tokens. This is the first comparable GLM-5.2 baseline result.
+- `fix-git`: reward 1.0, no exception, official verifier, 55s wall clock.
