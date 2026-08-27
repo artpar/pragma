@@ -33,6 +33,9 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 		if payload["model"] != "minimaxai/minimax-m2.7" {
 			t.Fatalf("model = %v", payload["model"])
 		}
+		if _, ok := payload["chat_template_kwargs"]; ok {
+			t.Fatal("chat_template_kwargs sent for non-GLM-5.2 model")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"id": "chatcmpl-test",
@@ -109,6 +112,56 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 	readRawCaptureJSON(t, filepath.Join(captureDir, "request.headers.json"), &headers)
 	if got := headers["Authorization"]; len(got) != 1 || got[0] != "<redacted>" {
 		t.Fatalf("captured Authorization = %#v", got)
+	}
+}
+
+func TestGLM52RequestPreservesThinking(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var payload struct {
+			Model              string `json:"model"`
+			ChatTemplateKwargs *struct {
+				ClearThinking *bool `json:"clear_thinking"`
+			} `json:"chat_template_kwargs"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("request body is not JSON: %v", err)
+		}
+		if payload.Model != "zai-org/glm-5.2" {
+			t.Fatalf("model = %q", payload.Model)
+		}
+		if payload.ChatTemplateKwargs == nil || payload.ChatTemplateKwargs.ClearThinking == nil {
+			t.Fatalf("chat_template_kwargs = %#v", payload.ChatTemplateKwargs)
+		}
+		if *payload.ChatTemplateKwargs.ClearThinking {
+			t.Fatal("clear_thinking = true, want false")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-test",
+			"object": "chat.completion",
+			"created": 1,
+			"model": "zai-org/glm-5.2",
+			"choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+			"usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+		}`))
+	}))
+	defer server.Close()
+
+	p, err := New("test-key", observe.NewEventBus(16), WithBaseURL(server.URL+"/v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.Complete(context.Background(), provider.RequestParams{
+		Model:     "zai-org/glm-5.2",
+		MaxTokens: 32,
+		Messages: []model.Message{{
+			Role:    model.RoleUser,
+			Content: []model.ContentPart{model.TextPart{Text: "continue"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
