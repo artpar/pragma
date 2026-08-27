@@ -76,3 +76,29 @@ Baseline results:
   deliverable, identified and repaired an IPv4-pattern error, and used 39,019
   output tokens. This is the first comparable GLM-5.2 baseline result.
 - `fix-git`: reward 1.0, no exception, official verifier, 55s wall clock.
+- `cancel-async-tasks`: reward 0.0, no exception, official verifier, 1m28s
+  wall clock. Five of six verifier tests passed. In the queued-task SIGINT
+  case, two jobs started but neither printed its cleanup marker before process
+  exit. Pragma delivered the task, ten valid model responses, tool results, and
+  enough time. The agent wrote a weaker ad-hoc SIGINT check that slept after
+  catching cancellation, accepted that result, and ended normally. Earliest
+  useful cause: **C, likely model capability failure**; no observed harness
+  affordance was missing.
+- `sqlite-db-truncate`: reward 1.0, no exception, official verifier, 1m51s wall
+  clock.
+- `build-cython-ext`: reward 1.0, no exception, official verifier, 6m51s wall
+  clock.
+- `path-tracing`: reward 0.0, no exception, official verifier, 27m32s wall
+  clock. The agent used all 100 configured model turns, completed `image.c`,
+  compiled and ran it, and measured 0.9985 cosine similarity locally. The
+  official verifier passed file existence, compilation, and no-dependency
+  checks, then its chrooted static x86-64 executable failed before user code ran
+  with Rosetta's `Unable to open /proc/self/exe: 2`; consequently no verifier
+  image existed. Record the official zero unchanged. Earliest useful cause:
+  **D, benchmark/environment incompatibility** on the ARM Mac's emulated
+  linux/amd64 Docker runtime, not a Pragma or model failure.
+
+D01 aggregate: four official passes and two official zeros (4/6). One zero is
+an ordinary task failure (`cancel-async-tasks`); one is separately classified as
+an environment/verifier execution failure (`path-tracing`). All six trials
+reached the official verifier and none had a Harbor or provider exception.
