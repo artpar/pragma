@@ -32,7 +32,7 @@ import (
 
 const (
 	defaultBaseURL      = "https://api.getlilac.com/v1"
-	lilacRequestTimeout = 360 * time.Second
+	lilacRequestTimeout = 150 * time.Second
 )
 
 // Provider wraps any-llm-go's OpenAI provider pointed at Lilac's endpoint.
