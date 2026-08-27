@@ -297,3 +297,29 @@ other fixed settings remain unchanged.
   control. Commit `568b607` reverts only E003's product change; E001 remains the
   accepted champion. The separate 100-turn adapter/verifier gap is retained for
   a future isolated experiment.
+
+## E004 — verify filesystem work after the provider-tools turn cap (precommitted)
+
+- Parent product champion: E001 product commit `90d90c5`; this experiment
+  changes only the Terminal-Bench adapter, not the shipped Pragma binary.
+- Observed failure: both E003 arms of `break-filter-js-from-html` executed 100
+  valid model/tool turns and left their filesystem work in the task container.
+  Pragma then exited 1 with the exact terminal message `provider tools loop
+  exceeded maximum of 100 turns`. The adapter raised `RuntimeError`, causing
+  Harbor to skip the unchanged official verifier. No score exists for either
+  trial even though Terminal-Bench tasks are judged from filesystem state.
+- Hypothesis: treating only this explicit exhausted-turn terminal as a completed
+  agent phase will let Harbor run the official verifier and produce the task's
+  legitimate score. Preserve return code 1 in trial metadata; all other nonzero
+  exits must still raise.
+- Smallest mechanism: add a strict terminal-message predicate in
+  `tools/harbor_pragma_agent.py` and suppress its exception only for that case.
+- Mechanical diagnostic: focused adapter tests must prove the exact turn-limit
+  output is allowed and arbitrary nonzero failures remain fatal.
+- Benchmark diagnostic: rerun parent-champion `break-filter-js-from-html` under
+  v2 and require an official verifier result. Frozen control: solved
+  `fix-git`, which must still run and verify normally.
+- Reject if the turn-limit trial still lacks an official verifier, another
+  nonzero exit is swallowed, or the normal control does not reach its official
+  verifier. This experiment may improve measurement coverage but receives task
+  success credit only from the unchanged official verifier.
