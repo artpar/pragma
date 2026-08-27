@@ -1,5 +1,5 @@
 {
-  "job_name": "pragma-lilac-glm52-e003-controls-v2",
+  "job_name": "pragma-lilac-glm52-e003-controls-rerun-v2",
   "jobs_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/jobs",
   "n_concurrent_trials": 1,
   "agents": [
