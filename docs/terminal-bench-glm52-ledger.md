@@ -12,7 +12,7 @@ Official Terminal-Bench verifier rewards remain the primary outcome.
 - Temperature: `0`
 - Other sampling parameters: provider defaults
 - Advertised context limit: 524,288 tokens
-- Maximum output: 4,096 tokens
+- Maximum output: 16,384 tokens
 - Tool protocol: provider-native tool calls; Pragma `Bash` and `apply_patch`
 - Pragma product path: ordinary non-interactive CLI with `--loop provider-tools`
 - Turn limit: 100 model turns
@@ -51,3 +51,20 @@ The first execution is `regex-log`, selected before any GLM-5.2 trajectory was
 observed. Classify its earliest failure layer before proposing a product change.
 Results on this diagnostic panel establish baseline behavior but do not alone
 promote a candidate designed from the same tasks.
+
+Pre-result configuration calibration:
+
+- The first `regex-log` launch used the inherited 4,096-token OpenRouter limit.
+  Lilac returned one response with exactly 4,096 completion tokens,
+  `finish_reason: length`, and no content or tool calls; the official verifier
+  failed because `/app/regex.txt` did not exist.
+- A direct protocol probe confirmed that GLM-5.2 emits its internal reasoning in
+  Lilac's `message.reasoning` field and can exhaust a small completion budget
+  before producing content or an action. The API advertises up to 524,288
+  completion tokens for this model. The 4,096 limit was a constraint inherited
+  from the depleted OpenRouter account, not a deliberate GLM-5.2 inference
+  setting.
+- Before any candidate exists, the fixed GLM-5.2 maximum output is therefore
+  calibrated once to 16,384. The 4,096 run is retained as configuration evidence
+  but is not comparable baseline task evidence. All subsequent baseline and
+  candidate runs use 16,384.

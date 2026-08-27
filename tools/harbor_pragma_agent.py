@@ -41,11 +41,13 @@ class PragmaAgent(BaseAgent):
         *args,
         bundle_dir: str,
         provider_name: str = "openrouter",
+        max_tokens: int = 4096,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.bundle_dir = Path(bundle_dir).resolve()
         self.provider_name = provider_name
+        self.max_tokens = max_tokens
 
     @staticmethod
     @override
@@ -105,7 +107,8 @@ class PragmaAgent(BaseAgent):
                 "--model",
                 shlex.quote(model),
                 "--temperature 0",
-                "--max-tokens 4096",
+                "--max-tokens",
+                shlex.quote(str(self.max_tokens)),
                 "--max-turns 100",
                 "--permission-mode bypassPermissions",
                 "--record",
