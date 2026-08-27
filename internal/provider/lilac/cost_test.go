@@ -100,7 +100,7 @@ func TestStreamUsageEstimation(t *testing.T) {
 	})
 
 	t.Run("pricing_lookup_works_for_all_models", func(t *testing.T) {
-		models := []string{"moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6", "minimaxai/minimax-m2.7", "minimaxai/minimax-m3", "zai-org/glm-5.1", "google/gemma-4-31b-it"}
+		models := []string{"moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6", "minimaxai/minimax-m2.7", "minimaxai/minimax-m3", "zai-org/glm-5.1", "zai-org/glm-5.2", "google/gemma-4-31b-it"}
 		for _, m := range models {
 			pricing, ok := p.Pricing(m)
 			if !ok {
@@ -111,6 +111,25 @@ func TestStreamUsageEstimation(t *testing.T) {
 				t.Errorf("pricing for %s has zero values: input=$%.2f output=$%.2f",
 					m, pricing.InputPerMToken, pricing.OutputPerMToken)
 			}
+		}
+	})
+
+	t.Run("glm_5_2_registry", func(t *testing.T) {
+		info, ok := LookupModel("zai-org/glm-5.2")
+		if !ok {
+			t.Fatal("model not found for zai-org/glm-5.2")
+		}
+		if info.ID != "zai-org/glm-5.2" {
+			t.Errorf("ID = %q, want zai-org/glm-5.2", info.ID)
+		}
+		if info.MaxContext != 524288 || info.MaxOutput != 524288 {
+			t.Errorf("limits = %d/%d, want 524288/524288", info.MaxContext, info.MaxOutput)
+		}
+		if info.Pricing.InputPerMToken != 0.90 || info.Pricing.OutputPerMToken != 3.00 || info.Pricing.CacheReadPerMToken != 0.17 {
+			t.Errorf("pricing = %#v, want input=0.90 output=3.00 cache_read=0.17", info.Pricing)
+		}
+		if !info.SupportsToolUse || !info.SupportsReasoning || info.SupportsVision {
+			t.Errorf("capabilities = tools:%v reasoning:%v vision:%v", info.SupportsToolUse, info.SupportsReasoning, info.SupportsVision)
 		}
 	})
 

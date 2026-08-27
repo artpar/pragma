@@ -21,6 +21,8 @@ type ModelInfo struct {
 
 // Sources:
 //
+//	GLM-5.2:  Lilac docs (2026-08-27) — 524,288 context, text only, tools, reasoning
+//	          Lilac model API: max completion 524,288
 //	GLM-5.1:  HuggingFace zai-org/GLM-5.1 config.json (max_position_embeddings: 202752)
 //	          OpenRouter: max output 131,072
 //	Kimi K2.5: HuggingFace moonshotai/Kimi-K2.5 config.json (max_position_embeddings: 262144)
@@ -32,8 +34,16 @@ type ModelInfo struct {
 //	              Max output from Models.dev Lilac catalog.
 //	Gemma 4:   HuggingFace google/gemma-4-31b-it config.json (text_config.max_position_embeddings: 262144)
 //	           Google AI docs: 256K context. No official max output stated.
-//	Pricing:   https://docs.getlilac.com/inference/models (2026-06-29)
+//	Pricing:   https://docs.getlilac.com/inference/models (2026-08-27)
 var registry = map[string]ModelInfo{
+	"zai-org/glm-5.2": {
+		ID:                "zai-org/glm-5.2",
+		MaxContext:        524288,
+		MaxOutput:         524288,
+		Pricing:           model.Pricing{InputPerMToken: 0.90, OutputPerMToken: 3.00, CacheReadPerMToken: 0.17},
+		SupportsToolUse:   true,
+		SupportsReasoning: true,
+	},
 	"zai-org/glm-5.1": {
 		ID:                "zai-org/glm-5.1",
 		MaxContext:        202752,
