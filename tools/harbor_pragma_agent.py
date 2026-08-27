@@ -1,6 +1,7 @@
 """Minimal Harbor adapter for Pragma's normal provider-tools product path."""
 
 import os
+import re
 import shlex
 from pathlib import Path
 from typing import override
@@ -10,6 +11,16 @@ import certifi
 from harbor.agents.base import BaseAgent
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
+
+
+_PROVIDER_TOOLS_TURN_LIMIT = re.compile(
+    r"(?:^|\n)error: provider tools loop exceeded maximum of \d+ turns\s*$"
+)
+
+
+def _is_provider_tools_turn_limit(output: str) -> bool:
+    """Return whether Pragma stopped only because its configured turn cap was reached."""
+    return _PROVIDER_TOOLS_TURN_LIMIT.search(output) is not None
 
 
 def _provider_api_key(provider_name: str) -> str | None:
@@ -132,4 +143,5 @@ class PragmaAgent(BaseAgent):
         }
         if result.return_code != 0:
             output = result.stderr or result.stdout or "Pragma returned no output"
-            raise RuntimeError(f"Pragma exited with {result.return_code}: {output[-4000:]}")
+            if not _is_provider_tools_turn_limit(output):
+                raise RuntimeError(f"Pragma exited with {result.return_code}: {output[-4000:]}")
