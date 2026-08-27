@@ -229,3 +229,31 @@ other fixed settings remain unchanged.
   response exhausted the doubled completion budget without content or a tool
   action, so it delivered no task-success value. Commit `921adc1` reverts only
   the E002 product change; E001 remains the accepted champion.
+
+## E003 — ask Lilac to preserve GLM 5.2 thinking (precommitted)
+
+- Parent champion: E001 product commit `90d90c5`, with rejected E002 reverted by
+  `921adc1`.
+- Observed failure: E001 now retains GLM 5.2 reasoning in Pragma's assistant
+  messages, but Lilac's current official model documentation says GLM 5.2 clears
+  previous assistant thinking blocks by default. The documented opt-in for
+  preserved thinking is `chat_template_kwargs.clear_thinking: false`; Pragma's
+  Lilac request type cannot currently send that field. This is category **A**
+  continuation-context loss at the provider request boundary.
+- Hypothesis: sending only the documented `clear_thinking: false` chat-template
+  option for exact `zai-org/glm-5.2` requests will allow the provider to use the
+  thinking E001 already preserves, improving multi-turn tool trajectories
+  without changing prompts, tools, reasoning effort, or sampling.
+- Smallest mechanism: add the typed optional chat-template request field and set
+  `clear_thinking` to false only for exact GLM 5.2 requests.
+- Mechanical diagnostic: a direct-request test must capture the JSON body and
+  prove the exact model sends `{"chat_template_kwargs":{"clear_thinking":false}}`
+  while another Lilac model does not.
+- Frozen benchmark controls under v2: `break-filter-js-from-html`, the next
+  lexicographically selected previously unseen task; `cancel-async-tasks`, the
+  unstable cancellation diagnostic; and solved `regex-log`. Obtain parent
+  results for all three before using candidate results.
+- Reject if the request field is absent or leaks to another model, tests fail,
+  or a previously solved control has a repeatable verified regression. Require
+  official verifier outcomes; token or trajectory differences alone do not
+  establish task-success value.
