@@ -162,3 +162,39 @@ reached the official verifier and none had a Harbor or provider exception.
   official pass. The single-run diagnostic gain is not by itself a claim that
   Pragma solves materially more tasks; later unseen and broad checkpoints must
   confirm cumulative task-success value.
+
+## Development regime v2 — completion-budget recalibration
+
+`adaptive-rejection-sampler` demonstrated that the 16,384-token setting can be
+fully consumed by GLM-5.2 reasoning before any content or action. Beginning with
+E002, the fixed maximum output is 32,768 tokens. This is a transparent inference
+configuration recalibration, not a Pragma improvement. Results from v1 remain
+valid historical/mechanical evidence but are not score-comparable with v2.
+Provider, model, temperature, tool protocol, turn limit, task timeout, and all
+other fixed settings remain unchanged.
+
+## E002 — allow slow Lilac reasoning responses to finish (precommitted)
+
+- Parent champion: E001 product commit `90d90c5`.
+- Observed failure: after R installation on `adaptive-rejection-sampler`, the
+  same fourth model request hit Lilac's hard-coded 150-second client deadline
+  repeatedly. At the candidate-independent v1 run, two attempts timed out and a
+  third response arrived just under the deadline after roughly 148 seconds.
+  Rejected attempts discard all in-flight model generation and restart the
+  identical request. This is category **A** premature response termination.
+- Hypothesis: raising the bounded Lilac request deadline to 360 seconds will let
+  legitimately slow GLM-5.2 reasoning responses complete once rather than be
+  repeatedly discarded, while the 30-minute task timeout still bounds total
+  execution.
+- Smallest mechanism: change only Lilac's per-request timeout constant. Do not
+  alter retry count, prompts, tools, or agent policy.
+- Diagnostic: `adaptive-rejection-sampler` under v2. The expected observable
+  change is a response completing after 150 seconds without an intervening
+  timeout/retry and producing a tool action or final content.
+- Frozen controls: `regex-log` and `cancel-async-tasks` from prior panels, plus
+  `bn-fit-modify`, the next lexicographically selected previously unseen task.
+  Obtain parent-champion v2 results for the diagnostic and new task before using
+  their candidate results.
+- Reject if slow responses still fail to complete, the response completes but
+  again contains no action at 32,768 tokens, or a previously solved control has
+  a repeatable verified regression. Latency alone is not promotion evidence.
