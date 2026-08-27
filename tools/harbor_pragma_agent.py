@@ -12,22 +12,23 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 
-def _openrouter_api_key() -> str | None:
-    """Resolve the benchmark credential without copying host config to a task."""
-    if value := os.environ.get("OPENROUTER_API_KEY"):
+def _provider_api_key(provider_name: str) -> str | None:
+    """Resolve a provider credential without copying host config to a task."""
+    env_name = f"{provider_name.upper()}_API_KEY"
+    if value := os.environ.get(env_name):
         return value
     credentials = Path.home() / ".pragma" / "credentials.yml"
     try:
         lines = credentials.read_text().splitlines()
     except OSError:
         return None
-    in_openrouter = False
+    in_provider = False
     for raw_line in lines:
         stripped = raw_line.strip()
         if raw_line.startswith("  ") and not raw_line.startswith("    "):
-            in_openrouter = stripped == "openrouter:"
+            in_provider = stripped == f"{provider_name}:"
             continue
-        if in_openrouter and raw_line.startswith("    ") and stripped.startswith("api_key:"):
+        if in_provider and raw_line.startswith("    ") and stripped.startswith("api_key:"):
             return stripped.split(":", 1)[1].strip().strip("'\"") or None
     return None
 
@@ -35,9 +36,16 @@ def _openrouter_api_key() -> str | None:
 class PragmaAgent(BaseAgent):
     """Upload a prebuilt Pragma binary and run one ordinary CLI session."""
 
-    def __init__(self, *args, bundle_dir: str, **kwargs):
+    def __init__(
+        self,
+        *args,
+        bundle_dir: str,
+        provider_name: str = "openrouter",
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.bundle_dir = Path(bundle_dir).resolve()
+        self.provider_name = provider_name
 
     @staticmethod
     @override
@@ -75,9 +83,10 @@ class PragmaAgent(BaseAgent):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        api_key = _openrouter_api_key()
+        api_key = _provider_api_key(self.provider_name)
         if not api_key:
-            raise RuntimeError("OPENROUTER_API_KEY is required by the Pragma adapter")
+            env_name = f"{self.provider_name.upper()}_API_KEY"
+            raise RuntimeError(f"{env_name} is required by the Pragma adapter")
 
         model = self.model_name or "z-ai/glm-5.3"
         log_dir = self.environment_logs_dir.as_posix()
@@ -91,7 +100,8 @@ class PragmaAgent(BaseAgent):
                 "--prompt",
                 shlex.quote(instruction),
                 "--loop provider-tools",
-                "--provider openrouter",
+                "--provider",
+                shlex.quote(self.provider_name),
                 "--model",
                 shlex.quote(model),
                 "--temperature 0",
@@ -107,7 +117,7 @@ class PragmaAgent(BaseAgent):
             command,
             cwd="/app",
             env={
-                "OPENROUTER_API_KEY": api_key,
+                f"{self.provider_name.upper()}_API_KEY": api_key,
                 "HOME": f"{log_dir}/home",
                 "SSL_CERT_FILE": "/opt/pragma/ca-certificates.crt",
             },
