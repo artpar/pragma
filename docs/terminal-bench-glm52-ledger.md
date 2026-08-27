@@ -414,3 +414,57 @@ other fixed settings remain unchanged.
   and verifier compatibility. A single stochastic flip is not a broad success
   claim; materially better reliability requires a directional panel result with
   no systematic new failure mode.
+
+### B01 observed outcome (censored by user-directed timeout change)
+
+- START completed all six entries in 1h05m21s. Five tasks were scoreable and
+  all received official reward 0.0. `caffe-cifar-10` failed environment setup
+  before agent execution because its Docker CPU request exceeded the two-CPU
+  runtime; exclude it from both arms. `circuit-fibsqrt` and `code-from-image`
+  each reached exactly 100 turns with return code 1, and the accepted E004
+  adapter correctly allowed both official verifiers to run.
+- Champion completed `build-pov-ray` at reward 0.0 after an 1,800-second
+  `AgentTimeoutError`; its verifier ran but passed zero of three assertions,
+  compared with two of three for START. The registry fix remained mechanically
+  active: no unknown-model or missing-pricing warnings appeared.
+- Champion reproduced the pre-agent `caffe-cifar-10` CPU incompatibility.
+  `chess-best-move` recovered after three consecutive 150-second provider
+  request timeouts, reached exactly 100 turns, and received official reward 0.0
+  with no adapter exception, providing another live E004 validation.
+- On `circuit-fibsqrt`, one request produced six consecutive 150-second provider
+  timeouts after only two completed responses. At the user's explicit request
+  to increase the timeout, B01 was stopped cleanly after 1h14m; circuit was
+  recorded canceled and the final two champion trials were not started.
+- Decision: **CENSORED / INCONCLUSIVE**, not an accepted benchmark comparison.
+  The completed paired official rewards tie, while champion subtest and timeout
+  evidence is worse. Do not impute outcomes for the unrun tasks or use B01 as
+  evidence that E005 improves task-solving quality. Retain its live registry and
+  adapter validation plus the sustained provider-timeout diagnostic.
+
+## E006 — extend Lilac reasoning-request timeout (precommitted)
+
+- Parent product champion: E005 product commit `7a4a82a`; accepted E004 remains
+  the evaluation adapter.
+- User direction: increase the timeout. Observed trigger: during the B01
+  champion window, `chess-best-move` suffered three consecutive 150-second
+  request timeouts before recovering, and `circuit-fibsqrt` suffered six
+  consecutive timeouts on one request without recovery before B01 was stopped.
+- Hypothesis: increasing only Lilac's per-request deadline from 150 to 360
+  seconds will allow slow GLM 5.2 reasoning responses to complete and reduce
+  retry storms, while retaining the existing retry policy and all frozen model,
+  prompt, tool, token, turn, task-timeout, and verifier settings.
+- Smallest mechanism: change `lilacRequestTimeout` to 360 seconds and add a
+  focused source-level regression test for that configured constant. This
+  intentionally revisits rejected E002 because the user explicitly requested
+  it after new sustained-timeout evidence; prior E002 evidence remains valid
+  and is not overwritten.
+- Mechanical gate: focused Lilac tests and `go test ./...` must pass; the rebuilt
+  exact-model binary must retain E005 registry behavior.
+- Benchmark diagnostic: first run an isolated task from the censored failure
+  path under the new binary and require at least one response that exceeds 150
+  seconds without a client timeout, or completion without the prior retry
+  storm. Official verifier reward remains the only task-success measure.
+- Reject as a performance improvement if slow requests merely consume more of
+  the fixed 1,800-second task budget, exhaust 32,768 output tokens without an
+  action, or introduce a verified regression. Provider-reliability evidence and
+  task-solving evidence must be reported separately.
