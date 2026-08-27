@@ -1,0 +1,20 @@
+{
+  "job_name": "pragma-lilac-glm52-e006-timeout-v2",
+  "jobs_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/jobs",
+  "n_concurrent_trials": 1,
+  "agents": [
+    {
+      "name": "tools.harbor_pragma_agent:PragmaAgent",
+      "model_name": "zai-org/glm-5.2",
+      "override_timeout_sec": 1800,
+      "kwargs": {
+        "bundle_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/bundles/GLM52_E006",
+        "provider_name": "lilac",
+        "max_tokens": 32768
+      }
+    }
+  ],
+  "tasks": [
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/circuit-fibsqrt"}
+  ]
+}
