@@ -257,3 +257,43 @@ other fixed settings remain unchanged.
   or a previously solved control has a repeatable verified regression. Require
   official verifier outcomes; token or trajectory differences alone do not
   establish task-success value.
+- Candidate commit: `ed63e44` (`Preserve GLM-5.2 thinking in Lilac requests`).
+  The exact model gets only
+  `chat_template_kwargs: {"clear_thinking": false}`; the focused captured-body
+  tests prove the field and value for GLM 5.2 and its absence for MiniMax M2.7.
+  `go test ./...` passes. Linux amd64 candidate binary SHA-256:
+  `2483b6a7f33a3c8282f63369d113f3b1abd3eedb0ee5e538200af5b5c9e45c21`;
+  the bundle reuses the pinned CA file with SHA-256
+  `bc363a289a53946a9e18092dc1f2f8cfabdc9d293f49bb1fd10f4c8d55f1c214`.
+- Invalid infrastructure attempt: job
+  `pragma-lilac-glm52-e003-controls-v2` omitted the required CA file and all
+  three trials stopped in setup with `FileNotFoundError`. It made no model
+  request and is excluded from every comparison. The repaired, distinctly
+  named job is `pragma-lilac-glm52-e003-controls-rerun-v2`.
+- Parent-champion v2 results:
+  - `break-filter-js-from-html`: no reward and no verifier result, 5m54s wall
+    clock. Pragma used all 100 turns and exited nonzero; the Harbor adapter
+    raised `RuntimeError`, so Harbor skipped the verifier. Preserve this as an
+    exception, not a zero score.
+  - `cancel-async-tasks`: reward 1.0, no exception, official verifier, 2m38s
+    wall clock and 8 model responses.
+  - `regex-log`: reward 1.0, no exception, official verifier, 4m44s wall clock
+    and 7 model responses.
+- Candidate v2 results:
+  - `break-filter-js-from-html`: the same no-reward `RuntimeError` after all 100
+    turns, 9m29s wall clock. It again had no verifier result, so slower turn
+    churn is not promotion evidence.
+  - `cancel-async-tasks`: reward 0.0, no exception, official verifier, 2m16s
+    wall clock and 22 model responses. Three of six tests passed; each
+    cancellation case emitted only one of two cleanup markers. This is a paired
+    v2 loss from the parent's official pass.
+  - `regex-log`: reward 1.0, no exception, official verifier, 6m50s wall clock
+    and 10 model responses. Its first request crossed the unchanged 150-second
+    deadline and was discarded once before a retry completed just under that
+    boundary.
+- Decision: **REJECTED**. The request field is documented and mechanically
+  correct, but it did not improve the unseen diagnostic, lost the paired
+  cancellation control, and introduced a timeout/retry on the other solved
+  control. Commit `568b607` reverts only E003's product change; E001 remains the
+  accepted champion. The separate 100-turn adapter/verifier gap is retained for
+  a future isolated experiment.
