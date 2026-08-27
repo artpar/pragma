@@ -343,3 +343,30 @@ other fixed settings remain unchanged.
   failures fatal. Because the benchmark diagnostic happened to finish before
   the cap, no task-success delta is attributed to E004. E001 remains the product
   champion; E004 is the active Terminal-Bench adapter.
+
+## E005 — register exact Lilac GLM 5.2 metadata (precommitted)
+
+- Parent product champion: E001 product commit `90d90c5`; accepted E004 changes
+  only evaluation infrastructure.
+- Observed failure: every exact-model run warns that `zai-org/glm-5.2` is
+  unknown, reports total cost as zero, and falls back to the generic 200K
+  context assumption. Lilac's official model catalog publishes the exact ID,
+  524,288-token context, text-only input, tool use, reasoning, and prices of
+  $0.90/M input, $0.17/M cache read, and $3.00/M output. The provider model API
+  advertises the same 524,288 maximum completion limit.
+- Hypothesis: adding only exact registry metadata will eliminate warnings,
+  provide accurate context/cost accounting, and avoid premature generic-context
+  compaction without changing the fixed benchmark request parameters.
+- Smallest mechanism: one `ModelInfo` entry plus exact registry/pricing tests.
+  Do not change aliases, defaults, prompts, tools, or inference controls.
+- Mechanical diagnostic: model lookup/listing, capabilities, context/output
+  limits, and all three price fields must match the published values. A normal
+  exact-model run must no longer print unknown-model or missing-pricing warnings
+  and must report nonzero cost.
+- Frozen benchmark controls under v2: solved `fix-git` plus
+  `build-pmars`, the next lexicographically selected previously unseen task.
+  These guard integration and broaden evidence; because explicit max output is
+  fixed at 32,768 and task prompts are far below the new context boundary, no
+  score delta is attributed to metadata alone.
+- Reject if metadata is wrong, warnings/cost remain broken, tests fail, or a
+  solved control has a verified regression.
