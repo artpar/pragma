@@ -323,3 +323,23 @@ other fixed settings remain unchanged.
   nonzero exit is swallowed, or the normal control does not reach its official
   verifier. This experiment may improve measurement coverage but receives task
   success credit only from the unchanged official verifier.
+- Candidate commits: `d446828` (`Run verifiers after provider-tools turn
+  exhaustion`) and test-strengthening commit `504d54d` (`Test adapter exit
+  classification`). The anchored predicate accepts only the exact terminal
+  provider-tools turn-limit message. Four focused tests prove that exit 1 with
+  that message is nonfatal, arbitrary exit 1 remains fatal, and exit 0 remains
+  nonfatal. The adapter preserves Pragma's actual return code in Harbor
+  metadata.
+- Candidate job `pragma-lilac-glm52-e004-turn-cap-v2`:
+  - `break-filter-js-from-html`: reward 1.0, no exception, official verifier,
+    4m38s wall clock and 49 model responses. This stochastic rerun ended
+    normally with Pragma return code 0, so it confirms official task success and
+    broadens champion evidence but does not exercise or earn causal credit for
+    the turn-cap exception branch.
+  - `fix-git`: reward 1.0, no exception, official verifier, 43s wall clock.
+- Decision: **ACCEPTED as evaluation infrastructure**, not as a product-score
+  improvement. The deterministic classification closes the observed path that
+  skipped verifiers after preserved filesystem work, while keeping unrelated
+  failures fatal. Because the benchmark diagnostic happened to finish before
+  the cap, no task-success delta is attributed to E004. E001 remains the product
+  champion; E004 is the active Terminal-Bench adapter.
