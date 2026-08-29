@@ -351,3 +351,14 @@ Pre-result infrastructure notes:
   output regime for paired controls and a 15–30 task checkpoint. Current
   unfunded OpenRouter authorization rejects task-scoped requests even at 1,536
   output tokens and is therefore insufficient.
+
+### E001 live-metadata correction (precommitted)
+
+- OpenRouter's live `/api/v1/models` response on 2026-08-30 reports
+  `context_length: 1310720` for both `z-ai/glm-5.3` and
+  `z-ai/glm-5.3-flash`. This contradicts the 1,048,576 value in page/FAQ text
+  used by the original E001 test. The live API is the runtime-facing authority
+  for Pragma's compaction budget.
+- Correct only the two registered GLM-5.3 context values and focused assertions
+  to 1,310,720. Preserve active-model compaction, provider default, tools,
+  prompts, and all other behavior. Reject if focused or full tests fail.
