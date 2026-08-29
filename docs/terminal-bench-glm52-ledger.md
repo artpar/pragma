@@ -675,3 +675,29 @@ other fixed settings remain unchanged.
   focused test. `go test ./...` passes.
 - Conclusion: optimization was performed, but a meaningful task-success
   improvement was not demonstrated.
+
+### B02 final clean outcome
+
+- The targeted 14-task infrastructure rerun completed in 2h53m47s for START
+  and 2h12m25s for cumulative E007. Eleven pairs were immediately scoreable:
+  START scored 7/11 and cumulative E007 scored 6/11. Together with the clean
+  `count-dataset-tokens` rerun, the twelve settled pairs were 7/12 versus 6/12.
+- The precommitted three-task residual rerun completed in 1h22m05s for START
+  and 1h05m28s for cumulative E007. All six official verifiers were clean.
+  START scored 1/3 (`filter-js-from-html`); cumulative E007 scored 2/3
+  (`feal-linear-cryptanalysis` and `filter-js-from-html`). Both arms failed
+  `extract-moves-from-video` after an `AgentTimeoutError` and a clean verifier.
+- Replacing every censored observation with its clean paired rerun yields a
+  final B02 score of **8/15 for START and 8/15 for cumulative E007**. There
+  were three cumulative gains (`constraints-scheduling`,
+  `financial-document-processor`, and `feal-linear-cryptanalysis`), three
+  cumulative losses (`crack-7z-hash`, `db-wal-recovery`, and `extract-elf`),
+  and nine ties. The cumulative mechanisms therefore show no directional
+  task-success improvement on the frozen unseen checkpoint.
+- Final decision: **REJECT the cumulative E001+E005+E007 product hill and
+  validate the existing rollback**. Retain E006's 360-second Lilac request
+  timeout because the user explicitly requested it, plus the accepted E004
+  evaluation adapter and experiment records. Relative to
+  `GLM52_START_BASELINE`, the only product change is the bounded timeout and
+  its focused test. Optimization was performed, but a meaningful task-success
+  improvement was not demonstrated.
