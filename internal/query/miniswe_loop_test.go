@@ -831,6 +831,129 @@ func TestProviderToolsLoopExecutesBashToolCall(t *testing.T) {
 	}
 }
 
+func TestProviderToolsLoopContinuesReasoningOnlyMaxTokensResponse(t *testing.T) {
+	callInput, err := json.Marshal(map[string]string{"cmd": "printf resumed-after-truncation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		{
+			Content:    []model.ContentPart{model.ThinkingPart{Text: "partial reasoning"}},
+			StopReason: model.StopMaxTokens,
+		},
+		{
+			Content: []model.ContentPart{
+				model.ToolCallPart{ID: "call-after-truncation", Name: "Bash", Input: callInput},
+			},
+			StopReason: model.StopToolUse,
+		},
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "done"}},
+			StopReason: model.StopEndTurn,
+		},
+	}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModeProviderTools,
+		MaxTokens: 4096,
+		MaxTurns:  5,
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "hello"))
+
+	var sawToolResult bool
+	var completed int
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case ErrorEvent:
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		case ToolResultEvent:
+			if strings.Contains(e.Result.Content, "resumed-after-truncation") {
+				sawToolResult = true
+			}
+		case TurnCompleteEvent:
+			completed++
+		}
+	}
+	if !sawToolResult {
+		t.Fatal("missing tool result after max-token continuation")
+	}
+	if completed != 1 {
+		t.Fatalf("TurnCompleteEvent count = %d, want only the final response", completed)
+	}
+	if prov.calls != 3 {
+		t.Fatalf("provider calls = %d, want 3", prov.calls)
+	}
+	if len(prov.requests) < 2 {
+		t.Fatalf("provider requests = %d, want at least 2", len(prov.requests))
+	}
+	messages := prov.requests[1].Messages
+	if len(messages) != 3 {
+		t.Fatalf("second request messages = %d, want original user, partial assistant, continuation user", len(messages))
+	}
+	if messages[1].Role != model.RoleAssistant {
+		t.Fatalf("partial response role = %s, want assistant", messages[1].Role)
+	}
+	thinking, ok := messages[1].Content[0].(model.ThinkingPart)
+	if !ok || thinking.Text != "partial reasoning" {
+		t.Fatalf("partial response = %#v, want preserved reasoning", messages[1].Content)
+	}
+	if messages[2].Role != model.RoleUser {
+		t.Fatalf("continuation role = %s, want user", messages[2].Role)
+	}
+	continuation, ok := messages[2].Content[0].(model.TextPart)
+	if !ok || continuation.Text != providerToolsMaxTokensContinuation {
+		t.Fatalf("continuation = %#v, want %q", messages[2].Content, providerToolsMaxTokensContinuation)
+	}
+}
+
+func TestProviderToolsLoopBoundsRepeatedMaxTokensResponses(t *testing.T) {
+	response := model.Response{
+		Content:    []model.ContentPart{model.ThinkingPart{Text: "still reasoning"}},
+		StopReason: model.StopMaxTokens,
+	}
+	prov := &pragmaLoopTestProvider{responses: []model.Response{response, response}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          conv.WorkDir,
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(16), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModeProviderTools,
+		MaxTokens: 4096,
+		MaxTurns:  2,
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "hello"))
+	var gotErr error
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case ErrorEvent:
+			gotErr = e.Err
+		case TurnCompleteEvent:
+			t.Fatal("truncated response must not report successful turn completion")
+		}
+	}
+	if gotErr == nil || !strings.Contains(gotErr.Error(), "exceeded maximum of 2 turns") {
+		t.Fatalf("error = %v, want bounded turn-cap failure", gotErr)
+	}
+	if prov.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", prov.calls)
+	}
+}
+
 func TestProviderToolsLoopHonorsCustomSystemPrompt(t *testing.T) {
 	prov := &pragmaLoopTestProvider{responses: []model.Response{{
 		Content:    []model.ContentPart{model.TextPart{Text: "done"}},
