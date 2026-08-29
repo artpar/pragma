@@ -19,8 +19,8 @@ func TestGLM53ModelMetadata(t *testing.T) {
 		t.Fatalf("DefaultModel = %q, want z-ai/glm-5.3", DefaultModel)
 	}
 	for _, modelID := range []string{DefaultModel, FlashModel} {
-		if got, ok := provider.ContextWindow(modelID); !ok || got != 1_048_576 {
-			t.Fatalf("ContextWindow(%q) = (%d, %v), want (1048576, true)", modelID, got, ok)
+		if got, ok := provider.ContextWindow(modelID); !ok || got != 1_310_720 {
+			t.Fatalf("ContextWindow(%q) = (%d, %v), want (1310720, true)", modelID, got, ok)
 		}
 	}
 	models := provider.ListModels()

@@ -11,7 +11,7 @@ Official Terminal-Bench verifier rewards are the primary outcome.
   `max` effort; Pragma sends no explicit reasoning parameter
 - Temperature: `0`
 - Other sampling parameters: provider defaults (Pragma sends none)
-- Advertised context limit: 1,048,576 tokens
+- Advertised context limit: 1,310,720 tokens (OpenRouter live model API)
 - Maximum output: 2,048 tokens (supersedes the capacity-blocked 4,096-token
   development regime described below)
 - Tool protocol: provider-native tool calls; Pragma `Bash` and `apply_patch`
@@ -162,7 +162,7 @@ Pre-result infrastructure notes:
 ## D01-v4 capacity-compatible baseline rerun (precommitted)
 
 - Current OpenRouter metadata reconfirms exact model `z-ai/glm-5.3`, native
-  always-on reasoning with default `max` effort, a 1,048,576-token context
+  always-on reasoning with default `max` effort, a 1,310,720-token context
   window, and provider-native tool calling. Sampling and tool settings remain
   unchanged.
 - Capacity probe on 2026-08-30: the exact endpoint accepted 64 and 2,048
@@ -204,12 +204,12 @@ Pre-result infrastructure notes:
   models for context compression, while START deterministically registers only
   `z-ai/glm-5.3-flash`, warns that exact `z-ai/glm-5.3` is unknown, budgets it
   at the generic 200K fallback, and selects Flash for compaction. OpenRouter's
-  current official metadata confirms exact `z-ai/glm-5.3` has a 1,048,576-token
+  current live metadata confirms exact `z-ai/glm-5.3` has a 1,310,720-token
   context window and provider-native tool support.
 - Reopen E001 despite its earlier provisional disposition. Implement only the
   deterministic identity/context/compaction fix, updated against current model
   metadata. Reject if exact GLM-5.3 is not the OpenRouter default/listed model,
-  its context is not 1,048,576, compaction does not preserve the active model,
+  its context is not 1,310,720, compaction does not preserve the active model,
   focused tests fail, or the exact-model smoke changes protocol behavior.
 - Promotion basis: mechanically strong correction of a hard fixed-model
   invariant. Provider-credit failures cannot establish benchmark improvement,
@@ -218,8 +218,9 @@ Pre-result infrastructure notes:
 ### E001 reconsideration outcome
 
 - Candidate commit: `9590458`. Exact `z-ai/glm-5.3` is now OpenRouter's
-  default and a listed model with a 1,048,576-token context; Flash remains
-  separately listed. OpenRouter compaction receives the active configured model
+  default and a listed model; its context metadata was subsequently corrected
+  to 1,310,720 from the live model API. Flash remains separately listed.
+  OpenRouter compaction receives the active configured model
   instead of substituting the provider default.
 - Focused OpenRouter, CLI, and compaction tests passed, followed by `go test
   ./...`. A normal provider-tools smoke with explicit exact model returned

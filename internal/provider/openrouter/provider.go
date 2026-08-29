@@ -59,7 +59,7 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	if modelID == DefaultModel || modelID == FlashModel || modelID == "stealth/ox-alpha" {
-		return 1_048_576, true
+		return 1_310_720, true
 	}
 	return p.Provider.ContextWindow(modelID)
 }
