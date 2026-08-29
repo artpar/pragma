@@ -178,3 +178,39 @@ Pre-result infrastructure notes:
   for candidate promotion. Record every official verifier outcome and classify
   provider or benchmark failures separately. Run serially; do not interpret a
   capacity rejection as a task failure.
+
+### D01-v4 observed outcome
+
+- `regex-log` was the only task to reach an official verifier: reward 0.0. Its
+  first model response ended at the 2,048-token `max_tokens` boundary without
+  a tool call; START treated that truncation as successful completion and never
+  created `/app/regex.txt`. This is a harness failure, not evidence that the
+  model completed the task incorrectly.
+- `fix-git` made nine useful provider/tool turns in the same workspace, then
+  terminated on transient HTTP 402 `in_flight_budget_exhausted` with
+  `Retry-After: 120`. `cancel-async-tasks`, `sqlite-db-truncate`, and
+  `build-cython-ext` were rejected by permanent `openrouter_credits` responses
+  after their prompts reduced affordable maximum output to 1,727–1,900 tokens.
+  These four trials are infrastructure/harness exceptions without verifier
+  scores. `path-tracing` was operator-cancelled during environment startup once
+  the repeated capacity blocker was established.
+- Conclusion: 2,048 is accepted for a tiny smoke but is not a stable funded
+  evaluation regime for task prompts. Do not lower the cap repeatedly and call
+  the resulting runs comparable. Broad promotion remains capacity-blocked.
+
+### E001 reconsideration — exact model preservation (precommitted)
+
+- New controlling evidence: the goal explicitly prohibits hidden alternative
+  models for context compression, while START deterministically registers only
+  `z-ai/glm-5.3-flash`, warns that exact `z-ai/glm-5.3` is unknown, budgets it
+  at the generic 200K fallback, and selects Flash for compaction. OpenRouter's
+  current official metadata confirms exact `z-ai/glm-5.3` has a 1,048,576-token
+  context window and provider-native tool support.
+- Reopen E001 despite its earlier provisional disposition. Implement only the
+  deterministic identity/context/compaction fix, updated against current model
+  metadata. Reject if exact GLM-5.3 is not the OpenRouter default/listed model,
+  its context is not 1,048,576, compaction does not preserve the active model,
+  focused tests fail, or the exact-model smoke changes protocol behavior.
+- Promotion basis: mechanically strong correction of a hard fixed-model
+  invariant. Provider-credit failures cannot establish benchmark improvement,
+  but they also must not force normal Pragma to violate the declared model.
