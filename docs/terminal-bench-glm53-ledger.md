@@ -363,3 +363,16 @@ Pre-result infrastructure notes:
 - Correct only the two registered GLM-5.3 context values and focused assertions
   to 1,310,720. Preserve active-model compaction, provider default, tools,
   prompts, and all other behavior. Reject if focused or full tests fail.
+
+### E001 live-metadata correction outcome
+
+- Commit `4ef1aba` updates only the registered exact/Flash context and focused
+  assertions to 1,310,720. Focused OpenRouter, CLI, and compaction tests pass;
+  `go test ./...` passes. Decision: **ACCEPTED as a correction to E001**, not a
+  separate task-success mechanism.
+- Capacity audit: OpenRouter `/api/v1/credits` reports `total_credits: 0` and
+  the credential is on the free tier. The live catalog contains no
+  `z-ai/glm-5.3:free` endpoint. The configured Lilac catalog exposes
+  `zai-org/glm-5.2` but no GLM-5.3. Therefore no configured provider can run a
+  legitimate exact-model broad checkpoint without external OpenRouter funding;
+  Flash or GLM-5.2 substitution is forbidden.
