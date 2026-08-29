@@ -24,13 +24,15 @@ type Provider struct {
 	inner      providers.Provider
 	bus        *observe.EventBus
 	maxRetries int
+	classify   shared.ClassifyFn
 }
 
 // Option configures the Provider.
 type Option func(*providerConfig)
 
 type providerConfig struct {
-	baseURL string
+	baseURL  string
+	classify shared.ClassifyFn
 }
 
 // WithBaseURL overrides the API base URL.
@@ -39,6 +41,12 @@ func WithBaseURL(url string) Option {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: func(c *providerConfig) { c.baseURL = url }")
 	return func(c *providerConfig) { c.baseURL = url }
+}
+
+// WithErrorClassifier supplies provider-specific retry semantics for an
+// OpenAI-compatible endpoint. OpenAI defaults remain in effect when nil.
+func WithErrorClassifier(classify shared.ClassifyFn) Option {
+	return func(c *providerConfig) { c.classify = classify }
 }
 
 // New creates an OpenAI provider backed by any-llm-go.
@@ -65,8 +73,12 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"openai: create provider: %w\", err)")
 		return nil, fmt.Errorf("openai: create provider: %w", err)
 	}
-	observe.GlobalTrace("return: &Provider{inner: inner, bus: bus, maxRetries: 10}, nil")
-	return &Provider{inner: inner, bus: bus, maxRetries: 10}, nil
+	classify := pc.classify
+	if classify == nil {
+		classify = openaiClassify
+	}
+	observe.GlobalTrace("return: &Provider{inner: inner, bus: bus, maxRetries: 10, classify: classify}, nil")
+	return &Provider{inner: inner, bus: bus, maxRetries: 10, classify: classify}, nil
 }
 
 func (p *Provider) Name() string {
@@ -135,7 +147,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	llmParams := anyllm.RequestToParams(params)
 
 	var comp *providers.ChatCompletion
-	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, openaiClassify, func() error {
+	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, p.classify, func() error {
 		var reqErr error
 		comp, reqErr = p.inner.Completion(ctx, llmParams)
 		return reqErr
