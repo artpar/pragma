@@ -594,3 +594,20 @@ other fixed settings remain unchanged.
   performance is flat or worse, stop trusting local gains and return to the
   strongest empirically supported product commit rather than rationalizing the
   discrepancy.
+
+### B02 discordant-pair rerun (precommitted)
+
+- Initial outcome: START recorded official passes on
+  `configure-git-webserver` and `count-dataset-tokens`; cumulative E007 recorded
+  official failures on both. No task flipped from a scoreable START failure to
+  a champion pass. Several later trials were separately censored after Docker
+  storage exhaustion and do not affect selection of these two reruns.
+- Rerun exactly the two pass-to-fail discordances, START first and cumulative
+  E007 second, preserving the B02 model, inference, timeout, concurrency, task,
+  and verifier settings. Docker capacity cleanup is limited to stopped Harbor
+  containers and recreatable Terminal-Bench image cache; unrelated containers
+  and volumes remain untouched.
+- Decision rule: if the cumulative arm does not recover both START passes, the
+  broad checkpoint remains flat or worse and the cumulative product hill is
+  rejected. Restore the strongest broadly supported product state while
+  retaining evaluation records and adapter fixes.
