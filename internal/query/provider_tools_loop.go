@@ -15,8 +15,6 @@ import (
 	"github.com/artpar/pragma/internal/tools/applypatch"
 )
 
-const providerToolsMaxTokensContinuation = "Continue from the truncated response."
-
 func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
 	observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "exit")
@@ -85,21 +83,6 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		}
 
 		toolCalls := responseToolCalls(response)
-		if response.StopReason == model.StopMaxTokens && len(toolCalls) == 0 {
-			if err := engine.appendConversationMessage(model.Message{
-				ID:        model.NewUUID(),
-				Role:      model.RoleUser,
-				Content:   []model.ContentPart{model.TextPart{Text: providerToolsMaxTokensContinuation}},
-				Timestamp: time.Now(),
-			}); err != nil {
-				ch <- ErrorEvent{Err: err}
-				return
-			}
-			if engine.autoTracker != nil {
-				engine.autoTracker.IncrementTurn()
-			}
-			continue
-		}
 		if response.StopReason != model.StopToolUse && len(toolCalls) == 0 {
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
