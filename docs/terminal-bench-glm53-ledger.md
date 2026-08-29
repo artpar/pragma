@@ -232,3 +232,32 @@ Pre-result infrastructure notes:
   substitution, directly enforcing the fixed-model invariant. No claim of
   increased verified task completion is made; funded broad controls remain
   required for that stronger claim.
+
+### E003 — continue truncated provider-tools work (precommitted)
+
+- Parent champion: `9590458` (E001 exact-model preservation; ledger-only commit
+  `2b479ce` records its acceptance).
+- Observed failure: on D01-v4 `regex-log`, exact GLM-5.3's first response ended
+  with `stop=max_tokens` at the fixed 2,048-token boundary, contained no tool
+  call, and produced no deliverable. Pragma emitted successful turn completion
+  and exited 0; the clean official verifier failed because `/app/regex.txt`
+  did not exist.
+- History check: the same mechanism was E007 in the GLM-5.2 campaign. It was
+  mechanically accepted with non-regressing controls, then removed when a
+  cumulative broad checkpoint tied START. Reopening is justified by new exact
+  GLM-5.3 branch-exercising evidence and a materially smaller output cap; the
+  earlier absence of broad task-success improvement remains controlling
+  caution.
+- Hypothesis: preserving a tool-free max-token assistant response and requesting
+  a neutral continuation in the same bounded provider-tools loop will prevent
+  false successful termination and give GLM-5.3 its missing opportunity to act.
+- Smallest mechanism: special-case only `StopMaxTokens` with no tool calls;
+  append `Continue from the truncated response.` and continue within the
+  existing 100-turn bound. Do not change prompts, tools, ordinary end-turn/tool
+  handling, model settings, or evaluator behavior.
+- Diagnostic: `regex-log`. Frozen controls: `fix-git` and
+  `cancel-async-tasks`, under the same eventual funded regime. Deterministic
+  gate must prove partial content preservation, a subsequent provider request,
+  subsequent tool execution, normal final termination, and bounded turn-cap
+  failure. Reject if the branch does not activate, drops state, changes normal
+  completion, or only adds repeated truncations without credible progress.
