@@ -526,3 +526,36 @@ other fixed settings remain unchanged.
   final completion regresses, the candidate loses a verified parent control,
   or continued requests merely add cost/latency without credible completion
   evidence. A diagnostic flip alone remains insufficient broad evidence.
+
+### E007 observed outcome
+
+- Candidate commit `d52a741` special-cases only reasoning/text responses with
+  `StopMaxTokens` and no tool call. It preserves the assistant content, appends
+  the neutral continuation marker, and advances within the existing turn cap.
+  A focused scripted-provider test proves preservation, request sequencing,
+  subsequent Bash execution, and ordinary final completion. `go test ./...`
+  passes. Linux amd64 binary SHA-256:
+  `69f06d040d466242ba6b1bed709f45cd8d43f05df4c1ea0abf6bdb4c59b7fd0d`.
+- Parent controls under the 360-second regime: `fix-git` reward 1.0;
+  `compile-compcert` reward 0.0 after `AgentTimeoutError`, with the official
+  verifier unable to find `/tmp/CompCert/ccomp`.
+- Candidate diagnostics:
+  - `circuit-fibsqrt`: five `max_tokens` responses and four tool-use responses.
+    Each truncation caused another model request, proving the live product path
+    no longer exits falsely after the first truncation. The task exhausted its
+    1,800-second budget and remained reward 0.0 (file/size checks passed,
+    functional correctness failed).
+  - `adaptive-rejection-sampler`: reward 1.0 with all nine verifier tests
+    passing. This trajectory never returned `max_tokens`, so the pass broadens
+    candidate evidence but receives no causal E007 credit.
+- Candidate controls: `fix-git` retained reward 1.0. The first
+  `compile-compcert` attempt was excluded after a host/network outage produced
+  repeated DNS failures and no verifier over a 23-hour suspended interval. A
+  clean frozen-settings rerun had zero API failures, never activated E007, and
+  tied the parent at reward 0.0 after `AgentTimeoutError`.
+- Decision: **ACCEPTED as a deterministic harness fix, not as demonstrated
+  task-success improvement**. E007 removes a repeated false-success terminal
+  and preserves active model work; frozen controls show no verified regression.
+  Repeated 32,768-token continuations can consume the task window, and the one
+  branch-exercising diagnostic did not improve reward. Require a broad
+  checkpoint before treating the cumulative product as materially stronger.
