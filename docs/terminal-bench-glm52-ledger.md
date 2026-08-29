@@ -559,3 +559,38 @@ other fixed settings remain unchanged.
   Repeated 32,768-token continuations can consume the task window, and the one
   branch-exercising diagnostic did not improve reward. Require a broad
   checkpoint before treating the cumulative product as materially stronger.
+
+## B02 — fifteen-task unseen broad checkpoint (precommitted)
+
+- Trigger: four retained product mechanisms (E001, E005, user-directed E006,
+  and E007) plus a censored six-task B01. Per the broad-checkpoint cadence,
+  local mechanical evidence is no longer sufficient to support the cumulative
+  hill.
+- Selection: the next fifteen lexicographically ordered Terminal-Bench 2.1
+  tasks never used in GLM 5.2 development: `configure-git-webserver`,
+  `constraints-scheduling`, `count-dataset-tokens`, `crack-7z-hash`,
+  `custom-memory-heap-crash`, `db-wal-recovery`, `distribution-search`,
+  `dna-assembly`, `dna-insert`, `extract-elf`, `extract-moves-from-video`,
+  `feal-differential-cryptanalysis`, `feal-linear-cryptanalysis`,
+  `filter-js-from-html`, and `financial-document-processor`. Selection is
+  frozen before any arm result.
+- Arms: START binary SHA-256
+  `a67186ddb18989c4685f04e4cac64ac2c10fb253aed6a47777d198dca0ecbb6c`
+  versus cumulative E007 binary SHA-256
+  `69f06d040d466242ba6b1bed709f45cd8d43f05df4c1ea0abf6bdb4c59b7fd0d`.
+  Run START first and candidate second.
+- Fixed evaluator regime: exact Lilac `zai-org/glm-5.2`, temperature 0,
+  provider-tools loop, max output 32,768, max turns 100, bypass permissions,
+  1,800-second task timeout, serial concurrency 1, accepted E004 adapter, and
+  unchanged official tasks/verifiers. Product-internal timeout/continuation
+  behavior is intentionally part of the compared product state.
+- Record every task as official pass, official fail, task timeout,
+  provider/infrastructure failure, or benchmark/environment failure. Do not
+  silently drop incompatible or inconvenient tasks; exclude only from paired
+  score inference with explicit classification.
+- Decision gate: require a credible directional improvement in paired verified
+  task completion without a systematic new failure mode. Rerun important
+  discordant cases when stochastic noise could explain a small delta. If broad
+  performance is flat or worse, stop trusting local gains and return to the
+  strongest empirically supported product commit rather than rationalizing the
+  discrepancy.
