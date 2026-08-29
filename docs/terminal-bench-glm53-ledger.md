@@ -313,3 +313,8 @@ Pre-result infrastructure notes:
   transient and permanent 402s are conflated, `Retry-After` is ignored, normal
   429 behavior regresses, workspace/conversation state restarts, or retry is
   unbounded.
+- Candidate commit: `60bc3eb`; Linux amd64 binary SHA-256:
+  `d3f299521d114c3acaa1a3eb4d883b8e8e793db2b1172c9a7c65f4391d482656`.
+  Use the same diagnostic-only 1,536-token `regex-log` setup as E003 to test
+  live retry scheduling and same-session continuation; it remains ineligible
+  as comparable promotion evidence.
