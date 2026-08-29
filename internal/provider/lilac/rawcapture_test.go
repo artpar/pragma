@@ -68,14 +68,11 @@ func TestRawCaptureRecordsAnyLLMWireRequest(t *testing.T) {
 	if resp.StopReason != model.StopEndTurn {
 		t.Fatalf("stop reason = %s", resp.StopReason)
 	}
-	if len(resp.Content) != 2 {
-		t.Fatalf("response content length = %d, want 2", len(resp.Content))
+	if len(resp.Content) != 1 {
+		t.Fatalf("response content length = %d, want 1", len(resp.Content))
 	}
-	if thinking, ok := resp.Content[0].(model.ThinkingPart); !ok || thinking.Text != "thinking" {
-		t.Fatalf("response content[0] = %#v, want thinking part", resp.Content[0])
-	}
-	if text, ok := resp.Content[1].(model.TextPart); !ok || text.Text != "ok" {
-		t.Fatalf("response content[1] = %#v, want text ok", resp.Content[1])
+	if text, ok := resp.Content[0].(model.TextPart); !ok || text.Text != "ok" {
+		t.Fatalf("response content[0] = %#v, want text ok", resp.Content[0])
 	}
 
 	captureDir := onlyRawCaptureDir(t, captureRoot)

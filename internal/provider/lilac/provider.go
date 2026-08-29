@@ -581,7 +581,6 @@ func (r completionResponse) toAnyLLM() *providers.ChatCompletion {
 		msg := providers.Message{
 			Role:      choice.Message.Role,
 			ToolCalls: choice.Message.ToolCalls,
-			Reasoning: choice.Message.Reasoning.value,
 		}
 		if choice.Message.Content != nil {
 			observe.GlobalTrace("if: choice.Message.Content != nil")
