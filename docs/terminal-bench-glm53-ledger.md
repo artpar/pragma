@@ -266,3 +266,50 @@ Pre-result infrastructure notes:
   2,048-token requests. This run may prove live branch activation but is not
   comparable promotion evidence. Frozen controls remain deferred to one stable
   funded regime shared by champion and candidate.
+
+### E003 observed outcome
+
+- Candidate commit: `da6c7b1`; Linux amd64 binary SHA-256:
+  `453671399b5319fc1d3abde3e519dc176de4602122ca467d328c64462d6cac43`.
+  The implementation changes only provider-tools handling of tool-free
+  `StopMaxTokens` responses and retains the existing turn cap.
+- Deterministic tests prove partial assistant-content preservation, neutral
+  continuation ordering, subsequent Bash execution, exactly one ordinary final
+  completion, and an error after repeated truncations exhaust the turn cap.
+  `go test ./...` passes.
+- Live exact-model diagnostic: `regex-log` returned two consecutive
+  `stop=max_tokens` responses. Candidate Pragma issued a subsequent model
+  request after each, proving the ordinary product branch no longer falsely
+  terminates. The third request hit transient 402
+  `in_flight_budget_exhausted`; no verifier ran and no task-success credit is
+  assigned.
+- Decision: **ACCEPTED on mechanically strong harness evidence**, with the
+  GLM-5.2 broad-tie caution still active. The change removes a deterministic
+  false-success terminal and preserves active model work; it has not yet shown
+  increased GLM-5.3 task completion and must survive funded frozen controls and
+  a later broad checkpoint.
+
+### E004 — retry transient OpenRouter in-flight authorization (precommitted)
+
+- Parent champion: `da6c7b1` (E001 + accepted E003).
+- Observed failure: START `fix-git` and E003 `regex-log` both made useful model
+  progress in an intact workspace, then Pragma terminated immediately on HTTP
+  402 with explicit reason `in_flight_budget_exhausted` and
+  `Retry-After: 120`. Permanent 402 responses instead identify
+  `limit_source: openrouter_credits` and must not be retried.
+- History check: GLM-5.3 E002 previously proved both classifier branches live
+  but was reverted while provider capacity prevented a verifier. The new E003
+  diagnostic independently reproduces the transient failure after two
+  truncation continuations, materially strengthening the same hypothesis.
+- Hypothesis: route only the explicit transient in-flight reason through the
+  existing bounded retry mechanism and honor its provider delay, preserving
+  conversation and workspace state; leave permanent credit errors terminal.
+- Smallest mechanism: allow the OpenAI-compatible adapter to receive a
+  provider-specific classifier, and add an OpenRouter classifier for the exact
+  transient reason. No whole-task restart, prompt change, model change, or
+  evaluator recovery.
+- Diagnostic: rerun E003 `regex-log`. Frozen controls remain `fix-git` and
+  `cancel-async-tasks` under one funded regime. Deterministic rejection gates:
+  transient and permanent 402s are conflated, `Retry-After` is ignored, normal
+  429 behavior regresses, workspace/conversation state restarts, or retry is
+  unbounded.
