@@ -214,3 +214,21 @@ Pre-result infrastructure notes:
 - Promotion basis: mechanically strong correction of a hard fixed-model
   invariant. Provider-credit failures cannot establish benchmark improvement,
   but they also must not force normal Pragma to violate the declared model.
+
+### E001 reconsideration outcome
+
+- Candidate commit: `9590458`. Exact `z-ai/glm-5.3` is now OpenRouter's
+  default and a listed model with a 1,048,576-token context; Flash remains
+  separately listed. OpenRouter compaction receives the active configured model
+  instead of substituting the provider default.
+- Focused OpenRouter, CLI, and compaction tests passed, followed by `go test
+  ./...`. A normal provider-tools smoke with explicit exact model returned
+  `E001_REOPENED_OK` and emitted no unknown-model warning. The first smoke that
+  intentionally omitted `--model` resolved the user's persisted `gemma-4`
+  override and was rejected by OpenRouter; it did not exercise provider-default
+  selection and is not candidate evidence.
+- Decision: **ACCEPTED on mechanically strong harness evidence**. The candidate
+  corrects deterministic model identity, context budgeting, and hidden model
+  substitution, directly enforcing the fixed-model invariant. No claim of
+  increased verified task completion is made; funded broad controls remain
+  required for that stronger claim.
