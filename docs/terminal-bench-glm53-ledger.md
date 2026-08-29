@@ -7,11 +7,13 @@ Official Terminal-Bench verifier rewards are the primary outcome.
 
 - Provider: OpenRouter Chat Completions (`https://openrouter.ai/api/v1`)
 - Model identifier: `z-ai/glm-5.3` (not the Flash variant)
-- Reasoning mode: no explicit Pragma thinking/reasoning parameter
+- Reasoning mode: model-native reasoning always on at OpenRouter's default
+  `max` effort; Pragma sends no explicit reasoning parameter
 - Temperature: `0`
 - Other sampling parameters: provider defaults (Pragma sends none)
 - Advertised context limit: 1,048,576 tokens
-- Maximum output: 4,096 tokens
+- Maximum output: 2,048 tokens (supersedes the capacity-blocked 4,096-token
+  development regime described below)
 - Tool protocol: provider-native tool calls; Pragma `Bash` and `apply_patch`
 - Pragma product path: ordinary non-interactive CLI with `--loop provider-tools`
 - Turn limit: 100 model turns
@@ -156,3 +158,23 @@ Pre-result infrastructure notes:
   `97c1963` for reevaluation when exact-model capacity is restored. The current
   product behavior therefore matches `START_BASELINE`; evaluation scaffolding
   and the append-only experiment history remain committed separately.
+
+## D01-v4 capacity-compatible baseline rerun (precommitted)
+
+- Current OpenRouter metadata reconfirms exact model `z-ai/glm-5.3`, native
+  always-on reasoning with default `max` effort, a 1,048,576-token context
+  window, and provider-native tool calling. Sampling and tool settings remain
+  unchanged.
+- Capacity probe on 2026-08-30: the exact endpoint accepted 64 and 2,048
+  maximum-output-token requests, but rejected 4,096 before inference with
+  permanent HTTP 402 `openrouter_credits`, reporting only 3,160 tokens
+  affordable. This is evaluation infrastructure, not a task outcome.
+- Supersede the unusable 4,096-token development regime with a fixed 2,048-token
+  maximum output for both START and candidates. Earlier 4,096-token task
+  outcomes are retained as history but are not treated as comparable promotion
+  evidence. Context, temperature 0, provider-tools protocol, 100 turns, serial
+  execution, and the 1,800-second active-task limit remain fixed.
+- Rerun all six frozen D01 tasks on `START_BASELINE` before using the new regime
+  for candidate promotion. Record every official verifier outcome and classify
+  provider or benchmark failures separately. Run serially; do not interpret a
+  capacity rejection as a task failure.

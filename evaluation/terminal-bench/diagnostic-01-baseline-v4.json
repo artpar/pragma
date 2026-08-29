@@ -1,0 +1,24 @@
+{
+  "job_name": "pragma-glm53-start-baseline-d01-v4",
+  "jobs_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/jobs",
+  "n_concurrent_trials": 1,
+  "agents": [
+    {
+      "name": "tools.harbor_pragma_agent:PragmaAgent",
+      "model_name": "z-ai/glm-5.3",
+      "override_timeout_sec": 1800,
+      "kwargs": {
+        "bundle_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/bundles/START_BASELINE",
+        "max_tokens": 2048
+      }
+    }
+  ],
+  "tasks": [
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/fix-git"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/regex-log"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/cancel-async-tasks"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/sqlite-db-truncate"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/build-cython-ext"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/path-tracing"}
+  ]
+}
