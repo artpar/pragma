@@ -611,3 +611,36 @@ other fixed settings remain unchanged.
   broad checkpoint remains flat or worse and the cumulative product hill is
   rejected. Restore the strongest broadly supported product state while
   retaining evaluation records and adapter fixes.
+
+### B02 observed outcome and rollback
+
+- Initial START arm: 15 trials in 2h18m. Official rewards were 2 passes
+  (`configure-git-webserver`, `count-dataset-tokens`) and 8 failures, including
+  an `AgentTimeoutError` on `crack-7z-hash`. Five additional tasks were censored
+  for benchmark/environment failures: `extract-elf`,
+  `extract-moves-from-video`, `feal-linear-cryptanalysis`,
+  `filter-js-from-html`, and `financial-document-processor`.
+- Initial cumulative-E007 arm: 15 trials in 2h33m. Thirteen tasks produced an
+  official reward and all were 0.0; `crack-7z-hash` and
+  `extract-moves-from-video` hit `AgentTimeoutError`. The remaining two tasks,
+  `feal-linear-cryptanalysis` and `filter-js-from-html`, were censored for
+  benchmark/environment failures. On the ten initially scoreable paired tasks,
+  START was 2/10 and cumulative E007 was 0/10: no gains and two losses.
+- Docker storage exhaustion affected several late environment starts. Cleanup
+  removed only two stopped Harbor containers and recreatable Terminal-Bench
+  image cache; unrelated running containers and volumes were preserved.
+- Frozen discordant reruns: START scored 0/2 and cumulative E007 scored 0/2 on
+  `configure-git-webserver` and `count-dataset-tokens`. The original START
+  passes therefore did not reproduce, but the cumulative arm also failed the
+  precommitted requirement to recover both. The broad result is flat or worse,
+  with no verified cumulative gain.
+- Decision: **REJECT the cumulative product hill**. Revert E001 reasoning
+  retention, E005 model-registry metadata, and E007 max-token continuation.
+  Retain E006's 360-second request timeout solely because the user explicitly
+  requested the increased timeout, not because B02 demonstrated task-success
+  value. Retain the accepted E004 evaluation adapter and all experiment records.
+  Revert commits: `e031ef7`, `121986d`, and `d345998`. After rollback, the only
+  product diff from `GLM52_START_BASELINE` is the bounded timeout change and its
+  focused test. `go test ./...` passes.
+- Conclusion: optimization was performed, but a meaningful task-success
+  improvement was not demonstrated.
