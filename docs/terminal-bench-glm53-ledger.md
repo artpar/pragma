@@ -318,3 +318,36 @@ Pre-result infrastructure notes:
   Use the same diagnostic-only 1,536-token `regex-log` setup as E003 to test
   live retry scheduling and same-session continuation; it remains ineligible
   as comparable promotion evidence.
+
+### E004 observed outcome
+
+- Focused tests confirm the explicit `in_flight_budget_exhausted` payload is
+  retryable as `rate_limit` with its 120-second provider delay, permanent
+  `openrouter_credits` 402 is non-retryable, and ordinary 429 classification is
+  unchanged. The existing shared retry loop bounds attempts and respects
+  context cancellation. `go test ./...` passes.
+- The new live diagnostic was rejected before inference by a permanent credit
+  response: with the task prompt, OpenRouter reported only 1,048–1,153 output
+  tokens affordable versus the requested 1,536. Candidate Pragma correctly
+  emitted `retryable=false` and did not wait or retry. This is useful negative
+  branch evidence but provides no verifier outcome.
+- The earlier E002 live recording remains direct evidence for the identical
+  positive branch: `APIRetryScheduled delay_ms: 120000`, followed by attempt 2
+  in the same Harbor trial and workspace. That attempt then received a distinct
+  permanent credit error and terminated correctly.
+- Decision: **ACCEPTED on mechanically strong provider-recovery evidence**.
+  This enforces the goal's explicit requirement to recover transient provider
+  failures without restarting task state while refusing permanent failures. It
+  does not demonstrate increased task completion.
+
+## Broad-gate hold after three retained mechanisms
+
+- Retained GLM-5.3 mechanisms are now E001 exact-model/context preservation,
+  E003 max-token continuation, and E004 transient in-flight retry. Each removes
+  a directly observed deterministic harness defect; none has broad task-success
+  evidence.
+- Per the broad-checkpoint cadence, do not begin another product experiment or
+  claim a task-success champion until exact-model capacity supports one stable
+  output regime for paired controls and a 15–30 task checkpoint. Current
+  unfunded OpenRouter authorization rejects task-scoped requests even at 1,536
+  output tokens and is therefore insufficient.
