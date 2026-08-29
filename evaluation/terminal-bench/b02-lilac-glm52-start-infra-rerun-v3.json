@@ -1,0 +1,33 @@
+{
+  "job_name": "pragma-lilac-glm52-b02-start-infra-rerun-v3",
+  "jobs_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/jobs",
+  "n_concurrent_trials": 1,
+  "agents": [
+    {
+      "name": "tools.harbor_pragma_agent:PragmaAgent",
+      "model_name": "zai-org/glm-5.2",
+      "override_timeout_sec": 1800,
+      "kwargs": {
+        "bundle_dir": "/Users/artpar/workspace/code/pragma/.pragma/terminal-bench/bundles/START_BASELINE",
+        "provider_name": "lilac",
+        "max_tokens": 32768
+      }
+    }
+  ],
+  "tasks": [
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/configure-git-webserver"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/constraints-scheduling"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/crack-7z-hash"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/custom-memory-heap-crash"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/db-wal-recovery"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/distribution-search"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/dna-assembly"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/dna-insert"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/extract-elf"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/extract-moves-from-video"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/feal-differential-cryptanalysis"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/feal-linear-cryptanalysis"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/filter-js-from-html"},
+    {"path": "/tmp/terminal-bench-2-1.87PRgf/tasks/financial-document-processor"}
+  ]
+}

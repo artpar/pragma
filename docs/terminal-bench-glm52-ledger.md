@@ -614,6 +614,20 @@ other fixed settings remain unchanged.
 
 ### B02 observed outcome and rollback
 
+> **Correction after verifier-log audit:** the outcome below was recorded
+> before every verifier bootstrap log was inspected. Docker VM storage
+> exhaustion caused package-install, image-extraction, `curl`, and `uvx`
+> failures that Harbor frequently serialized as reward 0.0 rather than as an
+> exception. Consequently the stated 10-task scoreable comparison and its
+> rollback decision are withdrawn as a provisional conclusion, not erased from
+> the experiment history. The configure/count rerun also had a network timeout
+> in both configure trials; only count produced a clean paired verifier result
+> (0.0 versus 0.0). After targeted Docker cleanup, rerun both arms on the union
+> of contaminated tasks: all B02 tasks except `count-dataset-tokens`, preserving
+> arm order and all frozen settings. Treat any renewed bootstrap failure as
+> censored and base the final broad decision only on clean paired official
+> verifier outcomes.
+
 - Initial START arm: 15 trials in 2h18m. Official rewards were 2 passes
   (`configure-git-webserver`, `count-dataset-tokens`) and 8 failures, including
   an `AgentTimeoutError` on `crack-7z-hash`. Five additional tasks were censored
