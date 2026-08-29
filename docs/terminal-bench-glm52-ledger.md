@@ -628,6 +628,23 @@ other fixed settings remain unchanged.
 > censored and base the final broad decision only on clean paired official
 > verifier outcomes.
 
+### B02 residual infrastructure rerun (precommitted)
+
+- The clean 14-task START rerun completed at 7/14 with no verifier bootstrap
+  failures. The corresponding cumulative-E007 rerun completed at 6/14, but
+  three champion reward-zero trials were not scoreable: the video verifier's
+  Python download timed out, while `feal-linear-cryptanalysis` and
+  `filter-js-from-html` failed to download `uv` and then lacked `uvx`.
+- Across the other eleven tasks, START scored 7/11 and cumulative E007 scored
+  6/11. The paired discordances were two gains (`constraints-scheduling`,
+  `financial-document-processor`) and three losses (`crack-7z-hash`,
+  `db-wal-recovery`, `extract-elf`). The separately clean count rerun tied
+  0.0–0.0.
+- Rerun both arms, START first, on exactly the three residual infrastructure-
+  censored tasks. Preserve all B02 settings and classify renewed bootstrap
+  failures as censored. Use these clean replacements with the other twelve
+  clean pairs for the final broad decision.
+
 - Initial START arm: 15 trials in 2h18m. Official rewards were 2 passes
   (`configure-git-webserver`, `count-dataset-tokens`) and 8 failures, including
   an `AgentTimeoutError` on `crack-7z-hash`. Five additional tasks were censored
