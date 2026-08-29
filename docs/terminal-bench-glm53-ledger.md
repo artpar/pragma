@@ -261,3 +261,8 @@ Pre-result infrastructure notes:
   subsequent tool execution, normal final termination, and bounded turn-cap
   failure. Reject if the branch does not activate, drops state, changes normal
   completion, or only adds repeated truncations without credible progress.
+- Current-capacity diagnostic amendment: run `regex-log` once at 1,536 maximum
+  output tokens because the unfunded authorization now rejects task-scoped
+  2,048-token requests. This run may prove live branch activation but is not
+  comparable promotion evidence. Frozen controls remain deferred to one stable
+  funded regime shared by champion and candidate.
