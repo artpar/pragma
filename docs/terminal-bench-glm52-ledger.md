@@ -717,3 +717,23 @@ other fixed settings remain unchanged.
   OpenRouter fixes that are inert for Lilac; reject E001/E005/E007 on the
   GLM-5.2 path. The strongest supported GLM-5.2 result remains the clean B02
   tie, so no meaningful task-success improvement is claimed.
+
+### Complete-set final evaluation (precommitted)
+
+- GLM52_FINAL_CANDIDATE: product commit 6f3271c, declared before results.
+  Linux amd64 binary SHA-256:
+  1f7bdd1534f74e6790d98749f0342b23d1ad9ca6c015eff40eba5b462369d483;
+  pinned CA SHA-256:
+  bc363a289a53946a9e18092dc1f2f8cfabdc9d293f49bb1fd10f4c8d55f1c214.
+- Run all 89 unchanged Terminal-Bench 2.1 tasks in lexical order with exact
+  Lilac zai-org/glm-5.2, temperature 0, provider-native tools, maximum output
+  32,768, maximum turns 100, bypass permissions, 1,800-second active-task
+  timeout, 360-second request timeout, serial concurrency 1, accepted E004
+  adapter, and official verifiers unchanged.
+- Classify every task as verified pass, verified fail, task timeout,
+  provider/infrastructure failure, or benchmark/environment failure. Do not
+  drop failures from the final denominator; separately identify censored
+  infrastructure outcomes and rerun them when practical.
+- This full-set run measures the final candidate's absolute completion profile.
+  The clean paired B02 checkpoint remains the comparative evidence against
+  START and already rejects a meaningful improvement claim.
