@@ -376,3 +376,15 @@ Pre-result infrastructure notes:
   `zai-org/glm-5.2` but no GLM-5.3. Therefore no configured provider can run a
   legitimate exact-model broad checkpoint without external OpenRouter funding;
   Flash or GLM-5.2 substitution is forbidden.
+
+## Target superseded by user direction
+
+- On 2026-08-30 the user explicitly directed the optimization to continue to
+  completion with GLM-5.2. The GLM-5.3 work remains mechanically documented but
+  never obtained funded frozen controls or a broad checkpoint, so it must not
+  be presented as demonstrated GLM-5.3 task-success improvement.
+- E003 max-token continuation is removed from the checked-out product because
+  the clean GLM-5.2 broad checkpoint already evaluated that mechanism and tied
+  START. E001 exact OpenRouter identity/context preservation and E004 transient
+  OpenRouter retry remain because they are deterministic provider corrections
+  and do not affect the Lilac GLM-5.2 path.

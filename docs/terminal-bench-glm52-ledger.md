@@ -701,3 +701,19 @@ other fixed settings remain unchanged.
   `GLM52_START_BASELINE`, the only product change is the bounded timeout and
   its focused test. Optimization was performed, but a meaningful task-success
   improvement was not demonstrated.
+
+## Final reconciliation after GLM-5.2 target override
+
+- On 2026-08-30 the user explicitly replaced the capacity-blocked GLM-5.3
+  target with GLM-5.2 and requested completion. Reuse the already-clean B02
+  paired checkpoint rather than rerunning a decided mechanism.
+- The intervening OpenRouter exact-model/compaction and transient-retry changes
+  do not execute on the Lilac GLM-5.2 path. The intervening provider-tools
+  max-token continuation is the same E007 mechanism included in B02's rejected
+  cumulative arm. Remove it again rather than overriding the 8/15 versus 8/15
+  broad result with later cross-model mechanical evidence.
+- Final GLM-5.2 product boundary: retain the user-directed 360-second Lilac
+  request timeout, accepted evaluation adapter, and mechanically supported
+  OpenRouter fixes that are inert for Lilac; reject E001/E005/E007 on the
+  GLM-5.2 path. The strongest supported GLM-5.2 result remains the clean B02
+  tie, so no meaningful task-success improvement is claimed.
