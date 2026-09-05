@@ -1,5 +1,8 @@
 # Issues Clean-Code Stabilization Goal Prompt
 
+> Inactive historical task specification. Do not execute as a standing goal.
+> Follow [agent.md](../agent.md); revalidate any issue before resuming this work.
+
 Use this prompt to drive an LLM agent that must resolve the concrete
 architecture-boundary issues listed in `issues-goal.md` while obeying
 `docs/clean-architecture-enforcement-doctrine.md`.

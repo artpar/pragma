@@ -3,6 +3,8 @@
 package openrouter
 
 import (
+	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +13,10 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
 	oaiprov "github.com/artpar/pragma/internal/provider/openai"
+	"github.com/artpar/pragma/internal/provider/rawcapture"
 	"github.com/artpar/pragma/internal/provider/shared"
+	oaisdk "github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 )
 
 const (
@@ -24,9 +29,16 @@ const (
 // correct provider identity to sessions and runtime diagnostics.
 type Provider struct {
 	*oaiprov.Provider
+	wireClient oaisdk.Client
+	bus        *observe.EventBus
 }
 
 func New(apiKey string, bus *observe.EventBus, baseURL string) (*Provider, error) {
+	// Match the embedded OpenAI-compatible adapter's existing key fallback so
+	// streaming and nonstreaming requests cannot use different credentials.
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
@@ -39,7 +51,12 @@ func New(apiKey string, bus *observe.EventBus, baseURL string) (*Provider, error
 	if err != nil {
 		return nil, err
 	}
-	return &Provider{Provider: inner}, nil
+	client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute)
+	if !ok {
+		client = &http.Client{Timeout: 10 * time.Minute}
+	}
+	wireClient := oaisdk.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL), option.WithHTTPClient(client))
+	return &Provider{Provider: inner, wireClient: wireClient, bus: bus}, nil
 }
 
 func (p *Provider) Name() string { return "openrouter" }

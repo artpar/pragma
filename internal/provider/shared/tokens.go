@@ -53,7 +53,7 @@ func EstimateTokens(params provider.RequestParams) int {
 }
 
 // EstimateOutputTokens provides a rough token estimate for response content.
-// Used when providers don't report usage (e.g., Lilac/vLLM streaming).
+// Used when providers don't report usage (for example, some vLLM streaming endpoints).
 func EstimateOutputTokens(parts []model.ContentPart) int {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

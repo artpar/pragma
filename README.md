@@ -2,6 +2,9 @@
 
 Agentic code. LLM-generic — works with Anthropic, OpenAI, Google, or any provider.
 
+Harness development: read [agent.md](agent.md) for the required replay-first
+verification methodology and [docs/README.md](docs/README.md) for current guidance.
+
 ## Quick Start
 
 ```bash
@@ -30,8 +33,8 @@ cd /Users/artpar/workspace/code/constraint-decay
 PRAGMA_PATH=/Users/artpar/workspace/code/pragma \
 AGENT=pragma_agent \
 TASK=node/node-express-openapi-unconstrained.json \
-LLM_API_KEY="$LILAC_API_KEY" \
-LLM_MODEL=minimaxai/minimax-m3 \
+LLM_API_KEY="$OPENROUTER_API_KEY" \
+LLM_MODEL=z-ai/glm-5.3 \
 tools/run_miniswe_with_capture.sh
 ```
 
@@ -41,8 +44,8 @@ Default Pragma benchmark settings from the adapter:
 
 | Setting | Value |
 |---|---|
-| Provider | `lilac` |
-| Model | `$LLM_MODEL`, default `minimaxai/minimax-m3` |
+| Provider | `openrouter` |
+| Model | `$LLM_MODEL`, default `z-ai/glm-5.3` |
 | Permission mode | `bypassPermissions` |
 | Context mode | `chat` |
 | Allowed tools | `Bash` |
@@ -83,7 +86,7 @@ tools/run_swebench_pro_instance.py \
   --pull-image
 ```
 
-The runner uses `LLM_API_KEY`, `LILAC_API_KEY`, or the Lilac entry in `~/.pragma/credentials.yml`.
+The runner uses `LLM_API_KEY`, `OPENROUTER_API_KEY`, or the OpenRouter entry in `~/.pragma/credentials.yml`.
 
 By default the runner also prepares and mounts a cached Linux `amd64`
 generator toolchain into the benchmark container, including `buf`, `protoc`,

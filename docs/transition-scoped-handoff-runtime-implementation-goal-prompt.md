@@ -1,5 +1,8 @@
 # Transition-Scoped Handoff Runtime Implementation Goal Prompt
 
+> Inactive historical task specification. Do not execute as a standing goal.
+> Follow [agent.md](../agent.md); verify current code before assuming the bug remains.
+
 Use this prompt to drive an implementation agent that must convert Pragma
 orchestration prompt handoff from destination-state inputs to transition-scoped
 handoff artifacts.

@@ -84,7 +84,7 @@ The command layer should stay thin. Most runtime construction belongs to
 | `internal/cli/run.go` | `BuildInteractiveRuntimeWithOptions` | Calls `SetupDepsWithOptions`, `RegisterTools`, builds compaction, slash deps, and runtime cleanup. |
 | `internal/cli/deps.go` | `Deps` | Shared runtime object graph: config, credentials, provider, bus, checker, state store, engine, MCP manager, cron scheduler, hook manager, metrics, session writer, and cleanup. |
 | `internal/cli/deps.go` | `SetupDepsWithOptions` | Main dependency injection root. Loads config/credentials, resolves provider, initializes observe subscribers, permissions, hooks, sessions/resume state, state store, cron, MCP manager, and cleanup. |
-| `internal/cli/deps.go` | `CreateProvider` | Factory for `anthropic`, `openai`, `google`, `google-vertex`, `groq`, and `lilac` providers. |
+| `internal/cli/deps.go` | `CreateProvider` | Factory for `anthropic`, `openai`, `openrouter`, `google`, `google-vertex`, and `groq` providers. |
 | `internal/cli/tools.go` | `RegisterTools` | Creates `query.Engine`. |
 | `internal/cli/subcommands.go` | `RegisterSubcommands`, `RunPromptCommand`, `RunLocalCommand` | Exposes slash commands as regular Cobra subcommands where applicable. |
 
@@ -145,7 +145,7 @@ The architectural rule is that provider adapters translate wire data into
 | `internal/provider/google/provider.go` | `google.Provider` | Google Gemini adapter. |
 | `internal/provider/googlevertex/provider.go` | `googlevertex.Provider` | Vertex AI adapter. |
 | `internal/provider/groq/provider.go` | `groq.Provider` | Groq adapter. |
-| `internal/provider/lilac/provider.go` | `lilac.Provider` | Lilac/OpenAI-compatible adapter backed by any-llm-go plus raw capture support. |
+| `internal/provider/openrouter/provider.go` | `openrouter.Provider` | OpenRouter adapter with provider reasoning preservation on the nonstreaming path. |
 | `internal/provider/replay/provider.go` | `replay.Provider` | Replays captured API responses with optional fallback provider. |
 | `internal/provider/rawcapture/rawcapture.go` | raw capture helpers | HTTP capture plumbing for provider request/response inspection. |
 | `internal/provider/shared/retry.go` | `WithRetry` | Shared retry policy and API retry event emission. |

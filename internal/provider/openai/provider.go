@@ -81,6 +81,15 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 	return &Provider{inner: inner, bus: bus, maxRetries: 10, classify: classify}, nil
 }
 
+// ConvertError retains the embedded adapter's typed error contract for callers
+// that need a provider-specific wire format with the same transport semantics.
+func (p *Provider) ConvertError(err error) error {
+	if converter, ok := p.inner.(providers.ErrorConverter); ok {
+		return converter.ConvertError(err)
+	}
+	return err
+}
+
 func (p *Provider) Name() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

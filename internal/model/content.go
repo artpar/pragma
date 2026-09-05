@@ -92,10 +92,12 @@ func (ToolResultPart) PartType() ContentType { return ContentToolResult }
 // RedactedData contains the opaque encrypted data that must be sent back verbatim.
 // The provider adapter emits this as a redacted_thinking block, not a regular one.
 type ThinkingPart struct {
-	Text         string `json:"text"`
-	Signature    string `json:"signature,omitempty"`
-	Redacted     bool   `json:"redacted,omitempty"`
-	RedactedData string `json:"redacted_data,omitempty"`
+	Text string `json:"text"`
+	// OpenRouterReasoningDetails preserves provider-issued reasoning blocks verbatim.
+	OpenRouterReasoningDetails json.RawMessage `json:"openrouter_reasoning_details,omitempty"`
+	Signature                  string          `json:"signature,omitempty"`
+	Redacted                   bool            `json:"redacted,omitempty"`
+	RedactedData               string          `json:"redacted_data,omitempty"`
 }
 
 func (ThinkingPart) contentPartSealed()    {}

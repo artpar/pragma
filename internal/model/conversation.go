@@ -142,6 +142,7 @@ func deepCopyContentPart(part ContentPart) ContentPart {
 	case ToolResultPart:
 		return p
 	case ThinkingPart:
+		p.OpenRouterReasoningDetails = append(json.RawMessage(nil), p.OpenRouterReasoningDetails...)
 		return p
 	default:
 		panic("deepCopyContentPart: unknown ContentPart type")

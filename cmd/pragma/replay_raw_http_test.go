@@ -84,7 +84,7 @@ func TestReplayRawHTTPProviderModelAndOut(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, stderr := executeRawHTTPReplay(t,
@@ -116,11 +116,11 @@ func TestReplayRawHTTPFormatRawDefault(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, stderr := executeRawHTTPReplay(t,
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",
@@ -144,11 +144,11 @@ func TestReplayRawHTTPFormatContent(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, stderr := executeRawHTTPReplay(t,
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",
@@ -183,11 +183,11 @@ func TestReplayRawHTTPFormatPrettyNoToolCalls(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, stderr := executeRawHTTPReplay(t,
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",
@@ -223,11 +223,11 @@ func TestReplayRawHTTPPrettyFlagAlias(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, stderr := executeRawHTTPReplay(t,
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",
@@ -265,11 +265,11 @@ func TestReplayRawHTTPFormatPrettyToolCalls(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, _ := executeRawHTTPReplay(t,
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",
@@ -319,11 +319,11 @@ func TestReplayRawHTTPFormatPrettyStreamPreservesTranscript(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, stderr := executeRawHTTPReplay(t,
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",
@@ -400,11 +400,11 @@ func TestReplayRawHTTPFormatOutWritesSelectedFormat(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, _ := executeRawHTTPReplay(t,
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",
@@ -423,11 +423,11 @@ func TestReplayRawHTTPFormatRejectsUnknown(t *testing.T) {
 	root := t.TempDir()
 	turnDir := filepath.Join(root, "turn-000001")
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	_, _, err := executeRawHTTPReplayWithError(
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--format", "yaml",
@@ -445,10 +445,10 @@ func TestReplayRawHTTPCredentialsFile(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("LILAC_API_KEY", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
 	t.Chdir(work)
 	writeReplayCredentials(t, home, `providers:
-  lilac:
+  openrouter:
     api_key: creds-key
 `)
 
@@ -462,7 +462,7 @@ func TestReplayRawHTTPCredentialsFile(t *testing.T) {
 
 	turnDir := filepath.Join(work, "turn-000001")
 	writeCaptureTurn(t, work, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	stdout, stderr := executeRawHTTPReplay(t,
@@ -489,11 +489,11 @@ func TestReplayRawHTTPTimeoutFlag(t *testing.T) {
 	defer server.Close()
 
 	writeCaptureTurn(t, root, "turn-000001", `{"model":"captured-model","messages":[]}`, `{"choices":[]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1}`)
 
 	_, _, err := executeRawHTTPReplayWithError(
-		"--provider", "lilac",
+		"--provider", "openrouter",
 		"--api-key", "flag-key",
 		"replay", "raw-http",
 		"--base-url", server.URL+"/v1",

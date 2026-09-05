@@ -43,7 +43,7 @@ func handleDoctor(_ context.Context, _ string, deps Deps) (Result, error) {
 	}
 
 	hasKey := false
-	for _, env := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY", "LILAC_API_KEY"} {
+	for _, env := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"} {
 		observe.GlobalTrace("range env key check")
 		if os.Getenv(env) != "" {
 			observe.GlobalTrace("if: os.Getenv(env) != \"\"")

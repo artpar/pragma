@@ -1,3 +1,6 @@
+> Inactive historical task specification. Do not execute as a standing goal.
+> Follow [agent.md](../agent.md); this prompt does not authorize implementation.
+
 You are working in `/Users/artpar/workspace/code/pragma` with one objective:
 
 Build, test, and iterate the SWE-bench Pro orchestration FSM and persona prompt

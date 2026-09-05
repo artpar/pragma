@@ -1,0 +1,65 @@
+{
+  "id": "gen-1788631867-LBsCC7ctJWbGW07TBP6D",
+  "object": "chat.completion",
+  "created": 1788631867,
+  "model": "z-ai/glm-5.3",
+  "provider": "DeepInfra",
+  "system_fingerprint": null,
+  "service_tier": null,
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "tool_calls",
+      "native_finish_reason": "tool_calls",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "refusal": null,
+        "reasoning": "Write a semaphore-based runner with KeyboardInterrupt handling.",
+        "tool_calls": [
+          {
+            "type": "function",
+            "index": 0,
+            "id": "chatcmpl-tool-b67f43bdd86ff3af",
+            "function": {
+              "name": "apply_patch",
+              "arguments": "{\"patch\": \"*** Begin Patch\\n*** Add File: /app/run.py\\n+import asyncio\\n+from collections.abc import Awaitable, Callable\\n+\\n+\\n+async def run_tasks(\\n+    tasks: list[Callable[[], Awaitable[None]]], max_concurrent: int\\n+) -> None:\\n+    \\\"\\\"\\\"Run async tasks with a cap on concurrency.\\n+\\n+    On KeyboardInterrupt, cancels remaining tasks but waits for their\\n+    cleanup code (finally blocks / cancellation handlers) to finish.\\n+    \\\"\\\"\\\"\\n+    if max_concurrent < 1:\\n+        raise ValueError(\\\"max_concurrent must be >= 1\\\")\\n+\\n+    semaphore = asyncio.Semaphore(max_concurrent)\\n+\\n+    async def runner(task: Callable[[], Awaitable[None]]) -> None:\\n+        async with semaphore:\\n+            await task()\\n+\\n+    coros = [runner(task) for task in tasks]\\n+    gathered = asyncio.gather(*coros)\\n+    try:\\n+        await gathered\\n+    except (KeyboardInterrupt, asyncio.CancelledError):\\n+        gathered.cancel()\\n+        # Let every task observe the cancellation and run its cleanup.\\n+        try:\\n+            await gathered\\n+        except (asyncio.CancelledError, KeyboardInterrupt, Exception):\\n+            pass\\n+        raise\\n*** End Patch\\n\"}"
+            }
+          }
+        ],
+        "reasoning_details": [
+          {
+            "type": "reasoning.text",
+            "text": "Write a semaphore-based runner with KeyboardInterrupt handling.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 516,
+    "completion_tokens": 293,
+    "total_tokens": 809,
+    "cost": 0.0017912,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0017912,
+      "upstream_inference_prompt_cost": 0.0006192,
+      "upstream_inference_completions_cost": 0.001172
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 16,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

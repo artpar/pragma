@@ -896,7 +896,7 @@ func (rt *InteractiveRuntime) resolveResumeProvider(conv model.Conversation) (re
 	}
 	if cfg.Provider == "" {
 		observe.GlobalTrace("if: cfg.Provider == \"\"")
-		cfg.Provider = "lilac"
+		cfg.Provider = "openrouter"
 	}
 	if conv.Model != "" {
 		observe.GlobalTrace("if: conv.Model != \"\"")

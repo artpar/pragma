@@ -26,8 +26,8 @@ class ProviderEnvExportTest(unittest.TestCase):
             "http://host.docker.internal:8080/v1",
         )
         self.assertEqual(
-            runner.docker_host_base_url("https://api.getlilac.com/v1"),
-            "https://api.getlilac.com/v1",
+            runner.docker_host_base_url("https://openrouter.ai/api/v1"),
+            "https://openrouter.ai/api/v1",
         )
 
     def test_provider_env_exports_includes_primary_and_override_provider(self) -> None:
@@ -46,13 +46,13 @@ class ProviderEnvExportTest(unittest.TestCase):
         with mock.patch.object(runner, "read_pragma_provider_credentials", side_effect=read_credentials):
             with mock.patch.dict(os.environ, env, clear=True):
                 exports = runner.provider_env_exports(
-                    "lilac",
-                    "primary-lilac-key",
-                    "https://api.getlilac.com/v1",
+                    "openrouter",
+                    "primary-openrouter-key",
+                    "https://openrouter.ai/api/v1",
                 )
 
-        self.assertEqual(exports["LILAC_API_KEY"], "primary-lilac-key")
-        self.assertEqual(exports["LILAC_BASE_URL"], "https://api.getlilac.com/v1")
+        self.assertEqual(exports["OPENROUTER_API_KEY"], "primary-openrouter-key")
+        self.assertEqual(exports["OPENROUTER_BASE_URL"], "https://openrouter.ai/api/v1")
         self.assertEqual(exports["OPENAI_API_KEY"], "env-openai-key")
         self.assertEqual(exports["OPENAI_BASE_URL"], "http://host.docker.internal:9090/v1")
         self.assertEqual(exports["GOOGLE_API_KEY"], "credential-google-key")

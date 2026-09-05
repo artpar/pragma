@@ -1,0 +1,136 @@
+# Pragma harness development methodology
+
+Current development policy, established 2026-09-06. Read this before planning,
+changing, or evaluating the harness. Historical goal prompts and experiment
+plans in docs/ are evidence, not standing instructions or authorization to run.
+OpenRouter is the active benchmark route; Lilac was removed. Do not revive or
+migrate historical Lilac configurations without an explicit current request.
+
+## Objective and scope
+
+Improve the harness through demonstrated defects and repeatable checks. Do not
+equate more code, passing synthetic tests, more model calls, or one task win with
+progress. Separate harness correctness, generated-solution correctness,
+evaluation infrastructure health, and model-dependent task success.
+
+## Required workflow
+
+1. Inspect existing records before generating new ones. Locate a real failing
+   event, the responsible production path, and the earliest wrong transition.
+   State the expected behavior and its source (task requirement, protocol
+   contract, or explicit harness policy). A preferred model answer is not a
+   deterministic harness contract. If evidence is missing, collect only the
+   missing observation; label the issue unconfirmed until reproduced.
+2. Write a failure case before fixing code. Record the case ID, source run and
+   event IDs, source revision, exact observed/expected behavior, executable
+   assertion, proposed mechanism, and evidence that would refute it.
+3. Reproduce through the actual production code with authentic recorded input.
+   Restore the minimum relevant conversation/filesystem state and execute to
+   the decision under test. The unchanged harness must fail the assertion for
+   the stated reason, not because a dependency is absent or setup is broken.
+4. Make one mechanism-level change. Run the identical case against the changed
+   harness; require the assertion to pass. Check adjacent successful cases and
+   affected integration paths. Preserve the failing baseline and result logs.
+5. Advance only to the cheapest additional test needed for the remaining claim.
+   Do not rerun an entire solver task to verify serialization or classification.
+6. Report what is proven, what is not, evidence locations, commands, durations,
+   costs, and the next unresolved decision. Keep failed experiments in the record.
+
+## Authentic replay and its boundary
+
+Use captured provider responses, tool results, sessions, and filesystem snapshots,
+not fabricated successful model outputs. Exercise real parsers, state machines,
+serialization, storage, and tool execution where those are the subject of the test.
+Synthetic unit tests may supplement coverage; they cannot establish that an
+observed production defect existed or that its production path was repaired.
+
+Replay is a deterministic code regression test, not a fresh model trial. Assert
+semantic fields and ordering precisely; normalize only documented volatile data
+such as request IDs or timestamps. Never normalize away the disputed behavior.
+
+Stop counterfactual replay when the changed harness would send a different model
+request or execute a different external action. Assert that boundary's output.
+Do not consume recorded downstream responses as if the changed interaction had
+actually produced them. A live continuation is needed to observe that reaction.
+
+Reexecute real local commands in isolated restored environments when testing
+execution behavior. Never replay writes against production services. Preserve
+input checksums, capture provenance, runtime/dependency/image versions, and
+sanitization notes. Exclude credentials and prevent hidden verifier/oracle data
+from entering solver context. Keep fixtures durable, not solely under /tmp.
+
+## Verification gates
+
+| Gate | Evidence required | Claim allowed |
+| --- | --- | --- |
+| Recorded regression | Real failing input; old code fails and changed production code passes exact assertion | This harness defect is repaired for the case |
+| Real local integration | Actual processes/files/tools and restored state; observable completion assertions | This execution behavior works in this environment |
+| Live provider contract | Small real request through changed adapter; inspect outgoing wire and returned result | Provider accepts the changed interaction |
+| Bounded live continuation | Same pre-intervention state, declared control, matched budgets and functioning verifier | Observed behavioral effect on the diagnostic cases |
+| Held-out evaluation | Frozen candidate, declared task set/repetitions/metrics and healthy evaluator | Evidence for task-success generalization, with uncertainty |
+
+Use applicable gates, not every gate mechanically. A local classification fix
+need not spend inference credits. A replay passing cannot establish score uplift.
+Do not claim deterministic live inference because temperature is zero.
+
+## Live experiments are exceptions to the replay loop
+
+Before spending inference, write the question replay cannot answer, treatment,
+control, exact checkpoint, model/provider and effective settings, call/token/time/
+cost ceilings, repetitions, success/rejection criteria, and stopping conditions.
+Verify outgoing settings rather than trusting CLI flags or provider metadata.
+Keep actual call counts and costs: equal turn limits can hide retries or extra calls.
+
+Change one mechanism per causal comparison. Restore identical pre-intervention
+state where possible; record provider routing and other unmatched conditions.
+The intervention must occur before the decision it allegedly changes. Do not
+attribute a first-response improvement to a later reasoning-replay change.
+An equal-budget ordinary continuation is required when claiming a special review
+instruction helps beyond simply allowing more work. Cases selected after seeing
+their failures are diagnostic, not held-out evidence.
+
+Do not launch a broad benchmark to discover whether a code change works. Require
+local mechanism evidence first and a bounded behavioral signal for score claims.
+No repeated runs until a favorable sample appears, moving acceptance criteria,
+unreported losses, or bundled persona/runtime changes presented as an ablation.
+
+## Evaluator and feedback-loop discipline
+
+Preflight the actual verifier with a known reference in the target environment.
+Check task/test hashes, architecture, dependencies, resources, disk, and that
+tests actually execute. Classify infrastructure failure, solver failure, timeout,
+operator cancellation, and missing result separately; retain original rewards.
+Stop a batch on infrastructure failure instead of accumulating misleading zeros.
+
+Cache pinned verifier dependencies and rerun unchanged real tests against existing
+submissions in fresh isolated containers. Label this a cached diagnostic, not a
+fresh official full-script run. Measure setup, inference, tools, and verification
+separately. Assertions must observe completed required work, not entry markers,
+successful imports, command submission, or reassuring final text.
+
+## Review, delegation, and completion
+
+When subagents are requested, give each a bounded independent evidence question
+and concrete deliverable. Track running/completed/shelved tasks explicitly. The
+main agent must read findings, reconcile contradictions, and incorporate or reject
+them with reasons. A subagent's confidence is not verification.
+
+A fix is complete only with a reproducible command, authentic case provenance,
+baseline failure, candidate pass, adjacent regression checks, and an explicit
+claim boundary. A task-score claim additionally needs model-dependent evidence.
+If a hypothesis fails, record rejection and stop pursuing it without new evidence.
+
+## Documentation maintenance
+
+This file is the methodology source of truth. docs/README.md identifies current
+entry points. Keep dated observations as historical evidence; mark superseded
+plans and old goal prompts inactive so future agents do not restart them.
+Preserve unique traces, results, checksums, and negative findings. Remove only
+verified redundant/disposable material within the user's scope; prefer recoverable
+archiving and record what moved or was removed. Age alone does not imply irrelevance.
+
+First implemented regression: OpenRouter nonstreaming reasoning-field loss,
+`go test ./internal/provider/openrouter -run TestRecordedReasoningSurvivesSessionReplay -count=1`.
+Provenance and claim limits are in internal/provider/openrouter/testdata/README.md.
+Next targets: token-limit termination classification and verifier-startup failures
+misclassified as solver failures. Those regressions are not yet implemented.

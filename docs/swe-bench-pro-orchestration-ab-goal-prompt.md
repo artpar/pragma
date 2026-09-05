@@ -1,3 +1,6 @@
+> Inactive historical task specification. Do not execute as a standing goal.
+> Follow [agent.md](../agent.md); this prompt does not authorize new experiments.
+
 You are working in `/Users/artpar/workspace/code/pragma` with one objective:
 
 Design and prove a SWE-bench Pro orchestration/persona flow that prevents the

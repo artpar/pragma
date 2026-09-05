@@ -125,8 +125,8 @@ test_provider_picker() {
 providers:
   google:
     api_key: fake-google-key-for-picker-test
-  lilac:
-    api_key: fake-lilac-key-for-picker-test
+  openrouter:
+    api_key: fake-openrouter-key-for-picker-test
 CREDS
 
     local S="pragma-e2e-picker-$$"
@@ -141,7 +141,7 @@ CREDS
     fi
 
     tmux_assert "$S" "google" "picker shows google"
-    tmux_assert "$S" "lilac" "picker shows lilac"
+    tmux_assert "$S" "openrouter" "picker shows openrouter"
 
     # google is alphabetically first → option 1
     tmux_send "$S" "1"

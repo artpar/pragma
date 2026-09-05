@@ -32,11 +32,6 @@ func TestAutoDetectProvider(t *testing.T) {
 			want:    "google",
 		},
 		{
-			name:    "LILAC_API_KEY env var only",
-			envVars: map[string]string{"LILAC_API_KEY": "lilac-xxx"},
-			want:    "lilac",
-		},
-		{
 			name:    "OPENAI_API_KEY env var only",
 			envVars: map[string]string{"OPENAI_API_KEY": "sk-xxx"},
 			want:    "openai",
@@ -102,7 +97,7 @@ func TestAutoDetectProvider(t *testing.T) {
 	}
 
 	// All env vars that autoDetectProvider checks
-	allEnvVars := []string{"ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "LILAC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY"}
+	allEnvVars := []string{"ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY"}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -127,24 +122,24 @@ func TestResolveProviderConfigExplicitFlagsWin(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("LILAC_API_KEY", "env-key")
+	t.Setenv("OPENROUTER_API_KEY", "env-key")
 	t.Chdir(work)
 	writeTestCredentials(t, home, `providers:
-  lilac:
+  openrouter:
     api_key: creds-key
     base_url: https://creds.example/v1
 `)
 
-	cmd := newFlagCommand(t, "--provider", "lilac", "--model", "glm", "--api-key", "flag-key")
+	cmd := newFlagCommand(t, "--provider", "openrouter", "--model", "z-ai/glm-5.3", "--api-key", "flag-key")
 	resolved, err := ResolveProviderConfig(cmd, ProviderResolutionOptions{})
 	if err != nil {
 		t.Fatalf("ResolveProviderConfig: %v", err)
 	}
-	if resolved.Provider != "lilac" {
-		t.Fatalf("Provider = %q, want lilac", resolved.Provider)
+	if resolved.Provider != "openrouter" {
+		t.Fatalf("Provider = %q, want openrouter", resolved.Provider)
 	}
-	if resolved.Model != "zai-org/glm-5.1" {
-		t.Fatalf("Model = %q, want alias-resolved glm", resolved.Model)
+	if resolved.Model != "z-ai/glm-5.3" {
+		t.Fatalf("Model = %q, want z-ai/glm-5.3", resolved.Model)
 	}
 	if resolved.APIKey != "flag-key" {
 		t.Fatalf("APIKey = %q, want flag-key", resolved.APIKey)
@@ -183,7 +178,7 @@ func TestResolveProviderConfigRejectsInvalidLoop(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("LILAC_API_KEY", "env-key")
+	t.Setenv("OPENROUTER_API_KEY", "env-key")
 	t.Chdir(work)
 
 	cmd := newFlagCommand(t, "--loop", "bogus")
@@ -200,20 +195,20 @@ func TestResolveProviderConfigCredentialsThenEnv(t *testing.T) {
 	home := t.TempDir()
 	work := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("LILAC_API_KEY", "env-key")
+	t.Setenv("OPENROUTER_API_KEY", "env-key")
 	t.Chdir(work)
 	writeTestCredentials(t, home, `providers:
-  lilac:
+  openrouter:
     api_key: creds-key
 `)
 
 	cmd := newFlagCommand(t)
-	resolved, err := ResolveProviderConfig(cmd, ProviderResolutionOptions{DefaultProvider: "lilac", DefaultModel: "captured-model"})
+	resolved, err := ResolveProviderConfig(cmd, ProviderResolutionOptions{DefaultProvider: "openrouter", DefaultModel: "captured-model"})
 	if err != nil {
 		t.Fatalf("ResolveProviderConfig: %v", err)
 	}
-	if resolved.Provider != "lilac" {
-		t.Fatalf("Provider = %q, want lilac", resolved.Provider)
+	if resolved.Provider != "openrouter" {
+		t.Fatalf("Provider = %q, want openrouter", resolved.Provider)
 	}
 	if resolved.Model != "captured-model" {
 		t.Fatalf("Model = %q, want captured-model", resolved.Model)
@@ -221,8 +216,8 @@ func TestResolveProviderConfigCredentialsThenEnv(t *testing.T) {
 	if resolved.APIKey != "creds-key" {
 		t.Fatalf("APIKey = %q, want credentials before env", resolved.APIKey)
 	}
-	if resolved.BaseURL != "https://api.getlilac.com/v1" {
-		t.Fatalf("BaseURL = %q, want default Lilac URL", resolved.BaseURL)
+	if resolved.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("BaseURL = %q, want default OpenRouter URL", resolved.BaseURL)
 	}
 }
 
@@ -246,21 +241,6 @@ func TestResolveProviderConfigEnvFallback(t *testing.T) {
 	}
 	if resolved.Model != DefaultModelFor("openai") {
 		t.Fatalf("Model = %q, want OpenAI default", resolved.Model)
-	}
-}
-
-func TestLilacDefaultAndAliasesUseMiniMaxM3(t *testing.T) {
-	if got := DefaultModelFor("lilac"); got != "minimaxai/minimax-m3" {
-		t.Fatalf("DefaultModelFor(lilac) = %q, want minimaxai/minimax-m3", got)
-	}
-	if got := SecondaryModelFor("lilac"); got != "minimaxai/minimax-m3" {
-		t.Fatalf("SecondaryModelFor(lilac) = %q, want minimaxai/minimax-m3", got)
-	}
-	if got := resolveModelAlias("lilac", "minimax"); got != "minimaxai/minimax-m3" {
-		t.Fatalf("resolveModelAlias(lilac, minimax) = %q, want minimaxai/minimax-m3", got)
-	}
-	if got := resolveModelAlias("lilac", "m2.7"); got != "minimaxai/minimax-m2.7" {
-		t.Fatalf("resolveModelAlias(lilac, m2.7) = %q, want minimaxai/minimax-m2.7", got)
 	}
 }
 

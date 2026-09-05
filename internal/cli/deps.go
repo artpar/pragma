@@ -27,7 +27,6 @@ import (
 	googleprov "github.com/artpar/pragma/internal/provider/google"
 	googlevertexprov "github.com/artpar/pragma/internal/provider/googlevertex"
 	groqprov "github.com/artpar/pragma/internal/provider/groq"
-	lilacprov "github.com/artpar/pragma/internal/provider/lilac"
 	oaiprov "github.com/artpar/pragma/internal/provider/openai"
 	openrouterprov "github.com/artpar/pragma/internal/provider/openrouter"
 	"github.com/artpar/pragma/internal/query"
@@ -581,7 +580,7 @@ func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (
 	}
 	if cfg.Provider == "" {
 		observe.GlobalTrace("if: cfg.Provider == \"\"")
-		cfg.Provider = "lilac"
+		cfg.Provider = "openrouter"
 	}
 	if cfg.Model == "" && opts.DefaultModel != "" {
 		observe.GlobalTrace("if: cfg.Model == \"\" && opts.DefaultModel != \"\"")
@@ -660,13 +659,6 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) (provider.Provider
 	case "google-vertex":
 		observe.GlobalTrace("case: \"google-vertex\"")
 		return googlevertexprov.New(cfg.VertexProjectID, cfg.VertexLocation, cfg.VertexEndpointID, cfg.VertexDomain, bus)
-	case "lilac":
-		observe.GlobalTrace("case: \"lilac\"")
-		var opts []lilacprov.Option
-		if baseURL := resolveBaseURL("LILAC_BASE_URL", "lilac"); baseURL != "" {
-			opts = append(opts, lilacprov.WithBaseURL(baseURL))
-		}
-		return lilacprov.New(cfg.APIKey, bus, opts...)
 	default:
 		observe.GlobalTrace("default")
 		return nil, fmt.Errorf("unknown provider %q", cfg.Provider)
@@ -690,9 +682,6 @@ func DefaultModelFor(providerName string) string {
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "gemini-2.5-flash"
-	case "lilac":
-		observe.GlobalTrace("case: \"lilac\"")
-		return "minimaxai/minimax-m3"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-sonnet-4-6-20250514"
@@ -721,9 +710,6 @@ func SecondaryModelFor(providerName string, activeModels ...string) string {
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "gemini-2.5-flash"
-	case "lilac":
-		observe.GlobalTrace("case: \"lilac\"")
-		return "minimaxai/minimax-m3"
 	default:
 		observe.GlobalTrace("default")
 		return "claude-haiku-4-5-20251001"
@@ -742,15 +728,6 @@ var modelAliases = map[string]map[string]string{
 	"google": {
 		"flash": "gemini-2.5-flash",
 		"pro":   "gemini-2.5-pro",
-	},
-	"lilac": {
-		"gemma":   "google/gemma-4-31b-it",
-		"glm":     "zai-org/glm-5.1",
-		"k2.5":    "moonshotai/kimi-k2.5",
-		"kimi":    "moonshotai/kimi-k2.6",
-		"m2.7":    "minimaxai/minimax-m2.7",
-		"m3":      "minimaxai/minimax-m3",
-		"minimax": "minimaxai/minimax-m3",
 	},
 }
 
@@ -820,9 +797,6 @@ func DefaultBaseURLFor(provider string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch provider {
-	case "lilac":
-		observe.GlobalTrace("case: \"lilac\"")
-		return "https://api.getlilac.com/v1"
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "https://api.openai.com/v1"
@@ -842,9 +816,6 @@ func baseURLEnvVarForProvider(provider string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch provider {
-	case "lilac":
-		observe.GlobalTrace("case: \"lilac\"")
-		return "LILAC_BASE_URL"
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "OPENAI_BASE_URL"
@@ -866,7 +837,7 @@ type selectedProvider struct {
 }
 
 // knownProviders is the list of all supported provider names.
-var knownProviders = []string{"anthropic", "openai", "openrouter", "google", "google-vertex", "groq", "lilac"}
+var knownProviders = []string{"anthropic", "openai", "openrouter", "google", "google-vertex", "groq"}
 
 // pickAvailableProvider collects providers that have an API key (from credentials
 // or env vars) and either auto-selects or prompts the user to choose.
@@ -953,11 +924,10 @@ func autoDetectProvider(creds config.Credentials) string {
 		name   string
 		envVar string
 	}{
-		{"lilac", "LILAC_API_KEY"},
+		{"openrouter", "OPENROUTER_API_KEY"},
 		{"anthropic", "ANTHROPIC_API_KEY"},
 		{"google", "GOOGLE_API_KEY"},
 		{"openai", "OPENAI_API_KEY"},
-		{"openrouter", "OPENROUTER_API_KEY"},
 		{"groq", "GROQ_API_KEY"},
 	}
 
@@ -997,9 +967,6 @@ func envVarForProvider(provider string) string {
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "GOOGLE_API_KEY"
-	case "lilac":
-		observe.GlobalTrace("case: \"lilac\"")
-		return "LILAC_API_KEY"
 	default:
 		observe.GlobalTrace("default")
 		return "ANTHROPIC_API_KEY"

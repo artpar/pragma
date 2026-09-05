@@ -1,3 +1,6 @@
+> Inactive historical task specification. Model defaults and experiments below
+> are not current instructions. Follow [agent.md](../agent.md).
+
 Goal: Make Pragma reliably complete SWE-bench Pro tasks using a Minimax + VibeThink multi-LLM orchestration, while preserving Pragma as a general-purpose long-task worker.
 
 Context:

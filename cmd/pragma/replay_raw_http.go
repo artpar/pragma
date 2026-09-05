@@ -56,7 +56,7 @@ func replayRawHTTPCmd() *cobra.Command {
 		RunE:  replayRawHTTPRun,
 	}
 	cmd.Flags().String("base-url", "", "override scheme/host/base path while preserving captured endpoint")
-	cmd.Flags().String("api-key-env", "LILAC_API_KEY", "environment variable containing the replay API key")
+	cmd.Flags().String("api-key-env", "OPENROUTER_API_KEY", "environment variable containing the replay API key")
 	cmd.Flags().String("format", "raw", "output format: raw, pretty, content")
 	cmd.Flags().Bool("pretty", false, "print a human-readable response report")
 	cmd.Flags().String("out", "", "write response body to file instead of stdout")
@@ -341,8 +341,8 @@ func inferRawHTTPReplayProvider(rawURL string) string {
 		return ""
 	}
 	switch strings.ToLower(u.Hostname()) {
-	case "api.getlilac.com":
-		return "lilac"
+	case "openrouter.ai":
+		return "openrouter"
 	case "api.openai.com":
 		return "openai"
 	case "api.groq.com":
@@ -354,7 +354,7 @@ func inferRawHTTPReplayProvider(rawURL string) string {
 
 func isRawHTTPReplayProvider(provider string) bool {
 	switch provider {
-	case "lilac", "openai", "groq":
+	case "openrouter", "openai", "groq":
 		return true
 	default:
 		return false

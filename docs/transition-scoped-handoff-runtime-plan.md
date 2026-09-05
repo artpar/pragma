@@ -1,5 +1,9 @@
 # Transition-Scoped Handoff Runtime
 
+> Historical design plan, not an active implementation queue. Statements about
+> the current bug below refer to the plan's original context. Revalidate against
+> current source and follow [agent.md](../agent.md) before making changes.
+
 ## Summary
 
 Fix the handoff architecture by moving prompt handoff ownership from destination-state `artifacts.inputs` to the actual transition that led to the destination.

@@ -13,7 +13,7 @@ func TestInspectRawHTTPDumpDirInput(t *testing.T) {
 	root := t.TempDir()
 	captureDir := filepath.Join(root, "raw-http-pragma")
 	writeCaptureTurn(t, captureDir, "000001-aaa", `{"model":"captured-model","messages":[]}`, `{"choices":[{"message":{"content":"dumped"},"finish_reason":"stop"}]}`,
-		`{"sequence":1,"method":"POST","url":"https://api.getlilac.com/v1/chat/completions"}`,
+		`{"sequence":1,"method":"POST","url":"https://openrouter.ai/v1/chat/completions"}`,
 		`{"sequence":1,"status":"200 OK","status_code":200}`)
 	outDir := filepath.Join(root, "turn-payloads")
 	if err := dumpRawHTTPCaptures(captureDir, outDir, false); err != nil {

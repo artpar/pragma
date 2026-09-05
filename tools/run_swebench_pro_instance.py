@@ -38,13 +38,13 @@ DEFAULT_PERSONA_DIR = "/pragma/personas-research-v2"
 def display_command(command: list[str]) -> list[str]:
     redacted = command.copy()
     for i, part in enumerate(redacted):
-        if part in {"LLM_API_KEY", "LILAC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GROQ_API_KEY"} and i + 1 < len(redacted):
+        if part in {"LLM_API_KEY", "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GROQ_API_KEY"} and i + 1 < len(redacted):
             redacted[i + 1] = "<redacted>"
         elif any(
             part.startswith(prefix)
             for prefix in (
                 "LLM_API_KEY=",
-                "LILAC_API_KEY=",
+                "OPENROUTER_API_KEY=",
                 "GOOGLE_API_KEY=",
                 "OPENAI_API_KEY=",
                 "ANTHROPIC_API_KEY=",
@@ -136,7 +136,7 @@ def api_key_env_var(provider: str) -> str:
         "anthropic": "ANTHROPIC_API_KEY",
         "google": "GOOGLE_API_KEY",
         "groq": "GROQ_API_KEY",
-        "lilac": "LILAC_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
         "openai": "OPENAI_API_KEY",
     }.get(provider, "ANTHROPIC_API_KEY")
 
@@ -144,7 +144,7 @@ def api_key_env_var(provider: str) -> str:
 def base_url_env_var(provider: str) -> str:
     return {
         "google": "GOOGLE_BASE_URL",
-        "lilac": "LILAC_BASE_URL",
+        "openrouter": "OPENROUTER_BASE_URL",
         "openai": "OPENAI_BASE_URL",
     }.get(provider, "")
 
@@ -160,7 +160,7 @@ def docker_host_base_url(value: str) -> str:
 
 def provider_env_exports(primary_provider: str, primary_api_key: str, primary_base_url: str) -> dict[str, str]:
     exports: dict[str, str] = {}
-    for provider in ("anthropic", "google", "groq", "lilac", "openai"):
+    for provider in ("anthropic", "google", "groq", "openai", "openrouter"):
         credential_key, credential_base_url = read_pragma_provider_credentials(provider)
         key_env = api_key_env_var(provider)
         value = primary_api_key if provider == primary_provider else os.getenv(key_env, "") or credential_key
@@ -534,8 +534,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample-jsonl", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--dockerhub-username", default="jefzda")
-    parser.add_argument("--provider", default=os.getenv("LLM_PROVIDER", "lilac"))
-    parser.add_argument("--model", default=os.getenv("LLM_MODEL", "minimaxai/minimax-m3"))
+    parser.add_argument("--provider", default=os.getenv("LLM_PROVIDER", "openrouter"))
+    parser.add_argument("--model", default=os.getenv("LLM_MODEL", "z-ai/glm-5.3"))
     parser.add_argument("--base-url", default=os.getenv("LLM_BASE_URL", ""))
     parser.add_argument("--max-turns", default=os.getenv("PRAGMA_MAX_TURNS", "250"))
     parser.add_argument("--temperature", default=os.getenv("PRAGMA_TEMPERATURE", "0"))
@@ -650,7 +650,7 @@ def main() -> None:
     config_api_key, config_base_url = read_pragma_provider_credentials(args.provider)
     provider_api_key_env = api_key_env_var(args.provider)
     api_key = os.getenv("LLM_API_KEY") or os.getenv(provider_api_key_env) or config_api_key
-    default_base_url = "https://api.getlilac.com/v1" if args.provider == "lilac" else ""
+    default_base_url = "https://openrouter.ai/api/v1" if args.provider == "openrouter" else ""
     base_url = args.base_url or config_base_url or default_base_url
     provider_exports = provider_env_exports(args.provider, api_key, base_url)
     image = dockerhub_image(row, args.dockerhub_username)

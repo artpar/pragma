@@ -118,11 +118,11 @@ func TestSaveCredentials_RoundTrip(t *testing.T) {
 
 	original := Credentials{
 		Providers: map[string]ProviderCredential{
-			"anthropic": {APIKey: "sk-ant-key1"},
-			"openai":    {APIKey: "sk-key2", BaseURL: "https://custom.example.com/v1"},
-			"google":    {APIKey: "AIza-key3"},
-			"groq":      {APIKey: "gsk-key4"},
-			"lilac":     {APIKey: "lk-key5", BaseURL: "https://api.getlilac.com/v1"},
+			"anthropic":  {APIKey: "sk-ant-key1"},
+			"openai":     {APIKey: "sk-key2", BaseURL: "https://custom.example.com/v1"},
+			"google":     {APIKey: "AIza-key3"},
+			"groq":       {APIKey: "gsk-key4"},
+			"openrouter": {APIKey: "sk-or-key5", BaseURL: "https://openrouter.ai/api/v1"},
 		},
 	}
 

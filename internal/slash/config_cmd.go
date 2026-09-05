@@ -99,7 +99,7 @@ func handleConfig(_ context.Context, _ string, deps Deps) (Result, error) {
 	b.WriteString("\n")
 
 	b.WriteString("Environment Variables\n")
-	envVars := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY", "LILAC_API_KEY"}
+	envVars := []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY"}
 	for _, env := range envVars {
 		observe.GlobalTrace("range envVars")
 		val := os.Getenv(env)
