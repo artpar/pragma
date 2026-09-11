@@ -49,6 +49,11 @@ func NewRegistry() (*Registry, error) {
 func (r *Registry) Register(info ProcessInfo) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	if info.PID <= 0 {
+		observe.GlobalTrace("if: info.PID <= 0")
+		observe.GlobalTrace("return: fmt.Errorf(\"register background process: invalid PID %d\", info.PID)")
+		return fmt.Errorf("register background process: invalid PID %d", info.PID)
+	}
 	info.UpdatedAt = time.Now()
 	data, err := json.Marshal(info)
 	if err != nil {
@@ -164,10 +169,11 @@ func (r *Registry) ListProcesses() ([]ProcessInfo, error) {
 	}
 
 	var active []ProcessInfo
+	now := time.Now()
 	for _, entry := range entries {
 		observe.GlobalTrace("range entries")
-		if entry.IsDir() || !pidFilePattern.MatchString(entry.Name()) {
-			observe.GlobalTrace("if: entry.IsDir() || !pidFilePattern.MatchString(entry.Name())")
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			observe.GlobalTrace("if: entry.IsDir() || filepath.Ext(entry.Name()) != \".json\"")
 			continue
 		}
 
@@ -178,13 +184,43 @@ func (r *Registry) ListProcesses() ([]ProcessInfo, error) {
 		}
 
 		var info ProcessInfo
+		// REG-001: only files carrying a "pid" field are provably registry
+		// records. Lenient unmarshaling would treat any JSON object as an
+		// empty ProcessInfo; a nil probe PID means the file is not ours and
+		// must be left untouched (TS #34210 posture).
+		var probe struct {
+			PID *int `json:"pid"`
+		}
+		if err := json.Unmarshal(data, &probe); err != nil || probe.PID == nil {
+			observe.GlobalTrace("if: err != nil")
+			continue
+		}
 		if err := json.Unmarshal(data, &info); err != nil {
 			observe.GlobalTrace("if: err != nil")
 			continue
 		}
 
-		if !r.recordActive(info, time.Now()) {
-			observe.GlobalTrace("if: !r.recordActive(info, time.Now())")
+		if !pidFilePattern.MatchString(entry.Name()) {
+			// REG-001: a record under a non-PID name is unreachable by every
+			// control path. Sweep it only when it provably belongs to this
+			// registry and carries an invalid PID (e.g. gogent-era -1.json).
+			observe.GlobalTrace("if: !pidFilePattern.MatchString(entry.Name())")
+			if *probe.PID <= 0 {
+				observe.GlobalTrace("if: *probe.PID <= 0")
+				_ = os.Remove(filepath.Join(r.dir, entry.Name()))
+			}
+			continue
+		}
+
+		if !r.recordActive(info, now) {
+			observe.GlobalTrace("if: !r.recordActive(info, now)")
+			// REG-001: dead process plus stale heartbeat is provably garbage;
+			// sweep it so the registry stays self-cleaning. A live process's
+			// record is never removed here, whatever its heartbeat age.
+			if info.PID > 0 && !isProcessAlive(info.PID) && !info.HasFreshHeartbeat(now) {
+				observe.GlobalTrace("if: info.PID > 0 && !isProcessAlive(info.PID) && !info.HasFreshHeartbeat(now)")
+				_ = os.Remove(filepath.Join(r.dir, entry.Name()))
+			}
 			continue
 		}
 

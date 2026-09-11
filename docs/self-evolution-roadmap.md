@@ -82,9 +82,14 @@ retry-authorization commits (`60bc3eb`, `a20443c`).
 
 ### M3 — Registry hygiene
 
-Stale `~/.pragma/active-sessions/` entries never expire (e.g. `-1.json`,
-gogent-era, pid -1, status `starting`). Entry: a recorded expectation for
-entry expiry. Exit: deterministic test plus cleanup.
+**Done 2026-09-11 (REG-001).** The registry never garbage-collected:
+the observed five-month-old gogent-era `-1.json` orphan was invisible to
+every read path and unreachable by every cleanup path. `Register` now
+refuses `PID <= 0`; `ListProcesses` sweeps only files that provably carry
+a registry `pid` field and are invalid or dead-plus-stale; anything
+unrecognized is left untouched. Package got its first tests; the authentic
+gate swept the real orphan via `./bin/pragma sessions`. Record:
+`docs/failure-cases/background-registry-hygiene-2026-09-11.md`.
 
 ### M4 — Capability restorations (one case per mechanism)
 
