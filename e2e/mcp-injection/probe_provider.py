@@ -20,6 +20,10 @@ Profiles:
   turnbudget: request 1 delays (MCP connect), then EVERY request returns a
     single Bash tool call (TURN-001 probe); the loop never gets final text
     and must exhaust the turn budget (run with --max-turns 8).
+  toklimit: request 1 delays (MCP connect), then returns a tool-free
+    finish_reason=length response with content cut mid-word (TOK-001 probe);
+    the loop must classify the truncated termination (baseline: silent
+    exit 0 success; candidate: truncation error, exit != 0).
 
 Usage: probe_provider.py <workdir> <profile> [delay_seconds]
 """
@@ -111,6 +115,25 @@ def tool_calls_response():
         "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
     }
 
+def truncated_text_response():
+    return {
+        "id": "chatcmpl-probe-truncated",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": "probe-model",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "TOK_LIMIT_PROBE_PARTIAL_TRU",
+                },
+                "finish_reason": "length",
+            }
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
 def final_text_response():
     return {
         "id": "chatcmpl-probe-final",
@@ -169,6 +192,10 @@ class Handler(BaseHTTPRequestHandler):
             if seq == 1:
                 time.sleep(DELAY)
             self._send_json(200, tool_calls_response())
+            return
+        if PROFILE == "toklimit" and seq == 1:
+            time.sleep(DELAY)
+            self._send_json(200, truncated_text_response())
             return
         self._send_json(200, final_text_response())
 

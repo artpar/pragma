@@ -353,6 +353,45 @@ def assert_tbgreen(reqs):
     print("PASS tbgreen.cap: loop still terminated with the 8-turn error")
 
 
+def assert_toklimit(reqs, expect):
+    """TOK-001 wire gate: a tool-free finish_reason=length response terminates
+    the provider-tools loop. expect=tokred (baseline): silent success — exit 0,
+    no truncation signal. expect=tokgreen (candidate): honest classification —
+    exit != 0 with the truncation error, partial text still delivered, and no
+    auto-continuation (exactly one model request either way)."""
+    check(len(reqs) == 1, "expected exactly 1 model request (truncated termination, no continuation), got %d" % len(reqs))
+    names = tool_names(reqs[0][1])
+    check(names, "boot request must carry the provider toolset")
+
+    exit_path = os.path.join(RESULTS, "exit_code")
+    check(os.path.exists(exit_path), "exit_code file missing (rerun run_probe.sh)")
+    with open(exit_path) as f:
+        code = int(f.read().strip())
+
+    with open(os.path.join(RESULTS, "stdout.txt")) as f:
+        stdout = f.read()
+    with open(os.path.join(RESULTS, "stderr.txt")) as f:
+        stderr = f.read()
+
+    check("TOK_LIMIT_PROBE_PARTIAL_TRU" in stdout,
+          "partial truncated text must still be delivered to the operator")
+
+    if expect == "tokred":
+        check(code == 0, "baseline must exit 0 (the recorded false-success classification), got %d" % code)
+        check("truncated" not in stdout + stderr,
+              "baseline must carry no truncation signal (that absence is the defect)")
+        print("PASS tokred.shape: 1 request, exit 0, partial text, no truncation signal (RED confirmed)")
+        return
+
+    check(code != 0, "truncated termination must exit non-zero, got %d" % code)
+    check("final response truncated by max_tokens output limit" in stderr,
+          "truncation error text not found in stderr")
+    check("conversation is preserved" in stderr,
+          "truncation error must name the preserved-conversation continuation")
+    print("PASS tokgreen.classification: exit %d, truncation error delivered" % code)
+    print("PASS tokgreen.norestart: exactly 1 model request (no auto-continuation; E003 stays reverted)")
+
+
 def main():
     reqs = load_requests()
     print("loaded %d captured requests from %s" % (len(reqs), RAW))
@@ -375,6 +414,8 @@ def main():
             assert_subgreen(reqs)
         elif EXPECT == "tbgreen":
             assert_tbgreen(reqs)
+        elif EXPECT in ("tokred", "tokgreen"):
+            assert_toklimit(reqs, EXPECT)
         else:
             raise Failure("unknown expectation %r" % EXPECT)
     except Failure as e:

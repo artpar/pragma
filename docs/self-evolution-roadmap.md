@@ -83,6 +83,27 @@ with variance captured across runs.
   planning task requires `submit_for_review` first, and submitting
   requires `in_progress` first — two extra round trips per task. Dogfood
   observation only.
+- **TURN-001 live effect (2026-09-11, first live run) — notice fired,
+  wrap-up incomplete, session still died at the cap.** At turn 90 of a
+  100-turn operator session the in-conversation notice arrived ("90 of 100
+  … 10 remain"); the model acknowledged it, stopped exploration, and
+  prioritized finishing the in-flight TOK-001 documentation + commit. The
+  10 remaining turns were not enough: two `apply_patch` retries burned
+  margin, and the loop terminated at turn 100
+  (`provider tools loop exceeded maximum of 100 turns`,
+  log `~/.pragma/logs/2026-09-11T21-21-59.jsonl`, notice ~21:53, death
+  ~22:06) with the commit undone — the operator re-prompted and the
+  preserved conversation continued. Honest reading: the mechanism worked
+  (injection + visibility + model orientation all observed), but notice
+  efficacy for *completing* wrap-up is unproven — orientation ≠ finishing
+  when the in-flight step exceeds the window. Per the case's own boundary,
+  this is recorded, not acted on: a TURN-002 (wider/earlier window, or
+  budget-aware wrap-up cost) needs this event to recur as a recorded need,
+  and the existing override (`--max-turns`) remains the operator's tool for
+  known-long tasks. Session wire tally for the watch: 100 completions +
+  3 in the continuation, ~121.6K peak input tokens, zero request
+  failures/retries across the whole run — wire-size watch stays open, no
+  harm event yet.
 
 ### M2b — Classify the captured session-start failure
 
@@ -203,6 +224,26 @@ clean, full suite exit 0 across 5 consecutive parallel runs. Live-effect
 boundary: injection is proven; that a model *acts* on the notice is not
 claimed. Record:
 `docs/failure-cases/turn-budget-warning-2026-09-11.md`.
+
+**TOK-001 — Token-limit truncation no longer classified as successful
+completion (2026-09-11).** agent.md's second named regression, evidenced
+by recorded events: the TB-2.1 `circuit-fibsqrt` and `dna-assembly` agent
+logs end at `stop=max_tokens` with silent exit 0, and GLM-5.3 D01-v4
+`regex-log` "emitted successful turn completion and exited 0" on a
+truncated first response (no deliverable, verifier 0.0) — confirmed as a
+defect on 2026-09-05 and unimplemented since. A tool-free `StopMaxTokens`
+termination in the provider-tools loop is now an honest error termination
+(`final response truncated by max_tokens output limit …; the conversation
+is preserved`), exit != 0, partial content preserved for
+re-prompt/`--resume` — classified exactly like the turn cap. No
+auto-continuation (E003 stays reverted per the `6f3271c` boundary);
+truncation-with-tool-calls still executes; pragma mode unchanged;
+sub-agents pair truncations as failures; the Harbor adapter recognizes
+the truncation error like the turn cap so verifiers still run. Gates:
+engine baseline RED (3 tests) / candidate GREEN, real-boot wire gate
+(`toklimit` profile: baseline exit 0 vs candidate exit 1, one request, no
+restart), full suite clean. Record:
+`docs/failure-cases/token-limit-termination-classification-2026-09-11.md`.
 
 ### M5 — Held-out self-evaluation (only if a score claim is made)
 

@@ -17,15 +17,28 @@ _PROVIDER_TOOLS_TURN_LIMIT = re.compile(
     r"(?:^|\n)error: provider tools loop exceeded maximum of \d+ turns\s*$"
 )
 
+_MAX_TOKENS_TRUNCATION = re.compile(
+    r"(?:^|\n)error: final response truncated by max_tokens output limit[^\n]*$"
+)
+
 
 def _is_provider_tools_turn_limit(output: str) -> bool:
     """Return whether Pragma stopped only because its configured turn cap was reached."""
     return _PROVIDER_TOOLS_TURN_LIMIT.search(output) is not None
 
 
+def _is_max_tokens_truncation(output: str) -> bool:
+    """Return whether Pragma stopped only because its output token limit truncated the final response."""
+    return _MAX_TOKENS_TRUNCATION.search(output) is not None
+
+
 def _is_fatal_pragma_exit(return_code: int, output: str) -> bool:
-    """Keep ordinary failures fatal while allowing completed turn-budget exhaustion."""
-    return return_code != 0 and not _is_provider_tools_turn_limit(output)
+    """Keep ordinary failures fatal while allowing completed budget-exhaustion terminations."""
+    return (
+        return_code != 0
+        and not _is_provider_tools_turn_limit(output)
+        and not _is_max_tokens_truncation(output)
+    )
 
 
 def _provider_api_key_env(provider_name: str) -> str:

@@ -109,6 +109,11 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		}
 
 		toolCalls := responseToolCalls(response)
+		if response.StopReason == model.StopMaxTokens && len(toolCalls) == 0 {
+			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: response.StopReason == model.StopMaxTokens && len(toolCalls) == 0")
+			ch <- ErrorEvent{Err: errors.New("final response truncated by max_tokens output limit before completion; the conversation is preserved — continue with a new prompt or --resume")}
+			return
+		}
 		if response.StopReason != model.StopToolUse && len(toolCalls) == 0 {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: response.StopReason != model.StopToolUse && len(toolCalls) == 0")
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}

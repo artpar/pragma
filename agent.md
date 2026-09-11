@@ -132,5 +132,9 @@ archiving and record what moved or was removed. Age alone does not imply irrelev
 First implemented regression: OpenRouter nonstreaming reasoning-field loss,
 `go test ./internal/provider/openrouter -run TestRecordedReasoningSurvivesSessionReplay -count=1`.
 Provenance and claim limits are in internal/provider/openrouter/testdata/README.md.
-Next targets: token-limit termination classification and verifier-startup failures
-misclassified as solver failures. Those regressions are not yet implemented.
+Next targets: verifier-startup failures misclassified as solver failures
+(the TB-2.1 audit's 24 false-looking zeros are Harbor-side so far — the
+pragma-owned production path is not yet identified; wait for a recorded
+event). Token-limit termination classification is now implemented
+(2026-09-11, TOK-001:
+docs/failure-cases/token-limit-termination-classification-2026-09-11.md).

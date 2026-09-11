@@ -253,3 +253,59 @@ func TestProviderToolsLoopAgentSubFailurePairsError(t *testing.T) {
 		t.Fatalf("pairing failed on parent request 3: %v", err)
 	}
 }
+
+func TestProviderToolsLoopAgentSubTruncationPairsError(t *testing.T) {
+	// TOK-001 adjacent consequence: a sub-agent whose final response is
+	// truncated by the output token limit (tool-free StopMaxTokens) must not
+	// be reported to the parent as a completed envelope carrying partial
+	// text; it pairs as a failure, like any other sub-agent error.
+	agentInput, _ := json.Marshal(map[string]string{"prompt": "investigate briefly"})
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		{
+			Content: []model.ContentPart{
+				model.ToolCallPart{ID: "call-agent-3", Name: AgentToolName, Input: agentInput},
+			},
+			StopReason: model.StopToolUse,
+		},
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "the sub answer so f"}},
+			StopReason: model.StopMaxTokens,
+		},
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "parent done"}},
+			StopReason: model.StopEndTurn,
+		},
+	}}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := newTestStore(conv)
+	engine := NewEngine(prov, store, model.NewCostTracker(0), newTestBus(), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModeProviderTools,
+		MaxTokens: 4096,
+		MaxTurns:  5,
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "delegate"))
+
+	var result ToolResultEvent
+	for _, ev := range events {
+		if e, ok := ev.(ToolResultEvent); ok {
+			result = e
+		}
+	}
+	if !result.Result.IsError {
+		t.Fatal("truncated sub-agent result must be an error result, not a completed envelope")
+	}
+	if !strings.Contains(result.Result.Content, "Agent failed") || !strings.Contains(result.Result.Content, "truncated") {
+		t.Fatalf("result content = %q, want Agent failed naming the truncation", result.Result.Content)
+	}
+	if result.Result.ToolCallID != "call-agent-3" {
+		t.Fatalf("ToolCallID = %q", result.Result.ToolCallID)
+	}
+	if prov.calls != 3 {
+		t.Fatalf("provider calls = %d, want 3 (failure result must still pair)", prov.calls)
+	}
+	if err := validateToolResultPairing(prov.requests[2].Messages); err != nil {
+		t.Fatalf("pairing failed on parent request 3: %v", err)
+	}
+}

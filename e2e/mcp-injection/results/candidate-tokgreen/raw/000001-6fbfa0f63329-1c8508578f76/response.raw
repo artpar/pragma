@@ -1,0 +1,1 @@
+{"id": "chatcmpl-probe-truncated", "object": "chat.completion", "created": 1789143660, "model": "probe-model", "choices": [{"index": 0, "message": {"role": "assistant", "content": "TOK_LIMIT_PROBE_PARTIAL_TRU"}, "finish_reason": "length"}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}

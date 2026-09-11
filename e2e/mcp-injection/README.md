@@ -66,6 +66,15 @@ requires the IDE running and its discovery lease fresh — TTL 30s).
   at request 5 ("4 of 8 ... 4 remain"), absent before and retained after,
   and the loop still terminates with the 8-turn error. Rerun:
   `run_probe.sh <label> turnbudget && assert_boot.py results/<label> tbgreen`.
+- `results/baseline-tokred/` / `results/candidate-tokgreen/` — TOK-001 wire
+  gate: the `toklimit` profile returns a tool-free `finish_reason=length`
+  response with partial text on request 1. Baseline (pre-fix): the session
+  ends classified as success — exit 0, no truncation signal. Candidate: exit
+  1 with `error: final response truncated by max_tokens output limit ...;
+  the conversation is preserved` as the last stderr line, partial text
+  still on stdout, and exactly one model request (no auto-continuation).
+  `run_probe.sh` records the CLI exit code in `exit_code`. Rerun:
+  `run_probe.sh <label> toklimit && assert_boot.py results/<label> tokred|tokgreen`.
 - Each `raw/<seq>-.../` holds `request.json` (exact wire body),
   `request.headers.json` (credentials redacted), `request.meta.json`
   (sequence, URL, sha256), `response.raw`, `response.meta.json`.

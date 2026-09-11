@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Boot one real pragma session against the scripted local provider and capture
 # the raw HTTP wire. Usage:
-#   run_probe.sh <label> <profile: provider-tools|pragma|websearch|subagent|turnbudget> [delay_seconds] [live]
+#   run_probe.sh <label> <profile: provider-tools|pragma|websearch|subagent|turnbudget|toklimit> [delay_seconds] [live]
 # The websearch profile also starts the local Brave stub and points
 # BRAVE_SEARCH_BASE_URL at it (WEB-001 hermetic gate). Pass "live" as the
 # 4th arg to skip the stub and hit the real Brave endpoint (WEB-001 live
@@ -24,7 +24,7 @@ mkdir -p "$OUT/raw"
 PROFILE="$MODE"
 LOOP="$PROFILE"
 case "$PROFILE" in
-  websearch|subagent|turnbudget) LOOP="provider-tools" ;;
+  websearch|subagent|turnbudget|toklimit) LOOP="provider-tools" ;;
 esac
 python3 "$HERE/probe_provider.py" "$PROBE" "$PROFILE" "$DELAY" > "$OUT/provider.log" 2>&1 &
 PROV_PID=$!
@@ -63,6 +63,8 @@ fi
 
 PROMPT="MCP injection boot probe: call the tools the scripted provider offers, then finish with the final text."
 
+STATUS_FILE="$OUT/exit_code"
+set +e
 env \
   PRAGMA_RAW_HTTP_CAPTURE_DIR="$OUT/raw" \
   OPENAI_BASE_URL="http://127.0.0.1:$PORT/v1" \
@@ -73,11 +75,15 @@ env \
   --loop "$LOOP" \
   "${EXTRA_ARGS[@]}" \
   --permission-mode bypassPermissions \
-  > "$OUT/stdout.txt" 2> "$OUT/stderr.txt" || true
+  > "$OUT/stdout.txt" 2> "$OUT/stderr.txt"
+STATUS=$?
+set -e
+echo "$STATUS" > "$STATUS_FILE"
 
 for p in $PIDS; do kill "$p" 2>/dev/null || true; done
 trap - EXIT
 
+echo "exit code: $STATUS"
 echo "--- stderr (loop trace) ---"
 cat "$OUT/stderr.txt"
 echo "--- stdout ---"
