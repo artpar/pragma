@@ -1,0 +1,35 @@
+{
+  "Accept": [
+    "application/json"
+  ],
+  "Authorization": [
+    "\u003credacted\u003e"
+  ],
+  "Content-Type": [
+    "application/json"
+  ],
+  "User-Agent": [
+    "OpenAI/Go 1.12.0"
+  ],
+  "X-Stainless-Arch": [
+    "arm64"
+  ],
+  "X-Stainless-Lang": [
+    "go"
+  ],
+  "X-Stainless-Os": [
+    "MacOS"
+  ],
+  "X-Stainless-Package-Version": [
+    "1.12.0"
+  ],
+  "X-Stainless-Retry-Count": [
+    "0"
+  ],
+  "X-Stainless-Runtime": [
+    "go"
+  ],
+  "X-Stainless-Runtime-Version": [
+    "go1.25.0"
+  ]
+}

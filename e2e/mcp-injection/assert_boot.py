@@ -19,6 +19,8 @@ RAW = os.path.join(RESULTS, "raw")
 
 MCP_RE = re.compile(r"^mcp__")
 SERVERS_RE = re.compile(r"^- name: (\S+)\n  status: (\S+)$", re.M)
+CLK_STAMP_RE = re.compile(r"^\[pragma wall-clock (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\]$")
+CLK_PREFIX_RE = re.compile(r"^\[pragma wall-clock (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\]\n")
 
 
 class Failure(Exception):
@@ -28,6 +30,20 @@ class Failure(Exception):
 def check(cond, msg):
     if not cond:
         raise Failure(msg)
+
+
+def user_texts(body):
+    """Yield the text contents of user-role wire messages, in order (CLK-001)."""
+    for m in body.get("messages", []):
+        if m.get("role") != "user":
+            continue
+        content = m.get("content")
+        if isinstance(content, str):
+            yield content
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    yield part.get("text", "")
 
 
 def load_requests():
@@ -392,6 +408,82 @@ def assert_toklimit(reqs, expect):
     print("PASS tokgreen.norestart: exactly 1 model request (no auto-continuation; E003 stays reverted)")
 
 
+def clk_stamps(body):
+    """(rfc3339_text, is_prefix_line) for every wall-clock stamp on the wire."""
+    out = []
+    for text in user_texts(body):
+        m = CLK_PREFIX_RE.match(text)
+        if m:
+            out.append((m.group(1), True))
+            continue
+        m = CLK_STAMP_RE.match(text.strip())
+        if m:
+            out.append((m.group(1), False))
+    return out
+
+
+def assert_clkred(reqs, expect):
+    """CLK-001 wire gate. expect=clkred (baseline): the wire carries zero
+    wall-clock stamps while the loop still completes the scripted profile
+    (>= 2 requests, turn-1 tools executed and paired)."""
+    check(len(reqs) >= 2, "expected >= 2 requests on the wire, got %d" % len(reqs))
+    stamps = []
+    for meta, body in reqs:
+        stamps.extend(clk_stamps(body))
+    check(len(stamps) == 0,
+          "RED requires zero wall-clock stamps on the wire; found %d" % len(stamps))
+    meta, body = reqs[-1]
+    names = tool_names(body)
+    check("Bash" in names and "apply_patch" in names,
+          "baseline loop shape broken: built-ins missing from tool list")
+    print("PASS clkred.absence: 0 stamps across %d requests; loop completed the scripted profile" % len(reqs))
+
+
+def assert_clkgreen(reqs):
+    """CLK-001 wire gate (candidate): the prompt message on every request
+    opens with a wall-clock prefix line; the final request carries a
+    post-tools companion user message that is exactly the stamp; stamps
+    parse as RFC3339 and are monotonic non-decreasing within the request."""
+    check(len(reqs) >= 2, "expected >= 2 requests on the wire, got %d" % len(reqs))
+    for meta, body in reqs:
+        stamps = clk_stamps(body)
+        check(len(stamps) >= 1,
+              "request seq=%d carries no wall-clock stamp" % meta["sequence"])
+        check(stamps[0][1] is True,
+              "request seq=%d first stamp is not the prompt prefix line: %r"
+              % (meta["sequence"], stamps[:1]))
+        parsed = []
+        for raw, _ in stamps:
+            try:
+                from datetime import datetime
+                parsed.append(datetime.fromisoformat(raw.replace("Z", "+00:00")))
+            except ValueError:
+                raise Failure("stamp %r is not RFC3339-parseable" % raw)
+        check(parsed == sorted(parsed),
+              "stamps are not monotonic within request seq=%d: %s"
+              % (meta["sequence"], [p.isoformat() for p in parsed]))
+    meta, body = reqs[-1]
+    msgs = body.get("messages", [])
+    saw_tool = False
+    companion = None
+    for m in msgs:
+        if m.get("role") == "tool":
+            saw_tool = True
+        elif m.get("role") == "user":
+            content = m.get("content")
+            text = content if isinstance(content, str) else None
+            if saw_tool and text is not None and CLK_STAMP_RE.match(text.strip()):
+                companion = text
+    check(companion is not None,
+          "final request lacks the post-tools companion stamp user message")
+    names = tool_names(body)
+    check("Bash" in names and "apply_patch" in names,
+          "candidate loop shape broken: built-ins missing from tool list")
+    print("PASS clkgreen.prefix: prompt stamp line on all %d requests" % len(reqs))
+    print("PASS clkgreen.companion: post-tools companion stamp present on the final request")
+    print("PASS clkgreen.monotonic: RFC3339 stamps non-decreasing on every request")
+
+
 def main():
     reqs = load_requests()
     print("loaded %d captured requests from %s" % (len(reqs), RAW))
@@ -416,6 +508,8 @@ def main():
             assert_tbgreen(reqs)
         elif EXPECT in ("tokred", "tokgreen"):
             assert_toklimit(reqs, EXPECT)
+        elif EXPECT in ("clkred", "clkgreen"):
+            assert_clkred(reqs, EXPECT) if EXPECT == "clkred" else assert_clkgreen(reqs)
         else:
             raise Failure("unknown expectation %r" % EXPECT)
     except Failure as e:

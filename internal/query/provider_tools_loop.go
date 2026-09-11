@@ -29,11 +29,12 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 	}
 	warnTurn := turnBudgetWarnTurn(maxTurns)
 
+	promptAt := time.Now()
 	if err := engine.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
-		Content:   []model.ContentPart{model.TextPart{Text: userMessage}},
-		Timestamp: time.Now(),
+		Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(promptAt) + "\n" + userMessage}},
+		Timestamp: promptAt,
 	}); err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
 		ch <- ErrorEvent{Err: err}
@@ -49,11 +50,12 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		}
 		if turn == warnTurn {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: turn == warnTurn")
+			noticeAt := time.Now()
 			if err := engine.appendConversationMessage(model.Message{
 				ID:        model.NewUUID(),
 				Role:      model.RoleUser,
-				Content:   []model.ContentPart{model.TextPart{Text: turnBudgetNotice(turn, maxTurns)}},
-				Timestamp: time.Now(),
+				Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(noticeAt) + "\n" + turnBudgetNotice(turn, maxTurns)}},
+				Timestamp: noticeAt,
 			}); err != nil {
 				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
 				ch <- ErrorEvent{Err: err}
@@ -143,6 +145,16 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			ch <- ErrorEvent{Err: err}
 			return
 		}
+		if err := engine.appendConversationMessage(model.Message{
+			ID:        model.NewUUID(),
+			Role:      model.RoleUser,
+			Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(time.Now())}},
+			Timestamp: time.Now(),
+		}); err != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
+			ch <- ErrorEvent{Err: err}
+			return
+		}
 
 		if engine.autoTracker != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: engine.autoTracker != nil")
@@ -155,6 +167,27 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 
 // turnBudgetNoticeMarker prefixes the in-conversation turn-budget warning.
 const turnBudgetNoticeMarker = "[pragma turn budget]"
+
+// wallClockStampMarker prefixes the model-visible wall-clock append stamp
+// (CLK-001): every user-role message this loop appends carries the time it
+// was added, so the model can perceive blocking, latency, and session age —
+// the store's Message.Timestamp never reaches the wire on its own.
+const wallClockStampMarker = "[pragma wall-clock "
+
+// wallClockStamp returns the append-time stamp line for engine-appended
+// user messages (CLK-001). RFC3339 keeps the timezone explicit. The stamp
+// rides as a first line inside text-only appends (prompt, turn-budget
+// notice); after a tool-results batch it rides as a companion user message
+// — the position and wire shape the TURN-001 notice proved live — because a
+// text part inside the results message would serialize before its tool
+// results (an unproven user-before-tools order on this route).
+func wallClockStamp(now time.Time) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: marker + now.Format(time.RFC3339) + \"]\"")
+	observe.GlobalTrace("return: wallClockStampMarker + now.Format(time.RFC3339) + \"]\"")
+	return wallClockStampMarker + now.Format(time.RFC3339) + "]"
+}
 
 // turnBudgetWarnTurn returns the 0-based loop iteration at which the
 // turn-budget notice is appended, or -1 when no warning window exists

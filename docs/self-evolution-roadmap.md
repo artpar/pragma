@@ -265,6 +265,33 @@ the cap) stays out of scope — no session has yet died *with 20 turns of
 warning*; that would be the TURN-003 evidence. Record:
 `docs/failure-cases/turn-budget-window-2026-09-11.md`.
 
+**CLK-001 — Wall-clock append stamps made model-visible
+(2026-09-11).** Driven by live operator evidence on the same session that
+committed TURN-002: a four-call batch sat ~2m13s behind its first call
+(the sync `Agent` fork under sequential dispatch) and the operator
+interrupted — in the conversation the model sees, none of it carried a
+clock or a duration ("you didnt even realise you were stuck"); the
+operator then requested timestamps on every appended message as the fix.
+Structural root: `model.Message.Timestamp` is set on every append but no
+adapter serializes it — the model had no wall clock at all. One mechanism:
+a `[pragma wall-clock <RFC3339>]` first line inside text-only appends
+(prompt, turn-budget notice) and a companion user message after each
+tool-results batch — the position and wire shape the TURN-001 notice
+proved live, keeping the results message tool-results-only (a text part
+inside it would serialize before its tool results, an unproven
+user-before-tools order on this route). Assistant messages unstamped;
+pragma loop mode untouched; no durations or derived values. Gates: unit
+baseline RED (`internal/query/wall_clock_test.go`: no stamps, loop
+completes) / candidate GREEN; full suite ×3 parallel; real-boot wire
+gates clkred/clkgreen plus the MCPINJ-001 `green` adjacent set on the
+same candidate capture (129 `mcp__` defs, 4 servers, real MCP execution,
+pairing intact — stamps ride without disturbing any prior wire gate);
+wire excerpt: request 2 closes `user: [pragma wall-clock
+2026-09-12T00:01:31+05:30]`, 15s after the prompt stamp. Claim boundary:
+injection and visibility proven; that the model uses the clock to manage
+blocking is a live-effect observation. Record:
+`docs/failure-cases/wall-clock-stamps-2026-09-11.md`.
+
 **Verifier-startup misclassification target examined and closed as
 external (2026-09-11).** agent.md's remaining named regression —
 verifier-startup failures misclassified as solver failures — was traced to
@@ -282,3 +309,27 @@ if a pragma-owned benchmark/runner path ever appears.
 
 Frozen candidate, declared task set, matched budgets, repetitions, uncertainty
 reported. Do not run broad benchmarks to discover whether a change works.
+
+### Recorded need (next open case candidate) — parallel sibling dispatch
+
+Live evidence 2026-09-11 (session `~/.pragma/logs/2026-09-11T22-55-12.jsonl`):
+a four-call batch dispatched at 23:03:20.605 sat ~2m13s behind its first
+call (the sync `Agent` fork) because `runProviderToolsLoop` executes
+sibling tool calls sequentially (`for _, call := range toolCalls`); the
+operator interrupted at 23:05:33 and the three queued independent calls
+(WebSearch, two MCP) died without executing. The operator directed
+"make the sync thing async … and then divide and conquer". Staged path,
+one mechanism per case:
+
+1. **Parallel sibling dispatch** (smallest, directly evidenced): execute a
+   batch's tool calls concurrently, results collected in call order.
+   Executor audit (2026-09-11, read-only): CostTracker, StateStore, and
+   the MCP client/manager are mutex-guarded; Bash/WebSearch/Agent are
+   per-call independent; `apply_patch` writes files, so same-batch
+   `apply_patch` calls need serialization (same-file lost-update hazard).
+2. **Background sub-agents** (branch mechanism, own case): detached fork
+   lifecycle — registry, bus lifecycle events, result delivery to a
+   conversation that moved on, explicit cancellation, orphan cleanup.
+3. **Worktree isolation** for writers (async + shared worktree = races).
+
+Case before mechanism; the interrupted batch is the recorded need.
