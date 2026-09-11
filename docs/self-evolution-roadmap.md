@@ -43,6 +43,22 @@ the bounded retry policy.
 
 ### M2b — Classify the captured session-start failure
 
+**Resolved 2026-09-11 — classification correct; no open defect.** The
+recording's `APIRequestFailed` message decodes to a MorphLLM 400:
+`Validation: The 'stream_options' field is only allowed when 'stream' is set
+to true.` Retrying an invalid request is pointless, so
+`retryable=false, request_failed` was the correct verdict. The underlying
+request defect was already fixed today in the MorphLLM adapter work
+(`docs/failure-cases/morphllm-provider-support-2026-09-11.md`, MORPH-001
+verification record describes this exact capture — the probe session
+`Reply exactly MORPH_PRAGMA_OK.`); the current session running on
+`morph-glm53-744b` is the live proof. The trailing `MCPServerFailed
+(planning, context canceled)` is the expected cascade of session teardown,
+not an independent defect. Residual finding: the authentic morphllm error
+message flows through the same substring classifier family as RTY-001 —
+RTY-002 (port the structured-status fix to morphllm, the active route) is
+now evidence-backed by real traffic and is the next open case.
+
 Recording `~/.pragma/recordings/4fcfb9ee-b7aa-4ec3-99b5-917d76cf67aa/
 20260911T075358.350980000Z.jsonl`: `APIRequestFailed
 error=request_failed retryable=false` ~1.1s after `APIRequestStarted`, then
