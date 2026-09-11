@@ -265,6 +265,19 @@ the cap) stays out of scope — no session has yet died *with 20 turns of
 warning*; that would be the TURN-003 evidence. Record:
 `docs/failure-cases/turn-budget-window-2026-09-11.md`.
 
+**Verifier-startup misclassification target examined and closed as
+external (2026-09-11).** agent.md's remaining named regression —
+verifier-startup failures misclassified as solver failures — was traced to
+its decision points: the repo's only trial-outcome classifier is the
+Harbor adapter's fatal-exit gate (`tools/harbor_pragma_agent.py`), which
+is deliberate and gated (turn-cap and TOK-001 truncation exits are
+non-fatal so verifiers still run); `evaluation/` holds result records, not
+classifiers; no benchmark runner exists elsewhere in the repo; and
+Harbor's source (where the TB-2.1 audit locates the 24 false-zero
+collapse) is neither vendored nor installed locally. No pragma-owned
+defect, no case; the entry in agent.md is updated accordingly. Reopen only
+if a pragma-owned benchmark/runner path ever appears.
+
 ### M5 — Held-out self-evaluation (only if a score claim is made)
 
 Frozen candidate, declared task set, matched budgets, repetitions, uncertainty

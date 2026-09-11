@@ -132,9 +132,14 @@ archiving and record what moved or was removed. Age alone does not imply irrelev
 First implemented regression: OpenRouter nonstreaming reasoning-field loss,
 `go test ./internal/provider/openrouter -run TestRecordedReasoningSurvivesSessionReplay -count=1`.
 Provenance and claim limits are in internal/provider/openrouter/testdata/README.md.
-Next targets: verifier-startup failures misclassified as solver failures
-(the TB-2.1 audit's 24 false-looking zeros are Harbor-side so far — the
-pragma-owned production path is not yet identified; wait for a recorded
-event). Token-limit termination classification is now implemented
-(2026-09-11, TOK-001:
+Examined 2026-09-11: verifier-startup failures misclassified as solver
+failures has no pragma-owned production path. The TB-2.1 audit attributes
+the 24 false-looking zeros to Harbor's own aggregate; this repo's only
+trial-outcome decision point is the adapter's fatal-exit gate
+(`tools/harbor_pragma_agent.py`), which is deliberate and gated (turn-cap
+and truncation exits are non-fatal so verifiers run); no reward classifier
+exists under `evaluation/` or `tools/`, and Harbor's source is neither
+vendored nor installed locally. The target is closed as external unless a
+pragma-owned benchmark runner ever appears. Token-limit termination
+classification is implemented (2026-09-11, TOK-001:
 docs/failure-cases/token-limit-termination-classification-2026-09-11.md).
