@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/mcp"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/shellrun"
@@ -27,6 +27,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: maxTurns <= 0")
 		maxTurns = DefaultMaxTurns
 	}
+	warnTurn := turnBudgetWarnTurn(maxTurns)
 
 	if err := engine.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
@@ -45,6 +46,19 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
 			ch <- ErrorEvent{Err: fmt.Errorf("context cancelled: %w", model.ErrContextCancelled)}
 			return
+		}
+		if turn == warnTurn {
+			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: turn == warnTurn")
+			if err := engine.appendConversationMessage(model.Message{
+				ID:        model.NewUUID(),
+				Role:      model.RoleUser,
+				Content:   []model.ContentPart{model.TextPart{Text: turnBudgetNotice(turn, maxTurns)}},
+				Timestamp: time.Now(),
+			}); err != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
+				ch <- ErrorEvent{Err: err}
+				return
+			}
 		}
 
 		snap := engine.store.Snapshot()
@@ -132,6 +146,45 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 	}
 
 	ch <- ErrorEvent{Err: fmt.Errorf("provider tools loop exceeded maximum of %d turns", maxTurns)}
+}
+
+// turnBudgetNoticeMarker prefixes the in-conversation turn-budget warning.
+const turnBudgetNoticeMarker = "[pragma turn budget]"
+
+// turnBudgetWarnTurn returns the 0-based loop iteration at which the
+// turn-budget notice is appended, or -1 when no warning window exists
+// (TURN-001). The window is maxTurns/10 turns remaining, floored at 5, and
+// at least half the budget for budgets below 10, so the model always has
+// room to act before the cap.
+func turnBudgetWarnTurn(maxTurns int) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if maxTurns <= 1 {
+		observe.GlobalTrace("if: maxTurns <= 1")
+		observe.GlobalTrace("return: -1")
+		return -1
+	}
+	window := maxTurns / 10
+	if window < 5 {
+		observe.GlobalTrace("if: window < 5")
+		window = maxTurns / 2
+	}
+	observe.GlobalTrace("return: maxTurns - window")
+	return maxTurns - window
+}
+
+// turnBudgetNotice is the warning shown to the model in-conversation as the
+// turn budget approaches exhaustion (TURN-001). The cap itself is unchanged;
+// continuation already exists (a new prompt resumes the preserved
+// conversation) and the explicit override exists (--max-turns).
+func turnBudgetNotice(used, maxTurns int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	remaining := maxTurns - used
+	observe.GlobalTrace("return: notice")
+	observe.GlobalTrace("return: fmt.Sprintf(\"%s %d of %d provider-tools turns used; %d remain. The loop stops...")
+	return fmt.Sprintf("%s %d of %d provider-tools turns used; %d remain. The loop stops when the budget is exhausted; the conversation is preserved and a new prompt continues it. Prioritize now: finish the current step, then either complete the task or write a concise handoff (state, decisions, evidence locations, next action) so a continued session can resume without redoing work.",
+		turnBudgetNoticeMarker, used, maxTurns, remaining)
 }
 
 func (engine *Engine) completeProviderToolsResponse(ctx context.Context, params provider.RequestParams, ch chan<- LoopEvent) (model.Response, error) {
@@ -253,6 +306,7 @@ func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.To
 	defer observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "exit")
 	if isMCPToolCall(engine, call.Name) {
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "if: isMCPToolCall(engine, call.Name)")
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "return: engine.executeMCPToolCall(ctx, call)")
 		return engine.executeMCPToolCall(ctx, call)
 	}
 	switch call.Name {
@@ -263,6 +317,7 @@ func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.To
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: websearch.ToolName")
 		if engine.config.WebSearch == nil {
 			observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "if: engine.config.WebSearch == nil")
+			observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "return: model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf(\"unknown tool ...")
 			return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}
 		}
 		return engine.executeWebSearchTool(ctx, call)
@@ -270,6 +325,7 @@ func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.To
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: AgentToolName")
 		if engine.config.DisableSubAgents {
 			observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "if: engine.config.DisableSubAgents")
+			observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "return: model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf(\"unknown tool ...")
 			return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}
 		}
 		return engine.executeSubAgentTool(ctx, call)
@@ -322,6 +378,7 @@ func (engine *Engine) executeWebSearchTool(ctx context.Context, call model.ToolC
 	if err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "if: err != nil")
 		observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "return: model.ToolResultPart{ ... IsError: true }")
+		observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf(\"WebSearch fai...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("WebSearch failed: %v", err), IsError: true}
 	}
 	observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: output}")
@@ -373,6 +430,7 @@ func (engine *Engine) executeMCPToolCall(ctx context.Context, call model.ToolCal
 	if err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "if: err != nil")
 		observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "return: model.ToolResultPart{ ... IsError: true }")
+		observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "return: model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf(\"mcp tool %s f...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("mcp tool %s failed: %v", call.Name, err), IsError: true}
 	}
 	observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "return: model.ToolResultPart{ToolCallID: call.ID, Content: output}")
