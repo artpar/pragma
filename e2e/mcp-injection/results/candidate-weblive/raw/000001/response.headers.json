@@ -1,0 +1,45 @@
+{
+  "Content-Type": [
+    "application/json"
+  ],
+  "Date": [
+    "Fri, 11 Sep 2026 14:30:06 GMT"
+  ],
+  "Referrer-Policy": [
+    "strict-origin-when-cross-origin"
+  ],
+  "Server-Timing": [
+    "search-roundtrip;dur=444.494"
+  ],
+  "Strict-Transport-Security": [
+    "max-age=31536000; includeSubDomains; preload"
+  ],
+  "Vary": [
+    "Accept-Encoding",
+    "Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site, Sec-Fetch-User"
+  ],
+  "X-Content-Type-Options": [
+    "nosniff"
+  ],
+  "X-Download-Options": [
+    "noopen"
+  ],
+  "X-Frame-Options": [
+    "SAMEORIGIN"
+  ],
+  "X-Ratelimit-Limit": [
+    "50, 0"
+  ],
+  "X-Ratelimit-Policy": [
+    "50;w=1, 0;w=2592000"
+  ],
+  "X-Ratelimit-Remaining": [
+    "49, 0"
+  ],
+  "X-Ratelimit-Reset": [
+    "1, 1675793"
+  ],
+  "X-Xss-Protection": [
+    "1; mode=block"
+  ]
+}

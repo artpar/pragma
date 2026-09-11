@@ -14,6 +14,7 @@ import (
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/shellrun"
 	"github.com/artpar/pragma/internal/tools/applypatch"
+	"github.com/artpar/pragma/internal/tools/websearch"
 )
 
 func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage string, ch chan<- LoopEvent) {
@@ -51,6 +52,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
 		system = engine.systemWithMCPStatus(system)
 		tools := providerToolDefs()
+		tools = engine.withWebSearchTool(tools)
 		tools = engine.withMCPToolDefs(ctx, tools)
 		system = engine.systemWithPatchGuidance(system, tools)
 		messages, err := engine.messagesForRequestChecked(snap.Conversation)
@@ -256,6 +258,13 @@ func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.To
 	case "Bash":
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: \"Bash\"")
 		return engine.executeProviderBashTool(ctx, call)
+	case websearch.ToolName:
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: websearch.ToolName")
+		if engine.config.WebSearch == nil {
+			observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "if: engine.config.WebSearch == nil")
+			return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}
+		}
+		return engine.executeWebSearchTool(ctx, call)
 	case applypatch.ToolName:
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: applypatch.ToolName")
 		return engine.executeProviderApplyPatchTool(ctx, call)
@@ -272,6 +281,43 @@ func isMCPToolCall(engine *Engine, name string) bool {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: mcp.IsMCPTool(name) && engine.config.MCPCallTool != nil")
 	return mcp.IsMCPTool(name) && engine.config.MCPCallTool != nil
+}
+
+// withWebSearchTool appends the WebSearch tool definition when its executor
+// is configured. Built-in names win on collision.
+func (engine *Engine) withWebSearchTool(tools []model.ToolDef) []model.ToolDef {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if engine.config.WebSearch == nil {
+		observe.GlobalTrace("if: engine.config.WebSearch == nil")
+		observe.GlobalTrace("return: tools")
+		return tools
+	}
+	for _, tool := range tools {
+		observe.GlobalTrace("range tools")
+		if tool.Name == websearch.ToolName {
+			observe.GlobalTrace("if: tool.Name == websearch.ToolName")
+			observe.GlobalTrace("return: tools")
+			return tools
+		}
+	}
+	observe.GlobalTrace("return: append(tools, websearch.ToolDef())")
+	return append(tools, websearch.ToolDef())
+}
+
+// executeWebSearchTool routes a WebSearch call through the configured
+// executor; the result pairs with the call like any built-in tool.
+func (engine *Engine) executeWebSearchTool(ctx context.Context, call model.ToolCallPart) model.ToolResultPart {
+	observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "exit")
+	output, err := engine.config.WebSearch(ctx, call.Input)
+	if err != nil {
+		observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "if: err != nil")
+		observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "return: model.ToolResultPart{ ... IsError: true }")
+		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("WebSearch failed: %v", err), IsError: true}
+	}
+	observe.TraceCtx(ctx, "query", "Engine.executeWebSearchTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: output}")
+	return model.ToolResultPart{ToolCallID: call.ID, Content: output}
 }
 
 // withMCPToolDefs appends the injected MCP tool definitions to the built-in

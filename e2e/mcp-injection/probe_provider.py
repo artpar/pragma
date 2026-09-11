@@ -12,6 +12,8 @@ Profiles:
     a Bash echo and a read-only MCP tool (mcp__past-conversations__list_projects).
     Request 2+ answers with final text.
   pragma: every request answers immediately with final text.
+  websearch: like provider-tools, but the first response carries a single
+    WebSearch tool call instead (WEB-001 probe).
 
 Usage: probe_provider.py <workdir> <profile> [delay_seconds]
 """
@@ -31,6 +33,15 @@ requests_path = os.path.join(WORKDIR, "requests.jsonl")
 lock = threading.Lock()
 counter = {"n": 0}
 
+WEBSEARCH_TOOL_CALL = {
+    "id": "call_probe_websearch",
+    "type": "function",
+    "function": {
+        "name": "WebSearch",
+        "arguments": json.dumps({"query": "pragma harness ai coding assistant"}),
+    },
+}
+
 BASH_TOOL_CALL = {
     "id": "call_probe_bash",
     "type": "function",
@@ -49,6 +60,9 @@ MCP_TOOL_CALL = {
 }
 
 def tool_calls_response():
+    calls = [BASH_TOOL_CALL, MCP_TOOL_CALL]
+    if PROFILE == "websearch":
+        calls = [WEBSEARCH_TOOL_CALL]
     return {
         "id": "chatcmpl-probe-1",
         "object": "chat.completion",
@@ -60,7 +74,7 @@ def tool_calls_response():
                 "message": {
                     "role": "assistant",
                     "content": None,
-                    "tool_calls": [BASH_TOOL_CALL, MCP_TOOL_CALL],
+                    "tool_calls": calls,
                 },
                 "finish_reason": "tool_calls",
             }
@@ -118,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
             seq = counter["n"]
             with open(requests_path, "a") as f:
                 f.write(json.dumps({"seq": seq, "path": self.path, "body": json.loads(raw.decode())}) + "\n")
-        if PROFILE == "provider-tools" and seq == 1:
+        if PROFILE in ("provider-tools", "websearch") and seq == 1:
             time.sleep(DELAY)
             self._send_json(200, tool_calls_response())
             return

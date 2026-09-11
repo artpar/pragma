@@ -110,8 +110,22 @@ Manager.CallMCPTool with original-name recovery, EngineConfig hooks, loop
 injection + dispatch); candidate GREEN: 129 defs from all 4 servers on the
 wire, real MCP execution through the loop, pairing intact; pragma mode
 unchanged; full suite clean. Record:
-`docs/failure-cases/mcp-tool-injection-2026-09-11.md`. Remaining M4: brave
-websearch tool, subagent tool.
+`docs/failure-cases/mcp-tool-injection-2026-09-11.md`.
+
+**M4.2 — Brave websearch tool restored (2026-09-11, WEB-001).** The model
+had no web search capability (131 tools, none of them WebSearch; the model
+had to shell out). Baseline RED on the wire (real boot: WebSearch call →
+`unknown tool`); the branch's WebSearch tool ported main-shaped
+(`internal/tools/websearch`: tool def, validation, `site:` filters,
+blocked-domain filtering, Brave client; `EngineConfig.WebSearch` hook;
+loop injection + dispatch; key resolution env → credentials in
+`RegisterTools`). Candidate GREEN hermetic (local Brave stub, wire
+captured, token redacted) plus the live contract gate: one real Brave call
+through the full loop path (HTTP 200, 5.1KB formatted results on the
+wire). rawcapture now redacts `X-Subscription-Token` (found via a
+would-have-leaked capture, deleted before commit). Record:
+`docs/failure-cases/websearch-tool-restoration-2026-09-11.md`. Remaining
+M4: subagent tool.
 
 ### M5 — Held-out self-evaluation (only if a score claim is made)
 

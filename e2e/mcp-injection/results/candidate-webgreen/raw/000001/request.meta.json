@@ -1,0 +1,9 @@
+{
+  "sequence": 1,
+  "method": "GET",
+  "url": "http://127.0.0.1:55252/res/v1/web/search?count=10\u0026q=pragma+harness+ai+coding+assistant",
+  "host": "127.0.0.1:55252",
+  "started_at": "2026-09-11T14:29:04.975706Z",
+  "request_bytes": 0,
+  "request_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

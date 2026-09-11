@@ -5,7 +5,7 @@ Parses the raw HTTP capture of a real pragma session boot and evaluates the
 RED (baseline) or GREEN (candidate) assertion set, plus the pragma-loop-mode
 adjacent check. Exits 0 on success, 1 on assertion failure.
 
-Usage: assert_boot.py <results-dir> <expect: red|green|pragma>
+Usage: assert_boot.py <results-dir> <expect: red|green|pragma|webred|webgreen>
 """
 import glob
 import json
@@ -35,12 +35,34 @@ def load_requests():
     for meta_path in glob.glob(os.path.join(RAW, "*", "request.meta.json")):
         with open(meta_path) as f:
             meta = json.load(f)
+        if "/chat/completions" not in meta.get("url", ""):
+            # Non-model wires (e.g. the WebSearch tool's Brave call) are
+            # separate evidence, not part of the model-request assertions.
+            continue
         body_path = os.path.join(os.path.dirname(meta_path), "request.json")
         with open(body_path) as f:
             body = json.load(f)
         metas.append((meta, body))
     metas.sort(key=lambda pair: pair[0]["sequence"])
     return metas
+
+
+def brave_captures():
+    """Captured non-model wires (the WebSearch tool's Brave request, if any)."""
+    out = []
+    for meta_path in glob.glob(os.path.join(RAW, "*", "request.meta.json")):
+        with open(meta_path) as f:
+            meta = json.load(f)
+        if "/chat/completions" in meta.get("url", ""):
+            continue
+        req = os.path.join(os.path.dirname(meta_path), "request.json")
+        body = ""
+        if os.path.exists(req):
+            with open(req) as f:
+                body = f.read()
+        out.append((meta, body))
+    out.sort(key=lambda pair: pair[0]["sequence"])
+    return out
 
 
 def system_text(body):
@@ -146,6 +168,92 @@ def assert_green(reqs):
     print("PASS green.pairing: request 2 accepted by the loop (both tool calls of turn 1 paired)")
 
 
+def assert_webred(reqs):
+    check(len(reqs) >= 2, "expected >= 2 requests on the wire, got %d" % len(reqs))
+    for meta, body in reqs:
+        names = tool_names(body)
+        check("WebSearch" not in names,
+              "RED requires WebSearch absent from tools; got %s" % names)
+    unknown = False
+    for meta, body in reqs:
+        for name, content in tool_messages(body):
+            if name == "WebSearch" and "unknown tool" in content:
+                unknown = True
+    check(unknown, "RED requires the model-issued WebSearch call to fail with 'unknown tool'")
+    print("PASS webred.absence: WebSearch absent from every tools list")
+    print("PASS webred.execution: WebSearch call answered 'unknown tool'")
+
+
+def assert_webgreen(reqs):
+    check(len(reqs) >= 2, "expected >= 2 requests on the wire, got %d" % len(reqs))
+    for i, (meta, body) in enumerate(reqs):
+        names = tool_names(body)
+        check("WebSearch" in names, "request %d missing WebSearch in tools: %s" % (i + 1, names))
+    meta, body = reqs[-1]
+    names = tool_names(body)
+    check("Bash" in names, "GREEN requires Bash still in the tool list")
+    check("apply_patch" in names, "GREEN requires apply_patch still in the tool list")
+    check(any(MCP_RE.match(n) for n in names),
+          "GREEN requires MCP defs still injected alongside WebSearch")
+    builtin_idx = names.index("apply_patch")
+    check(names.index("WebSearch") > builtin_idx,
+          "WebSearch must follow the built-ins")
+    result = None
+    for m, b in reqs:
+        for name, content in tool_messages(b):
+            if name == "WebSearch":
+                result = content
+    check(result is not None, "GREEN requires an executed WebSearch tool result on the wire")
+    check("unknown tool" not in (result or ""), "WebSearch result still says 'unknown tool'")
+    check("STUB_BRAVE_RESULT" in (result or ""),
+          "GREEN requires real tool-path output (stub marker) in the WebSearch result")
+    stub_hits = brave_captures()
+    check(len(stub_hits) >= 1, "GREEN requires the Brave search wire captured alongside the model wire")
+    meta = stub_hits[0][0]
+    check("/res/v1/web/search" in meta.get("url", "") and "q=pragma+harness" in meta.get("url", ""),
+          "Brave wire must be a search call carrying the probe query: %s" % meta.get("url"))
+    # token must be sent but redacted in the capture
+    import glob as _g
+    for mp in _g.glob(os.path.join(RAW, "*", "request.meta.json")):
+        with open(mp) as f:
+            m = json.load(f)
+        if "/chat/completions" in m.get("url", ""):
+            continue
+        hp = os.path.join(os.path.dirname(mp), "request.headers.json")
+        with open(hp) as f:
+            headers = json.load(f)
+        token = headers.get("X-Subscription-Token", [])
+        if token:
+            check(token[0] == "<redacted>",
+                  "X-Subscription-Token must be redacted in captured headers: %r" % token)
+    print("PASS webgreen.brave-wire: search request on the wire (%s), token redacted" % meta.get("url"))
+    print("PASS webgreen.injection: WebSearch present in all %d requests after built-ins" % len(reqs))
+    print("PASS webgreen.execution: WebSearch executed through the tool path (%d bytes)"
+          % len(result or ""))
+
+
+def assert_weblive(reqs):
+    """Live Brave contract gate: the search executed against the real
+    endpoint and its parsed results reached the model on the wire."""
+    check(len(reqs) >= 2, "expected >= 2 requests on the wire, got %d" % len(reqs))
+    for i, (meta, body) in enumerate(reqs):
+        names = tool_names(body)
+        check("WebSearch" in names, "request %d missing WebSearch in tools" % (i + 1))
+    result = None
+    for m, b in reqs:
+        for name, content in tool_messages(b):
+            if name == "WebSearch":
+                result = content
+    check(result is not None, "live gate requires an executed WebSearch result")
+    check("Web search results for query" in (result or ""),
+          "live result missing formatted output: %r" % (result or "")[:200])
+    check("unknown tool" not in (result or ""), "live result is an unknown-tool error")
+    check("WebSearch failed" not in (result or ""), "live result is a failure: %r" % (result or "")[:200])
+    check("STUB_BRAVE_RESULT" not in (result or ""), "live result unexpectedly contains stub data")
+    print("PASS weblive.contract: real Brave result parsed through the tool path (%d bytes)" % len(result))
+    print("PASS weblive.pairing: 2 requests accepted (tool result paired)")
+
+
 def assert_pragma(reqs):
     check(len(reqs) >= 1, "expected >= 1 request on the wire, got 0")
     for meta, body in reqs:
@@ -164,6 +272,12 @@ def main():
             assert_green(reqs)
         elif EXPECT == "pragma":
             assert_pragma(reqs)
+        elif EXPECT == "webred":
+            assert_webred(reqs)
+        elif EXPECT == "webgreen":
+            assert_webgreen(reqs)
+        elif EXPECT == "weblive":
+            assert_weblive(reqs)
         else:
             raise Failure("unknown expectation %r" % EXPECT)
     except Failure as e:

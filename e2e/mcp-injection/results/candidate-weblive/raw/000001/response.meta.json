@@ -1,0 +1,10 @@
+{
+  "sequence": 1,
+  "status": "200 OK",
+  "status_code": 200,
+  "started_at": "2026-09-11T14:30:06.479758Z",
+  "completed_at": "2026-09-11T14:30:06.689807Z",
+  "duration_ms": 1351,
+  "response_bytes": 90081,
+  "response_sha256": "4df7b957784a97ac61adb57ab6d7241a1727d0663725234d70bb092982fb840d"
+}

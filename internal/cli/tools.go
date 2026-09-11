@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/artpar/pragma/internal/app"
@@ -14,6 +15,7 @@ import (
 	"github.com/artpar/pragma/internal/provider/anthropic"
 	"github.com/artpar/pragma/internal/query"
 	"github.com/artpar/pragma/internal/skill"
+	"github.com/artpar/pragma/internal/tools/websearch"
 )
 
 // RegisterTools constructs the query engine. The active loop mode decides
@@ -49,6 +51,16 @@ func RegisterTools(d *Deps, _ permission.Prompter) (*query.Engine, error) {
 		observe.TraceCtx(ctx, "cli", "RegisterTools.MCPCallTool", "return: d.McpManager.CallMCPTool(ctx, toolName, input)")
 		return d.McpManager.CallMCPTool(ctx, toolName, input)
 	}
+	if key := webSearchKey(d); key != "" {
+		observe.GlobalTrace("if: key := webSearchKey(d); key != \"\"")
+		baseURL := resolveWebSearchBaseURL()
+		d.EngineCfg.WebSearch = func(ctx context.Context, input json.RawMessage) (string, error) {
+			observe.TraceCtx(ctx, "cli", "RegisterTools.WebSearch", "enter")
+			defer observe.TraceCtx(ctx, "cli", "RegisterTools.WebSearch", "exit")
+			observe.TraceCtx(ctx, "cli", "RegisterTools.WebSearch", "return: websearch.Execute(ctx, key, baseURL, input)")
+			return websearch.Execute(ctx, key, baseURL, input)
+		}
+	}
 	d.EngineCfg.RefreshCapabilities = func(ctx context.Context) {
 		ensureCapabilitiesForActiveWorkDir(ctx, d)
 	}
@@ -60,6 +72,30 @@ func RegisterTools(d *Deps, _ permission.Prompter) (*query.Engine, error) {
 	d.Engine = engine
 	observe.GlobalTrace("return: engine, nil")
 	return engine, nil
+}
+
+// webSearchKey resolves the Brave Search API key: the
+// BRAVE_SEARCH_API_KEY environment variable (the branch's source) first,
+// then the credentials store's "brave" provider.
+func webSearchKey(d *Deps) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if key := strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")); key != "" {
+		observe.GlobalTrace("if: key := strings.TrimSpace(os.Getenv(\"BRAVE_SEARCH_API_KEY\")); key != \"\"")
+		observe.GlobalTrace("return: key")
+		return key
+	}
+	observe.GlobalTrace("return: d.Creds.CredentialFor(\"brave\").APIKey")
+	return d.Creds.CredentialFor("brave").APIKey
+}
+
+// resolveWebSearchBaseURL allows overriding the Brave endpoint for hermetic
+// tests, mirroring OPENAI_BASE_URL.
+func resolveWebSearchBaseURL() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: strings.TrimSpace(os.Getenv(\"BRAVE_SEARCH_BASE_URL\"))")
+	return strings.TrimSpace(os.Getenv("BRAVE_SEARCH_BASE_URL"))
 }
 
 func RebindProviderBackedTools(_ *Deps) {

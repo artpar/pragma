@@ -536,7 +536,7 @@ func isSecretHeader(k string) bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	switch strings.ToLower(k) {
-	case "authorization", "x-api-key", "api-key", "proxy-authorization":
+	case "authorization", "x-api-key", "api-key", "proxy-authorization", "x-subscription-token":
 		observe.GlobalTrace("case: \"authorization\", \"x-api-key\", \"api-key\", \"proxy-authorization\"")
 		return true
 	default:

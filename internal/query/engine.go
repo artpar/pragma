@@ -45,6 +45,9 @@ type EngineConfig struct {
 	// MCPCallTool routes an "mcp__<server>__<tool>" invocation back to the
 	// owning MCP server. Required to execute injected MCP tool calls.
 	MCPCallTool func(ctx context.Context, toolName string, input json.RawMessage) (string, error)
+	// WebSearch executes a WebSearch tool invocation (Brave Search API).
+	// When set, the provider-tools loop offers the WebSearch tool.
+	WebSearch func(ctx context.Context, input json.RawMessage) (string, error)
 	RefreshCapabilities       func(context.Context)
 }
 
