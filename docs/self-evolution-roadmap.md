@@ -24,6 +24,16 @@ done when its exit gate holds, not when its code is written.
   Record: `docs/failure-cases/openrouter-retry-classification-2026-09-11.md`.
   Follow-ups RTY-002..005 (same mechanism in morphllm/openai/google/groq)
   remain open.
+- **RTY-002 — Structured classification ported to morphllm, the active
+  route (2026-09-11).** Same substring mechanism as RTY-001, evidenced by
+  the authentic 2026-09-11T07:53:58Z capture whose correct non-retryable
+  verdict was luck of message content, plus the dropped structured
+  Retry-After on typed rate limits. Baseline RED on both error shapes
+  (raw SDK and any-llm wrapped), candidate GREEN, structured RetryAfter
+  carried, full suite clean. Record:
+  `docs/failure-cases/morphllm-retry-classification-2026-09-11.md`.
+  RTY-003/004/005 (openai, google, groq) stay recorded-latent: no observed
+  authentic failure on those routes yet, so they are not preemptively fixed.
 
 ## Next
 

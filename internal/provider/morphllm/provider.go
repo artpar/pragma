@@ -3,6 +3,7 @@
 package morphllm
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"time"
@@ -13,6 +14,7 @@ import (
 	oaiprov "github.com/artpar/pragma/internal/provider/openai"
 	"github.com/artpar/pragma/internal/provider/rawcapture"
 	"github.com/artpar/pragma/internal/provider/shared"
+	llmerrors "github.com/mozilla-ai/any-llm-go/errors"
 	oaisdk "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
@@ -119,7 +121,60 @@ func (p *Provider) ListModels() []string {
 	return []string{DefaultModel}
 }
 
-var morphClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
+var morphFallbackClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
+
+func morphClassify(err error) shared.ErrorClassification {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	// Structured classification (RTY-002): the substring fallback matches
+	// code-like digit substrings anywhere in the error message, and the
+	// openai-go SDK error embeds the request URL and response body. A
+	// validation 400 whose URL or body carries such digits ("127.0.0.1:25003"
+	// contains "500") must not burn the ten-attempt retry budget.
+	var rate *llmerrors.RateLimitError
+	if errors.As(err, &rate) {
+		observe.GlobalTrace("if: errors.As(err, &rate)")
+		observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\ttrue,\n\tErrorType:\t\"rat...")
+		return shared.ErrorClassification{
+			Wrapped:    err,
+			Retryable:  true,
+			ErrorType:  "rate_limit",
+			RetryAfter: time.Duration(rate.RetryAfter) * time.Second,
+		}
+	}
+	var apiErr *oaisdk.Error
+	if errors.As(err, &apiErr) {
+		observe.GlobalTrace("if: errors.As(err, &apiErr)")
+		switch status := apiErr.StatusCode; status {
+		case 429:
+			observe.GlobalTrace("case 429")
+			observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\ttrue,\n\tErrorType:\t\"rat...")
+			return shared.ErrorClassification{
+				Wrapped:   err,
+				Retryable: true,
+				ErrorType: "rate_limit",
+			}
+		case 500, 502, 503, 504:
+			observe.GlobalTrace("case 500, 502, 503, 504")
+			observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\ttrue,\n\tErrorType:\t\"ser...")
+			return shared.ErrorClassification{
+				Wrapped:   err,
+				Retryable: true,
+				ErrorType: "server_error",
+			}
+		default:
+			observe.GlobalTrace("default")
+			observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\tfalse,\n\tErrorType:\t\"req...")
+			return shared.ErrorClassification{
+				Wrapped:   err,
+				Retryable: false,
+				ErrorType: "request_failed",
+			}
+		}
+	}
+	observe.GlobalTrace("return: morphFallbackClassify(err)")
+	return morphFallbackClassify(err)
+}
 
 // Morph documents max_tokens on its OpenAI-compatible endpoint. The shared
 // OpenAI adapter otherwise emits OpenAI's newer max_completion_tokens field.
