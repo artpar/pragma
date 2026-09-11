@@ -484,6 +484,42 @@ def assert_clkgreen(reqs):
     print("PASS clkgreen.monotonic: RFC3339 stamps non-decreasing on every request")
 
 
+def request_gap_seconds(reqs):
+    """Request-2 minus request-1 arrival (raw capture started_at) — the
+    tool-phase duration of the scripted turn (PAR-001)."""
+    from datetime import datetime
+    def started(meta):
+        return datetime.fromisoformat(meta["started_at"].replace("Z", "+00:00"))
+    return (started(reqs[1][0]) - started(reqs[0][0])).total_seconds()
+
+
+def assert_parallel(reqs, expect):
+    """PAR-001 wire gate. Both runs must complete the profile (>=2
+    requests, both sleep-3 Bash results paired on request 2, final text).
+    expect=parred (baseline): the two sleeps serialize — tool phase >=
+    ~6s. expect=pargreen (candidate): they run concurrently — tool phase
+    ~3s. Threshold 6.0s on the measured gap (delay 2s + tool phase:
+    concurrent ~5.1-5.5s, serialized ~8.1-8.5s)."""
+    check(len(reqs) >= 2, "expected >= 2 requests on the wire, got %d" % len(reqs))
+    results = []
+    for name, content in tool_messages(reqs[-1][1]):
+        if "PAR_A_DONE" in content or "PAR_B_DONE" in content:
+            results.append(content.strip().splitlines()[-1])
+    check(sorted(results) == ["PAR_A_DONE", "PAR_B_DONE"],
+          "request 2 must pair both Bash results; saw %r" % results)
+    gap = request_gap_seconds(reqs)
+    if expect == "parred":
+        check(gap >= 6.0,
+              "RED expects serialized sleeps (gap >= 6.0s); gap was %.2fs" % gap)
+        print("PASS parred.serial: both results paired; tool phase serialized (gap %.2fs >= 6.0s)" % gap)
+    else:
+        check(gap < 6.0,
+              "GREEN expects concurrent sleeps (gap < 6.0s); gap was %.2fs" % gap)
+        stamps = sum(len(clk_stamps(b)) for _, b in reqs)
+        check(stamps >= 2, "candidate must still carry CLK-001 stamps; saw %d" % stamps)
+        print("PASS pargreen.concurrent: both results paired; sleeps ran concurrently (gap %.2fs < 4.5s), %d CLK stamps present" % (gap, stamps))
+
+
 def main():
     reqs = load_requests()
     print("loaded %d captured requests from %s" % (len(reqs), RAW))
@@ -510,6 +546,8 @@ def main():
             assert_toklimit(reqs, EXPECT)
         elif EXPECT in ("clkred", "clkgreen"):
             assert_clkred(reqs, EXPECT) if EXPECT == "clkred" else assert_clkgreen(reqs)
+        elif EXPECT in ("parred", "pargreen"):
+            assert_parallel(reqs, EXPECT)
         else:
             raise Failure("unknown expectation %r" % EXPECT)
     except Failure as e:

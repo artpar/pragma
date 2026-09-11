@@ -81,12 +81,31 @@ MCP_TOOL_CALL = {
     },
 }
 
+PAR_BLOCKER_TOOL_CALL = {
+    "id": "call_probe_par_a",
+    "type": "function",
+    "function": {
+        "name": "Bash",
+        "arguments": json.dumps({"cmd": "sleep 3; echo PAR_A_DONE"}),
+    },
+}
+PAR_QUICK_TOOL_CALL = {
+    "id": "call_probe_par_b",
+    "type": "function",
+    "function": {
+        "name": "Bash",
+        "arguments": json.dumps({"cmd": "sleep 3; echo PAR_B_DONE"}),
+    },
+}
+
 def tool_calls_response():
     calls = [BASH_TOOL_CALL, MCP_TOOL_CALL]
     if PROFILE == "websearch":
         calls = [WEBSEARCH_TOOL_CALL]
     if PROFILE == "subagent":
         calls = [AGENT_TOOL_CALL]
+    if PROFILE == "parallel":
+        calls = [PAR_BLOCKER_TOOL_CALL, PAR_QUICK_TOOL_CALL]
     if PROFILE == "turnbudget":
         calls = [{
             "id": "call_probe_tb",
@@ -184,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
             seq = counter["n"]
             with open(requests_path, "a") as f:
                 f.write(json.dumps({"seq": seq, "path": self.path, "body": json.loads(raw.decode())}) + "\n")
-        if PROFILE in ("provider-tools", "websearch", "subagent") and seq == 1:
+        if PROFILE in ("provider-tools", "websearch", "subagent", "parallel") and seq == 1:
             time.sleep(DELAY)
             self._send_json(200, tool_calls_response())
             return

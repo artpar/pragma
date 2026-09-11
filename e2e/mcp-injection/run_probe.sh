@@ -24,7 +24,7 @@ mkdir -p "$OUT/raw"
 PROFILE="$MODE"
 LOOP="$PROFILE"
 case "$PROFILE" in
-  websearch|subagent|turnbudget|toklimit) LOOP="provider-tools" ;;
+  websearch|subagent|turnbudget|toklimit|parallel) LOOP="provider-tools" ;;
 esac
 python3 "$HERE/probe_provider.py" "$PROBE" "$PROFILE" "$DELAY" > "$OUT/provider.log" 2>&1 &
 PROV_PID=$!

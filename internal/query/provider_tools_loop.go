@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/artpar/pragma/internal/mcp"
@@ -127,14 +128,40 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			return
 		}
 
-		results := make([]model.ContentPart, 0, len(toolCalls))
+		// PAR-001: sibling calls in one assistant turn execute
+		// concurrently — independent calls no longer queue behind a slow
+		// first call (the 2026-09-11 sync-fork block), and completed
+		// results survive an interrupt that kills slower siblings.
+		// apply_patch calls stay sequential in call order (two same-batch
+		// patches can target one file — a concurrent lost-update hazard).
+		// Results keep call order regardless of completion order.
 		for _, call := range toolCalls {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "range toolCalls")
 			ch <- ToolCallEvent{Call: call}
-			result := engine.executeProviderToolCall(ctx, call)
-			ch <- ToolResultEvent{Result: result}
-			results = append(results, result)
 		}
+		results := make([]model.ContentPart, len(toolCalls))
+		var pending sync.WaitGroup
+		for i, call := range toolCalls {
+			if call.Name == applypatch.ToolName {
+				continue
+			}
+			pending.Add(1)
+			go func(i int, call model.ToolCallPart) {
+				defer pending.Done()
+				result := engine.executeProviderToolCall(ctx, call)
+				results[i] = result
+				ch <- ToolResultEvent{Result: result}
+			}(i, call)
+		}
+		for i, call := range toolCalls {
+			if call.Name != applypatch.ToolName {
+				continue
+			}
+			result := engine.executeProviderToolCall(ctx, call)
+			results[i] = result
+			ch <- ToolResultEvent{Result: result}
+		}
+		pending.Wait()
 		if err := engine.appendConversationMessage(model.Message{
 			ID:        model.NewUUID(),
 			Role:      model.RoleUser,

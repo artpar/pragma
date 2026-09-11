@@ -292,6 +292,34 @@ injection and visibility proven; that the model uses the clock to manage
 blocking is a live-effect observation. Record:
 `docs/failure-cases/wall-clock-stamps-2026-09-11.md`.
 
+**PAR-001 — Sibling tool calls in one assistant turn now execute
+concurrently (2026-09-12).** Driven by the same live event as CLK-001: a
+four-call batch sat ~2m13s behind its first call (the sync `Agent`
+fork) because `runProviderToolsLoop` dispatched sibling calls strictly
+sequentially; the operator interrupted and the three queued independent
+calls died without executing. The operator directed async/divide-and-
+conquer; the `Agent` tool description itself promises "parallelize
+evidence gathering". One mechanism: the dispatch partitions the batch —
+non-`apply_patch` calls run concurrently (WaitGroup, results indexed by
+call position, `ToolResultEvent`s as they complete), `apply_patch` calls
+stay sequential in call order (two same-batch patches can target one
+file — a lost-update hazard), results still append as one user message
+in call order. Interrupt semantics preserved (in-flight calls die,
+completed results are kept — quick calls are no longer lost behind slow
+ones). Concurrency audit recorded in the case (CostTracker, StateStore,
+MCP client/manager mutexed; EventBus lock-free; forks get separate
+engines/stores). Gates: unit baseline RED (event order proves
+serialization) / candidate GREEN, `-race` clean, apply_patch hazard
+invariant, full suite ×3, real-boot wire gates — `parallel` profile,
+two `sleep 3` calls: baseline gap 8.14s vs candidate 5.25s, both
+completing the profile — plus fresh MCPINJ `green` and CLK `clkgreen`
+adjacent boots on the candidate (Bash + real MCP call executed
+concurrently, 4 servers, pairing intact). Claim boundary: concurrent
+execution proven; background (async) sub-agents and worktree isolation
+for writers remain separate follow-up mechanisms, each with their own
+case. Record:
+`docs/failure-cases/parallel-sibling-dispatch-2026-09-12.md`.
+
 **Verifier-startup misclassification target examined and closed as
 external (2026-09-11).** agent.md's remaining named regression —
 verifier-startup failures misclassified as solver failures — was traced to
@@ -310,26 +338,18 @@ if a pragma-owned benchmark/runner path ever appears.
 Frozen candidate, declared task set, matched budgets, repetitions, uncertainty
 reported. Do not run broad benchmarks to discover whether a change works.
 
-### Recorded need (next open case candidate) — parallel sibling dispatch
+### Recorded need (follow-up mechanisms) — background sub-agents, worktree isolation
 
-Live evidence 2026-09-11 (session `~/.pragma/logs/2026-09-11T22-55-12.jsonl`):
-a four-call batch dispatched at 23:03:20.605 sat ~2m13s behind its first
-call (the sync `Agent` fork) because `runProviderToolsLoop` executes
-sibling tool calls sequentially (`for _, call := range toolCalls`); the
-operator interrupted at 23:05:33 and the three queued independent calls
-(WebSearch, two MCP) died without executing. The operator directed
-"make the sync thing async … and then divide and conquer". Staged path,
-one mechanism per case:
+PAR-001 (2026-09-12) delivered concurrent dispatch for sibling calls in
+one turn. The operator's async/divide-and-conquer direction has two
+remaining mechanisms, each with its own case, one mechanism per change:
 
-1. **Parallel sibling dispatch** (smallest, directly evidenced): execute a
-   batch's tool calls concurrently, results collected in call order.
-   Executor audit (2026-09-11, read-only): CostTracker, StateStore, and
-   the MCP client/manager are mutex-guarded; Bash/WebSearch/Agent are
-   per-call independent; `apply_patch` writes files, so same-batch
-   `apply_patch` calls need serialization (same-file lost-update hazard).
-2. **Background sub-agents** (branch mechanism, own case): detached fork
+1. **Background sub-agents** (branch mechanism, own case): detached fork
    lifecycle — registry, bus lifecycle events, result delivery to a
    conversation that moved on, explicit cancellation, orphan cleanup.
-3. **Worktree isolation** for writers (async + shared worktree = races).
+2. **Worktree isolation** for writers (async + shared worktree = races).
 
-Case before mechanism; the interrupted batch is the recorded need.
+Case before mechanism; evidence would be operator friction with the sync
+fork's turn-blocking despite PAR-001 (e.g. needing to interrupt a single
+long fork while other work waits on the turn) or concurrent writers
+racing on the shared worktree.

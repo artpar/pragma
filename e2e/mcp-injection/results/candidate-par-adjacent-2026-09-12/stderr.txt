@@ -1,0 +1,12 @@
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+  ⏺ mcp__past-conversations__list_projects
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=end_turn]
+
+total cost: $0.000025
+[2026-09-12T00:26:12+05:30] MCPServerDisconnected
+[2026-09-12T00:26:12+05:30] MCPServerDisconnected
+[2026-09-12T00:26:14+05:30] MCPServerDisconnected
+[2026-09-12T00:26:14+05:30] MCPServerDisconnected
