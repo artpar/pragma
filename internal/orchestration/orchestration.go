@@ -45,6 +45,7 @@ func (p ShellPolicy) IsZero() bool {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: len(p.DenyPatterns) == 0 && strings.TrimSpace(p.DenyMessage) == \"\" && strings...")
+	observe.GlobalTrace("return: len(p.DenyPatterns) == 0 && len(p.RequirePatterns) == 0 && strings.TrimSpace(...")
 	return len(p.DenyPatterns) == 0 && len(p.RequirePatterns) == 0 && strings.TrimSpace(p.DenyMessage) == "" && strings.TrimSpace(p.HandoffInputs) == ""
 }
 
@@ -585,10 +586,12 @@ func validateShellPolicy(defName, stateID string, policy ShellPolicy) error {
 		observe.GlobalTrace("range policy.RequirePatterns")
 		if strings.TrimSpace(pattern) == "" {
 			observe.GlobalTrace("if: strings.TrimSpace(pattern) == \"\"")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q shell_policy require_patterns[%d] is em...")
 			return fmt.Errorf("orchestration %q state %q shell_policy require_patterns[%d] is empty", defName, stateID, idx)
 		}
 		if _, err := regexp.Compile(pattern); err != nil {
 			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q state %q shell_policy require_patterns[%d] is in...")
 			return fmt.Errorf("orchestration %q state %q shell_policy require_patterns[%d] is invalid: %w", defName, stateID, idx, err)
 		}
 	}
@@ -658,6 +661,7 @@ func validateArtifactList(defName, owner string, artifacts []Artifact) error {
 		}
 		if artifact.MaxBytes < 0 {
 			observe.GlobalTrace("if: artifact.MaxBytes < 0")
+			observe.GlobalTrace("return: fmt.Errorf(\"orchestration %q %s artifact %q max_bytes must be non-negative\", ...")
 			return fmt.Errorf("orchestration %q %s artifact %q max_bytes must be non-negative", defName, owner, artifact.ID)
 		}
 		for _, value := range artifact.AllowedValues {

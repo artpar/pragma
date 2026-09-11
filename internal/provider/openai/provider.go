@@ -48,12 +48,18 @@ func WithBaseURL(url string) Option {
 // WithErrorClassifier supplies provider-specific retry semantics for an
 // OpenAI-compatible endpoint. OpenAI defaults remain in effect when nil.
 func WithErrorClassifier(classify shared.ClassifyFn) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(c *providerConfig) { c.classify = classify }")
 	return func(c *providerConfig) { c.classify = classify }
 }
 
 // WithChatCompletionRequestTransform adjusts the final OpenAI-compatible wire
 // request for endpoints whose field names differ from current OpenAI.
 func WithChatCompletionRequestTransform(transform func(*oaisdk.ChatCompletionNewParams)) Option {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(c *providerConfig) { c.requestTransform = transform }")
 	return func(c *providerConfig) { c.requestTransform = transform }
 }
 
@@ -78,6 +84,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 	var inner providers.Provider
 	var err error
 	if pc.requestTransform != nil {
+		observe.GlobalTrace("if: pc.requestTransform != nil")
 		inner, err = oai.NewCompatible(oai.CompatibleConfig{
 			APIKeyEnvVar:  "OPENAI_API_KEY",
 			BaseURLEnvVar: "OPENAI_BASE_URL",
@@ -91,6 +98,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 			RequireAPIKey:                  true,
 		}, cfgOpts...)
 	} else {
+		observe.GlobalTrace("else: pc.requestTransform != nil")
 		inner, err = oai.New(cfgOpts...)
 	}
 	if err != nil {
@@ -100,6 +108,7 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 	}
 	classify := pc.classify
 	if classify == nil {
+		observe.GlobalTrace("if: classify == nil")
 		classify = openaiClassify
 	}
 	observe.GlobalTrace("return: &Provider{inner: inner, bus: bus, maxRetries: 10, classify: classify}, nil")
@@ -109,9 +118,14 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 // ConvertError retains the embedded adapter's typed error contract for callers
 // that need a provider-specific wire format with the same transport semantics.
 func (p *Provider) ConvertError(err error) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if converter, ok := p.inner.(providers.ErrorConverter); ok {
+		observe.GlobalTrace("if: ok")
+		observe.GlobalTrace("return: converter.ConvertError(err)")
 		return converter.ConvertError(err)
 	}
+	observe.GlobalTrace("return: err")
 	return err
 }
 
@@ -179,8 +193,7 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	start := time.Now()
 
 	llmParams := anyllm.RequestToParams(params)
-	// stream_options is only valid on streaming requests. RequestToParams is
-	// shared by both paths, so clear it before a non-streaming completion.
+
 	llmParams.StreamOptions = nil
 
 	var comp *providers.ChatCompletion

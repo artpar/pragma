@@ -133,6 +133,7 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	}
 	startAtState := strings.TrimSpace(opts.StartAtState)
 	if startAtState != "" {
+		observe.TraceCtx(ctx, "orchestration", "runEvents", "if: startAtState != \"\"")
 		if _, ok := runtime.States[startAtState]; !ok {
 			observe.TraceCtx(ctx, "orchestration", "runEvents", "if: _, ok := runtime.States[startAtState]; !ok")
 			ch <- query.ErrorEvent{Err: fmt.Errorf("start state %q not found in orchestration %q", startAtState, def.Name)}
@@ -142,6 +143,7 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	}
 	stopAfterState := strings.TrimSpace(opts.StopAfterState)
 	if stopAfterState != "" {
+		observe.TraceCtx(ctx, "orchestration", "runEvents", "if: stopAfterState != \"\"")
 		if _, ok := runtime.States[stopAfterState]; !ok {
 			observe.TraceCtx(ctx, "orchestration", "runEvents", "if: _, ok := runtime.States[stopAfterState]; !ok")
 			ch <- query.ErrorEvent{Err: fmt.Errorf("stop-after state %q not found in orchestration %q", stopAfterState, def.Name)}
@@ -172,6 +174,7 @@ func runEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *query.Eng
 	var transitionFrom string
 	var transitionEvent string
 	if startAtState != "" {
+		observe.TraceCtx(ctx, "orchestration", "runEvents", "if: startAtState != \"\"")
 		transitionHandoff, transitionFrom, transitionEvent = startAtTransitionContext(def, startAtState, artifactRoot)
 	}
 	var previousStateOutputs *StateOutputRun
@@ -271,6 +274,7 @@ func startAtTransitionContext(def Definition, startAtState string, artifactRoot 
 	}
 	if len(matches) == 0 {
 		observe.GlobalTrace("if: len(matches) == 0")
+		observe.GlobalTrace("return: nil, \"\", \"\"")
 		return nil, "", ""
 	}
 	if len(matches) > 1 {
@@ -279,6 +283,7 @@ func startAtTransitionContext(def Definition, startAtState string, artifactRoot 
 	}
 	if len(matches) != 1 {
 		observe.GlobalTrace("if: len(matches) != 1")
+		observe.GlobalTrace("return: nil, \"\", \"\"")
 		return nil, "", ""
 	}
 	transition := matches[0]
@@ -317,6 +322,7 @@ func requiredHandoffArtifactsExist(artifacts []Artifact, artifactRoot string) bo
 		}
 		if _, err := os.Stat(resolveArtifactPath(artifact.Path, artifactRoot)); err != nil {
 			observe.GlobalTrace("if: os.Stat err")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 	}
@@ -492,6 +498,8 @@ func materializeSeedArtifacts(def Definition, artifactRoot string, opts RunOptio
 		}
 		usedSeedSources[source] = true
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"create seed artifact dir for %q at %q: %w\", artifact.ID, pat...")
 			return nil, fmt.Errorf("create seed artifact dir for %q at %q: %w", artifact.ID, path, err)
 		}
 		if err := os.WriteFile(path, content, 0o644); err != nil {
@@ -508,23 +516,33 @@ func materializeSeedArtifacts(def Definition, artifactRoot string, opts RunOptio
 		})
 	}
 	for source, content := range opts.SeedArtifacts {
+		observe.GlobalTrace("range opts.SeedArtifacts")
 		if usedSeedSources[source] {
+			observe.GlobalTrace("if: usedSeedSources[source]")
 			continue
 		}
 		matches := artifactsMatchingSeedTarget(def, artifactRoot, source)
 		if len(matches) == 0 {
+			observe.GlobalTrace("if: len(matches) == 0")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"seed artifact target %q does not match a declared seed sourc...")
 			return nil, fmt.Errorf("seed artifact target %q does not match a declared seed source, artifact id, or artifact path", source)
 		}
 		for _, artifact := range matches {
+			observe.GlobalTrace("range matches")
 			path := resolveArtifactPath(artifact.Path, artifactRoot)
 			if seen[path] {
+				observe.GlobalTrace("if: seen[path]")
 				continue
 			}
 			data := []byte(content)
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: nil, fmt.Errorf(\"create seed artifact dir for %q at %q: %w\", artifact.ID, pat...")
 				return nil, fmt.Errorf("create seed artifact dir for %q at %q: %w", artifact.ID, path, err)
 			}
 			if err := os.WriteFile(path, data, 0o644); err != nil {
+				observe.GlobalTrace("if: err != nil")
+				observe.GlobalTrace("return: nil, fmt.Errorf(\"write seed artifact %q at %q: %w\", artifact.ID, path, err)")
 				return nil, fmt.Errorf("write seed artifact %q at %q: %w", artifact.ID, path, err)
 			}
 			seen[path] = true
@@ -545,16 +563,21 @@ func artifactsMatchingSeedTarget(def Definition, artifactRoot string, target str
 	defer observe.GlobalTrace("exit")
 	target = strings.TrimSpace(target)
 	if target == "" {
+		observe.GlobalTrace("if: target == \"\"")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	var matches []Artifact
 	seenPaths := make(map[string]bool)
 	for _, artifact := range allArtifacts(def) {
+		observe.GlobalTrace("range allArtifacts(def)")
 		path := resolveArtifactPath(artifact.Path, artifactRoot)
 		if artifact.ID != target && artifact.Path != target && path != target {
+			observe.GlobalTrace("if: artifact.ID != target && artifact.Path != target && path != target")
 			continue
 		}
 		if seenPaths[path] {
+			observe.GlobalTrace("if: seenPaths[path]")
 			continue
 		}
 		seenPaths[path] = true
@@ -799,6 +822,7 @@ func runPersonaForState(ctx context.Context, ch chan<- query.LoopEvent, bus *obs
 
 	if err := applyStateLLMRuntime(ctx, engine, llmResolver, state, personaDef); err != nil {
 		observe.TraceCtx(ctx, "orchestration", "runNodeEventsWithControlContext", "if: err != nil")
+		observe.TraceCtx(ctx, "orchestration", "runPersonaForState", "return: err")
 		return err
 	}
 	_, err = RunStateEvents(ctx, ch, engine, projection, def, state, personaDef, taskPrompt, handoffPrompt, originalTaskPrompt, transitionHandoff, readEvents, artifactRoot, outputSnapshotsBefore)
@@ -818,19 +842,23 @@ func applyStateLLMRuntime(ctx context.Context, engine *query.Engine, resolver LL
 	llm := llmconfig.Merge(personaDef.LLM, state.LLM)
 	if llm.IsZero() {
 		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "if: llm.IsZero()")
+		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "return: nil")
 		return nil
 	}
 	if resolver == nil {
 		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "if: resolver == nil")
+		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "return: fmt.Errorf(\"state %q/persona %q defines llm but orchestration has no llm reso...")
 		return fmt.Errorf("state %q/persona %q defines llm but orchestration has no llm resolver", state.ID, personaDef.ID)
 	}
 	runtime, err := resolver(ctx, llm)
 	if err != nil {
 		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "if: err != nil")
+		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "return: fmt.Errorf(\"resolve llm for state %q/persona %q: %w\", state.ID, personaDef.ID...")
 		return fmt.Errorf("resolve llm for state %q/persona %q: %w", state.ID, personaDef.ID, err)
 	}
 	if runtime.Provider == nil {
 		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "if: runtime.Provider == nil")
+		observe.TraceCtx(ctx, "orchestration", "applyStateLLMRuntime", "return: fmt.Errorf(\"resolve llm for state %q/persona %q: provider is nil\", state.ID, ...")
 		return fmt.Errorf("resolve llm for state %q/persona %q: provider is nil", state.ID, personaDef.ID)
 	}
 	engine.BindProvider(runtime.Provider, runtime.ProviderName, runtime.Model)
@@ -935,6 +963,7 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 		FinalTextOnly:            stateCapturesFinalText(state),
 	}
 	if runOpts.FinalTextOnly {
+		observe.TraceCtx(ctx, "orchestration", "RunStateEvents", "if: runOpts.FinalTextOnly")
 		runOpts.FinalTextCheck = finalTextArtifactCompletionCheck(state)
 	}
 	for ev := range engine.RunPragmaLoopWithSystemCompletionCheckOptions(ctx, system, prompt, completionCheck, runOpts) {
@@ -963,6 +992,7 @@ func RunStateEvents(ctx context.Context, ch chan<- query.LoopEvent, engine *quer
 			observe.TraceCtx(ctx, "orchestration", "RunStateEvents", "typecase: query.TurnCompleteEvent")
 			if err := captureFinalTextArtifacts(state, artifactRoot, text.String()); err != nil {
 				observe.TraceCtx(ctx, "orchestration", "RunStateEvents", "if: err != nil")
+				observe.TraceCtx(ctx, "orchestration", "RunStateEvents", "return: text.String(), err")
 				return text.String(), err
 			}
 			emitOrchestration(ch, eventBus(engine), projection, query.OrchestrationStateCompletedEvent{StateID: state.ID, Duration: time.Since(start)})
@@ -1003,11 +1033,13 @@ func captureFinalTextArtifacts(state State, artifactRoot string, text string) er
 		path := resolveArtifactPath(artifact.Path, artifactRoot)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"create final_text artifact dir for %q: %w\", artifact.ID, err)")
 			return fmt.Errorf("create final_text artifact dir for %q: %w", artifact.ID, err)
 		}
 		content := normalizeFinalTextArtifactContent(text, artifact.AllowedValues)
 		if err := os.WriteFile(path, []byte(content+"\n"), 0o644); err != nil {
 			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: fmt.Errorf(\"write final_text artifact %q at %q: %w\", artifact.ID, path, err)")
 			return fmt.Errorf("write final_text artifact %q at %q: %w", artifact.ID, path, err)
 		}
 	}
@@ -1016,6 +1048,9 @@ func captureFinalTextArtifacts(state State, artifactRoot string, text string) er
 }
 
 func finalTextArtifactCompletionCheck(state State) query.PragmaLoopFinalTextCheck {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: func(text string) (bool, string, error) {\n\tfor _, artifact := range state.Art...")
 	return func(text string) (bool, string, error) {
 		for _, artifact := range state.Artifacts.Outputs {
 			if artifact.RuntimeCapture.Type != "final_text" {
@@ -1040,13 +1075,18 @@ func finalTextArtifactCompletionCheck(state State) query.PragmaLoopFinalTextChec
 }
 
 func trimmedNonEmptyStrings(values []string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	out := make([]string, 0, len(values))
 	for _, value := range values {
+		observe.GlobalTrace("range values")
 		value = strings.TrimSpace(value)
 		if value != "" {
+			observe.GlobalTrace("if: value != \"\"")
 			out = append(out, value)
 		}
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }
 
@@ -1134,6 +1174,7 @@ func buildPromptWithArtifactRoot(def Definition, state State, personaDef persona
 	completionContract := RenderStateCompletionContract(state)
 	systemText := strings.TrimRight(personaDef.Prompt, "\n")
 	if !stateCapturesFinalText(state) {
+		observe.GlobalTrace("if: !stateCapturesFinalText(state)")
 		systemText += "\n\n" + query.PragmaLoopSystemPrompt()
 	}
 	if completionContract != "" {
@@ -1414,8 +1455,10 @@ func validateFreshRequiredModelOutputs(state State, artifactRoot string, before 
 			observe.GlobalTrace("if: !afterSnapshot.Exists")
 			issue := fmt.Sprintf("- `%s`: `%s`", artifact.ID, path)
 			if artifactRuntimeAuthored(artifact) {
+				observe.GlobalTrace("if: artifactRuntimeAuthored(artifact)")
 				runtimeMissing = append(runtimeMissing, issue)
 			} else {
+				observe.GlobalTrace("else: artifactRuntimeAuthored(artifact)")
 				missing = append(missing, issue)
 			}
 			continue
@@ -1431,6 +1474,7 @@ func validateFreshRequiredModelOutputs(state State, artifactRoot string, before 
 	}
 	if len(missing) > 0 || len(runtimeMissing) > 0 || len(stale) > 0 {
 		observe.GlobalTrace("if: len(missing) > 0 || len(runtimeMissing) > 0 || len(stale) > 0")
+		observe.GlobalTrace("return: fmt.Errorf(\"required output artifact check failed after state %q:\\n%s\", state...")
 		return fmt.Errorf("required output artifact check failed after state %q:\n%s", state.ID, completionRejectionGuidance(missing, runtimeMissing, stale, nil, nil))
 	}
 	observe.GlobalTrace("return: nil")
@@ -2029,10 +2073,12 @@ func validateArtifactIntegrityCheck(artifact Artifact, check ArtifactIntegrityCh
 		maxItems, err := strconv.Atoi(strings.TrimSpace(check.Value))
 		if err != nil || maxItems < 0 {
 			observe.GlobalTrace("return: nil, fmt.Errorf invalid max")
+			observe.GlobalTrace("return: nil, fmt.Errorf(\"artifact %q check json_array_max_items has invalid value %q\"...")
 			return nil, fmt.Errorf("artifact %q check json_array_max_items has invalid value %q", artifact.ID, check.Value)
 		}
 		if len(values) > maxItems {
 			observe.GlobalTrace("if: len(values) > maxItems")
+			observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` field %q has %d items, maximum is %d\", artifact....")
 			return []string{fmt.Sprintf("- `%s` field %q has %d items, maximum is %d", artifact.ID, check.Field, len(values), maxItems)}, nil
 		}
 	case "json_no_unproven_generated_outputs_in_approved_edit_paths":
@@ -2315,6 +2361,7 @@ func validateArtifactIntegrityCheck(artifact Artifact, check ArtifactIntegrityCh
 		contractRaw, ok := snapshots[check.ArtifactID]
 		if !ok || len(contractRaw) == 0 {
 			observe.GlobalTrace("return: missing contract snapshot")
+			observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` cannot find rendered handoff snapshot for artifa...")
 			return []string{fmt.Sprintf("- `%s` cannot find rendered handoff snapshot for artifact %q", artifact.ID, check.ArtifactID)}, nil
 		}
 		return validateMarkdownNoForbiddenWorkerCommands(artifact, data, check.ArtifactID, contractRaw), nil
@@ -2352,6 +2399,7 @@ func validateArtifactIntegrityCheck(artifact Artifact, check ArtifactIntegrityCh
 		workerRaw, ok := snapshots[check.ArtifactID]
 		if !ok || len(workerRaw) == 0 {
 			observe.GlobalTrace("return: missing worker snapshot")
+			observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` cannot find rendered handoff snapshot for artifa...")
 			return []string{fmt.Sprintf("- `%s` cannot find rendered handoff snapshot for artifact %q", artifact.ID, check.ArtifactID)}, nil
 		}
 		return validateMarkdownWorkerBlockerValidationNoCommands(artifact, data, check.ArtifactID, workerRaw), nil
@@ -2409,6 +2457,7 @@ func validateMarkdownCandidateSurfacesConcrete(artifact Artifact, data []byte) [
 	bullets := markdownFlexibleSectionBullets(data, "Candidate Surfaces")
 	if len(bullets) == 0 {
 		observe.GlobalTrace("if: len(bullets) == 0")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has no Candidate Surfaces bullets\", artifact.ID)}")
 		return []string{fmt.Sprintf("- `%s` has no Candidate Surfaces bullets", artifact.ID)}
 	}
 	var issues []string
@@ -2458,6 +2507,7 @@ func validateJSONNoUnprovenGeneratedOutputsInApprovedEditPaths(artifact Artifact
 	approved, err := jsonStringArrayPath(doc, "approved_edit_paths")
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` cannot read approved_edit_paths: %v\", artifact.I...")
 		return []string{fmt.Sprintf("- `%s` cannot read approved_edit_paths: %v", artifact.ID, err)}
 	}
 	value, _ := jsonValueAtPath(doc, "generated_policy")
@@ -2488,17 +2538,26 @@ func validateJSONWorkerTrackTargetedValidationConsistent(artifact Artifact, doc 
 	targetedValidation := strings.TrimSpace(fmt.Sprint(doc["targeted_validation"]))
 	targetedLower := strings.ToLower(targetedValidation)
 	if targetedValidation == "" {
+		observe.GlobalTrace("if: targetedValidation == \"\"")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has empty targeted_validation; use \\\"none\\\" or t...")
 		return []string{fmt.Sprintf("- `%s` has empty targeted_validation; use \"none\" or the exact targeted validation command", artifact.ID)}
 	}
 	if targetedLower != "none" && workerTrack == "discovery" {
+		observe.GlobalTrace("if: targetedLower != \"none\" && workerTrack == \"discovery\"")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has targeted_validation %q but worker_track is d...")
 		return []string{fmt.Sprintf("- `%s` has targeted_validation %q but worker_track is discovery; set worker_track to implementation so the slice routes through the implementation worker before targeted validation, or set targeted_validation to \"none\"", artifact.ID, targetedValidation)}
 	}
 	if mode == "validation" && targetedLower == "none" {
+		observe.GlobalTrace("if: mode == \"validation\" && targetedLower == \"none\"")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has mode validation but targeted_validation is n...")
 		return []string{fmt.Sprintf("- `%s` has mode validation but targeted_validation is none; provide the exact validation command or change mode to discovery", artifact.ID)}
 	}
 	if mode == "validation" && workerTrack != "implementation" {
+		observe.GlobalTrace("if: mode == \"validation\" && workerTrack != \"implementation\"")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has mode validation but worker_track is %q; vali...")
 		return []string{fmt.Sprintf("- `%s` has mode validation but worker_track is %q; validation slices must use worker_track implementation so they do not route to the discovery/no-command path", artifact.ID, workerTrack)}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
@@ -2534,6 +2593,7 @@ func generatedPolicyProvesSourceOfTruth(policy string) bool {
 	policy = strings.ToLower(strings.Join(strings.Fields(policy), " "))
 	if policy == "" || !strings.Contains(policy, "source of truth") {
 		observe.GlobalTrace("if: missing source of truth")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	for _, disqualifier := range []string{
@@ -2551,6 +2611,7 @@ func generatedPolicyProvesSourceOfTruth(policy string) bool {
 		observe.GlobalTrace("range disqualifiers")
 		if strings.Contains(policy, disqualifier) {
 			observe.GlobalTrace("if: strings.Contains(policy, disqualifier)")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 	}
@@ -2598,6 +2659,7 @@ func validateMarkdownScopeRequestRequiresNoChangedFiles(artifact Artifact, data 
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` requests scope expansion but also reports change...")
 	return []string{fmt.Sprintf("- `%s` requests scope expansion but also reports changed files %q; scope-request reports must leave changed files as none", artifact.ID, strings.Join(changed, "; "))}
 }
 
@@ -2611,12 +2673,14 @@ func validateMarkdownScopeRequestRequiresCleanWorktree(artifact Artifact, data [
 	changed, err := gitChangedPaths()
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` requests scope expansion but current worktree cl...")
 		return []string{fmt.Sprintf("- `%s` requests scope expansion but current worktree cleanliness could not be verified: %v", artifact.ID, err)}
 	}
 	if len(changed) == 0 {
 		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` requests scope expansion but the current worktre...")
 	return []string{fmt.Sprintf("- `%s` requests scope expansion but the current worktree has changes %q; scope-request states must leave the repository clean before routing", artifact.ID, strings.Join(changed, "; "))}
 }
 
@@ -2626,12 +2690,14 @@ func gitChangedPaths() ([]string, error) {
 	rootCmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	if output, err := rootCmd.CombinedOutput(); err != nil {
 		observe.GlobalTrace("if: git rev-parse failed")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"git rev-parse --show-toplevel failed: %s\", strings.TrimSpace...")
 		return nil, fmt.Errorf("git rev-parse --show-toplevel failed: %s", strings.TrimSpace(string(output)))
 	}
 	statusCmd := exec.Command("git", "status", "--porcelain", "--untracked-files=all")
 	output, err := statusCmd.CombinedOutput()
 	if err != nil {
 		observe.GlobalTrace("if: git status failed")
+		observe.GlobalTrace("return: nil, fmt.Errorf(\"git status --porcelain --untracked-files=all failed: %s\", st...")
 		return nil, fmt.Errorf("git status --porcelain --untracked-files=all failed: %s", strings.TrimSpace(string(output)))
 	}
 	var changed []string
@@ -2643,8 +2709,10 @@ func gitChangedPaths() ([]string, error) {
 			continue
 		}
 		if len(line) > 3 {
+			observe.GlobalTrace("if: len(line) > 3")
 			changed = append(changed, strings.TrimSpace(line[3:]))
 		} else {
+			observe.GlobalTrace("else: len(line) > 3")
 			changed = append(changed, line)
 		}
 	}
@@ -2822,6 +2890,7 @@ func lineReferencesGeneratedOutput(line string) bool {
 	lower := strings.ToLower(line)
 	if strings.Contains(lower, "generated .pb.go") || strings.Contains(lower, "generated file") || strings.Contains(lower, "generated output") {
 		observe.GlobalTrace("if: generated phrase")
+		observe.GlobalTrace("return: true")
 		return true
 	}
 	normalized := strings.NewReplacer(
@@ -2842,6 +2911,7 @@ func lineReferencesGeneratedOutput(line string) bool {
 		token = strings.Trim(token, ".:")
 		if generatedOutputPath(token) {
 			observe.GlobalTrace("if: generatedOutputPath(token)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
@@ -2855,6 +2925,7 @@ func generatedOutputEditRecommendationLine(line string) bool {
 	lower := strings.ToLower(strings.Join(strings.Fields(line), " "))
 	if generatedOutputEditRecommendationNegated(lower) {
 		observe.GlobalTrace("if: generatedOutputEditRecommendationNegated")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	for _, phrase := range []string{
@@ -2879,6 +2950,7 @@ func generatedOutputEditRecommendationLine(line string) bool {
 		observe.GlobalTrace("range recommendation phrases")
 		if strings.Contains(lower, phrase) {
 			observe.GlobalTrace("if: strings.Contains(lower, phrase)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
@@ -2907,6 +2979,7 @@ func generatedOutputEditRecommendationNegated(line string) bool {
 		observe.GlobalTrace("range negated phrases")
 		if strings.Contains(line, phrase) {
 			observe.GlobalTrace("if: strings.Contains(line, phrase)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
@@ -2920,6 +2993,7 @@ func markdownFlexibleSectionBullets(data []byte, section string) []string {
 	bullets := markdownSectionBullets(data, section)
 	if len(bullets) > 0 {
 		observe.GlobalTrace("if: len(bullets) > 0")
+		observe.GlobalTrace("return: bullets")
 		return bullets
 	}
 	want := strings.ToLower(strings.TrimSpace(section))
@@ -2984,10 +3058,12 @@ func markdownCandidateSurfaceLooksLikePath(surface string) bool {
 	surface = strings.TrimSpace(surface)
 	if surface == "" {
 		observe.GlobalTrace("if: surface == \"\"")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	if strings.ContainsAny(surface, "*?[]{}") {
 		observe.GlobalTrace("if: contains glob")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	observe.GlobalTrace("return: strings.Contains(surface, \"/\") || strings.Contains(filepath.Base(surface), \".\")")
@@ -3000,6 +3076,7 @@ func markdownCandidateSurfaceHasImplementationDirective(bullet string) bool {
 	_, description, ok := strings.Cut(bullet, " - ")
 	if !ok {
 		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	description = strings.ToLower(description)
@@ -3020,6 +3097,7 @@ func markdownCandidateSurfaceHasImplementationDirective(bullet string) bool {
 		observe.GlobalTrace("range directives")
 		if strings.Contains(padded, directive) {
 			observe.GlobalTrace("if: strings.Contains(padded, directive)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
@@ -3107,6 +3185,7 @@ func validateMarkdownValidationCoverageConsistent(artifact Artifact, data []byte
 	}
 	if len(planned) == 0 {
 		observe.GlobalTrace("if: len(planned) == 0")
+		observe.GlobalTrace("return: issues")
 		return issues
 	}
 	if len(validated) == 0 && len(insufficient) == 0 {
@@ -3136,30 +3215,42 @@ func validateMarkdownValidationCoverageConsistent(artifact Artifact, data []byte
 }
 
 func weaklyValidatedAcceptanceIDs(data []byte, validated []string) []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	commands := markdownFlexibleSectionBullets(data, "Commands run")
 	if len(commands) == 0 || !onlyCompileOrStaticValidationCommands(commands) {
+		observe.GlobalTrace("if: len(commands) == 0 || !onlyCompileOrStaticValidationCommands(commands)")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	var weak []string
 	for _, id := range validated {
+		observe.GlobalTrace("range validated")
 		upper := strings.ToUpper(strings.TrimSpace(id))
 		if upper == "" || upper == "NONE" {
+			observe.GlobalTrace("if: upper == \"\" || upper == \"NONE\"")
 			continue
 		}
 		if acceptanceIDRequiresBehaviorValidation(upper) {
+			observe.GlobalTrace("if: acceptanceIDRequiresBehaviorValidation(upper)")
 			weak = append(weak, id)
 		}
 	}
+	observe.GlobalTrace("return: weak")
 	return weak
 }
 
 func onlyCompileOrStaticValidationCommands(commands []string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	sawCommand := false
 	for _, command := range commands {
+		observe.GlobalTrace("range commands")
 		normalized := strings.ToLower(strings.Join(strings.Fields(command), " "))
 		normalized = strings.TrimPrefix(normalized, "`")
 		normalized = strings.TrimSuffix(normalized, "`")
 		if normalized == "" || markdownNoneBullet(normalized) {
+			observe.GlobalTrace("if: normalized == \"\" || markdownNoneBullet(normalized)")
 			continue
 		}
 		sawCommand = true
@@ -3175,15 +3266,20 @@ func onlyCompileOrStaticValidationCommands(commands []string) bool {
 			strings.Contains(normalized, "source inspection"),
 			strings.Contains(normalized, "generated-symbol"),
 			strings.Contains(normalized, "symbol presence"):
+			observe.GlobalTrace("case: strings.Contains(normalized, \"go build\"), strings.Contains(normalized, \"go ve...")
 			continue
 		default:
+			observe.GlobalTrace("default")
 			return false
 		}
 	}
+	observe.GlobalTrace("return: sawCommand")
 	return sawCommand
 }
 
 func acceptanceIDRequiresBehaviorValidation(id string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	for _, marker := range []string{
 		"DEFAULT",
 		"VALIDATION",
@@ -3199,10 +3295,14 @@ func acceptanceIDRequiresBehaviorValidation(id string) bool {
 		"API",
 		"CONFIG-VALIDATION",
 	} {
+		observe.GlobalTrace("range []string{\n\t\"DEFAULT\",\n\t\"VALIDATION\",\n\t\"FRAMEWORK\",\n\t\"INTEGRATION\",\n\t\"TOKEN\",\n...")
 		if strings.Contains(id, marker) {
+			observe.GlobalTrace("if: strings.Contains(id, marker)")
+			observe.GlobalTrace("return: true")
 			return true
 		}
 	}
+	observe.GlobalTrace("return: false")
 	return false
 }
 
@@ -3304,6 +3404,7 @@ func markdownSectionFirstBullet(data []byte, section string) string {
 		observe.GlobalTrace("range markdownFlexibleSectionBullets")
 		if strings.TrimSpace(bullet) != "" {
 			observe.GlobalTrace("return: bullet")
+			observe.GlobalTrace("return: strings.TrimSpace(bullet)")
 			return strings.TrimSpace(bullet)
 		}
 	}
@@ -3745,11 +3846,13 @@ func validateCommandEvidenceRepoMutationLimit(artifact Artifact, reportPath stri
 	limit, err := strconv.Atoi(strings.TrimSpace(check.Value))
 	if err != nil || limit < 0 {
 		observe.GlobalTrace("if: err != nil || limit < 0")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has invalid repo mutation limit %q\", artifact.ID...")
 		return []string{fmt.Sprintf("- `%s` has invalid repo mutation limit %q", artifact.ID, check.Value)}, nil
 	}
 	evidenceData, err := os.ReadFile(evidencePath)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has no runtime command evidence artifact at `%s`...")
 		return []string{fmt.Sprintf("- `%s` has no runtime command evidence artifact at `%s`: %v", artifact.ID, evidencePath, err)}, nil
 	}
 	records, parseIssues := parseCommandEvidence(evidenceData, check.ArtifactID)
@@ -3772,10 +3875,13 @@ func validateCommandEvidenceRepoMutationLimit(artifact Artifact, reportPath stri
 		observe.GlobalTrace("if: mutations > limit")
 		reportData, readErr := os.ReadFile(reportPath)
 		if readErr != nil {
+			observe.GlobalTrace("if: readErr != nil")
+			observe.GlobalTrace("return: nil, readErr")
 			return nil, readErr
 		}
 		if markdownExplicitBlockerReport(reportData) {
 			observe.GlobalTrace("if: markdownExplicitBlockerReport")
+			observe.GlobalTrace("return: issues, nil")
 			return issues, nil
 		}
 		issues = append(issues, fmt.Sprintf("- `%s` runtime command evidence has %d repository mutation commands, exceeding limit %d. Stop repairing through repeated source mutations. If the source may be malformed or the edit cannot be completed within the mutation budget, rewrite the worker report as an explicit blocker, list changed files truthfully, do not claim acceptance coverage, and submit again. Examples: %s", artifact.ID, mutations, limit, strings.Join(previews, "; ")))
@@ -3790,11 +3896,13 @@ func validateCommandEvidenceNonReportLimit(artifact Artifact, check ArtifactInte
 	limit, err := strconv.Atoi(strings.TrimSpace(check.Value))
 	if err != nil || limit < 0 {
 		observe.GlobalTrace("if: err != nil || limit < 0")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has invalid non-report command limit %q\", artifa...")
 		return []string{fmt.Sprintf("- `%s` has invalid non-report command limit %q", artifact.ID, check.Value)}, nil
 	}
 	evidenceData, err := os.ReadFile(evidencePath)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has no runtime command evidence artifact at `%s`...")
 		return []string{fmt.Sprintf("- `%s` has no runtime command evidence artifact at `%s`: %v", artifact.ID, evidencePath, err)}, nil
 	}
 	records, parseIssues := parseCommandEvidence(evidenceData, check.ArtifactID)
@@ -3817,6 +3925,7 @@ func validateCommandEvidenceNonReportLimit(artifact Artifact, check ArtifactInte
 		observe.GlobalTrace("if: count > limit")
 		issues = append(issues, fmt.Sprintf("- `%s` runtime command evidence has %d non-report inspection commands, exceeding limit %d. Discovery workers must run one bounded inspection command at most, then write the report from that evidence or a blocker. Examples: %s", artifact.ID, count, limit, strings.Join(previews, "; ")))
 	}
+	observe.GlobalTrace("return: issues, nil")
 	return issues, nil
 }
 
@@ -3827,12 +3936,14 @@ func markdownExplicitBlockerReport(data []byte) bool {
 	for _, bullet := range markdownFlexibleSectionBullets(data, "Blocker") {
 		observe.GlobalTrace("range blocker")
 		if !markdownNoneBullet(bullet) {
+			observe.GlobalTrace("if: !markdownNoneBullet(bullet)")
 			blocker = true
 			break
 		}
 	}
 	if !blocker {
 		observe.GlobalTrace("if: !blocker")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	for _, bullet := range markdownFlexibleSectionBullets(data, "Acceptance coverage") {
@@ -3840,13 +3951,16 @@ func markdownExplicitBlockerReport(data []byte) bool {
 		lower := strings.ToLower(strings.Join(strings.Fields(bullet), " "))
 		if strings.Contains(lower, "acceptance_ids_addressed") && !strings.Contains(lower, "none") {
 			observe.GlobalTrace("if: acceptance_ids_addressed non-none")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 		if strings.Contains(lower, "validated_acceptance_ids") && !strings.Contains(lower, "none") {
 			observe.GlobalTrace("if: validated_acceptance_ids non-none")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 	}
+	observe.GlobalTrace("return: true")
 	return true
 }
 
@@ -3856,16 +3970,19 @@ func validateCommandEvidenceClaimedChanges(artifact Artifact, reportPath string,
 	reportData, err := os.ReadFile(reportPath)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 	claimed := markdownClaimedChangedFiles(reportData)
 	if len(claimed) == 0 {
 		observe.GlobalTrace("if: len(claimed) == 0")
+		observe.GlobalTrace("return: nil, nil")
 		return nil, nil
 	}
 	evidenceData, err := os.ReadFile(evidencePath)
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` has no runtime command evidence artifact at `%s`...")
 		return []string{fmt.Sprintf("- `%s` has no runtime command evidence artifact at `%s`: %v", artifact.ID, evidencePath, err)}, nil
 	}
 	records, parseIssues := parseCommandEvidence(evidenceData, check.ArtifactID)
@@ -3913,20 +4030,24 @@ func validateMarkdownWorkerBlockerValidationNoCommands(artifact Artifact, valida
 	defer observe.GlobalTrace("exit")
 	if !markdownExplicitBlockerReport(workerData) {
 		observe.GlobalTrace("if: !markdownExplicitBlockerReport")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	var commands []string
 	for _, bullet := range markdownFlexibleSectionBullets(validationData, "Commands run") {
 		observe.GlobalTrace("range commands")
 		if markdownNoneBullet(bullet) {
+			observe.GlobalTrace("if: markdownNoneBullet(bullet)")
 			continue
 		}
 		commands = append(commands, bullet)
 	}
 	if len(commands) == 0 {
 		observe.GlobalTrace("if: len(commands) == 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
+	observe.GlobalTrace("return: []string{fmt.Sprintf(\"- `%s` ran validation commands even though worker repor...")
 	return []string{fmt.Sprintf("- `%s` ran validation commands even though worker report %q is an explicit blocker. Record the blocker as insufficient evidence with Commands run set to none; do not run build/test/producer commands after a blocker report. Commands: %s", artifact.ID, workerArtifactID, strings.Join(commands, "; "))}
 }
 

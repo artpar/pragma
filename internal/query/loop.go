@@ -28,8 +28,10 @@ func (engine *Engine) Run(ctx context.Context, userMessage string) <-chan LoopEv
 		}()
 		switch engine.config.LoopMode {
 		case LoopModeProviderTools:
+			observe.TraceCtx(ctx, "query", "Engine.Run", "case: LoopModeProviderTools")
 			engine.runProviderToolsLoop(ctx, userMessage, ch)
 		default:
+			observe.TraceCtx(ctx, "query", "Engine.Run", "default")
 			engine.runPragmaLoop(ctx, userMessage, ch)
 		}
 	}()

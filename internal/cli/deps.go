@@ -128,16 +128,19 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	bus := observe.NewEventBus(1024)
 	traceEnabled, _ := cmd.Flags().GetBool("trace")
 	if os.Getenv("PRAGMA_FLOW_TRACE") == "1" {
+		observe.GlobalTrace("if: os.Getenv(\"PRAGMA_FLOW_TRACE\") == \"1\"")
 		traceEnabled = true
 	}
 	var traceFilter *observe.TraceFilter
 	if traceFilterEnv := os.Getenv("PRAGMA_TRACE_FILTER"); traceFilterEnv != "" {
+		observe.GlobalTrace("if: traceFilterEnv != \"\"")
 		traceEnabled = true
 		traceFilter = observe.ParseTraceFilter(traceFilterEnv)
 	}
 	restoreGlobalBus := func() {}
 	restoreTraceFilter := func() {}
 	if traceEnabled {
+		observe.GlobalTrace("if: traceEnabled")
 		restoreGlobalBus = observe.InstallGlobalBus(bus)
 		restoreTraceFilter = observe.InstallTraceFilter(traceFilter)
 	}
@@ -159,9 +162,11 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 	var logFilePath string
 	fileLogLevel := observe.LevelInfo
 	if cfg.Verbose {
+		observe.GlobalTrace("if: cfg.Verbose")
 		fileLogLevel = observe.LevelDebug
 	}
 	if traceEnabled {
+		observe.GlobalTrace("if: traceEnabled")
 		fileLogLevel = observe.LevelTrace
 	}
 	if pragmaHome, homeErr := config.PragmaHome(); homeErr == nil {
@@ -378,6 +383,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		observe.GlobalTrace("if: strings.TrimSpace(loopMode) != \"\"")
 		switch loopMode {
 		case query.LoopModePragma, query.LoopModeProviderTools:
+			observe.GlobalTrace("case: query.LoopModePragma, query.LoopModeProviderTools")
 			engineCfg.LoopMode = loopMode
 		default:
 			observe.GlobalTrace("default: invalid loop mode")
@@ -711,9 +717,11 @@ func SecondaryModelFor(providerName string, activeModels ...string) string {
 	case "openrouter", "morphllm":
 		observe.GlobalTrace("case: provider preserving active model")
 		if len(activeModels) > 0 && strings.TrimSpace(activeModels[0]) != "" {
+			observe.GlobalTrace("return: activeModels[0]")
 			return activeModels[0]
 		}
 		if providerName == "morphllm" {
+			observe.GlobalTrace("return: morphprov.DefaultModel")
 			return morphprov.DefaultModel
 		}
 		return openrouterprov.DefaultModel

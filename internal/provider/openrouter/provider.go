@@ -34,12 +34,15 @@ type Provider struct {
 }
 
 func New(apiKey string, bus *observe.EventBus, baseURL string) (*Provider, error) {
-	// Match the embedded OpenAI-compatible adapter's existing key fallback so
-	// streaming and nonstreaming requests cannot use different credentials.
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+
 	if apiKey == "" {
+		observe.GlobalTrace("if: apiKey == \"\"")
 		apiKey = os.Getenv("OPENAI_API_KEY")
 	}
 	if baseURL == "" {
+		observe.GlobalTrace("if: baseURL == \"\"")
 		baseURL = DefaultBaseURL
 	}
 	inner, err := oaiprov.New(
@@ -49,45 +52,75 @@ func New(apiKey string, bus *observe.EventBus, baseURL string) (*Provider, error
 		oaiprov.WithErrorClassifier(openrouterClassify),
 	)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil, err")
 		return nil, err
 	}
 	client, ok := rawcapture.HTTPClientFromEnv(10 * time.Minute)
 	if !ok {
+		observe.GlobalTrace("if: !ok")
 		client = &http.Client{Timeout: 10 * time.Minute}
 	}
 	wireClient := oaisdk.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(baseURL), option.WithHTTPClient(client))
+	observe.GlobalTrace("return: &Provider{Provider: inner, wireClient: wireClient, bus: bus}, nil")
 	return &Provider{Provider: inner, wireClient: wireClient, bus: bus}, nil
 }
 
-func (p *Provider) Name() string { return "openrouter" }
+func (p *Provider) Name() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: \"openrouter\"")
+	return "openrouter"
+}
 
 func (p *Provider) SupportsFeature(feature provider.Feature) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if feature == provider.FeatureThinking {
+		observe.GlobalTrace("if: feature == provider.FeatureThinking")
+		observe.GlobalTrace("return: true")
 		return true
 	}
+	observe.GlobalTrace("return: p.Provider.SupportsFeature(feature)")
 	return p.Provider.SupportsFeature(feature)
 }
 
 func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
-	// OpenRouter pricing is model- and route-dependent. Avoid attributing the
-	// embedded OpenAI adapter's prices to OpenRouter models.
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: model.Pricing{}, false")
+
 	return model.Pricing{}, false
 }
 
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if modelID == DefaultModel || modelID == FlashModel || modelID == "stealth/ox-alpha" {
+		observe.GlobalTrace("if: modelID == DefaultModel || modelID == FlashModel || modelID == \"stealth/ox-al...")
+		observe.GlobalTrace("return: 1_310_720, true")
 		return 1_310_720, true
 	}
+	observe.GlobalTrace("return: p.Provider.ContextWindow(modelID)")
 	return p.Provider.ContextWindow(modelID)
 }
 
-func (p *Provider) ListModels() []string { return []string{DefaultModel, FlashModel} }
+func (p *Provider) ListModels() []string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: []string{DefaultModel, FlashModel}")
+	return []string{DefaultModel, FlashModel}
+}
 
 var openrouterFallbackClassify = shared.ClassifyByStatusCodes([]string{"429", "500", "502", "503", "504"})
 
 func openrouterClassify(err error) shared.ErrorClassification {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	msg := err.Error()
 	if strings.Contains(msg, `"reason":"in_flight_budget_exhausted"`) {
+		observe.GlobalTrace("if: strings.Contains(msg, `\"reason\":\"in_flight_budget_exhausted\"`)")
+		observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\ttrue,\n\tErrorType:\t\"rat...")
 		return shared.ErrorClassification{
 			Wrapped:    err,
 			Retryable:  true,
@@ -95,23 +128,33 @@ func openrouterClassify(err error) shared.ErrorClassification {
 			RetryAfter: openrouterRetryAfter(msg),
 		}
 	}
+	observe.GlobalTrace("return: openrouterFallbackClassify(err)")
 	return openrouterFallbackClassify(err)
 }
 
 func openrouterRetryAfter(msg string) time.Duration {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	const marker = `"Retry-After":"`
 	start := strings.Index(msg, marker)
 	if start < 0 {
+		observe.GlobalTrace("if: start < 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
 	start += len(marker)
 	end := strings.IndexByte(msg[start:], '"')
 	if end < 0 {
+		observe.GlobalTrace("if: end < 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
 	seconds, err := strconv.Atoi(msg[start : start+end])
 	if err != nil || seconds < 0 {
+		observe.GlobalTrace("if: err != nil || seconds < 0")
+		observe.GlobalTrace("return: 0")
 		return 0
 	}
+	observe.GlobalTrace("return: time.Duration(seconds) * time.Second")
 	return time.Duration(seconds) * time.Second
 }
