@@ -99,6 +99,20 @@ subagent tool. Each restoration: recorded absence/failure first, mechanism
 ported second, gate third. Capability claims need real local integration
 evidence; task-success claims additionally need held-out evaluation.
 
+**M4.1 — MCP tool injection restored (2026-09-11, MCPINJ-001).** The
+provider-tools loop sent only `Bash`+`apply_patch` while 4 MCP servers
+(129 advertised tools) sat connected: `providerToolDefs()` was hardcoded and
+`mcp__` calls answered `unknown tool`. Baseline RED reproduced on the wire
+(real session boot, raw HTTP capture: 4 servers `connected`, tools still
+2, mcp call errored); the branch's MCPToolAdapter mechanism was ported
+main-shaped (mcp/adapter.go ToolDef conversion + Manager.ToolDefs +
+Manager.CallMCPTool with original-name recovery, EngineConfig hooks, loop
+injection + dispatch); candidate GREEN: 129 defs from all 4 servers on the
+wire, real MCP execution through the loop, pairing intact; pragma mode
+unchanged; full suite clean. Record:
+`docs/failure-cases/mcp-tool-injection-2026-09-11.md`. Remaining M4: brave
+websearch tool, subagent tool.
+
 ### M5 — Held-out self-evaluation (only if a score claim is made)
 
 Frozen candidate, declared task set, matched budgets, repetitions, uncertainty

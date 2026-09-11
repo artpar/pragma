@@ -1,0 +1,14 @@
+{
+  "expect": "pragma",
+  "results_dir": "e2e/mcp-injection/results/baseline-pragma",
+  "request_count": 1,
+  "requests": [
+    {
+      "seq": 1,
+      "url": "http://127.0.0.1:52853/v1/chat/completions",
+      "tool_names": [],
+      "mcp_connected": [],
+      "sha256": "513813e986b65480b22f89a41ed19f6ea61ea4ca841546aaa3c493cf5a34defa"
+    }
+  ]
+}

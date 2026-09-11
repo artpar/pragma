@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/permission"
 	"github.com/artpar/pragma/internal/provider"
@@ -23,6 +25,29 @@ func RegisterTools(d *Deps, _ permission.Prompter) (*query.Engine, error) {
 	d.EngineCfg.MCPServerStatuses = func() []query.MCPServerStatus {
 		ensureCapabilitiesForActiveWorkDir(context.Background(), d)
 		return mcpStatusesForQuery(d.McpManager)
+	}
+	d.EngineCfg.MCPToolDefs = func(ctx context.Context) []model.ToolDef {
+		observe.TraceCtx(ctx, "cli", "RegisterTools.MCPToolDefs", "enter")
+		defer observe.TraceCtx(ctx, "cli", "RegisterTools.MCPToolDefs", "exit")
+		ensureCapabilitiesForActiveWorkDir(ctx, d)
+		if d.McpManager == nil {
+			observe.TraceCtx(ctx, "cli", "RegisterTools.MCPToolDefs", "if: d.McpManager == nil")
+			observe.TraceCtx(ctx, "cli", "RegisterTools.MCPToolDefs", "return: nil")
+			return nil
+		}
+		observe.TraceCtx(ctx, "cli", "RegisterTools.MCPToolDefs", "return: d.McpManager.ToolDefs(ctx)")
+		return d.McpManager.ToolDefs(ctx)
+	}
+	d.EngineCfg.MCPCallTool = func(ctx context.Context, toolName string, input json.RawMessage) (string, error) {
+		observe.TraceCtx(ctx, "cli", "RegisterTools.MCPCallTool", "enter")
+		defer observe.TraceCtx(ctx, "cli", "RegisterTools.MCPCallTool", "exit")
+		if d.McpManager == nil {
+			observe.TraceCtx(ctx, "cli", "RegisterTools.MCPCallTool", "if: d.McpManager == nil")
+			observe.TraceCtx(ctx, "cli", "RegisterTools.MCPCallTool", "return: \"\", fmt.Errorf(...)")
+			return "", fmt.Errorf("mcp tool %s: no MCP manager configured", toolName)
+		}
+		observe.TraceCtx(ctx, "cli", "RegisterTools.MCPCallTool", "return: d.McpManager.CallMCPTool(ctx, toolName, input)")
+		return d.McpManager.CallMCPTool(ctx, toolName, input)
 	}
 	d.EngineCfg.RefreshCapabilities = func(ctx context.Context) {
 		ensureCapabilitiesForActiveWorkDir(ctx, d)

@@ -38,6 +38,13 @@ type EngineConfig struct {
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
 	SessionCheckpoint         func() error
 	MCPServerStatuses         func() []MCPServerStatus
+	// MCPToolDefs returns tool definitions for connected MCP servers. When
+	// set, the provider-tools loop injects them into the model tool list
+	// (names are "mcp__<server>__<tool>"; see internal/mcp/adapter.go).
+	MCPToolDefs func(ctx context.Context) []model.ToolDef
+	// MCPCallTool routes an "mcp__<server>__<tool>" invocation back to the
+	// owning MCP server. Required to execute injected MCP tool calls.
+	MCPCallTool func(ctx context.Context, toolName string, input json.RawMessage) (string, error)
 	RefreshCapabilities       func(context.Context)
 }
 

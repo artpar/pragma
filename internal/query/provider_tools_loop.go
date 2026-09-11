@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
 	"github.com/artpar/pragma/internal/shellrun"
@@ -50,6 +51,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
 		system = engine.systemWithMCPStatus(system)
 		tools := providerToolDefs()
+		tools = engine.withMCPToolDefs(ctx, tools)
 		system = engine.systemWithPatchGuidance(system, tools)
 		messages, err := engine.messagesForRequestChecked(snap.Conversation)
 		if err != nil {
@@ -246,6 +248,10 @@ func responseToolCalls(response model.Response) []model.ToolCallPart {
 func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.ToolCallPart) model.ToolResultPart {
 	observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "exit")
+	if isMCPToolCall(engine, call.Name) {
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "if: isMCPToolCall(engine, call.Name)")
+		return engine.executeMCPToolCall(ctx, call)
+	}
 	switch call.Name {
 	case "Bash":
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: \"Bash\"")
@@ -257,6 +263,66 @@ func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.To
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "default")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}
 	}
+}
+
+// isMCPToolCall reports whether a tool name is an injected MCP tool the
+// engine can route ("mcp__" prefix and a routing hook configured).
+func isMCPToolCall(engine *Engine, name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: mcp.IsMCPTool(name) && engine.config.MCPCallTool != nil")
+	return mcp.IsMCPTool(name) && engine.config.MCPCallTool != nil
+}
+
+// withMCPToolDefs appends the injected MCP tool definitions to the built-in
+// tool list. Built-in names win on collision (an MCP tool cannot shadow
+// Bash or apply_patch); duplicate MCP names are skipped (first wins).
+func (engine *Engine) withMCPToolDefs(ctx context.Context, tools []model.ToolDef) []model.ToolDef {
+	observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "exit")
+	if engine.config.MCPToolDefs == nil {
+		observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "if: engine.config.MCPToolDefs == nil")
+		observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "return: tools")
+		return tools
+	}
+	mcpDefs := engine.config.MCPToolDefs(ctx)
+	if len(mcpDefs) == 0 {
+		observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "if: len(mcpDefs) == 0")
+		observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "return: tools")
+		return tools
+	}
+	seen := make(map[string]bool, len(tools)+len(mcpDefs))
+	for _, tool := range tools {
+		observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "range tools")
+		seen[tool.Name] = true
+	}
+	for _, def := range mcpDefs {
+		observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "range mcpDefs")
+		if seen[def.Name] {
+			observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "if: seen[def.Name]")
+			continue
+		}
+		seen[def.Name] = true
+		tools = append(tools, def)
+	}
+	observe.TraceCtx(ctx, "query", "Engine.withMCPToolDefs", "return: tools")
+	return tools
+}
+
+// executeMCPToolCall routes an injected MCP tool call to its server through
+// the configured hook. The result pairs with the call (ToolCallID) like any
+// built-in tool result.
+func (engine *Engine) executeMCPToolCall(ctx context.Context, call model.ToolCallPart) model.ToolResultPart {
+	observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "exit")
+	output, err := engine.config.MCPCallTool(ctx, call.Name, call.Input)
+	if err != nil {
+		observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "if: err != nil")
+		observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "return: model.ToolResultPart{ ... IsError: true }")
+		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("mcp tool %s failed: %v", call.Name, err), IsError: true}
+	}
+	observe.TraceCtx(ctx, "query", "Engine.executeMCPToolCall", "return: model.ToolResultPart{ToolCallID: call.ID, Content: output}")
+	return model.ToolResultPart{ToolCallID: call.ID, Content: output}
 }
 
 func (engine *Engine) executeProviderBashTool(ctx context.Context, call model.ToolCallPart) model.ToolResultPart {

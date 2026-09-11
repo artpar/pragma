@@ -1,0 +1,12 @@
+{
+  "sequence": 1,
+  "trace_id": "e796134af9c96b1f638150e231c7e99b",
+  "span_id": "16c3384c43a223d8",
+  "status": "200 OK",
+  "status_code": 200,
+  "started_at": "2026-09-11T13:51:55.228622Z",
+  "completed_at": "2026-09-11T13:51:55.229081Z",
+  "duration_ms": 15009,
+  "response_bytes": 576,
+  "response_sha256": "5470a1260ce832fd72df760ac0356c2ef4fff2417461b36d189c30c187100b44"
+}

@@ -1,0 +1,34 @@
+{
+  "expect": "red",
+  "results_dir": "e2e/mcp-injection/results/baseline-red",
+  "request_count": 2,
+  "requests": [
+    {
+      "seq": 1,
+      "url": "http://127.0.0.1:52182/v1/chat/completions",
+      "tool_names": [
+        "Bash",
+        "apply_patch"
+      ],
+      "mcp_connected": [
+        "jetbrains-79dfb383eaefab75"
+      ],
+      "sha256": "310e9b65200ab9cd140e0eb56c9b73c9faf9ac88308887ceb3cf2d935b8b6bbe"
+    },
+    {
+      "seq": 2,
+      "url": "http://127.0.0.1:52182/v1/chat/completions",
+      "tool_names": [
+        "Bash",
+        "apply_patch"
+      ],
+      "mcp_connected": [
+        "agile",
+        "jetbrains-79dfb383eaefab75",
+        "past-conversations",
+        "planning"
+      ],
+      "sha256": "d26bd034edec23de7ab67d7bf43a1884857c1e2a441fa6a76f1fc761f4fdba20"
+    }
+  ]
+}
