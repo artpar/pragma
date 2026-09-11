@@ -60,8 +60,9 @@ with variance captured across runs.
   request-1 input at 20,294 tokens against 826 on the pre-injection
   binary on the same route — ~19.5K input tokens of tool-def overhead on
   **every** request, parent and sub-agent fork alike (the RTY-scan
-  sub-agent's fresh conversation also started at ~19.7K). Through 136
-  completions and 113K input tokens: zero request failures, zero retries.
+  sub-agent's fresh conversation also started at ~19.7K). Through the
+  session's full 147 completions and 121K peak input tokens: zero request
+  failures, zero retries.
   The one observed token-limit event on the live route — the morphllm
   router's `raw_isl_tokens` policy (medium class, 200,000 raw, hit at
   291,066 raw ≈ 2.8× the tokenized count) — occurred on the **old**
