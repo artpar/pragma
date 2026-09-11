@@ -23,9 +23,9 @@ mkdir -p "$OUT/raw"
 
 PROFILE="$MODE"
 LOOP="$PROFILE"
-if [ "$PROFILE" = "websearch" ]; then
-  LOOP="provider-tools"
-fi
+case "$PROFILE" in
+  websearch|subagent) LOOP="provider-tools" ;;
+esac
 python3 "$HERE/probe_provider.py" "$PROBE" "$PROFILE" "$DELAY" > "$OUT/provider.log" 2>&1 &
 PROV_PID=$!
 PIDS="$PROV_PID"

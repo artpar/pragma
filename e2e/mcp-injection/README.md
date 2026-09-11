@@ -13,8 +13,10 @@ baseline/candidate runs.
   (default 15s, letting the harness's async MCP connect complete), then
   returns two tool calls in one turn (`Bash` echo + read-only
   `mcp__past-conversations__list_projects`); `websearch` profile returns a
-  `WebSearch` tool call instead; `pragma` profile answers immediately with
-  final text.
+  `WebSearch` tool call instead; `subagent` profile returns an `Agent`
+  tool call (the sub-agent's own fresh-conversation request and the
+  parent's follow-up answer with final text); `pragma` profile answers
+  immediately with final text.
 - `brave_stub.py` — local Brave-compatible Search API stub (WEB-001
   hermetic gate; no Brave spend).
 - `run_probe.sh <label> <profile> [delay] [live]` — boots `./bin/pragma`
@@ -25,8 +27,8 @@ baseline/candidate runs.
   `live` as the 4th argument to hit the real Brave endpoint instead
   (budget: 1 search call).
 - `assert_boot.py <results-dir>
-  <red|green|pragma|webred|webgreen|weblive>` — asserts the wire shape
-  captured under `results/<label>/raw/`.
+  <red|green|pragma|webred|webgreen|weblive|subred|subgreen>` — asserts
+  the wire shape captured under `results/<label>/raw/`.
 
 Preconditions: the 4 MCP servers from the recorded case must be live
 (3 npx stdio servers are spawned by the harness; the JetBrains HTTP server
@@ -50,6 +52,12 @@ requires the IDE running and its discovery lease fresh — TTL 30s).
 - `results/candidate-weblive/` — WEB-001 live Brave contract: one real
   search call through the full loop path.
 - `results/candidate-webpragma/` — pragma mode unchanged after WEB-001.
+- `results/baseline-subred/` — SUB-001 baseline (`bbcca96`): no `Agent`
+  anywhere, call answered `unknown tool`.
+- `results/candidate-subgreen/` — SUB-001 candidate: the sub-agent's
+  fresh-conversation request on the wire (Agent excluded from its tools),
+  the parent pairing the JSON envelope with the sub-agent's final text.
+- `results/candidate-subpragma/` — pragma mode unchanged after SUB-001.
 - Each `raw/<seq>-.../` holds `request.json` (exact wire body),
   `request.headers.json` (credentials redacted), `request.meta.json`
   (sequence, URL, sha256), `response.raw`, `response.meta.json`.

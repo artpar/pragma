@@ -48,6 +48,9 @@ type EngineConfig struct {
 	// WebSearch executes a WebSearch tool invocation (Brave Search API).
 	// When set, the provider-tools loop offers the WebSearch tool.
 	WebSearch func(ctx context.Context, input json.RawMessage) (string, error)
+	// DisableSubAgents is set on sub-agent engines so the Agent tool is not
+	// injected into their toolset (recursion guard, SUB-001).
+	DisableSubAgents    bool
 	RefreshCapabilities       func(context.Context)
 }
 

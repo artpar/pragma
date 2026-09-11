@@ -57,8 +57,11 @@ func TestProviderToolsLoopWithoutWebSearchHookUnchanged(t *testing.T) {
 	collectPragmaLoopEvents(engine.Run(t.Context(), "hello"))
 
 	names := toolNamesOf(prov.requests[0].Tools)
-	if len(names) != 2 || !contains(names, "Bash") || !contains(names, "apply_patch") {
-		t.Fatalf("tools = %v, want exactly built-ins when no key resolves", names)
+	// No WebSearch without a resolvable key; the built-ins plus the
+	// unconditional Agent tool (SUB-001) remain.
+	if len(names) != 3 || !contains(names, "Bash") || !contains(names, "apply_patch") ||
+		!contains(names, "Agent") || contains(names, "WebSearch") {
+		t.Fatalf("tools = %v, want [Bash apply_patch Agent] when no key resolves", names)
 	}
 }
 

@@ -14,6 +14,9 @@ Profiles:
   pragma: every request answers immediately with final text.
   websearch: like provider-tools, but the first response carries a single
     WebSearch tool call instead (WEB-001 probe).
+  subagent: request 1 returns a single Agent tool call (SUB-001 probe);
+    the sub-agent's own request (fresh conversation) and the parent's
+    follow-up both answer with final text.
 
 Usage: probe_provider.py <workdir> <profile> [delay_seconds]
 """
@@ -32,6 +35,18 @@ os.makedirs(WORKDIR, exist_ok=True)
 requests_path = os.path.join(WORKDIR, "requests.jsonl")
 lock = threading.Lock()
 counter = {"n": 0}
+
+AGENT_TOOL_CALL = {
+    "id": "call_probe_agent",
+    "type": "function",
+    "function": {
+        "name": "Agent",
+        "arguments": json.dumps({
+            "prompt": "Reply exactly SUBAGENT_OUTPUT_MARKER and nothing else.",
+            "description": "subagent probe",
+        }),
+    },
+}
 
 WEBSEARCH_TOOL_CALL = {
     "id": "call_probe_websearch",
@@ -63,6 +78,8 @@ def tool_calls_response():
     calls = [BASH_TOOL_CALL, MCP_TOOL_CALL]
     if PROFILE == "websearch":
         calls = [WEBSEARCH_TOOL_CALL]
+    if PROFILE == "subagent":
+        calls = [AGENT_TOOL_CALL]
     return {
         "id": "chatcmpl-probe-1",
         "object": "chat.completion",
@@ -132,7 +149,7 @@ class Handler(BaseHTTPRequestHandler):
             seq = counter["n"]
             with open(requests_path, "a") as f:
                 f.write(json.dumps({"seq": seq, "path": self.path, "body": json.loads(raw.decode())}) + "\n")
-        if PROFILE in ("provider-tools", "websearch") and seq == 1:
+        if PROFILE in ("provider-tools", "websearch", "subagent") and seq == 1:
             time.sleep(DELAY)
             self._send_json(200, tool_calls_response())
             return

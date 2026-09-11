@@ -127,6 +127,26 @@ would-have-leaked capture, deleted before commit). Record:
 `docs/failure-cases/websearch-tool-restoration-2026-09-11.md`. Remaining
 M4: subagent tool.
 
+**M4.3 — Subagent tool restored, sync fork (2026-09-11, SUB-001).** The
+model could not delegate a bounded task to a fresh sub-conversation (no
+`Agent` tool; calls answered `unknown tool`). Baseline RED on the wire
+(real boot, scripted Agent call → `unknown tool`); mechanism: an Agent
+tool in the provider-tools loop that forks a fresh conversation via
+`ForkFreshConversation` (shared provider/bus/costs, sub config
+provider-tools + recursion guard + nil auto-compaction per #27794) and
+returns the sub-agent's final text in the branch's JSON envelope.
+Candidate GREEN on the wire: the sub-agent's request is a fresh
+conversation carrying the full sibling toolset minus Agent (129 MCP defs
+included), and the parent's next request pairs
+`{"status":"completed",...,"result":...}`. Pragma mode unchanged; full
+suite clean. Background/teammate/worktree/structure-graph variants remain
+follow-up mechanisms, each needing its own case. Record:
+`docs/failure-cases/subagent-tool-restoration-2026-09-11.md`.
+
+**M4 complete (2026-09-11).** All three declared restorations are gated
+and recorded. M5 (held-out self-evaluation) stays dormant unless a
+task-success claim is made.
+
 ### M5 — Held-out self-evaluation (only if a score claim is made)
 
 Frozen candidate, declared task set, matched budgets, repetitions, uncertainty

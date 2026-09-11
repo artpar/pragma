@@ -84,7 +84,8 @@ func TestProviderToolsLoopInjectsMCPToolDefs(t *testing.T) {
 	}
 }
 
-// MCPINJ-001 gate: without hooks the tool list is exactly the built-ins.
+// MCPINJ-001 gate: without hooks no MCP defs are injected. Since SUB-001 the
+// unconditional Agent tool joins the built-ins in provider-tools mode.
 func TestProviderToolsLoopWithoutMCPHooksSendsBuiltinsOnly(t *testing.T) {
 	engine, prov := newProviderToolsEngine(t, []model.Response{
 		{Content: []model.ContentPart{model.TextPart{Text: "done"}}, StopReason: model.StopEndTurn},
@@ -96,8 +97,13 @@ func TestProviderToolsLoopWithoutMCPHooksSendsBuiltinsOnly(t *testing.T) {
 		t.Fatalf("provider requests = %d, want 1", len(prov.requests))
 	}
 	names := toolNamesOf(prov.requests[0].Tools)
-	if len(names) != 2 || !contains(names, "Bash") || !contains(names, "apply_patch") {
-		t.Fatalf("tools = %v, want exactly [Bash apply_patch]", names)
+	if len(names) != 3 || !contains(names, "Bash") || !contains(names, "apply_patch") || !contains(names, "Agent") {
+		t.Fatalf("tools = %v, want exactly [Bash apply_patch Agent]", names)
+	}
+	for _, n := range names {
+		if n != "Bash" && n != "apply_patch" && n != "Agent" {
+			t.Fatalf("unexpected tool without hooks: %v", names)
+		}
 	}
 }
 

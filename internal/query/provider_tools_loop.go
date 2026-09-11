@@ -53,6 +53,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		system = engine.systemWithMCPStatus(system)
 		tools := providerToolDefs()
 		tools = engine.withWebSearchTool(tools)
+		tools = engine.withSubAgentTool(tools)
 		tools = engine.withMCPToolDefs(ctx, tools)
 		system = engine.systemWithPatchGuidance(system, tools)
 		messages, err := engine.messagesForRequestChecked(snap.Conversation)
@@ -265,6 +266,13 @@ func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.To
 			return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}
 		}
 		return engine.executeWebSearchTool(ctx, call)
+	case AgentToolName:
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: AgentToolName")
+		if engine.config.DisableSubAgents {
+			observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "if: engine.config.DisableSubAgents")
+			return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("unknown tool %q", call.Name), IsError: true}
+		}
+		return engine.executeSubAgentTool(ctx, call)
 	case applypatch.ToolName:
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: applypatch.ToolName")
 		return engine.executeProviderApplyPatchTool(ctx, call)
