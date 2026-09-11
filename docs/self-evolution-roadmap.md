@@ -45,11 +45,43 @@ failed once under parallel full-suite execution: `requests = 12, want 2` after
 full run. Suspected: local httptest latency under package parallelism trips
 the bounded retry policy.
 
-- Entry: reproduce under parallelism with variance captured across runs
-  (unconfirmed until reproduced).
-- Exit: deterministic passes across N consecutive parallel full-suite runs,
-  or the flake is localized to a documented environmental cause.
-- Why first: an unreliable gate makes every later claim unfalsifiable.
+**Resolved 2026-09-11 without a second observed flake.** RTY-001 removed
+the mechanism (misclassified-retry burn) that turned transient local
+httptest latency into 183s of budget exhaustion, and the suite has since
+run clean under parallelism five consecutive times on 2026-09-11 (exit 0,
+29 packages ok — including TURN-001's candidate gates). The suspected
+environmental trigger was never reproduced; if the flake returns, reopen
+with variance captured across runs.
+
+### Live observations (post-M4 dogfood, 2026-09-11) — notes, not cases
+
+- **Wire size of the injected toolset:** the first live session on the
+  restored build (4 MCP servers connected, 132 tool defs) measured
+  request-1 input at 20,294 tokens against 826 on the pre-injection
+  binary on the same route — ~19.5K input tokens of tool-def overhead on
+  **every** request, parent and sub-agent fork alike (the RTY-scan
+  sub-agent's fresh conversation also started at ~19.7K). Through 136
+  completions and 113K input tokens: zero request failures, zero retries.
+  The one observed token-limit event on the live route — the morphllm
+  router's `raw_isl_tokens` policy (medium class, 200,000 raw, hit at
+  291,066 raw ≈ 2.8× the tokenized count) — occurred on the **old**
+  binary and was driven by conversation growth, not tool defs; it was a
+  retryable 429, correctly classified with structured Retry-After
+  (RTY-002 working live). No harm event attributed to tool-def wire size
+  yet, so per-server MCP caps stay evidence-gated. To watch: with ~19.5K
+  extra per request, sessions reach the router's raw-token policy at
+  proportionally earlier conversation depth.
+- **RTY-003/004/005 (openai/google/groq): stay recorded-latent.** A
+  read-only scan of logs, session stores, and recordings (2026-09-11)
+  found no authentic failures on those routes: the openai-adapter-tagged
+  failures are openrouter-route events (RTY-001's domain, already fixed),
+  groq has never been used, google has not been exercised since June.
+  Absence of route traffic is not evidence of defect; the ports wait for
+  real failures.
+- **Planning-MCP workflow friction (minor, no case):** completing a
+  planning task requires `submit_for_review` first, and submitting
+  requires `in_progress` first — two extra round trips per task. Dogfood
+  observation only.
 
 ### M2b — Classify the captured session-start failure
 
@@ -146,6 +178,30 @@ follow-up mechanisms, each needing its own case. Record:
 **M4 complete (2026-09-11).** All three declared restorations are gated
 and recorded. M5 (held-out self-evaluation) stays dormant unless a
 task-success claim is made.
+
+**TURN-001 — Turn-budget warning restored ahead of the cap
+(2026-09-11, commit `e05726f`).** First case driven by live dogfood
+evidence: `DefaultMaxTurns` killed the previous operator session twice
+mid-task with no advance signal (log `2026-09-11T18-50-33.jsonl`: two
+exactly-100-completion segments ending `stop_reason=tool_use`; the model's
+recorded thinking shows it learned of the termination only afterward) and
+killed three Terminal-Bench 2.1 tasks the same way (audit record). Of the
+three options (warn-at-N / continuation / override) the case selects
+warn-at-N: continuation already exists (the conversation persists across
+the loop's death; a new prompt or `--resume` continues it) and the
+override already exists (`--max-turns`). Mechanism (one): a user-role
+turn-budget notice appended once, `maxTurns/10` turns before the cap
+(floored at 5, half the budget for budgets below 10), naming
+used/remaining and instructing wrap-up or handoff. Cap, error text, flags
+unchanged; pragma loop mode untouched (separate budget mechanism, own
+case if ever evidenced). Gates: baseline RED (scripted 20-turn loop: zero
+notices where one is due, cap-enforcement assertions passing), candidate
+GREEN (notice exactly once at the warn iteration, retained in history,
+pairing validation intact, cap still enforced), pragma-mode adjacent
+clean, full suite exit 0 across 5 consecutive parallel runs. Live-effect
+boundary: injection is proven; that a model *acts* on the notice is not
+claimed. Record:
+`docs/failure-cases/turn-budget-warning-2026-09-11.md`.
 
 ### M5 — Held-out self-evaluation (only if a score claim is made)
 
