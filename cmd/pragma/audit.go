@@ -18,7 +18,7 @@ func auditCmd() *cobra.Command {
 
 The path can be:
   - A .jsonl file (e.g., pragma-recording.jsonl)
-  - A replay directory containing events.jsonl`,
+  - A replay directory containing events.jsonl (or a single .jsonl event recording)`,
 		Args: cobra.ExactArgs(1),
 		RunE: auditRun,
 	}

@@ -19,7 +19,7 @@ func metricsCmd() *cobra.Command {
 
 The path can be:
   - A .jsonl file (e.g., pragma-recording.jsonl)
-  - A replay directory containing events.jsonl`,
+  - A replay directory containing events.jsonl (or a single .jsonl event recording)`,
 		Args: cobra.ExactArgs(1),
 		RunE: metricsRun,
 	}
@@ -33,6 +33,8 @@ func metricsRun(_ *cobra.Command, args []string) error {
 
 	if len(events) == 0 {
 		fmt.Println("No events found.")
+		fmt.Println("Hint: event recordings are written under ~/.pragma/recordings/<session-id>/;")
+		fmt.Println("session-store files (~/.pragma/sessions/*.jsonl) use a different format.")
 		return nil
 	}
 

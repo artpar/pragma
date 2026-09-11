@@ -3,6 +3,7 @@ package observe
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +36,9 @@ func LoadReplay(path string) (*ReplayEngine, error) {
 	}
 
 	artifactDir := path
-	eventsPath := filepath.Join(path, "events.jsonl")
+	// Let ScanEventLog resolve the events file: events.jsonl when present,
+	// otherwise a lone *.jsonl recording file in the directory.
+	eventsPath := path
 	if info, err := os.Stat(path); err != nil {
 		return nil, err
 	} else if !info.IsDir() {
@@ -97,12 +100,25 @@ func LoadReplay(path string) (*ReplayEngine, error) {
 }
 
 // LoadEvents reads events from a JSONL file. If path is a directory,
-// it looks for events.jsonl inside it.
+// it looks for events.jsonl inside it, or for a single *.jsonl recording
+// file when events.jsonl is absent. Events whose kinds are not registered
+// with the current build are skipped with a stderr warning so recordings
+// from older harness revisions remain loadable.
 func LoadEvents(path string) ([]Event, error) {
 	var events []Event
+	skipped := 0
+	var firstUnknown string
 	err := ScanEventLog(path, func(line EventLogLine) error {
 		event, err := UnmarshalEvent(line.Raw)
 		if err != nil {
+			var unknown UnknownEventKindError
+			if errors.As(err, &unknown) {
+				skipped++
+				if firstUnknown == "" {
+					firstUnknown = unknown.Kind
+				}
+				return nil
+			}
 			return fmt.Errorf("line %d: unmarshal event: %w", line.Number, err)
 		}
 		events = append(events, event)
@@ -110,6 +126,9 @@ func LoadEvents(path string) ([]Event, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, "warning: skipped %d event(s) with unregistered kinds (first: %q)\n", skipped, firstUnknown)
 	}
 	return events, nil
 }
@@ -120,7 +139,10 @@ func ScanEventLog(path string, handle func(EventLogLine) error) error {
 		return err
 	}
 	if info.IsDir() {
-		path = filepath.Join(path, "events.jsonl")
+		path, err = resolveEventLogPath(path)
+		if err != nil {
+			return err
+		}
 	}
 
 	f, err := os.Open(path)
@@ -142,6 +164,30 @@ func ScanEventLog(path string, handle func(EventLogLine) error) error {
 		return fmt.Errorf("scan event log: %w", err)
 	}
 	return nil
+}
+
+// resolveEventLogPath resolves the event file for a directory. The canonical
+// layout is events.jsonl; the recorder also writes <timestamp>.jsonl files
+// under ~/.pragma/recordings/<session-id>/, so a directory holding exactly
+// one such file resolves to it. Multiple candidates are reported rather
+// than guessed.
+func resolveEventLogPath(dir string) (string, error) {
+	canonical := filepath.Join(dir, "events.jsonl")
+	if _, err := os.Stat(canonical); err == nil {
+		return canonical, nil
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
+	if err != nil {
+		return "", err
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no events.jsonl or *.jsonl event file in %s", dir)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("multiple event files in %s: %v", dir, matches)
+	}
 }
 
 func (re *ReplayEngine) loadEvents(path string) error {

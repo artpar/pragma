@@ -419,7 +419,18 @@ func UnmarshalEvent(data []byte) (Event, error) {
 		}
 		event = e
 	default:
-		return nil, fmt.Errorf("unknown event kind: %q", peek.Kind)
+		return nil, UnknownEventKindError{Kind: peek.Kind}
 	}
 	return event, nil
+}
+
+// UnknownEventKindError reports an event whose kind is not registered with
+// the current harness build. Recordings from older revisions can contain
+// such kinds; loaders skip them so historical artifacts remain readable.
+type UnknownEventKindError struct {
+	Kind string
+}
+
+func (e UnknownEventKindError) Error() string {
+	return fmt.Sprintf("unknown event kind: %q", e.Kind)
 }
