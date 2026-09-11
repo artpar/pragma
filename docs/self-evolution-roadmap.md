@@ -72,6 +72,35 @@ with variance captured across runs.
   yet, so per-server MCP caps stay evidence-gated. To watch: with ~19.5K
   extra per request, sessions reach the router's raw-token policy at
   proportionally earlier conversation depth.
+
+### Live observations (2026-09-11/12 night session — the session that
+### committed CLK-001 and PAR-001) — notes, not cases
+
+- **TURN-002 live effect confirmed:** the widened notice fired at turn 80
+  of 100 with 20 remaining in that very session (in-conversation notice
+  ~00:29 IST) — the window change works live; the wrap-up had 20 turns
+  of room and completed cleanly. (TURN-003 escalation evidence would be
+  a session dying mid-task *despite* the 20-turn window.)
+- **Router 429s are queue-class, not raw-token:** three retryable 429s
+  hit that session (23:46, 00:03, 00:25) — all `router policy class
+  "small"/"whale" queue requests limit reached` concurrency-admission
+  limits (small: 8, whale: 2), all classified retryable and retried to
+  success (RTY-002 working live). Zero `raw_isl_tokens` events: the
+  wire-size harm event has still not occurred; the per-server-cap
+  mechanism stays evidence-gated. That session peaked at 172.6K input
+  tokens (106+ completions) with the router moving requests to the
+  whale class as the conversation grew.
+- **Interrupt-on-message-arrival spend waste (observation, no case):**
+  four `context canceled` request failures in that session — one was the
+  PAR-001 evidence batch (operator interrupt during tool execution); the
+  other three each preceded a user-message acceptance by seconds
+  (submitting a message while a model request is in flight cancels it).
+  Each canceled request forfeits its full input spend (40-120K tokens
+  each at this route's 2-4-minute thinking latency — roughly 350K input
+  tokens wasted across the session). The semantics are reasonable; the
+  cost is a long-latency × interrupt interaction. A "queue the message
+  behind the in-flight request" or partial-result-preservation
+  mechanism would need its own case if the operator wants it.
 - **RTY-003/004/005 (openai/google/groq): stay recorded-latent.** A
   read-only scan of logs, session stores, and recordings (2026-09-11)
   found no authentic failures on those routes: the openai-adapter-tagged
