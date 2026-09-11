@@ -17,6 +17,9 @@ Profiles:
   subagent: request 1 returns a single Agent tool call (SUB-001 probe);
     the sub-agent's own request (fresh conversation) and the parent's
     follow-up both answer with final text.
+  turnbudget: request 1 delays (MCP connect), then EVERY request returns a
+    single Bash tool call (TURN-001 probe); the loop never gets final text
+    and must exhaust the turn budget (run with --max-turns 8).
 
 Usage: probe_provider.py <workdir> <profile> [delay_seconds]
 """
@@ -80,6 +83,15 @@ def tool_calls_response():
         calls = [WEBSEARCH_TOOL_CALL]
     if PROFILE == "subagent":
         calls = [AGENT_TOOL_CALL]
+    if PROFILE == "turnbudget":
+        calls = [{
+            "id": "call_probe_tb",
+            "type": "function",
+            "function": {
+                "name": "Bash",
+                "arguments": json.dumps({"cmd": "echo TURN_BUDGET_PROBE_OK"}),
+            },
+        }]
     return {
         "id": "chatcmpl-probe-1",
         "object": "chat.completion",
@@ -151,6 +163,11 @@ class Handler(BaseHTTPRequestHandler):
                 f.write(json.dumps({"seq": seq, "path": self.path, "body": json.loads(raw.decode())}) + "\n")
         if PROFILE in ("provider-tools", "websearch", "subagent") and seq == 1:
             time.sleep(DELAY)
+            self._send_json(200, tool_calls_response())
+            return
+        if PROFILE == "turnbudget":
+            if seq == 1:
+                time.sleep(DELAY)
             self._send_json(200, tool_calls_response())
             return
         self._send_json(200, final_text_response())

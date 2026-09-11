@@ -1,0 +1,11 @@
+{
+  "sequence": 5,
+  "trace_id": "fd0a8c6dcfa6475f284143e991a87d4e",
+  "span_id": "176a8a580a3d8f46",
+  "method": "POST",
+  "url": "http://127.0.0.1:59830/v1/chat/completions",
+  "host": "",
+  "started_at": "2026-09-11T15:38:28.128238Z",
+  "request_bytes": 81772,
+  "request_sha256": "8563a696fd1830ec8bac8a588ed15e415d591898220c8f8ab7c069884f28d486"
+}

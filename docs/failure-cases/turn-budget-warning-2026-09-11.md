@@ -114,6 +114,18 @@
   - `go test ./internal/query/ -count=1` ok; `go test ./... -count=1`
     exit 0 (29 packages ok); `make instrument` idempotent (6 branch points
     added on first run, 0 on rerun); `make smoke` OK.
+- Wire gate (real local integration, added same day after the engine gates):
+  a real session boot against the scripted provider with `--max-turns 8`
+  (`e2e/mcp-injection`: new `turnbudget` profile + `tbgreen` assertion,
+  rerunnable via `run_probe.sh <label> turnbudget && assert_boot.py
+  results/<label> tbgreen`). Preserved evidence:
+  `e2e/mcp-injection/results/candidate-tbgreen/` — the notice appears on
+  the captured wire at request 5 ("4 of 8 ... 4 remain") as a proper user
+  message through the real OpenAI-compatible serialization, is absent from
+  requests 1–4 and retained exactly once through request 8, and the loop
+  still terminates with `provider tools loop exceeded maximum of 8 turns`
+  — the same error text and boot-level behavior as the recorded kills,
+  now preceded by a warning.
 - Live-effect boundary: this gate proves the notice is constructed and
   injected in-conversation through the production path. Whether a specific
   model *acts* on the notice (wraps up, writes a handoff) is a

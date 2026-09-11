@@ -17,6 +17,9 @@ baseline/candidate runs.
   tool call (the sub-agent's own fresh-conversation request and the
   parent's follow-up answer with final text); `pragma` profile answers
   immediately with final text.
+  `turnbudget` profile returns a Bash tool call on **every** request, so
+  the loop must exhaust its turn budget (run with `--max-turns 8`, which
+  `run_probe.sh` passes automatically — TURN-001 wire gate).
 - `brave_stub.py` — local Brave-compatible Search API stub (WEB-001
   hermetic gate; no Brave spend).
 - `run_probe.sh <label> <profile> [delay] [live]` — boots `./bin/pragma`
@@ -27,7 +30,7 @@ baseline/candidate runs.
   `live` as the 4th argument to hit the real Brave endpoint instead
   (budget: 1 search call).
 - `assert_boot.py <results-dir>
-  <red|green|pragma|webred|webgreen|weblive|subred|subgreen>` — asserts
+  <red|green|pragma|webred|webgreen|weblive|subred|subgreen|tbgreen>` — asserts
   the wire shape captured under `results/<label>/raw/`.
 
 Preconditions: the 4 MCP servers from the recorded case must be live
@@ -58,6 +61,11 @@ requires the IDE running and its discovery lease fresh — TTL 30s).
   fresh-conversation request on the wire (Agent excluded from its tools),
   the parent pairing the JSON envelope with the sub-agent's final text.
 - `results/candidate-subpragma/` — pragma mode unchanged after SUB-001.
+- `results/candidate-tbgreen/` — TURN-001 wire gate (`e05726f`+): with
+  `--max-turns 8`, the turn-budget notice appears exactly once on the wire
+  at request 5 ("4 of 8 ... 4 remain"), absent before and retained after,
+  and the loop still terminates with the 8-turn error. Rerun:
+  `run_probe.sh <label> turnbudget && assert_boot.py results/<label> tbgreen`.
 - Each `raw/<seq>-.../` holds `request.json` (exact wire body),
   `request.headers.json` (credentials redacted), `request.meta.json`
   (sequence, URL, sha256), `response.raw`, `response.meta.json`.

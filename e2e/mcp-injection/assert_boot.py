@@ -316,6 +316,43 @@ def assert_pragma(reqs):
     print("PASS pragma.shape: %d request(s), no tools sent" % len(reqs))
 
 
+def assert_tbgreen(reqs):
+    """TURN-001 wire gate: the turn-budget notice appears once on the wire
+    at the warn iteration and is retained, while the cap still kills the
+    loop (--max-turns 8 => warn at turn 4, 4 remain)."""
+    check(len(reqs) == 8, "expected exactly 8 requests (--max-turns 8), got %d" % len(reqs))
+
+    def notice_msgs(body):
+        n = 0
+        text = ""
+        for msg in body.get("messages", []):
+            if msg.get("role") == "user" and "[pragma turn budget]" in str(msg.get("content") or ""):
+                n += 1
+                text = str(msg.get("content"))
+        return n, text
+
+    for i in range(4):
+        n, _ = notice_msgs(reqs[i][1])
+        check(n == 0, "request seq=%d carries %d notices, want 0" % (i + 1, n))
+    n, text = notice_msgs(reqs[4][1])
+    check(n == 1, "warn-iteration request (seq=5) carries %d notices, want 1" % n)
+    check("4 of 8" in text and "4 remain" in text,
+          "notice text missing budget state: %r" % text[:160])
+    for i in (5, 6, 7):
+        n, _ = notice_msgs(reqs[i][1])
+        check(n == 1, "request seq=%d carries %d notices, want exactly 1 (retained)" % (i + 1, n))
+    cap = ""
+    for name in ("stderr.txt", "stdout.txt"):
+        path = os.path.join(RESULTS, name)
+        if os.path.exists(path):
+            with open(path) as f:
+                cap += f.read()
+    check("exceeded maximum of 8 turns" in cap,
+          "loop termination error 'exceeded maximum of 8 turns' not found in stdout/stderr")
+    print("PASS tbgreen.notice: notice at seq=5 ('4 of 8', '4 remain'), absent before, retained once after")
+    print("PASS tbgreen.cap: loop still terminated with the 8-turn error")
+
+
 def main():
     reqs = load_requests()
     print("loaded %d captured requests from %s" % (len(reqs), RAW))
@@ -336,6 +373,8 @@ def main():
             assert_subred(reqs)
         elif EXPECT == "subgreen":
             assert_subgreen(reqs)
+        elif EXPECT == "tbgreen":
+            assert_tbgreen(reqs)
         else:
             raise Failure("unknown expectation %r" % EXPECT)
     except Failure as e:

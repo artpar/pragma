@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Boot one real pragma session against the scripted local provider and capture
 # the raw HTTP wire. Usage:
-#   run_probe.sh <label> <profile: provider-tools|pragma|websearch> [delay_seconds] [live]
+#   run_probe.sh <label> <profile: provider-tools|pragma|websearch|subagent|turnbudget> [delay_seconds] [live]
 # The websearch profile also starts the local Brave stub and points
 # BRAVE_SEARCH_BASE_URL at it (WEB-001 hermetic gate). Pass "live" as the
 # 4th arg to skip the stub and hit the real Brave endpoint (WEB-001 live
@@ -24,7 +24,7 @@ mkdir -p "$OUT/raw"
 PROFILE="$MODE"
 LOOP="$PROFILE"
 case "$PROFILE" in
-  websearch|subagent) LOOP="provider-tools" ;;
+  websearch|subagent|turnbudget) LOOP="provider-tools" ;;
 esac
 python3 "$HERE/probe_provider.py" "$PROBE" "$PROFILE" "$DELAY" > "$OUT/provider.log" 2>&1 &
 PROV_PID=$!
@@ -46,6 +46,7 @@ PORT="$(cat "$PROBE/port")"
 echo "probe provider on 127.0.0.1:$PORT (profile=$PROFILE delay=${DELAY}s)"
 
 EXTRA_ENV=()
+EXTRA_ARGS=()
 if [ "$PROFILE" = "websearch" ] && [ "$LIVE" != "live" ]; then
   for _ in $(seq 1 100); do
     [ -f "$BRAVE/port" ] && break
@@ -55,6 +56,9 @@ if [ "$PROFILE" = "websearch" ] && [ "$LIVE" != "live" ]; then
   BRAVE_PORT="$(cat "$BRAVE/port")"
   echo "brave stub on 127.0.0.1:$BRAVE_PORT"
   EXTRA_ENV=("BRAVE_SEARCH_BASE_URL=http://127.0.0.1:$BRAVE_PORT")
+fi
+if [ "$PROFILE" = "turnbudget" ]; then
+  EXTRA_ARGS=(--max-turns 8)
 fi
 
 PROMPT="MCP injection boot probe: call the tools the scripted provider offers, then finish with the final text."
@@ -67,6 +71,7 @@ env \
   -p "$PROMPT" \
   --provider openai --model gpt-4o --api-key probe-local-key \
   --loop "$LOOP" \
+  "${EXTRA_ARGS[@]}" \
   --permission-mode bypassPermissions \
   > "$OUT/stdout.txt" 2> "$OUT/stderr.txt" || true
 
