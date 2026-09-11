@@ -13,6 +13,17 @@ done when its exit gate holds, not when its code is written.
   recordings load across event-kind drift; recording directories resolve;
   metrics guides on session-store files. Verification record in
   `docs/failure-cases/visibility-instruments-2026-09-11.md`.
+- **M2 — Flaky gate root-caused and fixed (2026-09-11).** RTY-001: the
+  openrouter classifier substring-matched status codes against the full
+  error message, so an ephemeral httptest port or an error body containing
+  "500"-like digits misclassified a permanent 400 as retryable, burning the
+  10-attempt budget (~183s of backoff — the observed suite flake).
+  Reproduced deterministically through the production classifier (baseline
+  RED), fixed via structured `StatusCode` extraction (candidate GREEN),
+  boundary replay verified across 10 random ports, full suite clean.
+  Record: `docs/failure-cases/openrouter-retry-classification-2026-09-11.md`.
+  Follow-ups RTY-002..005 (same mechanism in morphllm/openai/google/groq)
+  remain open.
 
 ## Next
 

@@ -3,6 +3,7 @@
 package openrouter
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -126,6 +127,42 @@ func openrouterClassify(err error) shared.ErrorClassification {
 			Retryable:  true,
 			ErrorType:  "rate_limit",
 			RetryAfter: openrouterRetryAfter(msg),
+		}
+	}
+	// Structured status classification: the openai-go SDK error renders as
+	// `POST "<request URL>": <status> <statusText> <body>`, so substring
+	// matching sees URL ports and body text. Ephemeral ports or error bodies
+	// containing code-like digits ("127.0.0.1:25003" contains "500") must
+	// not turn a permanent 4xx into a ten-attempt retry storm.
+	var apiErr *oaisdk.Error
+	if errors.As(err, &apiErr) {
+		observe.GlobalTrace("if: errors.As(err, &apiErr)")
+		switch status := apiErr.StatusCode; status {
+		case 429:
+			observe.GlobalTrace("case 429")
+			observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\ttrue,\n\tErrorType:\t\"rat...")
+			return shared.ErrorClassification{
+				Wrapped:    err,
+				Retryable:  true,
+				ErrorType:  "rate_limit",
+				RetryAfter: openrouterRetryAfter(msg),
+			}
+		case 500, 502, 503, 504:
+			observe.GlobalTrace("case 500, 502, 503, 504")
+			observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\ttrue,\n\tErrorType:\t\"ser...")
+			return shared.ErrorClassification{
+				Wrapped:   err,
+				Retryable: true,
+				ErrorType: "server_error",
+			}
+		default:
+			observe.GlobalTrace("default")
+			observe.GlobalTrace("return: shared.ErrorClassification{\n\tWrapped:\terr,\n\tRetryable:\tfalse,\n\tErrorType:\t\"req...")
+			return shared.ErrorClassification{
+				Wrapped:   err,
+				Retryable: false,
+				ErrorType: "request_failed",
+			}
 		}
 	}
 	observe.GlobalTrace("return: openrouterFallbackClassify(err)")
