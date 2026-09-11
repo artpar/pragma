@@ -17,6 +17,7 @@ import (
 	"github.com/mozilla-ai/any-llm-go/config"
 	"github.com/mozilla-ai/any-llm-go/providers"
 	oai "github.com/mozilla-ai/any-llm-go/providers/openai"
+	oaisdk "github.com/openai/openai-go"
 )
 
 // Provider wraps any-llm-go's OpenAI provider for pragma.
@@ -31,8 +32,9 @@ type Provider struct {
 type Option func(*providerConfig)
 
 type providerConfig struct {
-	baseURL  string
-	classify shared.ClassifyFn
+	baseURL          string
+	classify         shared.ClassifyFn
+	requestTransform func(*oaisdk.ChatCompletionNewParams)
 }
 
 // WithBaseURL overrides the API base URL.
@@ -47,6 +49,12 @@ func WithBaseURL(url string) Option {
 // OpenAI-compatible endpoint. OpenAI defaults remain in effect when nil.
 func WithErrorClassifier(classify shared.ClassifyFn) Option {
 	return func(c *providerConfig) { c.classify = classify }
+}
+
+// WithChatCompletionRequestTransform adjusts the final OpenAI-compatible wire
+// request for endpoints whose field names differ from current OpenAI.
+func WithChatCompletionRequestTransform(transform func(*oaisdk.ChatCompletionNewParams)) Option {
+	return func(c *providerConfig) { c.requestTransform = transform }
 }
 
 // New creates an OpenAI provider backed by any-llm-go.
@@ -67,7 +75,24 @@ func New(apiKey string, bus *observe.EventBus, opts ...Option) (*Provider, error
 		observe.GlobalTrace("if: ok")
 		cfgOpts = append(cfgOpts, config.WithHTTPClient(client))
 	}
-	inner, err := oai.New(cfgOpts...)
+	var inner providers.Provider
+	var err error
+	if pc.requestTransform != nil {
+		inner, err = oai.NewCompatible(oai.CompatibleConfig{
+			APIKeyEnvVar:  "OPENAI_API_KEY",
+			BaseURLEnvVar: "OPENAI_BASE_URL",
+			Capabilities: providers.Capabilities{
+				Completion: true, CompletionImage: true, CompletionReasoning: true,
+				CompletionStreaming: true, CompletionTools: true,
+			},
+			ChatCompletionRequestTransform: pc.requestTransform,
+			DefaultBaseURL:                 "https://api.openai.com/v1",
+			Name:                           "openai-compatible",
+			RequireAPIKey:                  true,
+		}, cfgOpts...)
+	} else {
+		inner, err = oai.New(cfgOpts...)
+	}
 	if err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: nil, fmt.Errorf(\"openai: create provider: %w\", err)")
@@ -154,6 +179,9 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	start := time.Now()
 
 	llmParams := anyllm.RequestToParams(params)
+	// stream_options is only valid on streaming requests. RequestToParams is
+	// shared by both paths, so clear it before a non-streaming completion.
+	llmParams.StreamOptions = nil
 
 	var comp *providers.ChatCompletion
 	err := shared.WithRetry(ctx, p.bus, p.maxRetries, traceID, spanID, p.classify, func() error {

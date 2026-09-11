@@ -16,6 +16,15 @@ import (
 	"github.com/artpar/pragma/internal/cli"
 )
 
+func TestRawHTTPReplayRecognizesMorphLLM(t *testing.T) {
+	if got := inferRawHTTPReplayProvider("https://api.morphllm.com/v1/chat/completions"); got != "morphllm" {
+		t.Fatalf("provider = %q, want morphllm", got)
+	}
+	if !isRawHTTPReplayProvider("morphllm") {
+		t.Fatal("morphllm should support raw HTTP replay")
+	}
+}
+
 func TestResolveRawHTTPCaptureDir(t *testing.T) {
 	root := t.TempDir()
 	runDir := filepath.Join(root, "run")

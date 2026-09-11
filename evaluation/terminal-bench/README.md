@@ -6,5 +6,6 @@ interpret historical results. The Lilac provider adapter was removed on
 Do not migrate their model IDs mechanically: Lilac and OpenRouter model IDs and
 routing are not equivalent.
 
-New evaluations must use provider `openrouter`, an OpenRouter model ID, explicit
-reasoning settings, and the evidence gates in ../../agent.md.
+New evaluations must use provider `morphllm`, model `morph-glm53-744b`, explicit
+reasoning settings, and the evidence gates in ../../agent.md. OpenRouter results
+remain historical comparison evidence.

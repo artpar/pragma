@@ -1,7 +1,6 @@
-package openrouter
+package morphllm
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,80 +16,71 @@ import (
 	"github.com/mozilla-ai/any-llm-go/providers"
 )
 
-// wireMessage keeps OpenRouter's extension fields out of the OpenAI SDK's
-// lossy message conversion. Details may include encrypted blocks and must not
-// be reconstructed from the display text.
+// wireMessage retains Morph's reasoning_content extension across agent turns.
 type wireMessage struct {
 	Role             string               `json:"role"`
 	Content          any                  `json:"content"`
 	ToolCalls        []providers.ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string               `json:"tool_call_id,omitempty"`
-	Reasoning        *string              `json:"reasoning,omitempty"`
-	ReasoningDetails json.RawMessage      `json:"reasoning_details,omitempty"`
+	ReasoningContent *string              `json:"reasoning_content,omitempty"`
 }
 
 func requestMessages(params provider.RequestParams) []wireMessage {
 	var messages []wireMessage
-	appendMessages := func(converted []providers.Message, details json.RawMessage) {
-		for _, m := range converted {
-			w := wireMessage{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID}
-			if m.Reasoning != nil {
-				text := m.Reasoning.Content
-				w.Reasoning = &text
+	appendConverted := func(converted []providers.Message) {
+		for _, message := range converted {
+			wire := wireMessage{
+				Role: message.Role, Content: message.Content,
+				ToolCalls: message.ToolCalls, ToolCallID: message.ToolCallID,
 			}
-			if m.Role == providers.RoleAssistant {
-				w.ReasoningDetails = details
+			if message.Reasoning != nil {
+				text := message.Reasoning.Content
+				wire.ReasoningContent = &text
 			}
-			messages = append(messages, w)
+			messages = append(messages, wire)
 		}
 	}
-	appendMessages(anyllm.MessagesToAnyLLM(params.System, nil), nil)
+	appendConverted(anyllm.MessagesToAnyLLM(params.System, nil))
 	toolNames := make(map[string]string)
-	for _, m := range params.Messages {
-		for _, part := range m.Content {
+	for _, message := range params.Messages {
+		for _, part := range message.Content {
 			if call, ok := part.(model.ToolCallPart); ok {
 				toolNames[call.ID] = call.Name
 			}
 		}
 	}
-	for _, m := range params.Messages {
-		var details json.RawMessage
-		for _, part := range m.Content {
-			if thinking, ok := part.(model.ThinkingPart); ok && len(thinking.OpenRouterReasoningDetails) > 0 {
-				details = thinking.OpenRouterReasoningDetails
-			}
-		}
-		appendMessages(anyllm.MessageToAnyLLM(m, toolNames), details)
+	for _, message := range params.Messages {
+		appendConverted(anyllm.MessageToAnyLLM(message, toolNames))
 	}
 	return messages
 }
 
-// Complete preserves OpenRouter reasoning on the nonstreaming provider-tools
-// path. Streaming continues to use the embedded adapter.
+// Complete preserves Morph reasoning on the non-streaming provider-tools path.
 func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) (model.Response, error) {
 	traceID, spanID := observe.NewTraceID(), observe.NewSpanID()
 	ctx = rawcapture.WithTrace(ctx, traceID, spanID)
-	p.bus.Emit(shared.RequestStartedEvent(traceID, spanID, params))
-	start := time.Now()
+	if p.bus != nil {
+		p.bus.Emit(shared.RequestStartedEvent(traceID, spanID, params))
+	}
+	started := time.Now()
 	llm := anyllm.RequestToParams(params)
-	// Preserve the embedded adapter's local validation boundary.
 	if llm.Model == "" {
 		return model.Response{}, llmerrors.NewInvalidRequestError("", fmt.Errorf("model is required"))
 	}
 	if len(llm.Messages) == 0 {
 		return model.Response{}, llmerrors.NewInvalidRequestError("", fmt.Errorf("at least one message is required"))
 	}
-	for _, m := range llm.Messages {
-		switch m.Role {
+	for _, message := range llm.Messages {
+		switch message.Role {
 		case "system", "user", "assistant", "tool":
 		default:
-			return model.Response{}, llmerrors.NewInvalidRequestError("", fmt.Errorf("unsupported message role: %s", m.Role))
+			return model.Response{}, llmerrors.NewInvalidRequestError("", fmt.Errorf("unsupported message role: %s", message.Role))
 		}
 	}
-	// Match the previous OpenAI-compatible request fields and token parameter.
+
 	body := map[string]any{"model": params.Model, "messages": requestMessages(params)}
 	if llm.MaxTokens != nil {
-		body["max_completion_tokens"] = *llm.MaxTokens
+		body["max_tokens"] = *llm.MaxTokens
 	}
 	if llm.Temperature != nil {
 		body["temperature"] = *llm.Temperature
@@ -103,10 +93,11 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
-		return model.Response{}, fmt.Errorf("openrouter encode request: %w", err)
+		return model.Response{}, fmt.Errorf("morphllm encode request: %w", err)
 	}
+
 	var response model.Response
-	err = shared.WithRetry(ctx, p.bus, 10, traceID, spanID, openrouterClassify, func() error {
+	err = shared.WithRetry(ctx, p.bus, 10, traceID, spanID, morphClassify, func() error {
 		var requestErr error
 		response, requestErr = p.completeWire(ctx, encoded)
 		return requestErr
@@ -114,13 +105,18 @@ func (p *Provider) Complete(ctx context.Context, params provider.RequestParams) 
 	if err != nil {
 		return model.Response{}, err
 	}
-	p.bus.Emit(observe.APIRequestCompleted{EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""), StopReason: response.StopReason, Usage: response.Usage, DurationMs: time.Since(start).Milliseconds(), Model: response.Model, Content: shared.MarshalContent(response.Content)})
+	if p.bus != nil {
+		p.bus.Emit(observe.APIRequestCompleted{
+			EventHeader: observe.NewEventHeader("APIRequestCompleted", traceID, spanID, ""),
+			StopReason:  response.StopReason, Usage: response.Usage,
+			DurationMs: time.Since(started).Milliseconds(), Model: response.Model,
+			Content: shared.MarshalContent(response.Content),
+		})
+	}
 	return response, nil
 }
 
 func (p *Provider) completeWire(ctx context.Context, body []byte) (model.Response, error) {
-	// Use the same SDK transport as the embedded adapter, including its retry
-	// policy and HTTP error representation, while retaining extension fields.
 	var data []byte
 	if err := p.wireClient.Post(ctx, "chat/completions", json.RawMessage(body), &data); err != nil {
 		return model.Response{}, p.Provider.ConvertError(err)
@@ -141,31 +137,29 @@ func (p *Provider) completeWire(ctx context.Context, body []byte) (model.Respons
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
-		return model.Response{}, fmt.Errorf("openrouter decode response: %w", err)
+		return model.Response{}, fmt.Errorf("morphllm decode response: %w", err)
 	}
 	if len(wire.Choices) == 0 {
-		return model.Response{}, fmt.Errorf("openrouter response contained no choices")
+		return model.Response{}, fmt.Errorf("morphllm response contained no choices")
 	}
 	completion := &providers.ChatCompletion{ID: wire.ID, Model: wire.Model}
 	if wire.Usage != nil {
 		wire.Usage.ReasoningTokens = wire.Usage.CompletionTokensDetails.ReasoningTokens
 		completion.Usage = &wire.Usage.Usage
 	}
-	for _, c := range wire.Choices {
-		m := providers.Message{Role: c.Message.Role, Content: c.Message.Content, ToolCalls: c.Message.ToolCalls}
-		completion.Choices = append(completion.Choices, providers.Choice{Index: c.Index, Message: m, FinishReason: c.FinishReason})
+	for _, choice := range wire.Choices {
+		message := providers.Message{
+			Role: choice.Message.Role, Content: choice.Message.Content,
+			ToolCalls: choice.Message.ToolCalls,
+		}
+		completion.Choices = append(completion.Choices, providers.Choice{
+			Index: choice.Index, Message: message, FinishReason: choice.FinishReason,
+		})
 	}
 	response := anyllm.ResponseFromCompletion(completion)
-	m := wire.Choices[0].Message
-	if bytes.Equal(bytes.TrimSpace(m.ReasoningDetails), []byte("null")) {
-		m.ReasoningDetails = nil
-	}
-	if m.Reasoning != nil || len(m.ReasoningDetails) > 0 {
-		thinking := model.ThinkingPart{OpenRouterReasoningDetails: append(json.RawMessage(nil), m.ReasoningDetails...)}
-		if m.Reasoning != nil {
-			thinking.Text = *m.Reasoning
-		}
-		response.Content = append([]model.ContentPart{thinking}, response.Content...)
+	reasoning := wire.Choices[0].Message.ReasoningContent
+	if reasoning != nil {
+		response.Content = append([]model.ContentPart{model.ThinkingPart{Text: *reasoning}}, response.Content...)
 	}
 	return response, nil
 }

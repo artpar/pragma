@@ -343,6 +343,8 @@ func inferRawHTTPReplayProvider(rawURL string) string {
 	switch strings.ToLower(u.Hostname()) {
 	case "openrouter.ai":
 		return "openrouter"
+	case "api.morphllm.com":
+		return "morphllm"
 	case "api.openai.com":
 		return "openai"
 	case "api.groq.com":
@@ -354,7 +356,7 @@ func inferRawHTTPReplayProvider(rawURL string) string {
 
 func isRawHTTPReplayProvider(provider string) bool {
 	switch provider {
-	case "openrouter", "openai", "groq":
+	case "openrouter", "morphllm", "openai", "groq":
 		return true
 	default:
 		return false

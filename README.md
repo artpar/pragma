@@ -33,8 +33,9 @@ cd /Users/artpar/workspace/code/constraint-decay
 PRAGMA_PATH=/Users/artpar/workspace/code/pragma \
 AGENT=pragma_agent \
 TASK=node/node-express-openapi-unconstrained.json \
-LLM_API_KEY="$OPENROUTER_API_KEY" \
-LLM_MODEL=z-ai/glm-5.3 \
+LLM_API_KEY="$MORPH_API_KEY" \
+LLM_PROVIDER=morphllm \
+LLM_MODEL=morph-glm53-744b \
 tools/run_miniswe_with_capture.sh
 ```
 
@@ -44,8 +45,8 @@ Default Pragma benchmark settings from the adapter:
 
 | Setting | Value |
 |---|---|
-| Provider | `openrouter` |
-| Model | `$LLM_MODEL`, default `z-ai/glm-5.3` |
+| Provider | `morphllm` |
+| Model | `$LLM_MODEL`, default `morph-glm53-744b` |
 | Permission mode | `bypassPermissions` |
 | Context mode | `chat` |
 | Allowed tools | `Bash` |
@@ -86,7 +87,7 @@ tools/run_swebench_pro_instance.py \
   --pull-image
 ```
 
-The runner uses `LLM_API_KEY`, `OPENROUTER_API_KEY`, or the OpenRouter entry in `~/.pragma/credentials.yml`.
+The runner uses `LLM_API_KEY`, `MORPH_API_KEY`, or the MorphLLM entry in `~/.pragma/credentials.yml`.
 
 By default the runner also prepares and mounts a cached Linux `amd64`
 generator toolchain into the benchmark container, including `buf`, `protoc`,
@@ -101,9 +102,9 @@ Add `--evaluate` to run the official local-Docker evaluator on the generated pat
 | Flag | Description |
 |---|---|
 | `-p, --prompt` | Prompt text (required for non-interactive) |
-| `--model` | Model name (default: claude-sonnet-4-20250514) |
-| `--provider` | Provider name (default: anthropic) |
-| `--api-key` | API key (or set `ANTHROPIC_API_KEY` env var) |
+| `--model` | Model name (provider default; MorphLLM fallback: `morph-glm53-744b`) |
+| `--provider` | Provider name (credential auto-detection; fallback: `morphllm`) |
+| `--api-key` | API key (or set the provider-specific environment variable) |
 | `--max-tokens` | Max output tokens (default: 16384) |
 | `--temperature` | Sampling temperature (0.0–1.0) |
 | `--thinking` | Enable extended thinking |
@@ -111,7 +112,7 @@ Add `--evaluate` to run the official local-Docker evaluator on the generated pat
 | `--verbose` | Verbose event logging to stderr |
 | `--record` | Record events to `pragma-recording.jsonl` |
 
-### Try GLM-5.3-Flash through OpenRouter
+### Try GLM-5.3 through MorphLLM
 
 ```bash
 mkdir -p ~/.pragma
@@ -122,19 +123,19 @@ $EDITOR ~/.pragma/credentials.yml
 
 ```yaml
 providers:
-  openrouter:
-    api_key: your-new-openrouter-key
+  morphllm:
+    api_key: your-morph-key
 ```
 
 Then run:
 
 ```bash
-go run ./cmd/pragma --provider openrouter --model z-ai/glm-5.3-flash \
+go run ./cmd/pragma --provider morphllm --model morph-glm53-744b \
   --prompt 'Inspect this repository and suggest one high-impact improvement.'
 ```
 
-Pragma uses OpenRouter's OpenAI-compatible endpoint automatically. Set
-`OPENROUTER_API_KEY` or `OPENROUTER_BASE_URL` only when you need a temporary
+Pragma uses Morph's OpenAI-compatible endpoint automatically. Set
+`MORPH_API_KEY` or `MORPH_BASE_URL` only when you need a temporary
 credential or endpoint override.
 
 ## Architecture

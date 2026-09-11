@@ -16,6 +16,10 @@ import run_swebench_pro_instance as runner  # noqa: E402
 
 
 class ProviderEnvExportTest(unittest.TestCase):
+    def test_morph_provider_mappings(self) -> None:
+        self.assertEqual(runner.api_key_env_var("morphllm"), "MORPH_API_KEY")
+        self.assertEqual(runner.base_url_env_var("morphllm"), "MORPH_BASE_URL")
+
     def test_docker_host_base_url_rewrites_localhost(self) -> None:
         self.assertEqual(
             runner.docker_host_base_url("http://127.0.0.1:8080/v1"),

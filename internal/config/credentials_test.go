@@ -123,6 +123,7 @@ func TestSaveCredentials_RoundTrip(t *testing.T) {
 			"google":     {APIKey: "AIza-key3"},
 			"groq":       {APIKey: "gsk-key4"},
 			"openrouter": {APIKey: "sk-or-key5", BaseURL: "https://openrouter.ai/api/v1"},
+			"morphllm":   {APIKey: "morph-key6", BaseURL: "https://api.morphllm.com/v1"},
 		},
 	}
 

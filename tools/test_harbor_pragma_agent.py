@@ -1,6 +1,20 @@
+import os
 import unittest
+from unittest import mock
 
-from harbor_pragma_agent import _is_fatal_pragma_exit, _is_provider_tools_turn_limit
+from harbor_pragma_agent import (
+    _is_fatal_pragma_exit,
+    _is_provider_tools_turn_limit,
+    _provider_api_key,
+    _provider_api_key_env,
+)
+
+
+class ProviderCredentialTest(unittest.TestCase):
+    def test_morph_uses_official_environment_variable(self) -> None:
+        self.assertEqual(_provider_api_key_env("morphllm"), "MORPH_API_KEY")
+        with mock.patch.dict(os.environ, {"MORPH_API_KEY": "morph-key"}, clear=True):
+            self.assertEqual(_provider_api_key("morphllm"), "morph-key")
 
 
 class ProviderToolsTurnLimitTest(unittest.TestCase):

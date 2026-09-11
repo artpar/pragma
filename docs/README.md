@@ -9,9 +9,11 @@
 - [Codebase architecture](codebase-architecture.md): architecture reference;
   confirm against current source when changing a component.
 
-Active benchmark/provider defaults use OpenRouter. The Lilac adapter and runtime
-selection were removed on 2026-09-06. Historical Lilac reports, traces, and
-evaluation configurations remain evidence and are not runnable current configs.
+Active benchmark/provider defaults use MorphLLM with `morph-glm53-744b` as of
+2026-09-11. OpenRouter remains supported and its recorded regression remains
+active coverage. The Lilac adapter and runtime selection were removed on
+2026-09-06. Historical Lilac reports, traces, and evaluation configurations
+remain evidence and are not runnable current configs.
 
 ## Evidence, not active plans
 

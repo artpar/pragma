@@ -28,9 +28,13 @@ def _is_fatal_pragma_exit(return_code: int, output: str) -> bool:
     return return_code != 0 and not _is_provider_tools_turn_limit(output)
 
 
+def _provider_api_key_env(provider_name: str) -> str:
+    return "MORPH_API_KEY" if provider_name == "morphllm" else f"{provider_name.upper()}_API_KEY"
+
+
 def _provider_api_key(provider_name: str) -> str | None:
     """Resolve a provider credential without copying host config to a task."""
-    env_name = f"{provider_name.upper()}_API_KEY"
+    env_name = _provider_api_key_env(provider_name)
     if value := os.environ.get(env_name):
         return value
     credentials = Path.home() / ".pragma" / "credentials.yml"
@@ -56,7 +60,7 @@ class PragmaAgent(BaseAgent):
         self,
         *args,
         bundle_dir: str,
-        provider_name: str = "openrouter",
+        provider_name: str = "morphllm",
         max_tokens: int = 4096,
         **kwargs,
     ):
@@ -103,10 +107,10 @@ class PragmaAgent(BaseAgent):
     ) -> None:
         api_key = _provider_api_key(self.provider_name)
         if not api_key:
-            env_name = f"{self.provider_name.upper()}_API_KEY"
+            env_name = _provider_api_key_env(self.provider_name)
             raise RuntimeError(f"{env_name} is required by the Pragma adapter")
 
-        model = self.model_name or "z-ai/glm-5.3"
+        model = self.model_name or "morph-glm53-744b"
         log_dir = self.environment_logs_dir.as_posix()
         command = " ".join(
             [
@@ -136,7 +140,7 @@ class PragmaAgent(BaseAgent):
             command,
             cwd="/app",
             env={
-                f"{self.provider_name.upper()}_API_KEY": api_key,
+                _provider_api_key_env(self.provider_name): api_key,
                 "HOME": f"{log_dir}/home",
                 "SSL_CERT_FILE": "/opt/pragma/ca-certificates.crt",
             },

@@ -3,7 +3,7 @@
 Current development policy, established 2026-09-06. Read this before planning,
 changing, or evaluating the harness. Historical goal prompts and experiment
 plans in docs/ are evidence, not standing instructions or authorization to run.
-OpenRouter is the active benchmark route; Lilac was removed. Do not revive or
+MorphLLM with `morph-glm53-744b` is the active benchmark route; Lilac was removed. Do not revive or
 migrate historical Lilac configurations without an explicit current request.
 
 ## Objective and scope

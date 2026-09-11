@@ -37,6 +37,11 @@ func TestAutoDetectProvider(t *testing.T) {
 			want:    "openai",
 		},
 		{
+			name:    "MORPH_API_KEY env var only",
+			envVars: map[string]string{"MORPH_API_KEY": "morph-xxx"},
+			want:    "morphllm",
+		},
+		{
 			name:    "OPENROUTER_API_KEY env var only",
 			envVars: map[string]string{"OPENROUTER_API_KEY": "sk-or-xxx"},
 			want:    "openrouter",
@@ -97,7 +102,7 @@ func TestAutoDetectProvider(t *testing.T) {
 	}
 
 	// All env vars that autoDetectProvider checks
-	allEnvVars := []string{"ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY"}
+	allEnvVars := []string{"ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "MORPH_API_KEY", "GROQ_API_KEY"}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -260,6 +265,30 @@ func TestOpenRouterDefaultsToGLM53(t *testing.T) {
 	}
 	if got := envVarForProvider("openrouter"); got != "OPENROUTER_API_KEY" {
 		t.Fatalf("envVarForProvider(openrouter) = %q", got)
+	}
+}
+
+func TestMorphLLMProviderConfiguration(t *testing.T) {
+	t.Setenv("MORPH_API_KEY", "morph-test-key")
+	if got := DefaultModelFor("morphllm"); got != "morph-glm53-744b" {
+		t.Fatalf("DefaultModelFor(morphllm) = %q, want morph-glm53-744b", got)
+	}
+	if got := DefaultBaseURLFor("morphllm"); got != "https://api.morphllm.com/v1" {
+		t.Fatalf("DefaultBaseURLFor(morphllm) = %q", got)
+	}
+	if got := envVarForProvider("morphllm"); got != "MORPH_API_KEY" {
+		t.Fatalf("envVarForProvider(morphllm) = %q, want MORPH_API_KEY", got)
+	}
+	if got := SecondaryModelFor("morphllm", "morph-glm53-744b"); got != "morph-glm53-744b" {
+		t.Fatalf("SecondaryModelFor(morphllm) = %q, want active Morph model", got)
+	}
+
+	p, err := CreateProvider(config.Config{Provider: "morphllm", Model: "morph-glm53-744b", APIKey: "test-key"}, nil)
+	if err != nil {
+		t.Fatalf("CreateProvider(morphllm): %v", err)
+	}
+	if p.Name() != "morphllm" {
+		t.Fatalf("provider Name() = %q, want morphllm", p.Name())
 	}
 }
 

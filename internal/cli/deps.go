@@ -27,6 +27,7 @@ import (
 	googleprov "github.com/artpar/pragma/internal/provider/google"
 	googlevertexprov "github.com/artpar/pragma/internal/provider/googlevertex"
 	groqprov "github.com/artpar/pragma/internal/provider/groq"
+	morphprov "github.com/artpar/pragma/internal/provider/morphllm"
 	oaiprov "github.com/artpar/pragma/internal/provider/openai"
 	openrouterprov "github.com/artpar/pragma/internal/provider/openrouter"
 	"github.com/artpar/pragma/internal/query"
@@ -580,7 +581,7 @@ func ResolveProviderConfig(cmd *cobra.Command, opts ProviderResolutionOptions) (
 	}
 	if cfg.Provider == "" {
 		observe.GlobalTrace("if: cfg.Provider == \"\"")
-		cfg.Provider = "openrouter"
+		cfg.Provider = "morphllm"
 	}
 	if cfg.Model == "" && opts.DefaultModel != "" {
 		observe.GlobalTrace("if: cfg.Model == \"\" && opts.DefaultModel != \"\"")
@@ -649,6 +650,9 @@ func CreateProvider(cfg config.Config, bus *observe.EventBus) (provider.Provider
 	case "openrouter":
 		observe.GlobalTrace("case: \"openrouter\"")
 		return openrouterprov.New(cfg.APIKey, bus, resolveBaseURL("OPENROUTER_BASE_URL", "openrouter"))
+	case "morphllm":
+		observe.GlobalTrace("case: \"morphllm\"")
+		return morphprov.New(cfg.APIKey, bus, resolveBaseURL("MORPH_BASE_URL", "morphllm"))
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		var opts []googleprov.Option
@@ -679,6 +683,9 @@ func DefaultModelFor(providerName string) string {
 	case "openrouter":
 		observe.GlobalTrace("case: \"openrouter\"")
 		return openrouterprov.DefaultModel
+	case "morphllm":
+		observe.GlobalTrace("case: \"morphllm\"")
+		return morphprov.DefaultModel
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "gemini-2.5-flash"
@@ -688,9 +695,9 @@ func DefaultModelFor(providerName string) string {
 	}
 }
 
-// SecondaryModelFor returns the model for summarization tasks. OpenRouter is a
-// model router rather than a model family, so an explicit active model must be
-// preserved instead of silently switching models during compaction.
+// SecondaryModelFor returns the model for summarization tasks. Router and
+// OpenAI-compatible host providers preserve the explicit active model instead
+// of silently switching model families during compaction.
 func SecondaryModelFor(providerName string, activeModels ...string) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -701,10 +708,13 @@ func SecondaryModelFor(providerName string, activeModels ...string) string {
 	case "openai":
 		observe.GlobalTrace("case: \"openai\"")
 		return "gpt-4o-mini"
-	case "openrouter":
-		observe.GlobalTrace("case: \"openrouter\"")
+	case "openrouter", "morphllm":
+		observe.GlobalTrace("case: provider preserving active model")
 		if len(activeModels) > 0 && strings.TrimSpace(activeModels[0]) != "" {
 			return activeModels[0]
+		}
+		if providerName == "morphllm" {
+			return morphprov.DefaultModel
 		}
 		return openrouterprov.DefaultModel
 	case "google":
@@ -728,6 +738,10 @@ var modelAliases = map[string]map[string]string{
 	"google": {
 		"flash": "gemini-2.5-flash",
 		"pro":   "gemini-2.5-pro",
+	},
+	"morphllm": {
+		"glm5.3":  morphprov.DefaultModel,
+		"glm-5.3": morphprov.DefaultModel,
 	},
 }
 
@@ -803,6 +817,9 @@ func DefaultBaseURLFor(provider string) string {
 	case "openrouter":
 		observe.GlobalTrace("case: \"openrouter\"")
 		return openrouterprov.DefaultBaseURL
+	case "morphllm":
+		observe.GlobalTrace("case: \"morphllm\"")
+		return morphprov.DefaultBaseURL
 	case "groq":
 		observe.GlobalTrace("case: \"groq\"")
 		return "https://api.groq.com/openai/v1"
@@ -822,6 +839,9 @@ func baseURLEnvVarForProvider(provider string) string {
 	case "openrouter":
 		observe.GlobalTrace("case: \"openrouter\"")
 		return "OPENROUTER_BASE_URL"
+	case "morphllm":
+		observe.GlobalTrace("case: \"morphllm\"")
+		return "MORPH_BASE_URL"
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "GOOGLE_BASE_URL"
@@ -837,7 +857,7 @@ type selectedProvider struct {
 }
 
 // knownProviders is the list of all supported provider names.
-var knownProviders = []string{"anthropic", "openai", "openrouter", "google", "google-vertex", "groq"}
+var knownProviders = []string{"anthropic", "openai", "openrouter", "morphllm", "google", "google-vertex", "groq"}
 
 // pickAvailableProvider collects providers that have an API key (from credentials
 // or env vars) and either auto-selects or prompts the user to choose.
@@ -924,6 +944,7 @@ func autoDetectProvider(creds config.Credentials) string {
 		name   string
 		envVar string
 	}{
+		{"morphllm", "MORPH_API_KEY"},
 		{"openrouter", "OPENROUTER_API_KEY"},
 		{"anthropic", "ANTHROPIC_API_KEY"},
 		{"google", "GOOGLE_API_KEY"},
@@ -964,6 +985,9 @@ func envVarForProvider(provider string) string {
 	case "openrouter":
 		observe.GlobalTrace("case: \"openrouter\"")
 		return "OPENROUTER_API_KEY"
+	case "morphllm":
+		observe.GlobalTrace("case: \"morphllm\"")
+		return "MORPH_API_KEY"
 	case "google":
 		observe.GlobalTrace("case: \"google\"")
 		return "GOOGLE_API_KEY"

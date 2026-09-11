@@ -146,7 +146,7 @@ func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
 	}
 	if cfg.Provider == "" {
 		observe.GlobalTrace("if: cfg.Provider == \"\"")
-		cfg.Provider = "openrouter"
+		cfg.Provider = "morphllm"
 	}
 	if cfg.Model == "" {
 		observe.GlobalTrace("if: cfg.Model == \"\"")
