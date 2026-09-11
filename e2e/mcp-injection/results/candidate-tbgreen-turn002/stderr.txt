@@ -1,0 +1,29 @@
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[model request: gpt-4o attempt 1]
+[model response: gpt-4o stop=tool_use]
+  ⏺ Bash
+[2026-09-11T22:29:21+05:30] MCPServerDisconnected
+[2026-09-11T22:29:23+05:30] MCPServerDisconnected
+[2026-09-11T22:29:23+05:30] MCPServerDisconnected
+[2026-09-11T22:29:23+05:30] MCPServerDisconnected
+error: provider tools loop exceeded maximum of 8 turns

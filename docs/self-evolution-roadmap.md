@@ -97,9 +97,9 @@ with variance captured across runs.
   (injection + visibility + model orientation all observed), but notice
   efficacy for *completing* wrap-up is unproven — orientation ≠ finishing
   when the in-flight step exceeds the window. Per the case's own boundary,
-  this is recorded, not acted on: a TURN-002 (wider/earlier window, or
-  budget-aware wrap-up cost) needs this event to recur as a recorded need,
-  and the existing override (`--max-turns`) remains the operator's tool for
+  this was recorded before acting: TURN-002 (the window widening below)
+  was authorized the same day by the operator's delegation, and the
+  existing override (`--max-turns`) remains the operator's tool for
   known-long tasks. Session wire tally for the watch: 100 completions +
   3 in the continuation, ~121.6K peak input tokens, zero request
   failures/retries across the whole run — wire-size watch stays open, no
@@ -244,6 +244,26 @@ engine baseline RED (3 tests) / candidate GREEN, real-boot wire gate
 (`toklimit` profile: baseline exit 0 vs candidate exit 1, one request, no
 restart), full suite clean. Record:
 `docs/failure-cases/token-limit-termination-classification-2026-09-11.md`.
+
+**TURN-002 — Turn-budget warning window widened to maxTurns/5
+(2026-09-11).** Driven by the first live run of TURN-001: the notice fired
+at turn 90, the model oriented to wrap-up, but 10 remaining turns were not
+enough for a realistic wrap-up (in-flight docs + commit + one retry cycle)
+and the loop died at 100 with the commit undone; the operator re-prompted
+and explicitly handed the window policy to the harness ("you killed
+yourself again … it's all on you"). One mechanism: the window in
+`turnBudgetWarnTurn` goes from `maxTurns/10` to `maxTurns/5` — 20 remaining
+at the default 100 (notice at turn 80) — with the small-budget fallback
+and every TURN-001 pinned small-budget value byte-identical. Notice text,
+single injection, cap, error text, flags, pragma mode unchanged. Gates:
+window-table baseline RED (100→90 vs want 80) / candidate GREEN, a
+100-turn loop gate (notice exactly once on request 81, "80 of 100 …
+20 remain", cap exact), real-boot tbgreen rerun on the rebuilt binary
+(small-budget wire unchanged, `results/candidate-tbgreen-turn002/`),
+full suite clean x3 parallel. Escalation (a second, stronger notice near
+the cap) stays out of scope — no session has yet died *with 20 turns of
+warning*; that would be the TURN-003 evidence. Record:
+`docs/failure-cases/turn-budget-window-2026-09-11.md`.
 
 ### M5 — Held-out self-evaluation (only if a score claim is made)
 

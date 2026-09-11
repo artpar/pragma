@@ -36,11 +36,76 @@ func TestTurnBudgetWarnTurnWindow(t *testing.T) {
 	for _, tc := range []struct {
 		maxTurns, want int
 	}{
-		{100, 90}, {50, 45}, {20, 10}, {12, 6}, {8, 4}, {6, 3}, {2, 1}, {1, -1}, {0, -1},
+		// TURN-002: large budgets warn at maxTurns/5 (20 remain for 100);
+		// the small-budget fallback (window < 5 -> maxTurns/2) keeps
+		// TURN-001's pinned values for budgets <= 20 byte-identical.
+		{100, 80}, {50, 40}, {20, 10}, {12, 6}, {8, 4}, {6, 3}, {2, 1}, {1, -1}, {0, -1},
 	} {
 		if got := turnBudgetWarnTurn(tc.maxTurns); got != tc.want {
 			t.Fatalf("turnBudgetWarnTurn(%d) = %d, want %d", tc.maxTurns, got, tc.want)
 		}
+	}
+}
+
+// TURN-002 loop gate: at the operator default budget (100) the notice
+// arrives at turn 80 with 20 turns of wrap-up room, fires exactly once, and
+// the cap still terminates the loop.
+func TestProviderToolsLoopTurnBudgetNoticeAtDefaultBudget(t *testing.T) {
+	const maxTurns = 100
+	prov := &pragmaLoopTestProvider{responses: turnBudgetToolUseResponses(maxTurns)}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          t.TempDir(),
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(64), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModeProviderTools,
+		MaxTokens: 4096,
+		MaxTurns:  maxTurns,
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "work"))
+
+	var capErr string
+	for _, ev := range events {
+		if e, ok := ev.(ErrorEvent); ok {
+			capErr = e.Err.Error()
+		}
+	}
+	if !strings.Contains(capErr, "exceeded maximum of 100 turns") {
+		t.Fatalf("loop termination error = %q, want turn-limit error", capErr)
+	}
+	if prov.calls != maxTurns {
+		t.Fatalf("provider calls = %d, want %d", prov.calls, maxTurns)
+	}
+	for i := 0; i < 80; i++ {
+		if n := countTurnBudgetNotices(prov.requests[i].Messages); n != 0 {
+			t.Fatalf("request %d carries %d notices, want 0", i, n)
+		}
+	}
+	if n := countTurnBudgetNotices(prov.requests[80].Messages); n != 1 {
+		t.Fatalf("warn-iteration request carries %d notices, want 1", n)
+	}
+	if n := countTurnBudgetNotices(prov.requests[99].Messages); n != 1 {
+		t.Fatalf("final request carries %d notices, want exactly 1", n)
+	}
+	var noticeText string
+	for _, msg := range prov.requests[80].Messages {
+		if msg.Role != model.RoleUser {
+			continue
+		}
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok && strings.Contains(tp.Text, turnBudgetNoticeMarker) {
+				noticeText = tp.Text
+			}
+		}
+	}
+	if !strings.Contains(noticeText, "80 of 100") || !strings.Contains(noticeText, "20 remain") {
+		t.Fatalf("notice text = %q, want budget state \"80 of 100\" and \"20 remain\"", noticeText)
 	}
 }
 

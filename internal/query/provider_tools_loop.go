@@ -158,9 +158,10 @@ const turnBudgetNoticeMarker = "[pragma turn budget]"
 
 // turnBudgetWarnTurn returns the 0-based loop iteration at which the
 // turn-budget notice is appended, or -1 when no warning window exists
-// (TURN-001). The window is maxTurns/10 turns remaining, floored at 5, and
-// at least half the budget for budgets below 10, so the model always has
-// room to act before the cap.
+// (TURN-001). The window is maxTurns/5 turns remaining — 20 at the default
+// 100 (TURN-002: the first live run showed 10 was too small to complete a
+// wrap-up) — with at least half the budget for small budgets (window < 5),
+// so the model always has room to act before the cap.
 func turnBudgetWarnTurn(maxTurns int) int {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -169,7 +170,7 @@ func turnBudgetWarnTurn(maxTurns int) int {
 		observe.GlobalTrace("return: -1")
 		return -1
 	}
-	window := maxTurns / 10
+	window := maxTurns / 5
 	if window < 5 {
 		observe.GlobalTrace("if: window < 5")
 		window = maxTurns / 2
