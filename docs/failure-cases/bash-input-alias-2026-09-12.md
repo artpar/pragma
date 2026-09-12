@@ -75,6 +75,14 @@ adjacent-behavior check).
 - The route's tool-call emission being fixed model-side (then this is a
   belt-and-suspenders change; the error-shape improvement alone still
   carries the diagnosability claim).
+- 2026-09-12 midday dogfood, recorded in the roadmap: four probe calls
+  (`command`, `zzz`, `foo`, `qqq`) all arrived at the response log as
+  `{"cmd": ...}` — a route-side coercion upstream of pragma (the repo
+  passes wire arguments through verbatim), so the executor alias fired
+  zero times live that session. The belt-and-suspenders reading above is
+  partially realized; the raw-key occurrences that opened this case prove
+  the coercion is conditional, not universal, so the executor-side
+  tolerance stays.
 
 ## Claim boundary
 

@@ -138,6 +138,66 @@ with variance captured across runs.
   failures/retries across the whole run — wire-size watch stays open, no
   harm event yet.
 
+### Live observations (2026-09-12 midday session — the INT-001/INT-002/
+### TURN-003 dogfood) — notes, not cases
+
+The operator-directed live-effect run for the three morning mechanisms, on
+the `d695a05` build (binary rebuilt through the green-boot adjacency gate:
+133 tools on the wire — Bash/apply_patch/WebSearch/Agent + 129 `mcp__` defs
+from 4 servers, real MCP execution, pairing intact, 2-request scripted
+completion; capture under `e2e/mcp-injection/results/green-int001-turn003/`).
+Route morph-glm53-744b, interactive provider-tools, no `--max-turns`. Log:
+`~/.pragma/logs/2026-09-12T12-27-56.jsonl`.
+
+- **INT-002 live behavior reframed — an upstream key coercion, not the
+  executor alias.** Deliberate probes — one Bash call with the command
+  under `command` (the INT-002 alias) plus three under unrecognized keys
+  (`zzz`, `foo`, `qqq`; values preserved exactly) — all executed, and the
+  response log shows every one arriving as `{"cmd": ...}`. The repo contains
+  no coercion: the anyllm translate and the streaming accumulator pass the
+  wire `tc.Function.Arguments` through verbatim
+  (`internal/provider/anyllm/translate.go`,
+  `internal/provider/accumulate.go`), and the INT-002 diff is
+  executor-only — so the rename happens before pragma sees the arguments
+  (router-side tool-call parsing or the emission layer; attribution
+  unresolved from the session log). Live reading: the executor alias fired
+  zero times tonight; "alias executes" live-green is the coercion's work,
+  not INT-002's. The alias + key-echo error stay gate-proven at the
+  executor and stay needed: the 2026-09-12T00-46-33 night session and the
+  2026-08-30 TB instance show raw non-schema keys do reach the executor on
+  this route sometimes — the coercion is conditional (request size/class is
+  the live hypothesis: tonight ran 39K+ input tokens from request 1; the
+  night session started small and grew into the whale class mid-session).
+  The case's belt-and-suspenders reshape bullet is now partially realized;
+  watch, don't fix — nothing failed, and the two layers are tolerance
+  layers of different reach.
+- **TURN-003 — expected absence confirmed.** Zero turn-budget notices
+  across the whole session (uncapped run; `turnBudgetWarnTurn(0)` defines
+  no warning turn), the loop healthy through its natural end-turn, the
+  sub-agent cap guard pinned by its gate. No-cap → no-window is the
+  designed state; recorded as expected, not a bug, per the operator's
+  framing.
+- **INT-001 — live dogfood pending at draft time.** Zero
+  `QueuedPromptEvent`, zero `RejectedPromptEvent`, zero request failures or
+  interrupts through 16 requests — the operator's mid-turn submissions had
+  not yet arrived when this entry was written. The mechanism stands on its
+  gates (queue append, park/drain pairing invariant, real-loop delivery of
+  queued input on the request wire, `-race`); observed submission behavior
+  will be appended here when it lands.
+- **Adjacent, CLK-001:** wall-clock companions present after every
+  tool-results batch (one per batch, stamped, model-visible between
+  requests), prompt stamped; results messages stayed tool-results-only;
+  16/16 requests completed with zero failures and zero retries — pairing
+  undisturbed.
+- **Adjacent, PAR-001:** sibling calls visibly concurrent — a 4-call batch
+  completed within one second (12:31:43), a 5-call batch likewise
+  (12:35:51); no serialization stalls behind slow siblings.
+- **Bash executor shell semantics (dogfood note):** the provider-tools
+  Bash runs commands with errexit+pipefail (the executor's shellrun
+  options) — diagnostic compounds abort at the first zero-match grep
+  (exit 1) or a head-closed pipe (exit 141). Benign, documented options;
+  structure commands with `|| true` guards accordingly.
+
 ### M2b — Classify the captured session-start failure
 
 **Resolved 2026-09-11 — classification correct; no open defect.** The
@@ -442,3 +502,6 @@ total) each blocked their parent turn for their duration under the sync
 fork — noticeable but never interrupt-worthy, and no other work waited
 on the turn: below the case-opening bar both times. No concurrent-writer
 race occurred (the tree stayed clean through three mechanism commits).
+The midday dogfood session adds nothing to the bar: no sub-agent use at
+all, a single sequential writer, and the tree clean except its own
+documentation commit.
