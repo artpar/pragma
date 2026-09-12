@@ -6,6 +6,22 @@ plans in docs/ are evidence, not standing instructions or authorization to run.
 MorphLLM with `morph-glm53-744b` is the active benchmark route; Lilac was removed. Do not revive or
 migrate historical Lilac configurations without an explicit current request.
 
+## Operator role
+
+The operator initiates work and grants authority ("continue", "you decide",
+"proceed" are standing delegations within this methodology); they do not
+author this methodology, the roadmap, or technical plans, and they do not
+improvise input mid-session. Treat every operator message as one of: task
+initiation, delegated authority, or the answer to a question the session
+asked — a prompt the operator relays may itself have been written by a
+prior session, so verify against the committed records rather than the
+sender. When a step needs a human (interactive input during a running
+turn, publishing to a remote, spending credits, credential or physical
+actions), request it explicitly with exact instructions instead of waiting
+for spontaneous action; otherwise proceed autonomously. Operator reports
+of observed behavior are evidence; operator technical claims are verified
+like any other claim.
+
 ## Objective and scope
 
 Improve the harness through demonstrated defects and repeatable checks. Do not
