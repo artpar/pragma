@@ -440,16 +440,22 @@ func (m Model) View() string {
 // (TUI-003): 45s under a minute, 5m11s under an hour, 2h03m beyond.
 // The test gate pins 311s → 5m11s; 311.99s still truncates to 311.
 func formatElapsed(d time.Duration) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if d < 0 {
+		observe.GlobalTrace("if: d < 0")
 		d = 0
 	}
 	sec := int(d.Seconds())
 	switch {
 	case sec < 60:
+		observe.GlobalTrace("case: sec < 60")
 		return fmt.Sprintf("%ds", sec)
 	case sec < 3600:
+		observe.GlobalTrace("case: sec < 3600")
 		return fmt.Sprintf("%dm%ds", sec/60, sec%60)
 	default:
+		observe.GlobalTrace("default")
 		return fmt.Sprintf("%dh%02dm", sec/3600, (sec%3600)/60)
 	}
 }
@@ -518,6 +524,7 @@ func (m Model) viewportContent() string {
 		observe.GlobalTrace("if: m.spinnerActive")
 		line := "\n" + m.spin.View() + " " + m.spinnerTool + "..."
 		if !m.spinnerToolStartedAt.IsZero() {
+			observe.GlobalTrace("if: !m.spinnerToolStartedAt.IsZero()")
 			line += " " + formatElapsed(m.spinnerNow.Sub(m.spinnerToolStartedAt))
 		}
 		b.WriteString(line)
@@ -790,6 +797,7 @@ func findLiveSeg(segs []segment, callID string) *segment {
 		seg := &segs[i]
 		if seg.kind == segLive && seg.live != nil && seg.live.CallID == callID {
 			observe.GlobalTrace("if: seg.kind == segLive && seg.live != nil && seg.live.CallID == callID")
+			observe.GlobalTrace("return: seg")
 			return seg
 		}
 	}
@@ -807,6 +815,7 @@ func (m *Model) fillLiveToolResult(call model.ToolCallPart, result model.ToolRes
 	seg := findLiveSeg(m.outputSegs, result.ToolCallID)
 	if seg == nil {
 		observe.GlobalTrace("if: seg == nil")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	seg.kind = segTool
@@ -839,6 +848,7 @@ func spinnerToolFor(active map[string]toolCallMeta) string {
 		}
 	}
 	observe.GlobalTrace("return: count")
+	observe.GlobalTrace("return: fmt.Sprintf(\"%d tools\", len(active))")
 	return fmt.Sprintf("%d tools", len(active))
 }
 
