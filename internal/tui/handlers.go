@@ -438,8 +438,16 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[response ended due to a provider error — you can try again or switch models with /model]")+"\n")
 		}
 
-		if e.StopReason == model.StopEndTurn && !m.finalResponseHadText {
+		// TUI-001/TUI-002: promote the final response's thinking when the
+		// turn ends without any operator-visible text. Runs before the pause
+		// notice below — the notice is a non-whitespace text segment that
+		// would otherwise halt promoteTrailingThinking's backward scan and
+		// block the textless delivery it exists to guarantee.
+		if (e.StopReason == model.StopEndTurn || e.StopReason == model.StopPauseTurn) && !m.finalResponseHadText {
 			m.outputSegs = promoteTrailingThinking(m.outputSegs)
+		}
+		if e.StopReason == model.StopPauseTurn {
+			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[turn paused by the provider — send a message to continue]")+"\n")
 		}
 		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())

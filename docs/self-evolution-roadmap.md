@@ -231,6 +231,33 @@ Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
   depth. The wire-size watch stays open; the known-good envelope is now
   265K tokenized (~740K raw at the previously observed 2.8× ratio).
 
+### Live observations (2026-09-12 evening session — the TUI-002
+### session) — notes, not cases
+
+Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
+`~/.pragma/logs/2026-09-12T18-53-02.jsonl`.
+
+- **TUI-002 — ORCH-002 finding 2 fixed the same evening.** Case
+  `docs/failure-cases/paused-turn-delivery-2026-09-12.md`: pause_turn is
+  in the provider-tools loop's reachable terminal-stop set but had no TUI
+  notice branch and no TUI-001 textless promotion — a thinking-only
+  paused response rendered a lone collapsed hint and the toolbar read
+  "ready". Baseline RED on `afac61d` through the production event path;
+  one mechanism change; TUI-001 family gates unchanged and green; full
+  TUI suite green. No production pause_turn has occurred — the case
+  labels this a deterministic reachable-shape gap, claim bounded to the
+  delivery mechanism.
+- **Operator live report, 19:02 — TUI visibility (verbatim):** *"the ui
+  for human is quite bad and doesnt tell the human at all whats *really*
+  going on."* Immediate anchor observed in this very session: a
+  ~5-minute `go build ./...` / `go test` tool stretch during which the
+  default view gave the operator no indication of what was running, for
+  how long, or whether anything was progressing. Recorded as the origin
+  observation for the next-case candidate (TUI-003: agent-activity
+  visibility — running tool/command identity, elapsed time, long-call
+  state, retry/phase state); this session's log is the authentic event
+  source for replaying exactly what the operator saw.
+
 ### ORCH-001 — Persona orchestration live-verified on the current build
 ### (2026-09-12, gate `e2e/orchestration/run_gate.sh`)
 
@@ -340,6 +367,21 @@ TUI-001-family follow-up candidate (the pause_turn notice). Recorded-need
 note: the 29-minute orchestration occupied its session exclusively —
 consistent with the background-sub-agent friction class; the case-opening
 bar (other work actually waiting on the turn) was not crossed.
+
+**Follow-up dispositions (2026-09-12 evening session).** Finding 2 is
+fixed — case TUI-002
+(`docs/failure-cases/paused-turn-delivery-2026-09-12.md`): pause_turn now
+renders a pause notice for every paused turn and the TUI-001 textless
+promotion covers it (gates `TestThinkingOnlyPauseTurnShowsInstruction`,
+`TestPausedTextBearingTurnShowsNotice`; the promotion must run before the
+notice append or the notice's own non-whitespace text halts the
+trailing-run scan — the first candidate attempt failed exactly there and
+the gate caught it). Findings 1, 3, and 4 stay open watch items,
+unchanged: 1 (queued-mid-thinking partial promotion) has its gate body
+recorded in the implementer report for an explicit future decision; 3's
+StopMaxTokens dead branch is confirmed unreachable from the
+provider-tools loop and harmless; 4's reload-scan terminator dependence
+is safe today and only a watch on future terminator changes.
 
 ### M2b — Classify the captured session-start failure
 

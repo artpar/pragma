@@ -178,3 +178,8 @@ Fourth: a thinking-only final response rendered no operator-readable output
 in the default view; its trailing thinking is now promoted at
 end_turn-without-text and on resume (2026-09-12, TUI-001),
 `go test ./internal/tui -run TestThinkingOnlyEndTurnShowsInstruction -count=1`.
+Fifth: a paused stop reason (pause_turn) rendered nothing in the TUI — no
+notice for any paused turn, and a thinking-only paused response stayed a
+lone collapsed hint; pause_turn now carries a pause notice and the
+TUI-001 textless promotion (2026-09-12, TUI-002),
+`go test ./internal/tui -run TestThinkingOnlyPauseTurnShowsInstruction -count=1`.
