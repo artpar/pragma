@@ -296,6 +296,20 @@ Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
   as evidence in `afac61d`) broke `go test ./...` builds; renamed to
   `.go.txt`, content preserved.
 
+- **TUI-005 — the sibling-spinner watch item, opened and fixed the same
+  evening.** Case `docs/failure-cases/parallel-spinner-2026-09-12.md`:
+  `ToolResultEvent` cleared the spinner unconditionally, so with
+  PAR-001 parallel siblings the first result hid the still-running
+  calls and (post-TUI-003) their elapsed time. One mechanism: the
+  spinner lifecycle now keys on the active-call registry (per-call
+  start stamps); it survives partial results, names the remaining work
+  (shared name, or `N tools` for mixed), anchors its elapsed clock to
+  the oldest still-running call, and clears with the last result;
+  single-call behavior unchanged. Baseline RED through the production
+  event path; both gates green ×5 runs; full repo suite green (29
+  packages). ORCH-002 findings 3 and 4 are now the only open watch
+  items from that review.
+
 ### ORCH-001 — Persona orchestration live-verified on the current build
 ### (2026-09-12, gate `e2e/orchestration/run_gate.sh`)
 

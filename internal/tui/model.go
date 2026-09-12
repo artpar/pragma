@@ -70,6 +70,13 @@ type liveSegData struct {
 	Content string
 }
 
+// toolCallMeta tracks one active tool call with its start time
+// (TUI-003/TUI-005: spinner elapsed anchoring and sibling survival).
+type toolCallMeta struct {
+	Call      model.ToolCallPart
+	StartedAt time.Time
+}
+
 // agentEntry tracks one agent's progress within a segAgent segment.
 type agentEntry struct {
 	AgentID     string
@@ -188,7 +195,7 @@ type Model struct {
 
 	// Rendering
 	mdRenderer      *render.MarkdownRenderer
-	activeToolCalls map[string]model.ToolCallPart // correlate ToolCallEvent → ToolResultEvent
+	activeToolCalls map[string]toolCallMeta // correlate ToolCallEvent → ToolResultEvent (TUI-005: with per-call start times)
 
 	// Spinner state
 	spinnerActive bool
@@ -276,7 +283,7 @@ func New(cfg Config) Model {
 		toolbar:         tb,
 		spin:            s,
 		mdRenderer:      render.NewMarkdownRenderer(80),
-		activeToolCalls: make(map[string]model.ToolCallPart),
+		activeToolCalls: make(map[string]toolCallMeta),
 		streamBuf:       &strings.Builder{},
 		parentCtx:       parentCtx,
 		ctx:             ctx,
@@ -812,6 +819,44 @@ func (m *Model) fillLiveToolResult(call model.ToolCallPart, result model.ToolRes
 	}
 	observe.GlobalTrace("return: true")
 	return true
+}
+
+// spinnerToolFor names the still-running sibling calls (TUI-005): the
+// shared tool name when they all match, else a count.
+func spinnerToolFor(active map[string]toolCallMeta) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	names := make(map[string]bool)
+	for _, meta := range active {
+		observe.GlobalTrace("range active")
+		names[meta.Call.Name] = true
+	}
+	if len(names) == 1 {
+		observe.GlobalTrace("if: len(names) == 1")
+		for n := range names {
+			observe.GlobalTrace("return: n")
+			return n
+		}
+	}
+	observe.GlobalTrace("return: count")
+	return fmt.Sprintf("%d tools", len(active))
+}
+
+// earliestActiveStart anchors the spinner's elapsed clock to the oldest
+// still-running call (TUI-005): monotonic within a batch.
+func earliestActiveStart(active map[string]toolCallMeta) time.Time {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var earliest time.Time
+	for _, meta := range active {
+		observe.GlobalTrace("range active")
+		if earliest.IsZero() || meta.StartedAt.Before(earliest) {
+			observe.GlobalTrace("if: earliest.IsZero() || meta.StartedAt.Before(earliest)")
+			earliest = meta.StartedAt
+		}
+	}
+	observe.GlobalTrace("return: earliest")
+	return earliest
 }
 
 // updateGroupCounts increments the appropriate counter on a group based on the entry's category.

@@ -370,7 +370,7 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 			m.outputSegs = appendText(m.outputSegs, "\n")
 		}
 
-		m.activeToolCalls[e.Call.ID] = e.Call
+		m.activeToolCalls[e.Call.ID] = toolCallMeta{Call: e.Call, StartedAt: time.Now()}
 
 		// TUI-003: stamp the running call's start — the spinner line
 		// renders its elapsed on every tick. Same-name sibling parallel
@@ -389,13 +389,12 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 	case query.ToolResultEvent:
 		observe.GlobalTrace("typecase: query.ToolResultEvent")
 
-		m.spinnerActive = false
-
 		m.finalResponseHadText = false
 
-		call, ok := m.activeToolCalls[e.Result.ToolCallID]
+		meta, ok := m.activeToolCalls[e.Result.ToolCallID]
 		if ok {
 			delete(m.activeToolCalls, e.Result.ToolCallID)
+			call := meta.Call
 			if isCollapsible(call.Name) != "" {
 				observe.GlobalTrace("if: isCollapsible(call.Name) != \"\"")
 
@@ -418,7 +417,18 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 			m.outputSegs = appendText(m.outputSegs, render.WrapWithBracket(e.Result.Content, e.Result.IsError, m.width, false))
 			m.outputSegs = appendText(m.outputSegs, "\n")
 		}
-		m.toolbar.SetStatus("streaming...")
+		// TUI-005: the running-tool spinner survives partial sibling
+		// results while any call is still active, re-anchored to the
+		// oldest remaining call; only the last result clears it.
+		if len(m.activeToolCalls) > 0 {
+			m.spinnerActive = true
+			m.spinnerTool = spinnerToolFor(m.activeToolCalls)
+			m.spinnerToolStartedAt = earliestActiveStart(m.activeToolCalls)
+			m.toolbar.SetStatus("executing: " + m.spinnerTool)
+		} else {
+			m.spinnerActive = false
+			m.toolbar.SetStatus("streaming...")
+		}
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 

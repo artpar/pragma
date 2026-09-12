@@ -197,3 +197,9 @@ bounded output-so-far to the event channel while the command runs, and
 the TUI renders it inline, replaced in place by the final result,
 `go test ./internal/query -run TestBashToolEmitsLiveOutputWhileRunning -count=1`
 and `go test ./internal/tui -run TestLiveToolOutputRendersInline -count=1`.
+Eighth: the running-tool spinner (and, with TUI-003, its elapsed time)
+ died on the first of several parallel sibling results while the others
+still ran (2026-09-12, TUI-005); the spinner now survives partial
+sibling results, names the remaining work, and anchors its elapsed clock
+to the oldest still-running call,
+`go test ./internal/tui -run TestSiblingSpinnerSurvivesPartialResults -count=1`.
