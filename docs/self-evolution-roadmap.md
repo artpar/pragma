@@ -783,3 +783,17 @@ race occurred (the tree stayed clean through three mechanism commits).
 The midday dogfood session adds nothing to the bar: no sub-agent use at
 all, a single sequential writer, and the tree clean except its own
 documentation commit.
+
+### Restart handoff (2026-09-12 evening → next session)
+
+`bin/pragma` is rebuilt at `76d09fb` (instrumented build); the 20:17
+session predates the rebuild. The next session's first trigger is the
+**live-effect check for TUI-003/004/005**: run one real ~90-second
+command and have the operator report what the UI showed while it ran —
+elapsed clock advancing on the spinner line, live output tail growing
+inline, and (if siblings run) the spinner surviving partial results.
+That report is the live evidence the cases deliberately do not claim.
+Then the open queue: the retry-visibility case (attempts 1–3 are
+viewport-hidden; the toolbar shows from attempt 1 — policy decision on
+viewport noise), ORCH-002 findings 3 and 4 (watch items), and the M5
+gate only if a score claim is ever made.
