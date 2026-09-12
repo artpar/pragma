@@ -23,6 +23,15 @@ type RejectedPromptEvent struct {
 
 func (RejectedPromptEvent) interactiveEventSealed() {}
 
+// QueuedPromptEvent reports a plain-text prompt submitted while a turn was
+// running (INT-001): it was appended to the conversation for the next
+// request boundary instead of starting a new turn.
+type QueuedPromptEvent struct {
+	Prompt string
+}
+
+func (QueuedPromptEvent) interactiveEventSealed() {}
+
 // LoopEvent carries a domain/runtime query event through the interactive stream.
 type LoopEvent struct {
 	Event query.LoopEvent

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
@@ -51,7 +52,7 @@ type EngineConfig struct {
 	// DisableSubAgents is set on sub-agent engines so the Agent tool is not
 	// injected into their toolset (recursion guard, SUB-001).
 	DisableSubAgents    bool
-	RefreshCapabilities       func(context.Context)
+	RefreshCapabilities func(context.Context)
 }
 
 // MCPServerStatus mirrors the session-init MCP server metadata shape.
@@ -79,6 +80,13 @@ type Engine struct {
 	hookMgr *hook.Manager
 
 	contentReplacementState *toolresult.ContentReplacementState
+
+	// INT-001: operator input submitted while a turn is running. Messages
+	// that cannot append immediately (conversation tail is an assistant
+	// tool_use awaiting results) park here and drain at the loop's next
+	// safe point; see provider_tools_loop.go AppendUserInput.
+	pendingUserInputs   []model.Message
+	pendingUserInputsMu sync.Mutex
 }
 
 // CompactionDeps holds optional compaction dependencies.

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -182,6 +183,9 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			ch <- ErrorEvent{Err: err}
 			return
 		}
+		// INT-001: operator messages queued mid-turn flush after the
+		// companion, at the pairing-safe request boundary.
+		engine.drainPendingUserInputs()
 
 		if engine.autoTracker != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: engine.autoTracker != nil")
@@ -190,6 +194,96 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 	}
 
 	ch <- ErrorEvent{Err: fmt.Errorf("provider tools loop exceeded maximum of %d turns", maxTurns)}
+}
+
+// AppendUserInput delivers operator text submitted while a turn is running
+// (INT-001): it is appended to the conversation as a regular stamped user
+// message and the loop's next request folds it in. When the conversation
+// tail is an assistant tool_use message still awaiting its results, the
+// message parks instead — a user message between a tool call and its
+// results would serialize before the tool results and break tool_result
+// pairing. Parked messages flush at the loop's next safe point
+// (drainPendingUserInputs, after each companion append).
+func (engine *Engine) AppendUserInput(text string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		observe.GlobalTrace("return: errors.New(\"empty user input\")")
+		return errors.New("empty user input")
+	}
+	now := time.Now()
+	msg := model.Message{
+		ID:        model.NewUUID(),
+		Role:      model.RoleUser,
+		Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(now) + "\n" + text}},
+		Timestamp: now,
+	}
+	engine.pendingUserInputsMu.Lock()
+	defer engine.pendingUserInputsMu.Unlock()
+	appended := false
+	engine.store.Update(func(s *app.AppState) {
+		if conversationTailHasDanglingToolUse(s.Conversation) {
+			engine.pendingUserInputs = append(engine.pendingUserInputs, msg)
+			return
+		}
+		s.Conversation.Append(msg)
+		appended = true
+	})
+	if !appended {
+		observe.GlobalTrace("return: nil (parked for the next safe point)")
+		return nil
+	}
+	engine.emitMessageAppended(msg)
+	observe.GlobalTrace("return: engine.checkpointSession()")
+	return engine.checkpointSession()
+}
+
+// drainPendingUserInputs flushes parked operator messages into the
+// conversation at a pairing-safe point (after the companion append). It
+// holds pendingUserInputsMu for the whole flush so a concurrent
+// AppendUserInput cannot interleave: parked messages land in submission
+// order, before any later direct append.
+func (engine *Engine) drainPendingUserInputs() {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	engine.pendingUserInputsMu.Lock()
+	defer engine.pendingUserInputsMu.Unlock()
+	for len(engine.pendingUserInputs) > 0 {
+		msg := engine.pendingUserInputs[0]
+		if err := engine.appendConversationMessage(msg); err != nil {
+			// Keep the unflushed head queued; the next drain retries. The
+			// conversation is already in a fatal-append state.
+			return
+		}
+		engine.pendingUserInputs = engine.pendingUserInputs[1:]
+	}
+}
+
+// conversationTailHasDanglingToolUse reports whether the conversation's
+// last message is an assistant message carrying tool calls whose results
+// have not been appended yet (the mid-tool-execution window).
+func conversationTailHasDanglingToolUse(conv model.Conversation) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	n := len(conv.Messages)
+	if n == 0 {
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	tail := conv.Messages[n-1]
+	if tail.Role != model.RoleAssistant {
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	for _, part := range tail.Content {
+		if _, ok := part.(model.ToolCallPart); ok {
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
 }
 
 // turnBudgetNoticeMarker prefixes the in-conversation turn-budget warning.

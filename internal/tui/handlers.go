@@ -172,6 +172,17 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
 		return m, waitForEvent(m.eventCh)
+	case interactive.QueuedPromptEvent:
+		// INT-001: the prompt was appended to the running conversation;
+		// the active turn's next request sees it.
+		observe.GlobalTrace("typecase: interactive.QueuedPromptEvent")
+		m.toolbar.SetStatus("streaming...")
+		m.input.remember(ev.Prompt)
+		m.renderAcceptedPrompt(ev.Prompt)
+		m.outputSegs = appendText(m.outputSegs, thinkingStyle.Render("· queued behind the running turn — its next request sees this")+"\n\n")
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+		return m, waitForEvent(m.eventCh)
 	case interactive.SlashResultEvent:
 		observe.GlobalTrace("typecase: interactive.SlashResultEvent")
 		next, cmd := m.handleRuntimeSlashResult(ev.Result)

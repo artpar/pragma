@@ -243,6 +243,34 @@ func (rt *InteractiveRuntime) RunInput(ctx context.Context, input string) <-chan
 	ch := make(chan interactive.Event, 16)
 	if !rt.beginInputTurn() {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "if: !rt.beginInputTurn()")
+		// INT-001: plain text submitted while a turn is running is queued
+		// into the conversation for the next request boundary instead of
+		// rejected-and-dropped — the night-session path where the only
+		// delivery was an interrupt that forfeited the in-flight request's
+		// input spend. Slash commands keep the busy rejection (runtime
+		// side effects cannot run mid-turn).
+		if _, _, ok := slash.Parse(input); !ok && rt.Engine != nil {
+			observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "if: !ok && rt.Engine != nil")
+			if err := rt.Engine.AppendUserInput(input); err != nil {
+				observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "if: err != nil")
+				ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+				close(ch)
+				observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "return: ch")
+				return ch
+			}
+			rt.rememberAcceptedPrompt(input)
+			if err := rt.writePromptHistory(input); err != nil {
+				observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "if: err != nil")
+				ch <- interactive.LoopEvent{Event: query.ErrorEvent{Err: err}}
+				close(ch)
+				observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "return: ch")
+				return ch
+			}
+			ch <- interactive.QueuedPromptEvent{Prompt: input}
+			close(ch)
+			observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "return: ch")
+			return ch
+		}
 		ch <- interactive.RejectedPromptEvent{Prompt: input, Reason: "busy"}
 		close(ch)
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.RunInput", "return: ch")
