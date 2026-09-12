@@ -519,16 +519,23 @@ func appendThinking(segs []segment, text string, redacted bool) []segment {
 // (non-whitespace), tool, group, agent, or error segment behind the run
 // stops the scan, so only the final response's thinking is promoted.
 func promoteTrailingThinking(segs []segment) []segment {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	i := len(segs) - 1
 	for i >= 0 && segs[i].kind == segText && strings.TrimSpace(segs[i].content) == "" {
+		observe.GlobalTrace("for: i >= 0 && segs[i].kind == segText && strings.TrimSpace(segs[i].content) == \"\"")
 		i--
 	}
 	if i < 0 || segs[i].kind != segThinking {
+		observe.GlobalTrace("if: i < 0 || segs[i].kind != segThinking")
+		observe.GlobalTrace("return: segs")
 		return segs
 	}
 	for ; i >= 0 && segs[i].kind == segThinking; i-- {
+		observe.GlobalTrace("for: i >= 0 && segs[i].kind == segThinking")
 		segs[i].forceShow = true
 	}
+	observe.GlobalTrace("return: segs")
 	return segs
 }
 
@@ -536,14 +543,22 @@ func promoteTrailingThinking(segs []segment) []segment {
 // entire content is thinking blocks — the persisted shape of a TUI-001 final
 // response. Used on conversation load to surface the missed instruction.
 func isThinkingOnlyAssistant(msg model.Message) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if msg.Role != model.RoleAssistant || len(msg.Content) == 0 {
+		observe.GlobalTrace("if: msg.Role != model.RoleAssistant || len(msg.Content) == 0")
+		observe.GlobalTrace("return: false")
 		return false
 	}
 	for _, part := range msg.Content {
+		observe.GlobalTrace("range msg.Content")
 		if _, ok := part.(model.ThinkingPart); !ok {
+			observe.GlobalTrace("if: !ok")
+			observe.GlobalTrace("return: false")
 			return false
 		}
 	}
+	observe.GlobalTrace("return: true")
 	return true
 }
 
@@ -944,9 +959,9 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 				observe.GlobalTrace("range snap.Conversation.Messages")
 				m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 			}
-			// TUI-001: surface a trailing thinking-only assistant message —
-			// its thinking was the turn's only output.
+
 			if n := len(snap.Conversation.Messages); n > 0 && isThinkingOnlyAssistant(snap.Conversation.Messages[n-1]) {
+				observe.GlobalTrace("if: n > 0 && isThinkingOnlyAssistant(snap.Conversation.Messages[n-1])")
 				m.outputSegs = promoteTrailingThinking(m.outputSegs)
 			}
 			m.input.SetHistory(promptHistoryFromSnapshot(snap))
