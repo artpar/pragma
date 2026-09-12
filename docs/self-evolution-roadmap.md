@@ -209,6 +209,28 @@ Route morph-glm53-744b, interactive provider-tools, no `--max-turns`. Log:
   (exit 1) or a head-closed pipe (exit 141). Benign, documented options;
   structure commands with `|| true` guards accordingly.
 
+### Live observations (2026-09-12 afternoon session — the TUI-001
+### session) — notes, not cases
+
+Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
+`~/.pragma/logs/2026-09-12T16-23-21.jsonl`.
+
+- **TUI-001 origin — a missed instruction, operator-observed.** The
+  midday session's closing response (15:37:39) was thinking-only with an
+  empty text body; the operator opened this fresh session reporting they
+  never received the promised follow-up prompt. Verified by production
+  trace and recorded regression, not recollection alone; case and fix:
+  `docs/failure-cases/thinking-only-endturn-2026-09-12.md` (commits
+  `413122a`, `725cc16`). Live-effect boundary — an operator reading
+  promoted thinking — remains open: this session's own turns all ended
+  with text, so no live promotion has rendered yet.
+- **Wire envelope extended 54% with no raw-policy trip.** 97 requests,
+  peak 265,376 input tokens (the largest session on the route yet vs
+  the night session's 172.6K), zero request failures, zero retries,
+  zero queue-class 429s — no `raw_isl_tokens` event even at whale-class
+  depth. The wire-size watch stays open; the known-good envelope is now
+  265K tokenized (~740K raw at the previously observed 2.8× ratio).
+
 ### M2b — Classify the captured session-start failure
 
 **Resolved 2026-09-11 — classification correct; no open defect.** The
