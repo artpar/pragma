@@ -134,3 +134,16 @@ the model *acts* on a mid-turn queued message is a live-effect observation,
 not claimed. Live TUI confirmation (actual Enter-during-streaming on a real
 route) is the operator dogfood step, exactly like TURN-001's live-effect
 boundary; the headless gates drive the same production functions.
+
+Live confirmation 2026-09-12 13:35 (midday dogfood session, log
+`~/.pragma/logs/2026-09-12T12-27-56.jsonl`): with a turn active and a
+`sleep 45` tool call executing, the operator submitted plain text
+mid-execution — no rejection, no interrupt, no canceled request; the
+message parked behind the dangling tool_use, drained after the companion
+append (results, companion, queued message appended as three
+microsecond-aligned `MessageAppended` events at 13:35:49.256), and was
+delivered on the next request wire with its 13:35:05 submission-time
+stamp, received by the model mid-turn. The TUI `QueuedPromptEvent` is
+not persisted to the session log (render-only); the log-side proof is
+the append trio plus delivery on the wire. Whether the model acts on
+queued input remains the open live-effect boundary.

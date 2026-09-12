@@ -177,13 +177,24 @@ Route morph-glm53-744b, interactive provider-tools, no `--max-turns`. Log:
   sub-agent cap guard pinned by its gate. No-cap → no-window is the
   designed state; recorded as expected, not a bug, per the operator's
   framing.
-- **INT-001 — live dogfood pending at draft time.** Zero
-  `QueuedPromptEvent`, zero `RejectedPromptEvent`, zero request failures or
-  interrupts through 16 requests — the operator's mid-turn submissions had
-  not yet arrived when this entry was written. The mechanism stands on its
-  gates (queue append, park/drain pairing invariant, real-loop delivery of
-  queued input on the request wire, `-race`); observed submission behavior
-  will be appended here when it lands.
+- **INT-001 — live-green; park/drain exercised mid-execution.** The
+  wrap-up surfaced that the operator relays prompts rather than
+  improvising input, so the live test was orchestrated explicitly: with
+  the turn active and a `sleep 45` tool call executing (dangling
+  tool_use tail), the operator submitted `INT001-LIVE-TEST` at 13:35:05.
+  Observed end to end: no rejection and no interrupt (zero
+  `RejectedPromptEvent`, zero `APIRequestFailed` — the sleep ran to
+  completion), the message parked behind the dangling tail, and the
+  drain fired in the designed order — results, companion, queued message
+  appended as three microsecond-aligned `MessageAppended` events at
+  13:35:49.256 — the queued message carrying its 13:35:05 submission
+  stamp — then delivered on the very next request, where the model
+  received it mid-turn (log `~/.pragma/logs/2026-09-12T12-27-56.jsonl`).
+  One observability note, not a defect: the `QueuedPromptEvent` emitted
+  for TUI rendering is not persisted to the session log, so log-side
+  proof of queueing is the append trio plus the request wire, not the
+  named event. Whether the model *acts* on queued input remains the
+  live-effect boundary, exactly as the case scoped it.
 - **Adjacent, CLK-001:** wall-clock companions present after every
   tool-results batch (one per batch, stamped, model-visible between
   requests), prompt stamped; results messages stayed tool-results-only;
