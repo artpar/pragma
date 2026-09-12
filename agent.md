@@ -168,3 +168,7 @@ names the received keys on empty-input errors (2026-09-12, INT-002),
 The provider-tools loop has no default turn cap since 2026-09-12
 (TURN-003; explicit --max-turns bounds unchanged),
 `go test ./internal/query -run TestProviderToolsLoopNoDefaultTurnCap -count=1`.
+Fourth: a thinking-only final response rendered no operator-readable output
+in the default view; its trailing thinking is now promoted at
+end_turn-without-text and on resume (2026-09-12, TUI-001),
+`go test ./internal/tui -run TestThinkingOnlyEndTurnShowsInstruction -count=1`.

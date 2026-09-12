@@ -473,6 +473,33 @@ with TurnCompleteEvent; sub pinned); every existing cap/window test
 recorded: unattended uncapped runs have no pragma-side turn guard now.
 Record: `docs/failure-cases/turn-cap-removal-2026-09-12.md`.
 
+**TUI-001 — A thinking-only final response renders its thinking in the
+default view (2026-09-12, commit `413122a`).** Live evidence: the 12:27
+dogfood session's closing request (15:37:39, log
+`2026-09-12T12-27-56.jsonl`) delivered the operator's follow-up
+instruction ("open a fresh session and say continue") entirely inside a
+thinking block with an empty text body; the fresh-session operator
+reported never receiving it — the default view showed only
+`∴ Thinking (ctrl+o to expand)`, the content collapsed behind the
+verbose toggle. Trace: `provider_tools_loop` emits `ThinkingEvent` →
+TUI `segThinking` → `RenderThinking` collapses non-verbose content,
+and the `TurnCompleteEvent` end_turn path appends no visible output.
+One mechanism: a `finalResponseHadText` flag (reset at turn start and on
+every `ToolResultEvent` — each new request within the turn — set only by
+`TextEvent`) plus `promoteTrailingThinking` marks the trailing thinking
+run `forceShow` at end_turn-without-text, rendering it expanded by
+default; the same promotion runs on both conversation-load paths
+(initial boot and resume) for a trailing thinking-only assistant
+message. Text-bearing responses keep thinking collapsed. Gates: baseline
+RED (instruction absent, hint only, through the production `Update`
+path) / candidate GREEN; adjacent — text-followed turns stay collapsed,
+multi-request tool work does not block promotion of the final response,
+reload positive+negative; `internal/tui` with `-race`; full suite 29
+packages clean. Claim boundary: default-mode visibility of a textless
+final response's content is a mechanism claim; whether an operator acts
+on the promoted content is live effect, not claimed. Record:
+`docs/failure-cases/thinking-only-endturn-2026-09-12.md`.
+
 **Verifier-startup misclassification target examined and closed as
 external (2026-09-11).** agent.md's remaining named regression —
 verifier-startup failures misclassified as solver failures — was traced to
