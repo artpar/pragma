@@ -231,7 +231,7 @@ Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
   depth. The wire-size watch stays open; the known-good envelope is now
   265K tokenized (~740K raw at the previously observed 2.8× ratio).
 
-### Live observations (2026-09-12 evening session — the TUI-002
+### Live observations (2026-09-12 evening session — the TUI-002/TUI-003
 ### session) — notes, not cases
 
 Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
@@ -257,6 +257,27 @@ Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
   visibility — running tool/command identity, elapsed time, long-call
   state, retry/phase state); this session's log is the authentic event
   source for replaying exactly what the operator saw.
+
+- **TUI-003 — the operator's UI complaint, opened and fixed the same
+  evening.** Case
+  `docs/failure-cases/running-tool-visibility-2026-09-12.md`: anchored to
+  the measured 361s silent tool gap (18:57:27 → 19:03:28, this session's
+  log, 42 requests) and the 19:02:27 verbatim report. Observation through
+  the production render path: during a running call the default view
+  shows the truncated command line, `executing: <tool>` in the toolbar,
+  and a bare animating spinner — no duration anywhere, so a six-minute
+  call was indistinguishable from a six-second one. One mechanism: the
+  spinner line now carries the running call's elapsed time
+  (`⣾ Bash... 5m11s`), stamped at `ToolCallEvent` and refreshed each
+  spinner tick. Baseline RED through the production event path; adjacent
+  gates (clears with the result, silent when idle, TUI-001/002 families
+  unchanged); full `internal/tui` suite green; `go build ./...` clean.
+  Not claimed: elapsed alone answers *"whats really going on"* — live
+  tool output streaming remains a separate future case (executor-level
+  mechanism, open on evidence), and the sibling-spinner gap is a recorded
+  watch item: `ToolResultEvent` clears the spinner unconditionally, so
+  with parallel sibling calls the spinner disappears while a sibling
+  still runs (pre-existing, unfixed).
 
 ### ORCH-001 — Persona orchestration live-verified on the current build
 ### (2026-09-12, gate `e2e/orchestration/run_gate.sh`)

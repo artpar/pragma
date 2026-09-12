@@ -372,6 +372,13 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 
 		m.activeToolCalls[e.Call.ID] = e.Call
 
+		// TUI-003: stamp the running call's start — the spinner line
+		// renders its elapsed on every tick. Same-name sibling parallel
+		// calls keep the first stamp (the spinner names one tool).
+		if !m.spinnerActive || m.spinnerTool != e.Call.Name {
+			m.spinnerToolStartedAt = time.Now()
+			m.spinnerNow = m.spinnerToolStartedAt
+		}
 		m.spinnerActive = true
 		m.spinnerTool = e.Call.Name
 		m.toolbar.SetStatus("executing: " + e.Call.Name)

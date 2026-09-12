@@ -183,3 +183,10 @@ notice for any paused turn, and a thinking-only paused response stayed a
 lone collapsed hint; pause_turn now carries a pause notice and the
 TUI-001 textless promotion (2026-09-12, TUI-002),
 `go test ./internal/tui -run TestThinkingOnlyPauseTurnShowsInstruction -count=1`.
+Sixth: a running tool call rendered no elapsed time — the animating
+spinner line carried no duration information, so a 361-second call was
+indistinguishable from a 6-second one in the default view
+(operator-observed, 2026-09-12, TUI-003); the spinner line now renders the
+running call's elapsed time (`⣾ Bash... 5m11s`), stamped at the tool
+call and refreshed each spinner tick,
+`go test ./internal/tui -run TestRunningToolShowsElapsedTime -count=1`.

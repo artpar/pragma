@@ -185,6 +185,11 @@ type Model struct {
 	// Spinner state
 	spinnerActive bool
 	spinnerTool   string
+	// TUI-003: when the running-tool spinner's named call began, and the
+	// most recent spinner tick time — the spinner line renders their
+	// difference as the running call's elapsed time.
+	spinnerToolStartedAt time.Time
+	spinnerNow           time.Time
 
 	// Streaming state
 	outputSegs   []segment        // typed segments for viewport content
@@ -319,6 +324,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.spinnerActive {
 			var cmd tea.Cmd
 			m.spin, cmd = m.spin.Update(msg)
+			m.spinnerNow = msg.Time
 
 			m.viewport.SetContent(m.viewportContent())
 			observe.GlobalTrace("return: m, cmd")
@@ -415,6 +421,24 @@ func (m Model) View() string {
 // viewportContent returns the full viewport content including spinner.
 // Thinking segments are rendered on demand based on verbose state.
 // Shows a welcome message when the conversation is empty.
+// formatElapsed renders a running duration for the spinner line
+// (TUI-003): 45s under a minute, 5m11s under an hour, 2h03m beyond.
+// The test gate pins 311s → 5m11s; 311.99s still truncates to 311.
+func formatElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	sec := int(d.Seconds())
+	switch {
+	case sec < 60:
+		return fmt.Sprintf("%ds", sec)
+	case sec < 3600:
+		return fmt.Sprintf("%dm%ds", sec/60, sec%60)
+	default:
+		return fmt.Sprintf("%dh%02dm", sec/3600, (sec%3600)/60)
+	}
+}
+
 func (m Model) viewportContent() string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -470,7 +494,11 @@ func (m Model) viewportContent() string {
 	b.WriteString(m.streamBuf.String())
 	if m.spinnerActive {
 		observe.GlobalTrace("if: m.spinnerActive")
-		b.WriteString("\n" + m.spin.View() + " " + m.spinnerTool + "...")
+		line := "\n" + m.spin.View() + " " + m.spinnerTool + "..."
+		if !m.spinnerToolStartedAt.IsZero() {
+			line += " " + formatElapsed(m.spinnerNow.Sub(m.spinnerToolStartedAt))
+		}
+		b.WriteString(line)
 	}
 
 	if m.modelDlg.active {
