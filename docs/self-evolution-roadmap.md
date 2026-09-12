@@ -294,6 +294,53 @@ TUI-001); handoff artifacts and verdict present; run output captured.
 Rejection: a harness-owned orchestration-path failure (persona load, LLM
 resolver, loop, control routing) — that would open a capability case.
 
+**ORCH-002 result — live-route dogfood: APPROVE, terminal `done`, four
+recorded findings (2026-09-12).** Run label
+`e2e/orchestration/results/orch-dogfood-2026-09-12/` (stdout event trace,
+persona artifacts preserved under `artifacts/`); log
+`~/.pragma/logs/2026-09-12T17-59-46.jsonl` — 108 requests, peak 32,371
+input tokens (persona conversations stay small; the whole three-persona
+adversarial review cost ~a tenth of one parent-session request). Wall
+~29 min: architect 15m46s, implementer 11m41s, prosecutor 1m19s. Ceiling
+note: the pre-declared 30-min ceiling was revised to 60 min mid-run,
+before it fired — the architect state alone measured 15m46s of genuine
+verification work (full TUI suite, focused tests, a queued-input probe);
+killing mid-implementer would have discarded more value than the spend.
+
+The task was an adversarial review of this session's own TUI-001
+mechanism (`413122a..948431c`). The personas performed real independent
+verification: the implementer confirmed checks 1/2/4 with write/read-site
+grep analysis of `forceShow`/`finalResponseHadText` and test runs with
+exit codes preserved; the prosecutor re-ran the focused tests, the full
+TUI suite, and a build itself (rc=0 each), verified the diff is
+instrumentation-only, and confirmed review-only discipline (the
+implementer probed repo paths via `go test -overlay`, zero repo edits).
+
+Findings — none block TUI-001; each is a recorded follow-up:
+1. **Queued-mid-thinking partial promotion (check 3):** ThinkingEvent(A)
+   → QueuedPromptEvent → ThinkingEvent(B) → end_turn-without-text
+   promotes only B; A stays collapsed behind the queued prompt's
+   non-whitespace text. Same-response thinking is partially un-promoted
+   versus the doc comment's promise; weighed non-blocking (the queued
+   prompt is itself operator-visible; A remains hinted). Gate body for a
+   future decision is recorded in the implementer report.
+2. **StopPauseTurn has no TUI notice branch** — a thinking-only paused
+   response renders as a lone collapsed hint: the TUI-001 delivery class
+   for a representable stop shape (anthropic maps pause_turn).
+3. The TUI's StopMaxTokens notice branch appears unreachable from the
+   provider-tools loop (tool-free truncation converts to ErrorEvent) —
+   harmless dead branch, confirm if other emitters appear.
+4. Reload promotion scans all reloaded segments — safe today because of
+   the inter-message "\n" terminator; fragile to future terminator
+   changes.
+
+Self-improvement payoff: orchestration is live-proven on the real route
+end-to-end and produced four recorded follow-ups, including the first
+TUI-001-family follow-up candidate (the pause_turn notice). Recorded-need
+note: the 29-minute orchestration occupied its session exclusively —
+consistent with the background-sub-agent friction class; the case-opening
+bar (other work actually waiting on the turn) was not crossed.
+
 ### M2b — Classify the captured session-start failure
 
 **Resolved 2026-09-11 — classification correct; no open defect.** The

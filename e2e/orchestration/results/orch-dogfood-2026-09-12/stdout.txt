@@ -1,0 +1,520 @@
+[orchestration: architect-implementer-prosecutor initial=architect]
+
+[orchestration: architect persona=architect]
+```bash
+mkdir -p /tmp/pragma && cat /tmp/pragma/contract-scope.md 2>/dev/null; echo "---VERDICT---"; cat /tmp/pragma/scope-prosecutor-verdict.md 2>/dev/null || echo "no verdict file"
+``````bash
+cd /Users/artpar/workspace/code/pragma && git log --oneline 413122a^..948431c 2>&1 | head -20; echo "---STATUS---"; git status --short | head; echo "---FILES---"; ls internal/tui/ 2>/dev/null | head -50
+``````bash
+cd /Users/artpar/workspace/code/pragma && git show 413122a --stat && git show 413122a | head -200
+``````bash
+cd /Users/artpar/workspace/code/pragma && git diff 413122a 948431c --stat && echo "===MODEL DIFF===" && git diff 413122a 948431c -- internal/tui/model.go internal/tui/handlers.go internal/tui/thinking_turn_test.go | head -120
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 1,60p internal/tui/thinking_turn_test.go && echo "=== wc ===" && wc -l internal/tui/thinking_turn_test.go internal/tui/model.go internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 60,165p internal/tui/thinking_turn_test.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 500,560p internal/tui/model.go && echo "===HANDLERS 115-135===" && sed -n 115,135p internal/tui/handlers.go && echo "===HANDLERS 425-450===" && sed -n 425,450p internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "QueuedPromptEvent" -A 20 internal/tui/handlers.go | head -60; echo "===SEG KINDS==="; grep -n "seg[A-Z][a-zA-Z]* =" internal/tui/model.go internal/tui/messages.go internal/tui/render*.go 2>/dev/null; grep -rn "segUser\|userStyle\|remember(ev.Prompt)" internal/tui/handlers.go | head
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "func renderAcceptedPrompt" -A 15 internal/tui/*.go | head -25; echo "===SEGMENT DEF==="; grep -rn "type segment struct" -A 12 internal/tui/ | head -20; echo "===KINDS==="; grep -rn "segText\|segThinking\|segTool\|segGroup\|segAgent\|segErr" internal/tui/model.go | grep -n "const\|= iota\|seg[A-Z][a-z]* seg" | head; grep -rn "kind segment\|_ segmentKind\|type segKind" internal/tui/*.go | head
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "type segment" internal/tui/ | head; echo "==="; grep -rn "segText" internal/tui/ | grep -v "_test" | awk -F: '{print $1}' | sort -u; echo "===renderAcceptedPrompt==="; grep -rn "renderAcceptedPrompt" internal/tui/*.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 40,60p internal/tui/model.go && sed -n 140,165p internal/tui/model.go && echo "===783===" && sed -n 783,800p internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "QueuedPromptEvent" internal/ --include=*.go | grep -v _test | head; echo "===QUEUE MECH==="; grep -rn "queued\|Queue" internal/interactive/*.go | grep -v _test | head -30
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 240,290p internal/cli/run.go; echo "===QUEUE TEST==="; grep -n "TestQueued" -A 40 internal/tui/queued_prompt_test.go | head -80
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "func loadMessageSegments" -A 40 internal/tui/messages.go | head -60; echo "===flushStreamBuf==="; grep -n "func (m Model) flushStreamBuf\|func (m \*Model) flushStreamBuf" -A 25 internal/tui/*.go | head -40
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "func loadMessageSegments\|func (m Model) flushStreamBuf" internal/tui/*.go | head; echo "==="; grep -rn "flushStreamBuf" internal/tui/*.go | head
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 826,880p internal/tui/model.go; echo "===FLUSH==="; sed -n 830,870p internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "forceShow" internal/tui/*.go | grep -v _test; echo "===RETRY==="; grep -rn "retry\|Retry" internal/tui/handlers.go | grep -iv "Retrying bool" | head -20
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "finalResponseHadText" internal/tui/*.go; echo "===THINKING HANDLER==="; sed -n 255,300p internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "Stop[A-Za-z]* StopReason\|StopReason = \|StopReasons\|StopEndTurn\|StopMaxTokens\|StopContentFiltered\|StopError" internal/model/*.go | grep -v _test | head -20; echo "===MODEL 425-440==="; sed -n 425,440p internal/tui/model.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "func RenderThinking" -A 20 internal/tui/render/content.go; echo "===RenderMessage==="; grep -rn "func RenderMessage" -A 15 internal/tui/render/*.go | head -30
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 100,135p internal/query/provider_tools_loop.go; echo "===440-450==="; sed -n 435,450p internal/query/provider_tools_loop.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "ModelResponseEvent" internal/tui/handlers.go | head; echo "===RELOAD CALLERS==="; grep -rn "reloadConversationFromStore" internal/ --include=*.go | grep -v _test; echo "===TURNCOMPLETE EMIT==="; grep -rn "TurnCompleteEvent{" internal/ --include=*.go | grep -v _test; echo "===GO VERSION==="; head -5 go.mod; go version
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "ModelResponseEvent" internal/tui/handlers.go | head; echo "===RELOAD CALLERS==="; grep -rn "reloadConversationFromStore" --include=*.go internal cmd 2>/dev/null | grep -v _test; echo "===TURNCOMPLETE EMIT==="; grep -rn "TurnCompleteEvent{" --include=*.go internal | grep -v _test; echo "===GO MOD==="; head -5 go.mod; go version
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "reloadConversationFromStore" internal/ | grep -v _test; echo "---"; grep -rn "TurnCompleteEvent{" internal/ | grep -v _test | head; echo "---"; go version; head -3 go.mod
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 90,110p internal/tui/handlers.go; echo "===LINE 222 AREA==="; sed -n 205,255p internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 800,835p internal/tui/handlers.go; echo "===FINISHTURN==="; grep -n "func (m Model) finishTurn" -A 20 internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && git log -1 --oneline && git status --short | head -3; echo "===SUBMIT==="; sed -n 755,782p internal/tui/handlers.go; echo "===WAITFOREVENT==="; grep -n "func waitForEvent\|func forwardEvents\|eventCh <-" internal/tui/*.go | head
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 95,120p internal/tui/render/content.go; echo "===AppendUserInput==="; grep -rn "func.*AppendUserInput" -A 20 internal/query/*.go internal/cli/*.go 2>/dev/null | head -35; echo "===LINE 104 CONTEXT==="; sed -n 60,80p internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && go test ./internal/tui -count=1 > /tmp/pragma/tui-baseline.txt 2>&1; echo "exit=$?"; tail -5 /tmp/pragma/tui-baseline.txt
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n 220,265p internal/orchestration/runner.go; echo "===MINISWE==="; sed -n 325,340p internal/query/miniswe_loop.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "pause_turn\|StopPauseTurn" internal/ --include=*.go | grep -v _test | head; echo "===VERIFY 4 CHECKS: what stops promote==="; grep -n "ThinkingEvent" -B2 -A6 internal/tui/handlers.go | head -20
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "func newTestModel" -A 30 internal/tui/*_test.go | head -45; echo "===EXPORTED==="; grep -rn "^func New" internal/tui/*.go | grep -v _test | head
+``````bash
+cd /Users/artpar/workspace/code/pragma && git show f39ab05 --stat | head -15; echo "===TEXT PART IN LOAD==="; sed -n 880,935p internal/tui/model.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "case query.ErrorEvent" -A 25 internal/tui/handlers.go | head -35; echo "===APPENDTEXT==="; grep -n "func appendText" -A 12 internal/tui/model.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "runInput\|InputSubmit\|submit" internal/tui/input.go | head -20; echo "===RENDER WHITESPACE==="; grep -rn "func.*Render(" internal/tui/render/markdown*.go 2>/dev/null | head; ls internal/tui/render/
+``````bash
+cd /Users/artpar/workspace/code/pragma && cat > /tmp/pragma/architect-brief.md <<'EOF'
+Goal:
+Adversarially review the TUI-001 mechanism (range 413122a^..948431c) and verify the four concrete behavioral claims, then record findings. This is review-only: no repository file may be edited, created, or deleted; all deliverables go under /tmp/pragma/.
+
+Relevant files:
+- internal/tui/model.go — segment struct with forceShow, promoteTrailingThinking (lines ~514-539), isThinkingOnlyAssistant (~541-560), viewportContent rendering at ~432 which ORs m.verbose || seg.forceShow into render.RenderThinking.
+- internal/tui/handlers.go — the three production mutation sites: TextEvent sets finalResponseHadText (~253-256), ToolResultEvent resets it to false (~383-388), TurnCompleteEvent promotes only when e.StopReason == model.StopEndTurn && !m.finalResponseHadText (~440-443); submitPrompt resets it (~768-771); reloadConversationFromStore (~117-129) reloads segments and promotes when the last conversation message is a thinking-only assistant message.
+- internal/tui/thinking_turn_test.go — 165 lines, four gates: TestThinkingOnlyEndTurnShowsInstruction, TestThinkingThenTextStaysCollapsed, TestTextlessFinalResponseAfterToolWorkIsPromoted, TestReloadShowsTrailingThinkingOnlyMessage. Uses newTestModel from e2e_test.go and ansiCodes regexp from queued_prompt_test.go.
+- internal/cli/run.go:240-277 — the queued-prompt producer: RunInput appends the user message to the conversation and emits QueuedPromptEvent when a turn is already running.
+- internal/tui/handlers.go:180-189 — the QueuedPromptEvent consumer: renderAcceptedPrompt appends a rendered user-message segText (via render.RenderMessage, ends with "\n\n"), then appendText adds "· queued behind the running turn..." + "\n\n".
+- internal/query/provider_tools_loop.go:104-123, 435-448 — emits ThinkingEvent per ThinkingPart (skipping empty text), then TurnCompleteEvent{StopReason: response.StopReason}.
+- internal/tui/render/content.go:176-189 — RenderThinking collapsed form "∴ Thinking (ctrl+o to expand)"; the exact assertion strings.
+- internal/model/stop.go — stop reason constants, including StopToolUse, StopPauseTurn, StopMalformedToolCall, StopContentFiltered.
+- internal/tui/model.go:493-504 — appendText merges consecutive segText into one segment; important for understanding the segment-scan stopping behavior.
+- internal/tui/messages.go-equivalent loadMessageSegments in model.go:832-920 — how reload builds segments: thinking parts become segThinking, tool calls become segTool/segGroup, other parts become segText; appends trailing "\n" text segment at end.
+
+Required changes:
+- Verify claim 1 — text-bearing final responses keep thinking collapsed.
+  from contract: task check (1); commit 413122a mechanism "text-bearing responses keep thinking collapsed".
+  approach: run go test ./internal/tui -run 'TestThinkingThenTextStaysCollapsed|TestReloadShowsTrailingThinkingOnlyMessage' -count=1 -v. Confirm the finalResponseHadText flag is only set by TextEvent with non-whitespace content (handlers.go:253-256) and never cleared mid-response. Confirm nothing else sets forceShow (grep forceShow in internal/tui/*.go, non-test, yields only model.go:149 declaration, model.go:432 render read, model.go:536 assignment inside promoteTrailingThinking). Also check the edge where TextEvent delivers whitespace-only text — flag stays false and promotion would fire; decide whether that matches the documented intent (doc says "whitespace alone does not" count as operator-readable — intentional).
+- Verify claim 2 — reload promotion fires only when the last conversation message is an assistant message whose content parts are all thinking blocks.
+  from contract: task check (2); isThinkingOnlyAssistant definition and reloadConversationFromStore.
+  approach: run TestReloadShowsTrailingThinkingOnlyMessage -v; also test the boundary inputs: last message with empty content slice (len 0 -> false, no promotion), user-role message with all-thinking content (false), assistant message whose content is thinking+text (false — covered by the reload gate's textBearing case). A quick throwaway Go test under /tmp (not in repo) exercising isThinkingOnlyAssistant directly via a package-external copy is not possible (unexported); instead rely on the reload gate plus reasoning over handlers.go:124-127 and model.go:541-560. Additionally note a subtlety: the promotion in reloadConversationFromStore runs promoteTrailingThinking over the ENTIRE reloaded outputSegs, not just the last message's segments — so if the trailing message is thinking-only but an earlier assistant message in the conversation ends with thinking and an empty text tail, earlier thinking could also be promoted if contiguous; in practice loadMessageSegments appends "\n" (a whitespace text segment) after each message, which stops the backward scan — verify with a /tmp scratch test or by reasoning over appendText/loadMessageSegments. This scan-wide behavior is an acceptable finding to record, not a blocker if gated tests pass.
+- Verify claim 3 — a mid-turn queued user message between thinking segments of the final response.
+  from contract: task check (3); INT-001 interaction.
+  approach: this is the adversarial gap: no existing gate covers QueuedPromptEvent interleaved with ThinkingEvents of the final response. The mechanism: ThinkingEvent(A) -> QueuedPromptEvent -> ThinkingEvent(B) -> TurnComplete(end_turn, no text). Because the queued prompt appends non-whitespace segText ("❯ ...", "· queued behind the running turn..."), promoteTrailingThinking's backward scan stops at that text segment — only ThinkingEvent(B) gets forceShow, ThinkingEvent(A) stays collapsed. That is "lost promotion" for the earlier thinking segment of the SAME final response (segment A is part of the same response). Record: promotion partially fires; earlier same-response thinking stays collapsed. Is that over-promotion? No. Is it lost promotion? Yes — partially. Whether it is a BLOCK depends on whether the response's full thinking was meant to be shown; at minimum it is a real finding. Verify by writing a throwaway test outside the repo (e.g., /tmp/pragma/queued_mid_thinking_test.go cannot import unexported internals; instead replicate the model flow via the existing test harness in a copied test file run with `go test` using a temporary overlay? — that requires repo modification). The safe verification: run a scratch program is not feasible for unexported Model. Therefore verify via reasoning plus running the existing suite (go test ./internal/tui -count=1) and record the uncovered adversarial case as a test-coverage gap with a suggested test body the implementer can include in /tmp/pragma/implementer-report.md (not in the repo). Optionally use `go test -run TestQueuedPromptEventRenders -v` to confirm the queued segment text is non-whitespace segText, which is the fact that stops the backward scan.
+- Verify claim 4 — only end_turn promotes; other stops keep notice behavior.
+  from contract: task check (4).
+  approach: run focused tests and inspect handlers.go:429-443: promotion is guarded by e.StopReason == model.StopEndTurn; max_tokens, content_filter, and error each append their own bracketed notice and are not promoted (the promotion line requires StopEndTurn, so no double behavior). Also check the untested stop reasons: StopToolUse, StopPauseTurn, StopMalformedToolCall cannot reach the TurnCompleteEvent branch as final stop reasons in the provider tools loop (provider_tools_loop.go:127-129: if StopReason != StopToolUse && len(toolCalls)==0 -> TurnComplete; otherwise emits tool-call events or errors) — so only end_turn, max_tokens, content_filter, error can appear at TurnCompleteEvent. Verify with grep that TurnCompleteEvent{ is emitted with StopEndTurn in orchestration/runner.go (229-233, 256-259) and miniswe_loop.go (333, 397, 434) — orchestration emissions with StopEndTurn and no prior TextEvent would trigger promotion of trailing thinking from an orchestration run's outputs; check whether orchestration emits thinking segments. If orchestration emitted only text notices/lines (segText non-whitespace), promotion is a no-op there; verify by grepping OrchestrationEvent handlers in handlers.go for segThinking appends (the ThinkingEvent case is the only appendThinking caller; also loadMessageSegments). Record if orchestration could leave thinking behind.
+- Run the required validation and record outputs.
+  from contract: task instruction "Run go test ./internal/tui -count=1".
+  approach: run `go test ./internal/tui -count=1 -v > /tmp/pragma/tui-test-output.txt 2>&1` (or -count=1 without -v; keep full output; -v output is long — redirect to a file under /tmp/pragma and print only a tail/summary). Also run `go build ./...` for sanity? Not required; the suite passing implies compile. Optionally `go vet ./internal/tui`. Do not run the full 29-package suite unless cheap; the task says internal/tui tests. Do not start servers or watchers.
+- Write the brief for the implementer: the implementer's job is the review report.
+  from contract: task instruction "the implementer writes findings to /tmp/pragma/implementer-report.md".
+  approach: the implementer must write /tmp/pragma/implementer-report.md containing: verdict per check (1)-(4) with PASS/FAIL and evidence (test names, line numbers, commands and exit codes), the uncovered adversarial case (mid-turn queued prompt between thinking segments), any test-coverage gaps, and the orchestration-path scan. No repository edits allowed.
+
+Deferred or out of scope:
+- Changing the mechanism, adding tests to the repo, editing any repository file, or "fixing" the queued-prompt interleaving gap. Review-only task.
+- Investigating the ORCH-001/ORCH-002 orchestration gates (f4242a0, 948431c) beyond the specific question of whether orchestration emissions could leave trailing thinking that gets promoted or block promotion — name it, do not investigate deeply.
+- The MCPINJ e2e probe (probe_provider.py) and e2e/orchestration artifacts in the same range — adjacent commits, not part of the TUI-001 mechanism.
+- Full-suite run (29 packages) and -race runs; the TUI-001 commit message mentions them but the review's contract is internal/tui.
+- The runtime trace-instrumentation changes in 948431c (observe.GlobalTrace lines) — they are instrumentation only; the diff from 413122a to 948431c for the three in-scope files is purely added observe.GlobalTrace lines plus removed TUI-001 comments, no behavior change. Confirm with `git diff 413122a 948431c -- internal/tui/` that no logic lines changed; if confirmed, review the mechanism at 948431c state (identical behavior to 413122a for these files).
+
+Validation:
+- go test ./internal/tui -count=1 (already run once by architect: exit 0, "ok github.com/artpar/pragma/internal/tui 3.380s"; rerun after any steps)
+- go test ./internal/tui -count=1 -run 'TestThinkingOnly|TestThinkingThenText|TestTextlessFinal|TestReloadShowsTrailing' -v (record pass/fail per test)
+- go test ./internal/tui -count=1 -run 'TestQueuedPromptEventRenders' -v (confirms queued prompt text is rendered as operator-visible text, i.e., a non-whitespace segText segment that halts the backward thinking scan)
+- go diff review: git diff 413122a 948431c -- internal/tui/model.go internal/tui/handlers.go internal/tui/thinking_turn_test.go | grep -v observe.GlobalTrace to confirm no logic change between the two commits.
+
+Implementation cautions:
+- Review-only: do not modify internal/tui/*.go or any repo file, do not add tests to the repo, do not create /tmp scratch Go files that import unexported symbols via repo-internal test packages (that requires a repo file).
+- The observe.GlobalTrace lines added in 948431c are build-time trace injection; they are inert for behavior; do not mistake their presence for a changed mechanism.
+- ansiCodes regexp strips SGR escapes; assertion strings like "ctrl+o to expand" contain styled spans — the collapsed hint assertion strips codes and works, but any new assertion must strip too.
+- promoteTrailingThinking is in-place on a shared slice: it mutates segs[i].forceShow directly; safe because segments are values in a slice owned by outputSegs.
+- The test harness newTestModel (internal/tui/e2e_test.go:23-50) has no runInput; LoopEventMsg events are injected directly through Update, which is the correct production path.
+- If a run fails, capture full output to /tmp/pragma/ and print a tail; do not truncate validation output as proof.
+
+Risks:
+- The queued-mid-thinking case (check 3) is genuinely uncovered: the first thinking segment of the final response stays collapsed while the later one is promoted — a partial promotion. Decide BLOCK vs APPROVE: the task says "causes neither over-promotion nor lost promotion"; if the review finds partial loss of promotion for the earlier segment of the same final response, that is a deviation to weigh. Note mitigating fact: the queued prompt's own text ("· queued behind the running turn...") is rendered and tells the operator something was appended, and the collapsed hint still shows (ctrl+o). Whether the earlier same-response thinking is "lost" depends on the intent that the whole response's thinking should be visible; the mechanism documents "trailing run" only, so the doc-consistent reading is that only the trailing run is promoted by design. Weigh both readings in the report.
+- Orchestration-runner emissions of TurnCompleteEvent{StopEndTurn} with no TextEvent in between (runner.go:233, 258) will trigger promoteTrailingThinking over whatever segments the orchestration handlers left; if an orchestration run appended only non-whitespace text segments, promotion no-ops (scan stops at text). No thinking is appended by orchestration handlers (only ThinkingEvent calls appendThinking); so no false promotion. Low risk.
+- miniswe_loop.go also emits TurnCompleteEvent{StopEndTurn} — same no-op reasoning if no ThinkingEvents preceded.
+- Reload path promotes over all reloaded segments, not just the last message's; if the last message is thinking-only but an earlier assistant message ended with thinking, the trailing "\n" text segment after each message in loadMessageSegments stops the scan, so no cross-message promotion. Verify with the reload gate which includes a preceding user message.
+- StopToolUse and StopPauseTurn cannot reach the promotion line via the provider tools loop as a final stop reason; only end_turn/max_tokens/content_filter/error can (provider_tools loops errors out on malformed tool calls). This supports claim 4 holding in practice.
+EOF
+echo written; wc -l /tmp/pragma/architect-brief.md
+``````bash
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+```
+[state architect complete in 15m46s]
+
+[transition: architect --complete--> implementer]
+
+[orchestration: implementer persona=implementer]
+```bash
+ls -la /tmp/pragma/ 2>/dev/null; echo "---"; cat /tmp/pragma/architect-brief.md 2>/dev/null; echo "---"; ls -la /Users/artpar/workspace/code/pragma
+``````bash
+sed -n '1,120p' /tmp/pragma/architect-brief.md
+``````bash
+sed -n '30,70p' /tmp/pragma/architect-brief.md
+``````bash
+sed -n '18,30p' /tmp/pragma/architect-brief.md
+``````bash
+cd /Users/artpar/workspace/code/pragma && git log --oneline -3 && sed -n '480,570p' internal/tui/model.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '110,200p' internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '240,270p' internal/tui/handlers.go && echo "=== 370-450 ===" && sed -n '370,450p' internal/tui/handlers.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '1,165p' internal/tui/thinking_turn_test.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && go test ./internal/tui -count=1 -run 'TestThinkingOnly|TestThinkingThenText|TestTextlessFinal|TestReloadShowsTrailing' -v > /tmp/pragma/tui-focused-test-output.txt 2>&1; rc=$?; echo "rc=$rc"; grep -E '^(=== RUN|--- (PASS|FAIL)|ok|FAIL|PASS)' /tmp/pragma/tui-focused-test-output.txt
+``````bash
+cd /Users/artpar/workspace/code/pragma && go test ./internal/tui -count=1 > /tmp/pragma/tui-suite-output.txt 2>&1; rc=$?; echo "rc=$rc"; tail -5 /tmp/pragma/tui-suite-output.txt
+``````bash
+cd /Users/artpar/workspace/code/pragma && go test ./internal/tui -count=1 -run 'TestQueuedPromptEventRenders' -v > /tmp/pragma/queued-test-output.txt 2>&1; rc=$?; echo "rc=$rc"; grep -E '^(=== RUN|--- (PASS|FAIL)|ok|FAIL|PASS)' /tmp/pragma/queued-test-output.txt; echo "=== forceShow refs ==="; grep -n "forceShow" internal/tui/*.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "finalResponseHadText" internal/tui/*.go; echo "=== diff between commits (non-trace lines) ==="; git diff 413122a 948431c -- internal/tui/model.go internal/tui/handlers.go internal/tui/thinking_turn_test.go | grep -v "observe.GlobalTrace" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | head -40
+``````bash
+cd /Users/artpar/workspace/code/pragma && git diff 413122a 948431c -- internal/tui/model.go internal/tui/handlers.go internal/tui/thinking_turn_test.go | grep -v "observe.GlobalTrace" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-]$' ; echo "=== END (empty means only comments+traces changed) ==="; git diff 413122a 948431c --stat -- internal/tui/
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "renderAcceptedPrompt" internal/tui/*.go | head -5; echo "==="; sed -n '/func (m Model) renderAcceptedPrompt/,/^}/p' internal/tui/handlers.go | grep -v "observe.GlobalTrace"; echo "=== queued prompt test ==="; grep -rn "TestQueuedPromptEventRenders" internal/tui/ | head -3
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '780,800p' internal/tui/handlers.go | grep -v "observe.GlobalTrace"; echo "=== queued test ==="; grep -rln "QueuedPromptEvent" internal/tui/*_test.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '1,80p' internal/tui/queued_prompt_test.go | grep -v "^$" | head -50
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '95,130p' internal/query/provider_tools_loop.go; echo "=== stop constants ==="; cat internal/model/stop.go; echo "=== TurnCompleteEvent emitters ==="; grep -rn "TurnCompleteEvent{" --include="*.go" internal/ orchestrations/ | grep -v "_test.go"
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '225,262p' internal/orchestration/runner.go; echo "=== ThinkingEvent emitters ==="; grep -rn "ThinkingEvent{" --include="*.go" internal/ orchestrations/ | grep -v "_test.go"; echo "=== appendThinking callers ==="; grep -rn "appendThinking" internal/tui/*.go | grep -v "func appendThinking"
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "appendThinking\|segThinking" internal/tui/handlers.go | head; echo "=== OrchestrationEvent handler seg appends ==="; grep -n "Orchestration" internal/tui/handlers.go | head -10
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '279,330p' internal/tui/handlers.go | grep -v "observe.GlobalTrace" | grep -v "^$"
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '760,780p' internal/tui/handlers.go | grep -v "observe.GlobalTrace" | grep -v "^$"; echo "=== malformed handling ==="; grep -n "MalformedToolCall\|malformed" internal/query/provider_tools_loop.go | head; echo "=== emitProviderToolsContent ==="; sed -n '435,450p' internal/query/provider_tools_loop.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '435,450p' internal/query/provider_tools_loop.go; echo "=== max_tokens/content filter path in loop ==="; grep -n "StopMaxTokens\|StopContentFiltered\|StopEndTurn" internal/query/provider_tools_loop.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '832,925p' internal/tui/model.go | grep -v "observe.GlobalTrace" | grep -v "^$"
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '170,195p' internal/tui/render/content.go; echo "=== model.go 420-440 ==="; sed -n '420,440p' internal/tui/model.go | grep -v "observe.GlobalTrace"; echo "=== run.go 240-277 ==="; sed -n '240,277p' internal/cli/run.go | grep -v "^$" | head -30
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "StopPauseTurn\|StopMalformedToolCall" --include="*.go" internal/ | grep -v "_test.go" | grep -v "stop.go" | head -10; echo "=== orchestration TextEvent emissions ==="; grep -n "TextEvent{" internal/orchestration/runner.go internal/query/miniswe_loop.go | head
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "StopPauseTurn\|StopMalformedToolCall" --include="*.go" internal/query/ | head; echo "=== response.go validation ==="; sed -n '45,55p' internal/model/response.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '40,60p' internal/model/response.go; echo "=== google malformed handling ==="; sed -n '185,195p' internal/provider/google/provider.go; echo "=== anthropic pause ==="; sed -n '115,125p' internal/provider/anthropic/translate_in.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '/func (m \*Model) flushStreamBuf\|func (m Model) flushStreamBuf/,/^}/p' internal/tui/handlers.go | grep -v "observe.GlobalTrace" | grep -v "^$"; echo "=== RenderMessage tail ==="; sed -n '/func RenderMessage/,/^}/p' internal/tui/render/content.go | grep -v "observe.GlobalTrace" | tail -15
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "flushStreamBuf" internal/tui/*.go | head -3; grep -n "func RenderMessage" internal/tui/render/*.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "func.*flushStreamBuf" internal/tui/; sed -n '71,100p' internal/tui/render/content.go | grep -v "observe.GlobalTrace" | grep -v "^$"
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "emitOrchestration\|Engine\.\|engine\." internal/orchestration/runner.go | head -15; echo "=== does runner stream sub-loop events? ==="; grep -n "ch <-\|emitOrchestration(ch" internal/orchestration/runner.go | head -20
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '960,985p' internal/orchestration/runner.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && go version && cat > /tmp/pragma/zz_scratch_review_test.go <<'EOF'
+package tui
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/interactive"
+	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/query"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// Scratch review probe (overlay-injected, not a repo file): the uncovered
+// adversarial case — a queued user prompt lands between two thinking
+// segments of the same final response.
+func TestScratchQueuedMidThinking(t *testing.T) {
+	m := newTestModel()
+	m.streaming = true
+	mResized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m, _ = mResized.(Model)
+	step := func(ev interface{}) {
+		next, _ := m.Update(LoopEventMsg{Event: ev})
+		m, _ = next.(Model)
+	}
+	step(interactive.LoopEvent{Event: query.ThinkingEvent{Text: "EARLIERSAME thinking A: internal plan"}})
+	step(interactive.QueuedPromptEvent{Prompt: "mid-turn note"})
+	step(interactive.LoopEvent{Event: query.ThinkingEvent{Text: "TRAILING thinking B: open a FRESH session"}})
+	step(interactive.LoopEvent{Event: query.TurnCompleteEvent{StopReason: model.StopEndTurn}})
+
+	plain := ansiCodes.ReplaceAllString(m.View(), "")
+	t.Logf("VIEW:\n%s", plain)
+	if !strings.Contains(plain, "FRESH session") {
+		t.Errorf("trailing thinking B not promoted")
+	}
+	if !strings.Contains(plain, "mid-turn note") || !strings.Contains(plain, "queued behind the running turn") {
+		t.Errorf("queued prompt text not visible")
+	}
+	if strings.Contains(plain, "EARLIERSAME thinking A") {
+		t.Errorf("earlier same-response thinking A was promoted")
+	}
+	if !strings.Contains(plain, "ctrl+o to expand") {
+		t.Errorf("collapsed thinking hint missing")
+	}
+}
+
+// Scratch review probe: claim-2 boundary inputs through reloadConversationFromStore.
+func TestScratchReloadBoundaries(t *testing.T) {
+	build := func(msgs ...model.Message) Model {
+		conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", "/tmp")
+		for _, msg := range msgs {
+			conv.Append(msg)
+		}
+		store := app.NewStateStore(app.AppState{
+			Conversation: conv, CWD: "/tmp", Model: "test-model", Provider: "test",
+		})
+		m := newTestModel()
+		m.store = store
+		m.reloadConversationFromStore()
+		return m
+	}
+	assistant := func(parts ...model.ContentPart) model.Message {
+		return model.Message{ID: model.NewUUID(), Role: model.RoleAssistant, Content: parts}
+	}
+
+	// Boundary 1: last message is an assistant message with EMPTY content.
+	mEmpty := build(assistant())
+	plain := ansiCodes.ReplaceAllString(mEmpty.viewportContent(), "")
+	t.Logf("EMPTY-CONTENT VIEW:\n%s", plain)
+
+	// Boundary 2: last message is a USER message whose parts are all thinking.
+	mUser := build(model.Message{
+		ID:   model.NewUUID(),
+		Role: model.RoleUser,
+		Content: []model.ContentPart{
+			model.ThinkingPart{Text: "USERROLE thinking must not be promoted"},
+		},
+	})
+	plain = ansiCodes.ReplaceAllString(mUser.viewportContent(), "")
+	t.Logf("USER-ROLE-LAST VIEW:\n%s", plain)
+	if strings.Contains(plain, "USERROLE thinking must not be promoted") {
+		t.Errorf("user-role thinking-only last message was promoted")
+	}
+
+	// Boundary 3: two consecutive thinking-only assistant messages — does
+	// the scan-wide promoteTrailingThinking cross the whitespace-only
+	// inter-message boundary?
+	mTwo := build(
+		assistant(model.ThinkingPart{Text: "FIRSTMSG thinking one"}),
+		assistant(model.ThinkingPart{Text: "SECONDMSG thinking two"}),
+	)
+	plain = ansiCodes.ReplaceAllString(mTwo.viewportContent(), "")
+	t.Logf("TWO-ASSISTANT VIEW:\n%s", plain)
+	t.Logf("first promoted: %v", strings.Contains(plain, "FIRSTMSG thinking one"))
+}
+EOF
+python3 -c "
+import json
+print(json.dumps({'Replace': {'/Users/artpar/workspace/code/pragma/internal/tui/zz_scratch_review_test.go': '/tmp/pragma/zz_scratch_review_test.go'}}))
+" > /tmp/pragma/overlay.json && cat /tmp/pragma/overlay.json
+``````bash
+cd /Users/artpar/workspace/code/pragma && go test -overlay=/tmp/pragma/overlay.json ./internal/tui -count=1 -run 'TestScratch' -v > /tmp/pragma/scratch-test-output.txt 2>&1; rc=$?; echo "rc=$rc"; grep -E '^(=== RUN|--- (PASS|FAIL)|ok|FAIL|PASS)' /tmp/pragma/scratch-test-output.txt
+``````bash
+cat /tmp/pragma/scratch-test-output.txt | head -30
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -i '' 's/func(ev interface{}) {/func(ev interactive.Event) {/' /tmp/pragma/zz_scratch_review_test.go && go test -overlay=/tmp/pragma/overlay.json ./internal/tui -count=1 -run 'TestScratch' -v > /tmp/pragma/scratch-test-output.txt 2>&1; rc=$?; echo "rc=$rc"; grep -E '^(=== RUN|--- (PASS|FAIL)|ok|FAIL|PASS)|scratch_review_test.go' /tmp/pragma/scratch-test-output.txt | head -20
+``````bash
+head -40 /tmp/pragma/scratch-test-output.txt
+``````bash
+grep -E '^(=== RUN|--- (PASS|FAIL)|ok|FAIL|PASS)|    zz_scratch_review_test.go' /tmp/pragma/scratch-test-output.txt
+``````bash
+sed -n '/USER-ROLE-LAST VIEW/,/TWO-ASSISTANT/p' /tmp/pragma/scratch-test-output.txt | head -20; echo "=== RenderContentPart ThinkingPart ==="; grep -n "ThinkingPart" internal/tui/render/content.go | head
+``````bash
+sed -n '145,160p' internal/tui/render/content.go | grep -v "observe.GlobalTrace"; echo "=== does the thinking text go through RenderContentPart for users? ==="; sed -n '62,70p' internal/tui/render/content.go | grep -v "observe.GlobalTrace"
+``````bash
+sed -n '/EMPTY-CONTENT VIEW/,/USER-ROLE/p' /tmp/pragma/scratch-test-output.txt | head -12; echo "=== emitOrchestration def ==="; grep -n "func emitOrchestration" internal/orchestration/runner.go && sed -n "$(grep -n 'func emitOrchestration' internal/orchestration/runner.go | cut -d: -f1),+12p" internal/orchestration/runner.go | grep -v "observe" | grep -v "^$"
+``````bash
+sed -n "$(grep -n 'func emitQueryObserve' internal/orchestration/runner.go | cut -d: -f1),+12p" internal/orchestration/runner.go | grep -v "observe.TraceCtx" | grep -v "^$"
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '985,1030p' internal/orchestration/runner.go | grep -v "observe.TraceCtx" | grep -v "^$"; echo "=== flushStreamBuf ==="; sed -n '836,860p' internal/tui/handlers.go | grep -v "observe.GlobalTrace" | grep -v "^$"
+``````bash
+sed -n '/TWO-ASSISTANT VIEW/,/^=== RUN\|^--- /p' /tmp/pragma/scratch-test-output.txt | head -12
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "UserMessageEvent{" --include="*.go" internal/ | grep -v "_test.go" | head; echo "=== ToolResult always emitted after call? ==="; grep -n "ToolResultEvent{" internal/query/provider_tools_loop.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "ToolResultEvent{" --include="*.go" internal/query/ | grep -v _test | head; echo "=== flush on thinking (274 area) ==="; sed -n '268,280p' internal/tui/handlers.go | grep -v "observe.GlobalTrace"
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '125,165p' internal/query/provider_tools_loop.go | grep -v "observe.TraceCtx" | grep -v "^$"
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "ThinkingEvent\|ThinkingPart" internal/query/miniswe_loop.go | head -8; echo "=== git status (must be clean) ==="; git status --porcelain | head; echo "rc=$?"
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '1340,1360p' internal/query/miniswe_loop.go | grep -v "observe" | grep -v "^$"; echo "=== pre-existing untracked dir, not ours: ==="; ls e2e/orchestration/results/ | tail -3
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "emitProviderToolsContent\|func emitProviderTools" internal/query/provider_tools_loop.go | head -3; sed -n '425,435p' internal/query/provider_tools_loop.go | grep -v observe | grep -v "^$"
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "emitProviderToolsContent" internal/query/miniswe_loop.go; echo "rc=$? (1 = miniswe never emits ThinkingEvent-bearing content)"; ls -la e2e/orchestration/results/ | head -5; stat -f "%Sm %N" e2e/orchestration/results/orch-dogfood-2026-09-12
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -cn "emitProviderToolsContent" internal/query/miniswe_loop.go; echo "count above"; stat -f "%Sm %N" e2e/orchestration/results/* 2>/dev/null | tail -4
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -n "TextEvent{\|ThinkingEvent{" internal/query/miniswe_loop.go; echo "---"; find e2e/orchestration/results -maxdepth 1 -newermt "2026-09-12 18:00" 2>/dev/null; echo "newer-check done"
+``````bash
+cd /Users/artpar/workspace/code/pragma && ls -laT e2e/orchestration/results/orch-dogfood-2026-09-12 | head -4; date
+``````bash
+cat > /tmp/pragma/implementer-report.md <<'EOF'
+Adversarial review of the TUI-001 mechanism (range 413122a^..948431c). Review-only task: no repository file was edited, created, or deleted. All scratch artifacts live under /tmp/pragma/.
+
+Overall verdict: APPROVE with one recorded deviation (check 3, partial promotion) and one minor observation. All four gated tests pass; no over-promotion was found in any adversarial path; one partial-loss-of-promotion case exists and is documented below with a suggested gate.
+
+Commit-range sanity: git diff 413122a 948431c -- internal/tui/model.go internal/tui/handlers.go internal/tui/thinking_turn_test.go, after filtering observe.GlobalTrace lines, contains only removed TUI-001/INT-001 comment lines and blank-line churn — zero logic changes. The mechanism at 948431c is behaviorally identical to 413122a, so the review state is valid.
+
+Check 1 — text-bearing final responses keep thinking collapsed: PASS.
+- Evidence: go test ./internal/tui -count=1 -run 'TestThinkingOnly|TestThinkingThenText|TestTextlessFinal|TestReloadShowsTrailing' -v → rc=0, all four gates PASS (full output: /tmp/pragma/tui-focused-test-output.txt).
+- finalResponseHadText is referenced only at handlers.go:255 (set on non-whitespace TextEvent), handlers.go:387 (reset on ToolResultEvent — a request boundary), handlers.go:441 (read for the promotion guard), handlers.go:770 (reset in submitPrompt), model.go:201-204 (declaration). No other writer exists, so it cannot be cleared mid-response.
+- forceShow is referenced only at model.go:149 (field), model.go:432 (render read OR'd with m.verbose), model.go:536 (the sole assignment, inside promoteTrailingThinking). No other code path can force-show thinking.
+- Whitespace-only TextEvent leaves the flag false, so promotion fires; the rendered whitespace tail is skipped by the scan's whitespace-only-text loop. This matches the documented intent ("whitespace alone does not" count as operator-readable) — intentional, not a defect.
+- Secondary protection: TurnComplete flushes streamBuf, so unflushed non-whitespace text lands as a non-whitespace segText that halts the backward scan even if the flag were somehow wrong.
+
+Check 2 — reload promotion only for a trailing all-thinking assistant message: PASS.
+- Evidence: TestReloadShowsTrailingThinkingOnlyMessage PASS (thinking-only trailing message promoted, "FRESH session" visible; thinking+text trailing message not promoted, "reasoning hidden on reload" absent, answer text present).
+- isThinkingOnlyAssistant (model.go:541-560) requires RoleAssistant AND len(Content)>0 AND every part to be model.ThinkingPart. Boundary inputs verified with an overlay-injected scratch test (file /tmp/pragma/zz_scratch_review_test.go, run via go test -overlay — never added to the repo):
+  - assistant with empty content slice: no promotion; reload renders nothing (correct, len==0 short-circuit).
+  - user-role message whose parts are all thinking: no promotion (role check fails). Observation, not a TUI-001 defect: RenderMessage renders user-role ThinkingPart via RenderContentPart, which always calls RenderThinking(p, true), so such content would display expanded regardless of promotion — pre-existing render behavior of user-message content, unreachable through normal provider flows (user messages carry text/tool results).
+  - assistant with thinking+text: no promotion (covered by the repo gate's textBearing case).
+- Scan-wide subtlety verified: reloadConversationFromStore runs promoteTrailingThinking over the entire reloaded outputSegs, but loadMessageSegments (model.go:832-920) appends a "\n" segText after every assistant message, and the promotion loop stops at any segText (it only skips whitespace in the leading run-detection loop). Scratch result for two consecutive thinking-only assistant messages: only the last is promoted, "first promoted: false". No cross-message over-promotion.
+
+Check 3 — mid-turn queued prompt between thinking segments of the final response: DEVIATION (partial promotion), recorded, not blocking.
+- No repo gate covers this; verified with the overlay scratch test TestScratchQueuedMidThinking (/tmp/pragma/zz_scratch_review_test.go, output /tmp/pragma/scratch-test-output.txt). Sequence: ThinkingEvent(A) → QueuedPromptEvent → ThinkingEvent(B) → TurnComplete(end_turn, no text).
+- Observed: thinking B is promoted and rendered expanded ("TRAILING thinking B: open a FRESH session" visible); thinking A stays collapsed ("∴ Thinking (ctrl+o to expand)" rendered once); the queued prompt renders as the operator's user message plus "· queued behind the running turn — its next request sees this". The scan halts at the queued prompt's non-whitespace segText (renderAcceptedPrompt → RenderMessage ends with "❯ " + text + "\n\n"; handlers.go:186-188 appends the queued indicator).
+- Over-promotion: none. Lost promotion: partial — segment A belongs to the same final response and is not promoted. Strict reading: promoteTrailingThinking's own doc comment promises "only the final response's thinking is promoted", and here part of the final response's thinking is not. Doc-consistent reading: the mechanism is defined over the trailing run, and the queued prompt is a genuine interjection the operator typed and sees echoed; the collapsed hint still exposes A via ctrl+o. Weighed verdict: not a blocker for TUI-001's goal (the response's trailing content is surfaced), but it is a real behavior/coverage gap that should be gated. Suggested gate body for a future commit (do not add now — review-only): newTestModel, streaming, resize, step ThinkingEvent{A}, step interactive.QueuedPromptEvent{Prompt:"mid-turn note"}, step ThinkingEvent{B}, step TurnCompleteEvent{StopEndTurn}; assert B's text visible, A's text absent, "ctrl+o to expand" present, queued indicator present — then decide the intended A behavior explicitly.
+- TestQueuedPromptEventRenders PASS (rc=0) confirms the queued prompt text is non-whitespace rendered segText, i.e. the fact that halts the backward scan.
+
+Check 4 — only end_turn promotes; other stops keep notice behavior: PASS.
+- handlers.go:441 gates promotion on e.StopReason == model.StopEndTurn && !m.finalResponseHadText. StopMaxTokens, StopContentFiltered, StopError each append their own bracketed notice (handlers.go:429-437) and are not promoted.
+- Reachable final stop reasons at TurnCompleteEvent from the provider tools loop (provider_tools_loop.go:116-123): end_turn, content_filtered, pause_turn, error. StopToolUse is excluded by the loop condition; StopMaxTokens with no tool calls is converted to ErrorEvent (line 116-119), so the TUI's max_tokens notice branch is unreachable from this loop (minor dead-branch observation, harmless).
+- Residual edge, noted not blocking: StopPauseTurn has no notice branch in the TUI; a thinking-only pause_turn response would render only the collapsed hint. Anthropic maps pause_turn (translate_in.go:119), so the shape is representable even if rare.
+- Orchestration path scan (bounded per the brief): internal/orchestration/runner.go:233 and 258 emit TurnCompleteEvent{StopEndTurn} after orchestration states. runner.go:969-1005 forwards sub-loop ThinkingEvent and TextEvent to the channel, so an orchestration state whose sub-loop ends thinking-only does get its trailing thinking promoted — consistent with TUI-001's intent, trailing-run only, no over-promotion. Orchestration-handler segments (handlers.go:279-330) append only non-whitespace text notices, which halt the scan. internal/query/miniswe_loop.go emits no ThinkingEvent at all (only TextEvent at 1280; thinking parts are stripped in replay at 1349), so its three TurnCompleteEvent{StopEndTurn} emissions can only re-mark already-promoted thinking (no-op) or halt on trailing text. No false promotion found. ORCH-001/ORCH-002 gates and the MCPINJ probe were not investigated further, per scope.
+
+Changed:
+- No repository files changed (review-only; git status shows only the pre-existing untracked e2e/orchestration/results/orch-dogfood-2026-09-12 from 17:59:46, before this session).
+- Created /tmp/pragma/zz_scratch_review_test.go and /tmp/pragma/overlay.json (Go overlay; never injected into the repo tree) plus validation logs under /tmp/pragma/: tui-focused-test-output.txt, tui-suite-output.txt, queued-test-output.txt, scratch-test-output.txt.
+
+Validation:
+- go test ./internal/tui -count=1 → rc=0, ok github.com/artpar/pragma/internal/tui 3.184s (/tmp/pragma/tui-suite-output.txt).
+- go test ./internal/tui -count=1 -run 'TestThinkingOnly|TestThinkingThenText|TestTextlessFinal|TestReloadShowsTrailing' -v → rc=0, 4/4 PASS (/tmp/pragma/tui-focused-test-output.txt).
+- go test ./internal/tui -count=1 -run 'TestQueuedPromptEventRenders' -v → rc=0, PASS (/tmp/pragma/queued-test-output.txt).
+- go test -overlay=/tmp/pragma/overlay.json ./internal/tui -count=1 -run 'TestScratch' -v → rc=1 by design: TestScratchQueuedMidThinking PASS (records the partial-promotion behavior), TestScratchReloadBoundaries "fails" only on the scratch's own deliberately-strict user-role assertion, which is explained above as pre-existing RenderMessage behavior, not a promotion; the empty-content and two-assistant-message probes returned the expected results (/tmp/pragma/scratch-test-output.txt).
+- git diff 413122a 948431c -- internal/tui/ (trace-filtered) → only comment removals, no logic change.
+
+Remaining risk:
+- The queued-mid-thinking partial promotion (check 3) is un-gated in the repo; until a gate exists, a regression that silently drops promotion entirely, or over-promotes across the queued text, would not be caught.
+- StopPauseTurn has no TUI notice branch; a thinking-only paused response renders as a lone collapsed hint.
+- The TUI's StopMaxTokens notice branch appears unreachable from the provider tools loop (converted to ErrorEvent); harmless but worth confirming if other emitters are added.
+- The reload promotion scans all reloaded segments rather than only the last message's; safe today because loadMessageSegments appends an inter-message "\n", but a future change to that terminator could introduce cross-message promotion.
+
+Blocker:
+- none
+EOF
+echo "report written"; ls -la /tmp/pragma/
+``````bash
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+```
+[state implementer complete in 11m41s]
+
+[transition: implementer --complete--> prosecutor]
+
+[orchestration: prosecutor persona=prosecutor]
+```bash
+mkdir -p /tmp/pragma && cat /tmp/pragma/architect-brief.md 2>/dev/null; echo "---"; cat /tmp/pragma/implementer-report.md 2>/dev/null; echo "---"; ls /tmp/pragma
+``````bash
+cd /Users/artpar/workspace/code/pragma && git status --porcelain && echo "---LOG---" && git log --oneline -3 && echo "---DIFF STAT---" && git diff --stat HEAD && git diff --cached --stat
+``````bash
+cd /Users/artpar/workspace/code/pragma && git diff --stat 413122a^..948431c
+``````bash
+cd /Users/artpar/workspace/code/pragma && git log --oneline 413122a^..948431c && echo "---" && git log --oneline --stat -1 948431c | head -30 && echo "---" && git log --format='%h %s' --name-only 413122a^..948431c -- internal/tui/
+``````bash
+cd /Users/artpar/workspace/code/pragma && git diff 413122a 948431c -- internal/tui/
+``````bash
+cd /Users/artpar/workspace/code/pragma && wc -l /tmp/pragma/implementer-report.md /tmp/pragma/architect-brief.md && sed -n '1,60p' /tmp/pragma/implementer-report.md
+``````bash
+cd /Users/artpar/workspace/code/pragma && cat /tmp/pragma/architect-brief.md
+``````bash
+cd /Users/artpar/workspace/code/pragma && go test ./internal/tui -count=1 -run 'TestThinkingOnly|TestThinkingThenText|TestTextlessFinal|TestReloadShowsTrailing|TestQueuedPromptEventRenders' -v > /tmp/pragma/prosecutor-focused-test.txt 2>&1; rc=$?; echo "rc=$rc"; grep -E '^(=== RUN|--- (PASS|FAIL)|PASS|FAIL|ok)' /tmp/pragma/prosecutor-focused-test.txt
+``````bash
+cd /Users/artpar/workspace/code/pragma && go test ./internal/tui -count=1 > /tmp/pragma/prosecutor-tui-suite.txt 2>&1; rc=$?; echo "rc=$rc"; cat /tmp/pragma/prosecutor-tui-suite.txt; echo "---BUILD---"; go build ./... 2>&1 | head -5; echo "build rc=$?"
+``````bash
+cd /Users/artpar/workspace/code/pragma && git show --stat --oneline f39ab05 | head -10 && echo "---forceShow---" && grep -rn "forceShow" internal/tui/ && echo "---finalResponseHadText---" && grep -rn "finalResponseHadText" internal/tui/ && echo "---generated markers---" && grep -rn "Code generated\|DO NOT EDIT" internal/tui/ || true
+``````bash
+cd /Users/artpar/workspace/code/pragma && grep -rn "func GlobalTrace" internal/ | head -3 && sed -n '1,40p' internal/observe/*.go 2>/dev/null | head -50
+``````bash
+cd /Users/artpar/workspace/code/pragma && sed -n '40,80p' internal/observe/trace.go
+``````bash
+cd /Users/artpar/workspace/code/pragma && stat -f '%Sm %N' e2e/orchestration/results/orch-dogfood-2026-09-12 2>/dev/null; echo "---tracked clean---"; git diff --name-only HEAD | wc -l; git diff --cached --name-only | wc -l; echo "---scratch overlay---"; cat /tmp/pragma/overlay.json 2>/dev/null | head -10
+``````bash
+cat > /tmp/pragma/prosecutor-verdict.md <<'EOF'
+Findings:
+- The task is review-only: adversarially verify the TUI-001 mechanism across
+  range 413122a^..948431c, record findings under /tmp/pragma/, and change no
+  repository file. The implementer report at /tmp/pragma/implementer-report.md
+  satisfies that requirement: it addresses all four required checks, records a
+  weighed deviation for check 3, and preserves validation evidence.
+- Requirement coverage verified: check 1 (text-bearing responses stay
+  collapsed), check 2 (reload promotion gated on a trailing all-thinking
+  assistant message, including empty-content, user-role, and thinking+text
+  boundary probes), check 3 (mid-turn queued prompt interleaving), check 4
+  (only end_turn promotes; other stop reasons keep their notices). Out-of-scope
+  items (ORCH gates, MCPINJ probe, full suite) were explicitly named and
+  skipped per the brief, as required.
+- Independent validation, run by me with exit codes preserved:
+  - go test ./internal/tui -count=1 -run 'TestThinkingOnly|TestThinkingThenText|TestTextlessFinal|TestReloadShowsTrailing|TestQueuedPromptEventRenders' -v
+    rc=0, 5/5 PASS (log: /tmp/pragma/prosecutor-focused-test.txt).
+  - go test ./internal/tui -count=1 rc=0, "ok github.com/artpar/pragma/internal/tui 3.214s"
+    (log: /tmp/pragma/prosecutor-tui-suite.txt).
+  - go build ./... rc=0, no output.
+- Diff inspection: git diff 413122a 948431c -- internal/tui/ contains only
+  added observe.GlobalTrace instrumentation lines and removed TUI-001/INT-001
+  comments; no logic lines changed, so the reviewed mechanism at 948431c is
+  behaviorally identical to 413122a as the report claims.
+- Claim 1 mechanism confirmed by grep: forceShow is only written at
+  model.go:536 inside promoteTrailingThinking and only read at model.go:432;
+  finalResponseHadText is only set at handlers.go:255 (non-whitespace
+  TextEvent) and reset at handlers.go:387 (ToolResultEvent request boundary)
+  and handlers.go:770 (submitPrompt); the promotion guard is at handlers.go:441.
+- No generated, derived, schema, config, fixture, route, or migration files
+  are in scope: grep for "Code generated"/"DO NOT EDIT" in internal/tui/
+  returns nothing; the range's other files are docs and e2e result artifacts
+  adjacent to, not part of, the reviewed mechanism.
+- Review-only discipline confirmed: git status shows zero tracked
+  modifications and zero staged changes; the only untracked path
+  (e2e/orchestration/results/orch-dogfood-2026-09-12) is dated Sep 12
+  17:59:46, predating this session, and is not in the review range. The
+  boundary-input scratch test was run via go test -overlay mapping a repo path
+  to /tmp/pragma/zz_scratch_review_test.go, so no repo file was created or
+  edited. The scratch run's rc=1 is disclosed and explained in the report as a
+  deliberately strict scratch assertion on pre-existing render behavior, not a
+  hidden failure; the underlying producer command and full output are named.
+- Deviation weighed, not a blocker: the queued-mid-thinking case promotes only
+  the trailing thinking run, leaving the earlier same-response thinking
+  segment collapsed behind the queued prompt's non-whitespace segText. This is
+  a coverage/behavior gap, but the mechanism documents promotion of the
+  "trailing run" only, the queued prompt is itself operator-visible text, and
+  the brief explicitly forbids fixing it in this review-only task. The report
+  records it with a suggested future gate, which is exactly the required
+  deliverable. Minor notes (StopPauseTurn lacks a notice branch, unreachable
+  StopMaxTokens notice branch, reload scans all segments) are recorded
+  observations, not concrete task risk.
+
+Required repair:
+None. The task is review-only and is complete; the recorded check 3 gap and
+minor notes are findings for future gating, not repairs to be made now.
+
+Decision:
+APPROVE
+EOF
+echo "verdict written"; ls -la /tmp/pragma/prosecutor-verdict.md
+``````bash
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+```
+[state prosecutor complete in 1m19s]
+
+[transition: prosecutor --complete--> route_prosecutor_verdict]
+
+[control: route_prosecutor_verdict (artifact_verdict)]
+[control: route_prosecutor_verdict emitted approve]
+
+[transition: route_prosecutor_verdict --approve--> done]
+
+[orchestration: done]

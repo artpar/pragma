@@ -1,0 +1,4 @@
+=== RUN   TestQueuedPromptEventRenders
+--- PASS: TestQueuedPromptEventRenders (0.00s)
+PASS
+ok  	github.com/artpar/pragma/internal/tui	0.298s

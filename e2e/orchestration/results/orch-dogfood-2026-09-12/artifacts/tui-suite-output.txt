@@ -1,0 +1,1 @@
+ok  	github.com/artpar/pragma/internal/tui	3.184s

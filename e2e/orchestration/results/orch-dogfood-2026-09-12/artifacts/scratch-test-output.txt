@@ -1,0 +1,62 @@
+=== RUN   TestScratchQueuedMidThinking
+    zz_scratch_review_test.go:32: VIEW:
+                                                                                                            
+         ▐▛███▜▌   pragma v                                                                                 
+        ▝▜█████▛▘  test-model · test                                                                        
+          ▘▘ ▝▝                                                                                             
+                   Enter to send · Alt+Enter for newlines · /help for commands                              
+                                                                                                            
+        ∴ Thinking (ctrl+o to expand)                                                                       
+        ❯                                                                                                   
+          mid-turn note                                                                                     
+                                                                                                            
+        · queued behind the running turn — its next request sees this                                       
+                                                                                                            
+        ∴ Thinking…                                                                                         
+          TRAILING thinking B: open a FRESH session                                                         
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+                                                                                                            
+        ────────────────────────────────────────────────────────────────────────────────────────────────────
+        ❯                                                                                                   
+        ❯                                                                                                   
+        ❯                                                                                                   
+        ────────────────────────────────────────────────────────────────────────────────────────────────────
+         ⏺ test-model · test · . · 0s · $0.0000                                                       ready 
+--- PASS: TestScratchQueuedMidThinking (0.00s)
+=== RUN   TestScratchReloadBoundaries
+    zz_scratch_review_test.go:69: EMPTY-CONTENT VIEW:
+        
+    zz_scratch_review_test.go:80: USER-ROLE-LAST VIEW:
+        ❯ ∴ Thinking…
+          USERROLE thinking must not be promoted
+        
+    zz_scratch_review_test.go:82: user-role thinking-only last message was promoted
+    zz_scratch_review_test.go:93: TWO-ASSISTANT VIEW:
+        ∴ Thinking (ctrl+o to expand)
+        
+        ∴ Thinking…
+          SECONDMSG thinking two
+        
+    zz_scratch_review_test.go:94: first promoted: false
+--- FAIL: TestScratchReloadBoundaries (0.00s)
+FAIL
+FAIL	github.com/artpar/pragma/internal/tui	0.410s
+FAIL

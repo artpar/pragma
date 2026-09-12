@@ -1,0 +1,10 @@
+=== RUN   TestThinkingOnlyEndTurnShowsInstruction
+--- PASS: TestThinkingOnlyEndTurnShowsInstruction (0.00s)
+=== RUN   TestThinkingThenTextStaysCollapsed
+--- PASS: TestThinkingThenTextStaysCollapsed (0.00s)
+=== RUN   TestTextlessFinalResponseAfterToolWorkIsPromoted
+--- PASS: TestTextlessFinalResponseAfterToolWorkIsPromoted (0.00s)
+=== RUN   TestReloadShowsTrailingThinkingOnlyMessage
+--- PASS: TestReloadShowsTrailingThinkingOnlyMessage (0.00s)
+PASS
+ok  	github.com/artpar/pragma/internal/tui	0.558s
