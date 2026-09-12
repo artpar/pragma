@@ -601,21 +601,35 @@ func (engine *Engine) executeProviderBashTool(ctx context.Context, call model.To
 	observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "exit")
 	var input struct {
-		Cmd string `json:"cmd"`
+		Cmd     string `json:"cmd"`
+		Command string `json:"command"` // INT-002: observed emission alias
 	}
 	if err := json.Unmarshal(call.Input, &input); err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "if: err != nil")
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf(\"invalid Bash ...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("invalid Bash input: %v", err), IsError: true}
 	}
-	if strings.TrimSpace(input.Cmd) == "" {
-		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "if: strings.TrimSpace(input.Cmd) == \"\"")
-		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: \"Bash input requires non-e...")
-		return model.ToolResultPart{ToolCallID: call.ID, Content: "Bash input requires non-empty cmd", IsError: true}
+	cmd := input.Cmd
+	if strings.TrimSpace(cmd) == "" {
+		cmd = input.Command
+	}
+	if strings.TrimSpace(cmd) == "" {
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "if: strings.TrimSpace(cmd) == \"\"")
+		// INT-002: echo the received keys so the model can self-correct in
+		// one turn instead of rediscovering the cause from a bare error.
+		var received []string
+		var keys map[string]json.RawMessage
+		if json.Unmarshal(call.Input, &keys) == nil {
+			for k := range keys {
+				received = append(received, k)
+			}
+		}
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: \"Bash input requires a non-e...")
+		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("Bash input requires a non-empty command under key \"cmd\"; received keys: %v", received), IsError: true}
 	}
 	snap := engine.store.Snapshot()
 	result, err := shellrun.Execute(ctx, shellrun.Options{
-		Command:            input.Cmd,
+		Command:            cmd,
 		WorkDir:            snap.CWD,
 		Timeout:            pragmaLoopCommandTimeout,
 		ForegroundWait:     pragmaLoopForegroundWait,
