@@ -421,6 +421,20 @@ StopMaxTokens dead branch is confirmed unreachable from the
 provider-tools loop and harmless; 4's reload-scan terminator dependence
 is safe today and only a watch on future terminator changes.
 
+**Finding 1 decided and gated (2026-09-12 evening, same session).** The
+queued-mid-thinking shape (Thinking A → queued operator prompt →
+Thinking B → end_turn-without-text) keeps trailing-run-only promotion
+as the explicit contract: B promotes, A stays collapsed behind the
+ctrl+o hint, the operator's queued prompt renders echoed in place.
+Decision rationale: the queued prompt is the operator's own
+interjection — auto-expanding model thinking across the operator's
+words interleaves worse than the collapsed hint, and the promotion's
+purpose (the turn's only operator-facing output is visible) is
+satisfied by the trailing run. The recorded gate body now exists in the
+repo: `go test ./internal/tui -run TestQueuedMidThinkingPromotesTrailingRunOnly
+-count=1` — a regression that drops the promotion or over-promotes
+across the queued text is caught. Findings 3 and 4 remain watch items.
+
 ### M2b — Classify the captured session-start failure
 
 **Resolved 2026-09-11 — classification correct; no open defect.** The
