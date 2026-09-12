@@ -11,7 +11,13 @@ migrate historical Lilac configurations without an explicit current request.
 The operator initiates work and grants authority ("continue", "you decide",
 "proceed" are standing delegations within this methodology); they do not
 author this methodology, the roadmap, or technical plans, and they do not
-improvise input mid-session. Treat every operator message as one of: task
+improvise input mid-session. Amendment 2026-09-12 ("not my call, you are
+the master, its your call always"): technical and sequencing decisions are
+the agent's call by default — bounded self-improvement work proceeds on
+the agent's own judgment without asking; the operator initiates work and
+handles human-only actions. Announce, rather than request, anything
+unusually costly or irreversible before doing it. Treat every operator
+message as one of: task
 initiation, delegated authority, or the answer to a question the session
 asked — a prompt the operator relays may itself have been written by a
 prior session, so verify against the committed records rather than the

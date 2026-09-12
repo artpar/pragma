@@ -270,6 +270,30 @@ capability is now a verified instrument for self-improvement use —
 prosecutor-verified harness changes and dogfood evidence for the
 recorded-need mechanisms (long persona turns exercise the sync fork).
 
+### ORCH-002 (pre-declared before the run) — orchestration dogfood on the
+### live route
+
+Question replay cannot answer: does the orchestration complete a real
+architect → implementer → prosecutor cycle on the live route with real
+multi-turn persona work, and what recorded-need evidence (long blocking
+sub-work, worktree contention) does a live orchestration run generate?
+The ORCH-001 gate left persona answer quality on real routes explicitly
+unclaimed.
+
+Treatment: one `pragma orchestration run` of
+`orchestrations/architect-implementer-prosecutor.yaml --persona-dir
+personas` on a bounded real task — an adversarial review of the TUI-001
+mechanism (commits `413122a`..`948431c`), chosen because a BLOCK verdict
+with concrete findings is itself valuable evidence about this session's
+own change. Provider/model: morphllm / `morph-glm53-744b` (the active
+route), bypass permissions (standalone runner default), persona state
+turn budgets at their defaults. Ceilings: one run, wall-clock ≤ 30
+minutes, stopped on any harness-owned failure. Success: terminal state
+reached (APPROVE or BLOCK both count — a BLOCK opens a re-examination of
+TUI-001); handoff artifacts and verdict present; run output captured.
+Rejection: a harness-owned orchestration-path failure (persona load, LLM
+resolver, loop, control routing) — that would open a capability case.
+
 ### M2b — Classify the captured session-start failure
 
 **Resolved 2026-09-11 — classification correct; no open defect.** The
