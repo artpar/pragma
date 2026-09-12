@@ -1063,6 +1063,7 @@ func (rt *InteractiveRuntime) switchProviderModel(providerName, modelID string) 
 	// highlight agree with the live runtime.
 	d.Store.Update(func(s *app.AppState) {
 		s.Model = modelID
+		s.Provider = providerName
 		s.Conversation.Model = modelID
 		s.Conversation.Provider = providerName
 	})

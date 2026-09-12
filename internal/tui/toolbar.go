@@ -115,6 +115,17 @@ func (t *toolbar) SetModel(name string) {
 	t.modelName = name
 }
 
+// SetProvider updates the displayed provider name (e.g. after a
+// cross-provider /model switch).
+func (t *toolbar) SetProvider(name string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if name != "" {
+		observe.GlobalTrace("if: name != \"\"")
+		t.provider = name
+	}
+}
+
 func (t *toolbar) SetStartTime(startTime time.Time) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

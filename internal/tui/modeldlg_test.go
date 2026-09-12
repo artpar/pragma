@@ -133,3 +133,30 @@ func indexOf(haystack, needle string) int {
 	}
 	return -1
 }
+
+func TestModelDialogHandlesBatchedRunes(t *testing.T) {
+	// Bubbletea batches consecutive printable input into a single KeyRunes
+	// event (e.g. pasted text or fast terminal input); the whole batch must
+	// land in the filter, not be dropped.
+	d := newModelDialogFixture()
+
+	selected := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("gemini")})
+	if selected != "" {
+		t.Fatalf("batched input unexpectedly selected %q", selected)
+	}
+	if d.filter != "gemini" {
+		t.Fatalf("filter = %q, want \"gemini\"", d.filter)
+	}
+	visible := d.visible()
+	if len(visible) != 1 || visible[0] != "google/gemini-2.5-flash" {
+		t.Fatalf("visible after batched filter = %v, want [google/gemini-2.5-flash]", visible)
+	}
+}
+
+func TestModelDialogIgnoresAltRunes(t *testing.T) {
+	d := newModelDialogFixture()
+	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true})
+	if d.filter != "" {
+		t.Fatalf("alt-modified rune leaked into filter: %q", d.filter)
+	}
+}

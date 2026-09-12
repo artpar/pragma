@@ -69,6 +69,33 @@ through the production fetchers returned
 Full suite `go test ./internal/... -count=1` passes; AST instrumentation
 (`make instrument`) re-ran clean.
 
+## Live TUI verification (real build, tmux)
+
+Driven `bin/pragma` in a real terminal (tmux, 160x45), keystrokes and
+screen captures only:
+
+- `/models` opened with **514 entries**: 6 google-vertex static (active
+  provider) + 40 google live + 23 morphllm live + 445 openrouter live.
+- Typing `morph-glm53` filtered 514 entries to the 2 morph matches
+  (`filter: "morph-glm53" 2 match(es)`).
+- Enter on `morphllm/morph-glm53flash` switched google-vertex → morphllm
+  (toolbar `morph-glm53flash · morphllm`), and the next turn POSTed to
+  `https://api.morphllm.com/v1/chat/completions` — the wire log shows a
+  provider-side 429 "Service overloaded" (capacity, not auth/model:
+  switch routing proven at the wire level).
+- After switching to `morph-glm53-744b`, one turn completed
+  (`reply with just: ok` → `ok`, 408 in / 60 out, $0.0008).
+
+This live run caught two real-TUI-only defects the unit tests missed:
+
+1. Batched key input: bubbletea delivers consecutive printable input as a
+   single multi-rune KeyRunes event (confirmed in bubbletea v1.3.10
+   key.go: "we report the bunch of them as a single KeyRunes or KeySpace
+   event"), so the filter ignored pasted/fast-typed text. Fixed by
+   iterating `keyMsg.Runes` (plus ignoring Alt-modified runes).
+2. The toolbar kept the startup provider label after a cross-provider
+   switch. Fixed via `toolbar.SetProvider` synced from the store.
+
 ## Claim boundaries
 
 - Live evidence covers model *listing* only, not switching a conversation

@@ -138,10 +138,18 @@ func (d *modelDialog) Update(msg tea.Msg) string {
 	case tea.KeyRunes:
 		observe.GlobalTrace("case: tea.KeyRunes")
 
-		r := keyMsg.String()
-		if d.filter == "" && len(r) == 1 && r[0] >= '1' && r[0] <= '9' {
+		if keyMsg.Alt {
+			observe.GlobalTrace("if: keyMsg.Alt — shortcut, not filter text")
+			observe.GlobalTrace("return: \"\"")
+			return ""
+		}
+		// Bubbletea batches consecutive printable input into one KeyRunes
+		// event (a single KeyMsg may carry many runes — pasted or fast
+		// terminal input), so iterate the runes, not String().
+		runes := keyMsg.Runes
+		if d.filter == "" && len(runes) == 1 && runes[0] >= '1' && runes[0] <= '9' {
 			observe.GlobalTrace("if: digit jump while filter is empty")
-			idx := int(r[0] - '1')
+			idx := int(runes[0] - '1')
 			if idx < len(d.visible()) {
 				observe.GlobalTrace("if: idx < len(d.models)")
 				d.selected = idx
@@ -149,9 +157,12 @@ func (d *modelDialog) Update(msg tea.Msg) string {
 			observe.GlobalTrace("return: \"\"")
 			return ""
 		}
-		if len([]rune(r)) == 1 {
-			observe.GlobalTrace("if: printable rune — extend filter")
-			d.filter += r
+		if len(runes) > 0 {
+			observe.GlobalTrace("if: printable runes — extend filter")
+			for _, r := range runes {
+				observe.GlobalTrace("range runes")
+				d.filter += string(r)
+			}
 			d.clampSelected()
 		}
 	}

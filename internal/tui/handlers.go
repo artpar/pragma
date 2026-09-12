@@ -115,6 +115,10 @@ func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd
 		observe.GlobalTrace("if: snap.Model != \"\"")
 		m.toolbar.SetModel(snap.Model)
 	}
+	if snap := m.store.Snapshot(); snap.Provider != "" {
+		observe.GlobalTrace("if: snap.Provider != \"\"")
+		m.toolbar.SetProvider(snap.Provider)
+	}
 	m.viewport.SetContent(m.viewportContent())
 	m.viewport.GotoBottom()
 	observe.GlobalTrace("return: m, nil")
