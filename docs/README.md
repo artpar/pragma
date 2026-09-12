@@ -8,6 +8,9 @@
   source and effective configuration before executing historical commands.
 - [Codebase architecture](codebase-architecture.md): architecture reference;
   confirm against current source when changing a component.
+- [Self-evolution roadmap](self-evolution-roadmap.md): the live harness
+  backlog with its evidence gates; case records with verification evidence
+  live in [failure-cases/](failure-cases/).
 
 Active benchmark/provider defaults use MorphLLM with `morph-glm53-744b` as of
 2026-09-11. OpenRouter remains supported and its recorded regression remains
