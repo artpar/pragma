@@ -143,13 +143,14 @@ type errorSegData struct {
 // segment is a typed chunk of viewport output. Text segments are pre-rendered;
 // thinking and tool segments store raw data and are rendered based on verbose.
 type segment struct {
-	kind     segmentKind
-	content  string        // segText: pre-rendered; segThinking: raw thinking text
-	redacted bool          // only meaningful for segThinking
-	tool     *toolSegData  // only meaningful for segTool
-	agent    *agentSegData // only meaningful for segAgent
-	group    *groupSegData // only meaningful for segGroup (ADR-044)
-	errData  *errorSegData // only meaningful for segError
+	kind      segmentKind
+	content   string        // segText: pre-rendered; segThinking: raw thinking text
+	redacted  bool          // only meaningful for segThinking
+	forceShow bool          // TUI-001: thinking promoted for a textless final response renders expanded
+	tool      *toolSegData  // only meaningful for segTool
+	agent     *agentSegData // only meaningful for segAgent
+	group     *groupSegData // only meaningful for segGroup (ADR-044)
+	errData   *errorSegData // only meaningful for segError
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -197,6 +198,10 @@ type Model struct {
 	quitPending  bool             // true after idle Ctrl+C, waiting for second to quit
 	permQueue    []PermRequestMsg // queued permission requests when dialog is already visible
 	retryAttempt int              // generation counter for stale countdown tick detection
+	// finalResponseHadText tracks whether the current request within the turn
+	// emitted visible text (TUI-001). Reset at turn start and on every
+	// ToolResultEvent (a new request boundary); read at TurnComplete.
+	finalResponseHadText bool
 
 	// Layout
 	width  int
@@ -424,7 +429,7 @@ func (m Model) viewportContent() string {
 			observe.GlobalTrace("case: segThinking")
 			b.WriteString(render.RenderThinking(model.ThinkingPart{
 				Text: seg.content, Redacted: seg.redacted,
-			}, m.verbose) + "\n")
+			}, m.verbose || seg.forceShow) + "\n")
 		case segTool:
 			observe.GlobalTrace("case: segTool")
 			b.WriteString(render.RenderToolOutput(
@@ -505,6 +510,41 @@ func appendThinking(segs []segment, text string, redacted bool) []segment {
 	defer observe.GlobalTrace("exit")
 	observe.GlobalTrace("return: append(segs, segment{kind: segThinking, content: text, redacted: redacted})")
 	return append(segs, segment{kind: segThinking, content: text, redacted: redacted})
+}
+
+// promoteTrailingThinking marks the trailing run of thinking segments
+// forceShow (TUI-001): a final response that emitted no text otherwise
+// renders as a single collapsed hint, hiding the turn's entire output from a
+// default-mode operator. Trailing whitespace-only text is skipped; any text
+// (non-whitespace), tool, group, agent, or error segment behind the run
+// stops the scan, so only the final response's thinking is promoted.
+func promoteTrailingThinking(segs []segment) []segment {
+	i := len(segs) - 1
+	for i >= 0 && segs[i].kind == segText && strings.TrimSpace(segs[i].content) == "" {
+		i--
+	}
+	if i < 0 || segs[i].kind != segThinking {
+		return segs
+	}
+	for ; i >= 0 && segs[i].kind == segThinking; i-- {
+		segs[i].forceShow = true
+	}
+	return segs
+}
+
+// isThinkingOnlyAssistant reports whether msg is an assistant message whose
+// entire content is thinking blocks — the persisted shape of a TUI-001 final
+// response. Used on conversation load to surface the missed instruction.
+func isThinkingOnlyAssistant(msg model.Message) bool {
+	if msg.Role != model.RoleAssistant || len(msg.Content) == 0 {
+		return false
+	}
+	for _, part := range msg.Content {
+		if _, ok := part.(model.ThinkingPart); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // appendTool appends a raw tool result to segments for on-demand rendering.
@@ -903,6 +943,11 @@ func (m Model) handleResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 			for _, msg := range snap.Conversation.Messages {
 				observe.GlobalTrace("range snap.Conversation.Messages")
 				m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
+			}
+			// TUI-001: surface a trailing thinking-only assistant message —
+			// its thinking was the turn's only output.
+			if n := len(snap.Conversation.Messages); n > 0 && isThinkingOnlyAssistant(snap.Conversation.Messages[n-1]) {
+				m.outputSegs = promoteTrailingThinking(m.outputSegs)
 			}
 			m.input.SetHistory(promptHistoryFromSnapshot(snap))
 		}

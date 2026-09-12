@@ -124,6 +124,11 @@ func (m *Model) reloadConversationFromStore() {
 		observe.GlobalTrace("range conv.Messages")
 		m.outputSegs = loadMessageSegments(m.outputSegs, msg, m.mdRenderer)
 	}
+	// TUI-001: surface a trailing thinking-only assistant message — its
+	// thinking was the turn's only output.
+	if n := len(conv.Messages); n > 0 && isThinkingOnlyAssistant(conv.Messages[n-1]) {
+		m.outputSegs = promoteTrailingThinking(m.outputSegs)
+	}
 	m.input.SetHistory(promptHistoryFromSnapshot(snap))
 }
 
@@ -246,6 +251,11 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("typecase: query.TextEvent")
 		m.closeActiveGroup()
 		m.streamBuf.WriteString(e.Text)
+		// TUI-001: text emission marks the current request as having
+		// operator-readable output (whitespace alone does not).
+		if strings.TrimSpace(e.Text) != "" {
+			m.finalResponseHadText = true
+		}
 
 		raw := m.streamBuf.String()
 		boundary := strings.LastIndex(raw, "\n\n")
@@ -375,6 +385,9 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		observe.GlobalTrace("typecase: query.ToolResultEvent")
 
 		m.spinnerActive = false
+		// TUI-001: a tool result is a request boundary — the next response
+		// within the turn starts from "no text emitted yet".
+		m.finalResponseHadText = false
 
 		call, ok := m.activeToolCalls[e.Result.ToolCallID]
 		if ok {
@@ -426,6 +439,11 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		}
 		if e.StopReason == model.StopError {
 			m.outputSegs = appendText(m.outputSegs, "\n"+thinkingStyle.Render("[response ended due to a provider error — you can try again or switch models with /model]")+"\n")
+		}
+		// TUI-001: a final response that emitted no visible text must not
+		// collapse its only content behind the verbose toggle.
+		if e.StopReason == model.StopEndTurn && !m.finalResponseHadText {
+			m.outputSegs = promoteTrailingThinking(m.outputSegs)
 		}
 		m.outputSegs = appendText(m.outputSegs, "\n")
 		m.toolbar.UpdateCost(m.costTracker.TotalUSD())
@@ -752,6 +770,8 @@ func (m Model) submitPrompt(text string) (tea.Model, tea.Cmd) {
 	defer observe.GlobalTrace("exit")
 
 	m.streaming = true
+	// TUI-001: each turn starts with no text emitted by its first request.
+	m.finalResponseHadText = false
 	m.input.SetStreaming(true)
 	m.toolbar.SetStatus("streaming...")
 
