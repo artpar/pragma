@@ -8,6 +8,8 @@
   source and effective configuration before executing historical commands.
 - [Codebase architecture](codebase-architecture.md): architecture reference;
   confirm against current source when changing a component.
+- [Cross-provider model catalog](cross-provider-model-catalog-2026-09-12.md):
+  /models live-lists every credentialed provider (feature record, MODEL-001).
 - [Self-evolution roadmap](self-evolution-roadmap.md): the live harness
   backlog with its evidence gates; case records with verification evidence
   live in [failure-cases/](failure-cases/).

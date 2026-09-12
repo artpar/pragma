@@ -151,6 +151,11 @@ func validateActiveModel(d *Deps, modelID string) error {
 				return nil
 			}
 		}
+		if d.ModelCatalog != nil && d.ModelCatalog.Knows(d.Cfg.Provider, modelID) {
+			observe.GlobalTrace("if: model is live-listed by the catalog")
+			observe.GlobalTrace("return: nil")
+			return nil
+		}
 		observe.GlobalTrace("return: fmt.Errorf(\"unknown model %q for provider %s\", modelID, d.Cfg.Provider)")
 		return fmt.Errorf("unknown model %q for provider %s", modelID, d.Cfg.Provider)
 	}
@@ -161,6 +166,9 @@ func validateActiveModel(d *Deps, modelID string) error {
 func switchActiveModel(d *Deps, modelID string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
+	// Resolve short aliases (haiku, sonnet, flash...) to full IDs so the
+	// stored and requested model match. Same resolution startup applies.
+	modelID = resolveModelAlias(d.Cfg.Provider, modelID)
 	if err := validateActiveModel(d, modelID); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")

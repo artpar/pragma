@@ -1,11 +1,13 @@
 package google
 
 import (
+	"context"
 	"sort"
 	"strings"
 
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
+	"google.golang.org/genai"
 )
 
 // ModelInfo holds capabilities and pricing for a known Google model.
@@ -92,6 +94,89 @@ func ListModels() []string {
 	sort.Strings(ids)
 	observe.GlobalTrace("return: ids")
 	return ids
+}
+
+// FetchModels lists model IDs from the live Gemini Models API
+// (GET /v1beta/models), keeping only models that support generateContent
+// (chat) — the endpoint also returns embeddings, image, and video models
+// that cannot serve a conversation. Resource names of the form
+// "models/<id>" are stripped to the bare IDs the registry and requests use.
+// An empty baseURL selects the SDK default.
+func FetchModels(ctx context.Context, apiKey, baseURL string) ([]string, error) {
+	observe.TraceCtx(ctx, "google", "FetchModels", "enter")
+	defer observe.TraceCtx(ctx, "google", "FetchModels", "exit")
+	clientConfig := &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	}
+	if baseURL != "" {
+		observe.TraceCtx(ctx, "google", "FetchModels", "if: baseURL != \"\"")
+		clientConfig.HTTPOptions = genai.HTTPOptions{BaseURL: baseURL}
+	}
+	client, err := genai.NewClient(ctx, clientConfig)
+	if err != nil {
+		observe.TraceCtx(ctx, "google", "FetchModels", "if: err != nil")
+		observe.TraceCtx(ctx, "google", "FetchModels", "return: nil, err")
+		return nil, err
+	}
+	var ids []string
+	for m, err := range client.Models.All(ctx) {
+		observe.TraceCtx(ctx, "google", "FetchModels", "range client.Models.All(ctx)")
+		if err != nil {
+			observe.TraceCtx(ctx, "google", "FetchModels", "if: err != nil")
+			observe.TraceCtx(ctx, "google", "FetchModels", "return: nil, err")
+			return nil, err
+		}
+		if m == nil || !supportsGenerateContent(m.SupportedActions) {
+			observe.TraceCtx(ctx, "google", "FetchModels", "if: m == nil || !supportsGenerateContent(m.SupportedActions)")
+			continue
+		}
+		id := strings.TrimPrefix(m.Name, "models/")
+		if id == "" {
+			observe.TraceCtx(ctx, "google", "FetchModels", "if: id == \"\"")
+			continue
+		}
+		if !containsString(ids, id) {
+			observe.TraceCtx(ctx, "google", "FetchModels", "if: !containsString(ids, id)")
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	observe.TraceCtx(ctx, "google", "FetchModels", "return: ids, nil")
+	return ids, nil
+}
+
+// supportsGenerateContent reports whether the model's supported actions
+// include chat generation. The Gemini REST API reports this as
+// supportedGenerationMethods; the SDK maps it to SupportedActions.
+func supportsGenerateContent(actions []string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for _, action := range actions {
+		observe.GlobalTrace("range actions")
+		if action == "generateContent" {
+			observe.GlobalTrace("if: action == \"generateContent\"")
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
+}
+
+func containsString(haystack []string, needle string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for _, s := range haystack {
+		observe.GlobalTrace("range haystack")
+		if s == needle {
+			observe.GlobalTrace("if: s == needle")
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
 }
 
 // LookupModel finds a model by exact ID or prefix match.

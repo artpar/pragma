@@ -358,6 +358,18 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 		return Result{DisplayText: msg}, nil
 	}
 
+	if providerName, bare := splitQualifiedModelArg(deps, args); providerName != "" && providerName != deps.Provider {
+		observe.GlobalTrace("if: cross-provider qualified arg without a model switcher")
+		observe.GlobalTrace("return: Result{DisplayText: ...}, nil")
+		observe.GlobalTrace("return: Result{DisplayText: fmt.Sprintf(\n\t\"Model %q belongs to provider %q. Switching...")
+		return Result{DisplayText: fmt.Sprintf(
+			"Model %q belongs to provider %q. Switching providers at runtime needs the interactive switcher; restart with --provider %s --model %s",
+			args, providerName, providerName, bare)}, nil
+	} else if providerName != "" {
+		observe.GlobalTrace("else-if: providerName != \"\"")
+		args = bare
+	}
+
 	if deps.ContextWindowFunc != nil {
 		observe.GlobalTrace("if: deps.ContextWindowFunc != nil")
 		if _, ok := deps.ContextWindowFunc(args); !ok {
@@ -406,6 +418,30 @@ func handleModel(_ context.Context, args string, deps Deps) (Result, error) {
 	}
 	observe.GlobalTrace("return: Result{DisplayText: msg}, nil")
 	return Result{DisplayText: msg}, nil
+}
+
+// splitQualifiedModelArg splits a "provider/model" argument when the prefix
+// names a known provider. Anything else (including bare model IDs that
+// contain slashes, like OpenRouter's "z-ai/glm-5.3") is not qualified.
+func splitQualifiedModelArg(deps Deps, input string) (providerName, modelID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	idx := strings.Index(input, "/")
+	if idx <= 0 {
+		observe.GlobalTrace("if: idx <= 0")
+		observe.GlobalTrace("return: \"\", input")
+		return "", input
+	}
+	prefix := input[:idx]
+	for _, known := range deps.KnownProviders {
+		observe.GlobalTrace("range deps.KnownProviders")
+		if known == prefix {
+			observe.GlobalTrace("return: prefix, input[idx+1:]")
+			return prefix, input[idx+1:]
+		}
+	}
+	observe.GlobalTrace("return: \"\", input")
+	return "", input
 }
 
 func handleMcp(_ context.Context, _ string, deps Deps) (Result, error) {

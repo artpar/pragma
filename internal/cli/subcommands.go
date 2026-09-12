@@ -170,14 +170,16 @@ func BuildLocalSlashDeps(cmd *cobra.Command) (slash.Deps, error) {
 	observe.GlobalTrace("return: slash.Deps{\n\tStore:\t\tstore,\n\tCostTracker:\tmodel.NewCostTracker(0),\n\tModelName...")
 
 	return slash.Deps{
-		Store:        store,
-		CostTracker:  model.NewCostTracker(0),
-		ModelName:    cfg.Model,
-		Provider:     cfg.Provider,
-		Cwd:          cwd,
-		SessionStore: ss,
-		SkillCatalog: sl,
-		McpStatus:    localMcpStatuses(cwd),
+		Store:       store,
+		CostTracker: model.NewCostTracker(0),
+		ModelName:   cfg.Model,
+		Provider:    cfg.Provider,
+		Cwd:         cwd,
+		// Needed to interpret qualified "provider/model" arguments for /model.
+		KnownProviders: knownProviders,
+		SessionStore:   ss,
+		SkillCatalog:   sl,
+		McpStatus:      localMcpStatuses(cwd),
 	}, nil
 }
 

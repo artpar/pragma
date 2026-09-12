@@ -213,3 +213,104 @@ func TestHandleCompactNilCompactor(t *testing.T) {
 		t.Error("should indicate compaction not available")
 	}
 }
+
+func testKnownProviders() []string {
+	return []string{"anthropic", "openai", "openrouter", "morphllm", "google", "google-vertex", "groq"}
+}
+
+func TestHandleModelRejectsCrossProviderWithoutSwitcher(t *testing.T) {
+	conv := model.NewConversation(model.SystemPrompt{}, "morph-glm53-744b", "morphllm", "/tmp")
+	store := app.NewStateStore(app.AppState{Conversation: conv, Model: "morph-glm53-744b", CWD: "/tmp"})
+	deps := Deps{
+		Store:          store,
+		ModelName:      "morph-glm53-744b",
+		Provider:       "morphllm",
+		KnownProviders: testKnownProviders(),
+	}
+
+	result, err := handleModel(context.Background(), "google/gemini-2.5-flash", deps)
+	if err != nil {
+		t.Fatalf("handleModel error: %v", err)
+	}
+	if !strings.Contains(result.DisplayText, "--provider google") {
+		t.Errorf("expected restart guidance in %q", result.DisplayText)
+	}
+	if store.Snapshot().Model != "morph-glm53-744b" {
+		t.Errorf("store model changed to %q despite rejected switch", store.Snapshot().Model)
+	}
+}
+
+func TestHandleModelStripsSameProviderQualification(t *testing.T) {
+	conv := model.NewConversation(model.SystemPrompt{}, "claude-sonnet-4-6-20250514", "anthropic", "/tmp")
+	store := app.NewStateStore(app.AppState{Conversation: conv, Model: "claude-sonnet-4-6-20250514", CWD: "/tmp"})
+	deps := Deps{
+		Store:          store,
+		ModelName:      "claude-sonnet-4-6-20250514",
+		Provider:       "anthropic",
+		KnownProviders: testKnownProviders(),
+		ContextWindowFunc: func(modelID string) (int, bool) {
+			if modelID == "claude-sonnet-4-6-20250514" {
+				return 200000, true
+			}
+			return 0, false
+		},
+	}
+
+	result, err := handleModel(context.Background(), "anthropic/claude-sonnet-4-6-20250514", deps)
+	if err != nil {
+		t.Fatalf("handleModel error: %v", err)
+	}
+	if snap := store.Snapshot(); snap.Model != "claude-sonnet-4-6-20250514" {
+		t.Errorf("store model = %q, want bare claude-sonnet-4-6-20250514", snap.Model)
+	}
+	if !strings.Contains(result.DisplayText, "claude-sonnet-4-6-20250514") {
+		t.Errorf("expected switch confirmation in %q", result.DisplayText)
+	}
+}
+
+func TestHandleModelBareSlashedModelIDStaysWhole(t *testing.T) {
+	// OpenRouter model IDs contain a vendor slash but no provider prefix.
+	conv := model.NewConversation(model.SystemPrompt{}, "z-ai/glm-5.3", "openrouter", "/tmp")
+	store := app.NewStateStore(app.AppState{Conversation: conv, Model: "z-ai/glm-5.3", CWD: "/tmp"})
+	deps := Deps{
+		Store:          store,
+		ModelName:      "z-ai/glm-5.3",
+		Provider:       "openrouter",
+		KnownProviders: testKnownProviders(),
+		ContextWindowFunc: func(modelID string) (int, bool) {
+			if modelID == "z-ai/glm-5.3" || modelID == "z-ai/glm-5.3-flash" {
+				return 1310720, true
+			}
+			return 0, false
+		},
+	}
+
+	_, err := handleModel(context.Background(), "z-ai/glm-5.3-flash", deps)
+	if err != nil {
+		t.Fatalf("handleModel error: %v", err)
+	}
+	if snap := store.Snapshot(); snap.Model != "z-ai/glm-5.3-flash" {
+		t.Errorf("store model = %q, want z-ai/glm-5.3-flash unchanged", snap.Model)
+	}
+}
+
+func TestSplitQualifiedModelArg(t *testing.T) {
+	deps := Deps{KnownProviders: testKnownProviders()}
+	cases := []struct {
+		input        string
+		wantProvider string
+		wantModel    string
+	}{
+		{"google/gemini-2.5-flash", "google", "gemini-2.5-flash"},
+		{"z-ai/glm-5.3", "", "z-ai/glm-5.3"},
+		{"morph-glm53-744b", "", "morph-glm53-744b"},
+		{"/leading", "", "/leading"},
+	}
+	for _, tc := range cases {
+		gotProvider, gotModel := splitQualifiedModelArg(deps, tc.input)
+		if gotProvider != tc.wantProvider || gotModel != tc.wantModel {
+			t.Errorf("splitQualifiedModelArg(%q) = (%q, %q), want (%q, %q)",
+				tc.input, gotProvider, gotModel, tc.wantProvider, tc.wantModel)
+		}
+	}
+}

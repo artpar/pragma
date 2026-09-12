@@ -86,6 +86,13 @@ func (m Model) handleRuntimeSlashResult(result slash.Result) (tea.Model, tea.Cmd
 		observe.GlobalTrace("if: result.OpenModelPicker")
 		var models []string
 		currentModel := m.toolbar.modelName
+		// The picker lists qualified "provider/model" IDs across providers;
+		// qualify the current model the same way so the (current) marker
+		// still highlights it.
+		if m.slashDeps.Provider != "" && currentModel != "" && !strings.HasPrefix(currentModel, m.slashDeps.Provider+"/") {
+			observe.GlobalTrace("if: qualify current model for picker highlight")
+			currentModel = m.slashDeps.Provider + "/" + currentModel
+		}
 		if m.slashDeps.ModelLister != nil {
 			observe.GlobalTrace("if: m.slashDeps.ModelLister != nil")
 			models = m.slashDeps.ModelLister()

@@ -203,3 +203,12 @@ still ran (2026-09-12, TUI-005); the spinner now survives partial
 sibling results, names the remaining work, and anchors its elapsed clock
 to the oldest still-running call,
 `go test ./internal/tui -run TestSiblingSpinnerSurvivesPartialResults -count=1`.
+Ninth: /models showed only the active provider's static fallback (one model
+on morphllm) instead of the full inventory; /models and /model now
+live-list every credentialed provider's models API as qualified
+provider/model entries, with a type-to-filter picker and in-session
+cross-provider switching over the resume rebind path
+(operator-requested feature, 2026-09-12, MODEL-001; record in
+docs/cross-provider-model-catalog-2026-09-12.md),
+`go test ./internal/cli -run "TestQualifiedModelIDs|TestRefresh|TestKnows|TestParseModelTarget" -count=1`
+and `go test ./internal/tui -run TestModelDialog -count=1`.

@@ -996,15 +996,116 @@ func (rt *InteractiveRuntime) applyResumeProvider(binding resumeProviderBinding)
 func (rt *InteractiveRuntime) switchActiveModel(modelID string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if err := switchActiveModel(rt.Deps, modelID); err != nil {
+	providerName, bareID := parseModelTarget(modelID, rt.Deps.Cfg.Provider)
+	if bareID == "" {
+		observe.GlobalTrace("if: bareID == \"\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"model is required\")")
+		return fmt.Errorf("model is required")
+	}
+	if providerName != rt.Deps.Cfg.Provider {
+		observe.GlobalTrace("if: providerName != rt.Deps.Cfg.Provider — cross-provider switch")
+		observe.GlobalTrace("return: rt.switchProviderModel(providerName, bareID)")
+		return rt.switchProviderModel(providerName, bareID)
+	}
+	if err := switchActiveModel(rt.Deps, bareID); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
 		return err
 	}
-	rt.SlashDeps.ModelName = modelID
+	rt.SlashDeps.ModelName = bareID
 	rt.rebindCompaction()
 	observe.GlobalTrace("return: nil")
 	return nil
+}
+
+// switchProviderModel switches the runtime to another provider's model,
+// reusing the resume rebinding path (engine, tools, compaction, budget).
+// Requires credentials for the target provider.
+func (rt *InteractiveRuntime) switchProviderModel(providerName, modelID string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	d := rt.Deps
+	if !isKnownProvider(providerName) {
+		observe.GlobalTrace("if: !isKnownProvider(providerName)")
+		observe.GlobalTrace("return: fmt.Errorf(\"unknown provider %q\", providerName)")
+		return fmt.Errorf("unknown provider %q", providerName)
+	}
+	key := resumeAPIKeyForProvider(providerName, d)
+	if key == "" && providerName != "google-vertex" {
+		observe.GlobalTrace("if: key == \"\" && providerName != \"google-vertex\"")
+		observe.GlobalTrace("return: fmt.Errorf(\"no API key for provider\")")
+		return fmt.Errorf("no API key for provider %q — add it to ~/.pragma/credentials.yml or set %s", providerName, envVarForProvider(providerName))
+	}
+	// Resolve short aliases before validating against the catalog.
+	modelID = resolveModelAlias(providerName, modelID)
+	if d.ModelCatalog != nil && !d.ModelCatalog.Knows(providerName, modelID) {
+		observe.GlobalTrace("if: !d.ModelCatalog.Knows(providerName, modelID)")
+		observe.GlobalTrace("return: fmt.Errorf(\"unknown model for provider\")")
+		return fmt.Errorf("unknown model %q for provider %s", modelID, providerName)
+	}
+	cfg := d.Cfg
+	cfg.Provider = providerName
+	cfg.Model = modelID
+	cfg.APIKey = key
+	prov, err := CreateProvider(cfg, d.Bus)
+	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
+		return err
+	}
+	rt.applyResumeProvider(resumeProviderBinding{
+		cfg:          cfg,
+		prov:         prov,
+		providerName: providerName,
+		modelID:      modelID,
+	})
+	// Record the new provider on the conversation so resume and the picker
+	// highlight agree with the live runtime.
+	d.Store.Update(func(s *app.AppState) {
+		s.Model = modelID
+		s.Conversation.Model = modelID
+		s.Conversation.Provider = providerName
+	})
+	// Warm the catalog for the newly active provider.
+	go d.ModelCatalog.Refresh(context.Background(), providerName, key)
+	observe.GlobalTrace("return: nil")
+	return nil
+}
+
+// parseModelTarget interprets a /model argument. A "provider/model" prefix
+// is treated as a provider qualifier only when the prefix names a known
+// provider — bare model IDs that themselves contain slashes (OpenRouter's
+// "z-ai/glm-5.3") stay model IDs for the active provider.
+func parseModelTarget(input, activeProvider string) (providerName, modelID string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	input = strings.TrimSpace(input)
+	if idx := strings.Index(input, "/"); idx > 0 {
+		observe.GlobalTrace("if: idx := strings.Index(input, \"/\"); idx > 0")
+		prefix := input[:idx]
+		if isKnownProvider(prefix) {
+			observe.GlobalTrace("if: isKnownProvider(prefix)")
+			observe.GlobalTrace("return: prefix, input[idx+1:]")
+			return prefix, input[idx+1:]
+		}
+	}
+	observe.GlobalTrace("return: activeProvider, input")
+	return activeProvider, input
+}
+
+// isKnownProvider reports whether name is a supported provider.
+func isKnownProvider(name string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for _, p := range knownProviders {
+		observe.GlobalTrace("range knownProviders")
+		if p == name {
+			observe.GlobalTrace("return: true")
+			return true
+		}
+	}
+	observe.GlobalTrace("return: false")
+	return false
 }
 
 func (rt *InteractiveRuntime) rebindCompaction() {
@@ -1133,6 +1234,13 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 			st.PromptHistory = append([]string(nil), promptHistory...)
 		})
 	}
+	if d.ModelCatalog == nil {
+		observe.GlobalTrace("if: d.ModelCatalog == nil")
+		d.ModelCatalog = NewModelCatalog(d.Creds)
+	}
+	// Populate the cross-provider model catalog in the background so the
+	// first /models open already shows live listings where credentials exist.
+	go d.ModelCatalog.Refresh(context.Background(), d.Cfg.Provider, d.Cfg.APIKey)
 	slashDeps := slash.Deps{
 		Store:          d.Store,
 		CostTracker:    d.CostTracker,
@@ -1143,12 +1251,20 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 		Provider:       d.Cfg.Provider,
 		Cwd:            d.Cwd,
 		ClipboardWrite: clipboard.WriteAll,
+		// Cross-provider catalog: qualified "provider/model" IDs for every
+		// provider with credentials, the active provider first.
 		ModelLister: func() []string {
+			if d.ModelCatalog != nil {
+				if ids := d.ModelCatalog.QualifiedModelIDs(d.Cfg.Provider, d.Cfg.APIKey); len(ids) > 0 {
+					return ids
+				}
+			}
 			if ml, ok := d.Prov.(provider.ModelLister); ok {
 				return ml.ListModels()
 			}
 			return nil
 		},
+		KnownProviders:    knownProviders,
 		ContextWindowFunc: d.Prov.ContextWindow,
 		ModelSwitcher:     nil,
 		OnModelChanged: func(modelID string) {

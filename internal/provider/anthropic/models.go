@@ -1,8 +1,12 @@
 package anthropic
 
 import (
+	"context"
 	"sort"
 	"strings"
+
+	sdk "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -120,6 +124,40 @@ func ListModels() []string {
 	sort.Strings(ids)
 	observe.GlobalTrace("return: ids")
 	return ids
+}
+
+// FetchModels lists model IDs from the live Anthropic Models API
+// (GET /v1/models), paging through all results. Used by the cross-provider
+// model catalog behind /models. An empty baseURL selects the SDK default.
+func FetchModels(ctx context.Context, apiKey, baseURL string) ([]string, error) {
+	observe.TraceCtx(ctx, "anthropic", "FetchModels", "enter")
+	defer observe.TraceCtx(ctx, "anthropic", "FetchModels", "exit")
+	clientOpts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+		option.WithMaxRetries(0),
+	}
+	if baseURL != "" {
+		observe.TraceCtx(ctx, "anthropic", "FetchModels", "if: baseURL != \"\"")
+		clientOpts = append(clientOpts, option.WithBaseURL(baseURL))
+	}
+	client := sdk.NewClient(clientOpts...)
+	pager := client.Models.ListAutoPaging(ctx, sdk.ModelListParams{})
+	var ids []string
+	for pager.Next() {
+		observe.TraceCtx(ctx, "anthropic", "FetchModels", "for: pager.Next()")
+		if id := strings.TrimSpace(pager.Current().ID); id != "" {
+			observe.TraceCtx(ctx, "anthropic", "FetchModels", "if: id != \"\"")
+			ids = append(ids, id)
+		}
+	}
+	if err := pager.Err(); err != nil {
+		observe.TraceCtx(ctx, "anthropic", "FetchModels", "if: err != nil")
+		observe.TraceCtx(ctx, "anthropic", "FetchModels", "return: nil, err")
+		return nil, err
+	}
+	sort.Strings(ids)
+	observe.TraceCtx(ctx, "anthropic", "FetchModels", "return: ids, nil")
+	return ids, nil
 }
 
 // LookupModel returns the ModelInfo for a model ID, resolving aliases.

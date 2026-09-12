@@ -60,10 +60,13 @@ type Deps struct {
 	Commands []Command
 
 	// Model switching support — nil-safe (graceful degradation when unavailable).
-	ModelLister       func() []string                  // returns available model names for current provider
+	ModelLister       func() []string                  // returns available model IDs as qualified "provider/model" entries
 	ContextWindowFunc func(modelID string) (int, bool) // validates model + returns context window
-	ModelSwitcher     func(modelID string) error       // validates and applies a live model switch
+	ModelSwitcher     func(modelID string) error       // validates and applies a live model switch; accepts "provider/model"
 	OnModelChanged    func(modelID string)             // callback: update budget + compaction on model switch
+	// KnownProviders lists provider names that may prefix a qualified
+	// "provider/model" argument. Nil-safe: empty means no qualification.
+	KnownProviders []string
 
 	// MCP status — nil-safe.
 	McpStatus func() []McpServerStatus // returns configured MCP servers with connection state
