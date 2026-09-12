@@ -52,6 +52,7 @@ const (
 	segAgent // agent progress, updated in-place based on AgentProgressEvent (ADR-043)
 	segGroup // collapsed read/search group, accumulates consecutive collapsible tools (ADR-044)
 	segError // classified error with optional retry state, rendered on demand based on verbose
+	segLive  // running tool call's output-so-far, updated in place on ToolOutputEvent and completed in place by the result (TUI-004)
 )
 
 // toolSegData holds raw tool result data for on-demand rendering.
@@ -61,6 +62,12 @@ type toolSegData struct {
 	Input   json.RawMessage
 	Content string
 	IsError bool
+}
+
+// liveSegData holds a running tool call's output-so-far (TUI-004).
+type liveSegData struct {
+	CallID  string
+	Content string
 }
 
 // agentEntry tracks one agent's progress within a segAgent segment.
@@ -151,6 +158,7 @@ type segment struct {
 	agent     *agentSegData // only meaningful for segAgent
 	group     *groupSegData // only meaningful for segGroup (ADR-044)
 	errData   *errorSegData // only meaningful for segError
+	live      *liveSegData  // only meaningful for segLive (TUI-004)
 }
 
 // Model is the main bubbletea model for the interactive TUI.
@@ -461,6 +469,13 @@ func (m Model) viewportContent() string {
 				seg.tool.IsError, m.width, m.verbose,
 			))
 			b.WriteString("\n")
+		case segLive:
+			observe.GlobalTrace("case: segLive")
+			if seg.live != nil {
+				observe.GlobalTrace("if: seg.live != nil")
+				b.WriteString(render.WrapWithBracket(seg.live.Content, false, m.width, m.verbose))
+				b.WriteString("\n")
+			}
 		case segAgent:
 			observe.GlobalTrace("case: segAgent")
 			if seg.agent != nil {
@@ -757,6 +772,46 @@ func (m *Model) fillGroupResult(call model.ToolCallPart, result model.ToolResult
 			return
 		}
 	}
+}
+
+// findLiveSeg returns the segLive segment for a running call, if any (TUI-004).
+func findLiveSeg(segs []segment, callID string) *segment {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	for i := len(segs) - 1; i >= 0; i-- {
+		observe.GlobalTrace("for: i >= 0")
+		seg := &segs[i]
+		if seg.kind == segLive && seg.live != nil && seg.live.CallID == callID {
+			observe.GlobalTrace("if: seg.kind == segLive && seg.live != nil && seg.live.CallID == callID")
+			return seg
+		}
+	}
+	observe.GlobalTrace("return: nil")
+	return nil
+}
+
+// fillLiveToolResult completes a running call's live segment in place with
+// the final result (TUI-004): the segment flips to segTool, so the
+// completed rendering is byte-identical to a call that never streamed and
+// nothing duplicates. Reports whether a live segment existed.
+func (m *Model) fillLiveToolResult(call model.ToolCallPart, result model.ToolResultPart) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	seg := findLiveSeg(m.outputSegs, result.ToolCallID)
+	if seg == nil {
+		observe.GlobalTrace("if: seg == nil")
+		return false
+	}
+	seg.kind = segTool
+	seg.live = nil
+	seg.tool = &toolSegData{
+		Name:    call.Name,
+		Input:   call.Input,
+		Content: result.Content,
+		IsError: result.IsError,
+	}
+	observe.GlobalTrace("return: true")
+	return true
 }
 
 // updateGroupCounts increments the appropriate counter on a group based on the entry's category.

@@ -279,6 +279,23 @@ Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
   with parallel sibling calls the spinner disappears while a sibling
   still runs (pre-existing, unfixed).
 
+- **TUI-004 — live foreground-Bash output, opened and fixed the same
+  evening.** Case `docs/failure-cases/live-tool-output-2026-09-12.md`:
+  the 361s silent gap showed *how long* (post-TUI-003) but *not what
+  was coming out* — the executor produced zero incremental events by
+  construction. One mechanism: `shellrun.OnLiveOutput` (throttled ticker
+  during the foreground wait, emit-on-change, 100-line tail) → new
+  sealed `ToolOutputEvent` on the existing dispatch channel → TUI
+  `segLive` inline tail, completed **in place** by the final result
+  (byte-identical completed rendering, no duplication). Gates: real
+  local integration (a real two-step command streams its first step
+  before completion; baseline RED with zero between-events) plus TUI
+  guards; full repo suite green after fixing an adjacent self-inflicted
+  defect the full-suite run exposed — the ORCH-002 dogfood artifact
+  `zz_scratch_review_test.go` (a `package tui` scratch probe committed
+  as evidence in `afac61d`) broke `go test ./...` builds; renamed to
+  `.go.txt`, content preserved.
+
 ### ORCH-001 — Persona orchestration live-verified on the current build
 ### (2026-09-12, gate `e2e/orchestration/run_gate.sh`)
 

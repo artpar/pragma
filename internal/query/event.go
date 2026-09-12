@@ -58,6 +58,19 @@ type ToolResultEvent struct {
 
 func (ToolResultEvent) loopEventSealed() {}
 
+// ToolOutputEvent carries incremental output of a still-running tool
+// call (TUI-004): emitted while a foreground Bash command runs so the
+// operator sees what the command is doing instead of a bare spinner.
+// The tail is bounded (RunningOutputLines); the final ToolResultEvent
+// supersedes it.
+type ToolOutputEvent struct {
+	ToolCallID string
+	Output     string
+	Running    bool
+}
+
+func (ToolOutputEvent) loopEventSealed() {}
+
 // StructuredOutputEvent carries a runtime-validated structured final output.
 type StructuredOutputEvent struct {
 	ToolCallID string

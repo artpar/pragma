@@ -190,3 +190,10 @@ indistinguishable from a 6-second one in the default view
 running call's elapsed time (`⣾ Bash... 5m11s`), stamped at the tool
 call and refreshed each spinner tick,
 `go test ./internal/tui -run TestRunningToolShowsElapsedTime -count=1`.
+Seventh: a running foreground tool call emitted no output until it
+completed — a 6-minute command was invisible the whole time
+(operator-observed, 2026-09-12, TUI-004); the executor now streams the
+bounded output-so-far to the event channel while the command runs, and
+the TUI renders it inline, replaced in place by the final result,
+`go test ./internal/query -run TestBashToolEmitsLiveOutputWhileRunning -count=1`
+and `go test ./internal/tui -run TestLiveToolOutputRendersInline -count=1`.

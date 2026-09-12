@@ -24,6 +24,11 @@ type Options struct {
 	UsePipefail        bool
 	UseErrexit         bool
 	RunningOutputLines int
+	// OnLiveOutput, when set, is invoked with the tail of output-so-far
+	// while the foreground command runs (TUI-004), at most once per
+	// LiveOutputInterval and only when the output has grown.
+	OnLiveOutput       func(soFar string)
+	LiveOutputInterval time.Duration
 }
 
 type Files struct {
@@ -100,21 +105,52 @@ func Execute(ctx context.Context, opts Options) (Result, error) {
 	}()
 
 	var waitErr error
-	select {
-	case waitErr = <-done:
-		observe.TraceCtx(ctx, "shellrun", "Execute", "select: waitErr = <-done")
-		cancel()
-	case <-time.After(opts.ForegroundWait):
-		observe.TraceCtx(ctx, "shellrun", "Execute", "select: <-time.After(opts.ForegroundWait)")
-		output := TailLines(ReadOutput(files), opts.RunningOutputLines)
-		result.Output = RunningContent("Command is still running after "+opts.ForegroundWait.String()+".", result.PID, files, output, opts.RunningOutputLines)
-		result.Running = true
-		cancelOnReturn = false
-		return result, nil
-	case <-cmdCtx.Done():
-		observe.TraceCtx(ctx, "shellrun", "Execute", "select: <-cmdCtx.Done()")
-		result.TimedOut = cmdCtx.Err() == context.DeadlineExceeded
-		waitErr = <-done
+	// TUI-004: while the foreground command runs, a ticker reads the
+	// console file and invokes OnLiveOutput with the bounded tail whenever
+	// the output has grown. The nil-channel case never fires when the
+	// callback is unset.
+	var liveCh <-chan time.Time
+	var lastLive string
+	if opts.OnLiveOutput != nil {
+		observe.TraceCtx(ctx, "shellrun", "Execute", "if: opts.OnLiveOutput != nil")
+		interval := opts.LiveOutputInterval
+		if interval <= 0 {
+			observe.TraceCtx(ctx, "shellrun", "Execute", "if: interval <= 0")
+			interval = 250 * time.Millisecond
+		}
+		liveTicker := time.NewTicker(interval)
+		defer liveTicker.Stop()
+		liveCh = liveTicker.C
+	}
+	fgExpiry := time.After(opts.ForegroundWait)
+waitLoop:
+	for {
+		select {
+		case waitErr = <-done:
+			observe.TraceCtx(ctx, "shellrun", "Execute", "select: waitErr = <-done")
+			cancel()
+			break waitLoop
+		case <-fgExpiry:
+			observe.TraceCtx(ctx, "shellrun", "Execute", "select: <-fgExpiry")
+			output := TailLines(ReadOutput(files), opts.RunningOutputLines)
+			result.Output = RunningContent("Command is still running after "+opts.ForegroundWait.String()+".", result.PID, files, output, opts.RunningOutputLines)
+			result.Running = true
+			cancelOnReturn = false
+			return result, nil
+		case <-cmdCtx.Done():
+			observe.TraceCtx(ctx, "shellrun", "Execute", "select: <-cmdCtx.Done()")
+			result.TimedOut = cmdCtx.Err() == context.DeadlineExceeded
+			waitErr = <-done
+			break waitLoop
+		case <-liveCh:
+			observe.TraceCtx(ctx, "shellrun", "Execute", "select: <-liveCh")
+			soFar := ReadOutput(files)
+			if soFar != lastLive {
+				observe.TraceCtx(ctx, "shellrun", "Execute", "if: soFar != lastLive")
+				lastLive = soFar
+				opts.OnLiveOutput(TailLines(soFar, opts.RunningOutputLines))
+			}
+		}
 	}
 
 	result.Output = ReadOutput(files)

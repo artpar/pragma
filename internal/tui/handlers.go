@@ -400,6 +400,8 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 				observe.GlobalTrace("if: isCollapsible(call.Name) != \"\"")
 
 				m.fillGroupResult(call, e.Result)
+			} else if m.fillLiveToolResult(call, e.Result) {
+				observe.GlobalTrace("else-if: fillLiveToolResult — live seg completed in place")
 			} else if hasProgressSegment(m.outputSegs, call.Name) {
 				observe.GlobalTrace("else-if: hasProgressSegment — skip segTool")
 			} else {
@@ -419,6 +421,25 @@ func (m Model) handleLoopEvent(msg LoopEventMsg) (tea.Model, tea.Cmd) {
 		m.toolbar.SetStatus("streaming...")
 		m.viewport.SetContent(m.viewportContent())
 		m.viewport.GotoBottom()
+
+	case query.ToolOutputEvent:
+		observe.GlobalTrace("typecase: query.ToolOutputEvent")
+		// TUI-004: the running call's output-so-far renders inline; the
+		// final ToolResultEvent replaces it in place.
+		if seg := findLiveSeg(m.outputSegs, e.ToolCallID); seg != nil {
+			observe.GlobalTrace("if: findLiveSeg — update in place")
+			seg.live.Content = e.Output
+		} else {
+			observe.GlobalTrace("else: append segLive")
+			m.outputSegs = append(m.outputSegs, segment{kind: segLive, live: &liveSegData{
+				CallID:  e.ToolCallID,
+				Content: e.Output,
+			}})
+			m.outputSegs = appendText(m.outputSegs, "\n")
+		}
+		m.viewport.SetContent(m.viewportContent())
+		m.viewport.GotoBottom()
+		return m, waitForEvent(m.eventCh)
 
 	case query.UserMessageEvent:
 		observe.GlobalTrace("typecase: query.UserMessageEvent")

@@ -17,7 +17,7 @@ import (
 func runBashToolCall(t *testing.T, engine *Engine, input string) model.ToolResultPart {
 	t.Helper()
 	call := model.ToolCallPart{ID: "call-bash-alias", Name: "Bash", Input: []byte(input)}
-	return engine.executeProviderToolCall(t.Context(), call)
+	return engine.executeProviderToolCall(t.Context(), call, nil)
 }
 
 func TestProviderBashToolAcceptsCommandAlias(t *testing.T) {

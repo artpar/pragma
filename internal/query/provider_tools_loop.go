@@ -144,7 +144,12 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			pending.Add(1)
 			go func(i int, call model.ToolCallPart) {
 				defer pending.Done()
-				result := engine.executeProviderToolCall(ctx, call)
+				// TUI-004: stream the running call's output-so-far to the
+				// event channel; the final ToolResultEvent supersedes it.
+				onLive := func(tail string) {
+					ch <- ToolOutputEvent{ToolCallID: call.ID, Output: tail, Running: true}
+				}
+				result := engine.executeProviderToolCall(ctx, call, onLive)
 				results[i] = result
 				ch <- ToolResultEvent{Result: result}
 			}(i, call)
@@ -155,7 +160,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: call.Name != applypatch.ToolName")
 				continue
 			}
-			result := engine.executeProviderToolCall(ctx, call)
+			result := engine.executeProviderToolCall(ctx, call, nil)
 			results[i] = result
 			ch <- ToolResultEvent{Result: result}
 		}
@@ -460,7 +465,10 @@ func responseToolCalls(response model.Response) []model.ToolCallPart {
 	return calls
 }
 
-func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.ToolCallPart) model.ToolResultPart {
+// executeProviderToolCall dispatches one tool call. onLiveOutput, when
+// non-nil, receives the running call's output-so-far (TUI-004); tools
+// that do not stream ignore it.
+func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.ToolCallPart, onLiveOutput func(string)) model.ToolResultPart {
 	observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "exit")
 	if isMCPToolCall(engine, call.Name) {
@@ -471,7 +479,7 @@ func (engine *Engine) executeProviderToolCall(ctx context.Context, call model.To
 	switch call.Name {
 	case "Bash":
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: \"Bash\"")
-		return engine.executeProviderBashTool(ctx, call)
+		return engine.executeProviderBashTool(ctx, call, onLiveOutput)
 	case websearch.ToolName:
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderToolCall", "case: websearch.ToolName")
 		if engine.config.WebSearch == nil {
@@ -596,7 +604,7 @@ func (engine *Engine) executeMCPToolCall(ctx context.Context, call model.ToolCal
 	return model.ToolResultPart{ToolCallID: call.ID, Content: output}
 }
 
-func (engine *Engine) executeProviderBashTool(ctx context.Context, call model.ToolCallPart) model.ToolResultPart {
+func (engine *Engine) executeProviderBashTool(ctx context.Context, call model.ToolCallPart, onLiveOutput func(string)) model.ToolResultPart {
 	observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "enter")
 	defer observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "exit")
 	var input struct {
@@ -640,6 +648,7 @@ func (engine *Engine) executeProviderBashTool(ctx context.Context, call model.To
 		UsePipefail:        true,
 		UseErrexit:         true,
 		RunningOutputLines: pragmaLoopRunningOutputLines,
+		OnLiveOutput:       onLiveOutput,
 	})
 	if err != nil {
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "if: err != nil")

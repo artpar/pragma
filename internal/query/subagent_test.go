@@ -162,7 +162,7 @@ func TestProviderToolsLoopAgentValidation(t *testing.T) {
 			{Content: []model.ContentPart{model.TextPart{Text: "done"}}, StopReason: model.StopEndTurn},
 		}, EngineConfig{})
 		// dispatch the bad call directly through the production path
-		result := engine2.executeProviderToolCall(t.Context(), model.ToolCallPart{ID: "x", Name: AgentToolName, Input: []byte(bad)})
+		result := engine2.executeProviderToolCall(t.Context(), model.ToolCallPart{ID: "x", Name: AgentToolName, Input: []byte(bad)}, nil)
 		if !result.IsError {
 			t.Fatalf("bad input %s must produce an error result", bad)
 		}
