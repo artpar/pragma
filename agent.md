@@ -143,3 +143,12 @@ vendored nor installed locally. The target is closed as external unless a
 pragma-owned benchmark runner ever appears. Token-limit termination
 classification is implemented (2026-09-11, TOK-001:
 docs/failure-cases/token-limit-termination-classification-2026-09-11.md).
+Second implemented regression: mid-turn operator input is queued into
+the conversation instead of rejected-and-dropped (2026-09-12, INT-001),
+`go test ./internal/cli -run TestRunInputQueuesPlainTextWhileTurnActive -count=1`.
+Third: Bash tool input accepts the observed `command` key alias and
+names the received keys on empty-input errors (2026-09-12, INT-002),
+`go test ./internal/query -run TestProviderBashToolAcceptsCommandAlias -count=1`.
+The provider-tools loop has no default turn cap since 2026-09-12
+(TURN-003; explicit --max-turns bounds unchanged),
+`go test ./internal/query -run TestProviderToolsLoopNoDefaultTurnCap -count=1`.

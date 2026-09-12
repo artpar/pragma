@@ -43,8 +43,6 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		return
 	}
 
-	// TURN-003: maxTurns == 0 means no turn cap (operator directive
-	// 2026-09-12); the loop ends on end-turn, error, or interrupt.
 	for turn := 0; maxTurns <= 0 || turn < maxTurns; turn++ {
 		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "for: turn < maxTurns")
 		if err := ctx.Err(); err != nil {
@@ -131,13 +129,6 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			return
 		}
 
-		// PAR-001: sibling calls in one assistant turn execute
-		// concurrently — independent calls no longer queue behind a slow
-		// first call (the 2026-09-11 sync-fork block), and completed
-		// results survive an interrupt that kills slower siblings.
-		// apply_patch calls stay sequential in call order (two same-batch
-		// patches can target one file — a concurrent lost-update hazard).
-		// Results keep call order regardless of completion order.
 		for _, call := range toolCalls {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "range toolCalls")
 			ch <- ToolCallEvent{Call: call}
@@ -145,7 +136,9 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		results := make([]model.ContentPart, len(toolCalls))
 		var pending sync.WaitGroup
 		for i, call := range toolCalls {
+			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "range toolCalls")
 			if call.Name == applypatch.ToolName {
+				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: call.Name == applypatch.ToolName")
 				continue
 			}
 			pending.Add(1)
@@ -157,7 +150,9 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			}(i, call)
 		}
 		for i, call := range toolCalls {
+			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "range toolCalls")
 			if call.Name != applypatch.ToolName {
+				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: call.Name != applypatch.ToolName")
 				continue
 			}
 			result := engine.executeProviderToolCall(ctx, call)
@@ -185,8 +180,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			ch <- ErrorEvent{Err: err}
 			return
 		}
-		// INT-001: operator messages queued mid-turn flush after the
-		// companion, at the pairing-safe request boundary.
+
 		engine.drainPendingUserInputs()
 
 		if engine.autoTracker != nil {
@@ -234,6 +228,7 @@ func (engine *Engine) AppendUserInput(text string) error {
 	})
 	if !appended {
 		observe.GlobalTrace("return: nil (parked for the next safe point)")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	engine.emitMessageAppended(msg)
@@ -252,10 +247,11 @@ func (engine *Engine) drainPendingUserInputs() {
 	engine.pendingUserInputsMu.Lock()
 	defer engine.pendingUserInputsMu.Unlock()
 	for len(engine.pendingUserInputs) > 0 {
+		observe.GlobalTrace("for: len(engine.pendingUserInputs) > 0")
 		msg := engine.pendingUserInputs[0]
 		if err := engine.appendConversationMessage(msg); err != nil {
-			// Keep the unflushed head queued; the next drain retries. The
-			// conversation is already in a fatal-append state.
+			observe.GlobalTrace("if: err != nil")
+
 			return
 		}
 		engine.pendingUserInputs = engine.pendingUserInputs[1:]
@@ -279,6 +275,7 @@ func conversationTailHasDanglingToolUse(conv model.Conversation) bool {
 		return false
 	}
 	for _, part := range tail.Content {
+		observe.GlobalTrace("range tail.Content")
 		if _, ok := part.(model.ToolCallPart); ok {
 			observe.GlobalTrace("return: true")
 			return true
@@ -613,6 +610,7 @@ func (engine *Engine) executeProviderBashTool(ctx context.Context, call model.To
 	}
 	cmd := input.Cmd
 	if strings.TrimSpace(cmd) == "" {
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "if: strings.TrimSpace(cmd) == \"\"")
 		cmd = input.Command
 	}
 	if strings.TrimSpace(cmd) == "" {
@@ -622,11 +620,14 @@ func (engine *Engine) executeProviderBashTool(ctx context.Context, call model.To
 		var received []string
 		var keys map[string]json.RawMessage
 		if json.Unmarshal(call.Input, &keys) == nil {
+			observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "if: json.Unmarshal(call.Input, &keys) == nil")
 			for k := range keys {
+				observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "range keys")
 				received = append(received, k)
 			}
 		}
 		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: \"Bash input requires a non-e...")
+		observe.TraceCtx(ctx, "query", "Engine.executeProviderBashTool", "return: model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf(\"Bash input re...")
 		return model.ToolResultPart{ToolCallID: call.ID, Content: fmt.Sprintf("Bash input requires a non-empty command under key \"cmd\"; received keys: %v", received), IsError: true}
 	}
 	snap := engine.store.Snapshot()

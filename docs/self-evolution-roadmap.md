@@ -101,6 +101,10 @@ with variance captured across runs.
   cost is a long-latency × interrupt interaction. A "queue the message
   behind the in-flight request" or partial-result-preservation
   mechanism would need its own case if the operator wants it.
+  **Corrected and resolved 2026-09-12 (INT-001):** the code trace showed
+  submission never canceled the request — it was rejected-and-dropped
+  (busy) and the operator's separate interrupt did the forfeiting;
+  mid-turn input now queues into the conversation instead.
 - **RTY-003/004/005 (openai/google/groq): stay recorded-latent.** A
   read-only scan of logs, session stores, and recordings (2026-09-11)
   found no authentic failures on those routes: the openai-adapter-tagged
@@ -349,6 +353,55 @@ for writers remain separate follow-up mechanisms, each with their own
 case. Record:
 `docs/failure-cases/parallel-sibling-dispatch-2026-09-12.md`.
 
+**INT-001 — Mid-turn operator input is queued, not rejected-and-dropped
+(2026-09-12, commit `640bc5b`).** The night-session forfeit note's
+mechanism was corrected by code trace: submission while a request is in
+flight never canceled anything — `RunInput` rejected the text outright
+(busy) and dropped it, so the only delivery path was the operator's
+Esc/Ctrl+C interrupt, which canceled the in-flight request and forfeited
+its full input spend (four `context canceled` events, ~350K input
+tokens; log `2026-09-11T22-55-12.jsonl`). One mechanism: the busy path
+appends plain text to the conversation via `Engine.AppendUserInput`
+(CLK-001 stamp shape) and emits `QueuedPromptEvent`; the loop's existing
+snapshot-per-request fold (proven live by the companions) delivers it to
+the next request; a message parks while the tail is a dangling tool_use
+(it would serialize before the tool results and break pairing) and
+flushes after each companion; slash commands stay rejected while a turn
+runs; interrupt semantics unchanged. Gates: baseline RED (reject+drop
+through the production path) / candidate GREEN; park+pairing invariant;
+real-loop delivery with a real Bash tool on the request wire; TUI
+render; `-race`; full suite 29 packages on the INT-001-only tree.
+Record: `docs/failure-cases/interrupt-input-queue-2026-09-12.md`.
+
+**INT-002 — Bash input key alias accepted, empty-input error made
+diagnosable (2026-09-12, commit `970bb08`).** Found live inside the
+INT-001 session: Bash calls whose emitted input carried the command
+under `command` (not the schema's `cmd`) failed with a bare
+"Bash input requires non-empty cmd" — 7+ occurrences in the
+2026-09-12T00-46-33 session plus a 2026-08-30 Terminal-Bench instance,
+each burning turns while the model rediscovered the cause. One
+mechanism: `executeProviderBashTool` accepts `cmd` (schema key) with
+`command` as the observed alias; no-recognized-key errors list the
+received top-level keys so the model self-corrects in one turn. Schema,
+pragma mode, and all other tools unchanged. Gates: baseline RED (alias
+call fails with the terse error) / candidate GREEN (alias executes);
+schema-key path green on both; full suite clean. Record:
+`docs/failure-cases/bash-input-alias-2026-09-12.md`.
+
+**TURN-003 — Default 100-turn cap removed (2026-09-12, commit
+`2b9824a`).** The operator's explicit directive after the cap's history
+(two operator sessions + three TB-2.1 tasks + TURN-001's live run dying
+mid-wrap-up): no default turn cap. `MaxTurns <= 0` now means uncapped;
+`--max-turns`/config bounds unchanged with warning window and cap error
+intact; sub-agents stay bounded (`DefaultSubAgentMaxTurns = 100`) when
+the parent runs uncapped — a drifting sub would block the sync fork
+indefinitely. Gates: baseline RED (unset MaxTurns, 105 scripted tool
+turns → "exceeded maximum of 100 turns") / candidate GREEN (completes
+with TurnCompleteEvent; sub pinned); every existing cap/window test
+(explicit MaxTurns) unchanged; full suite 29 packages clean. Hazards
+recorded: unattended uncapped runs have no pragma-side turn guard now.
+Record: `docs/failure-cases/turn-cap-removal-2026-09-12.md`.
+
 **Verifier-startup misclassification target examined and closed as
 external (2026-09-11).** agent.md's remaining named regression —
 verifier-startup failures misclassified as solver failures — was traced to
@@ -382,3 +435,10 @@ Case before mechanism; evidence would be operator friction with the sync
 fork's turn-blocking despite PAR-001 (e.g. needing to interrupt a single
 long fork while other work waits on the turn) or concurrent writers
 racing on the shared worktree.
+
+Status 2026-09-12: still waiting on evidence. The continuation session's
+two verification sub-agents (bounded read/return tasks, ~1-2 minutes
+total) each blocked their parent turn for their duration under the sync
+fork — noticeable but never interrupt-worthy, and no other work waited
+on the turn: below the case-opening bar both times. No concurrent-writer
+race occurred (the tree stayed clean through three mechanism commits).

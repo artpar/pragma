@@ -154,10 +154,10 @@ func (engine *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 		Worktree:          snap.Worktree,
 		ArtifactSessionID: snap.SessionID(),
 	})
-	// TURN-003: an uncapped parent still gets a bounded sub — a drifting
-	// sub-agent blocks this synchronous fork indefinitely otherwise.
+
 	subCfg := engine.config
 	if subCfg.MaxTurns <= 0 {
+		observe.GlobalTrace("if: subCfg.MaxTurns <= 0")
 		subCfg.MaxTurns = DefaultSubAgentMaxTurns
 	}
 	sub := &Engine{
