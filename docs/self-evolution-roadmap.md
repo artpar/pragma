@@ -231,6 +231,45 @@ Route morph-glm53-744b, interactive provider-tools, uncapped. Log:
   depth. The wire-size watch stays open; the known-good envelope is now
   265K tokenized (~740K raw at the previously observed 2.8× ratio).
 
+### ORCH-001 — Persona orchestration live-verified on the current build
+### (2026-09-12, gate `e2e/orchestration/run_gate.sh`)
+
+The orchestration capability (`/orchestrate` + `pragma orchestration run`,
+~6,700-line FSM runner + persona catalog) had not run live since
+2026-06-24 — predating the entire self-evolution program's engine, loop,
+admission, dispatch, and tool changes. A zero-spend real-boot gate was
+added: a scripted OpenAI-compatible provider (`probe_provider.py`,
+profile `orchestration`) keys persona responses off each request's system
+prompt; every persona answers with one fenced bash block that writes its
+state artifact and echoes the completion sentinel, so the real
+`pragma orchestration run orchestrations/architect-implementer-prosecutor.yaml
+--persona-dir personas` walks the whole chain — engine, pragma loop, LLM
+resolver, persona system prompts, real bash execution, artifact-verdict
+control routing.
+
+Result (label `orch-green-boot-2026-09-12`): exit 0; architect →
+implementer → prosecutor each completed in one turn (3 requests on the
+wire, raw HTTP captures recorded); the deliverable and all handoff
+artifacts were created by real shell execution; the prosecutor's APPROVE
+verdict was routed by the artifact-verdict control to terminal `done`.
+
+The first (red) run is a recorded boundary fact, not a pragma defect: a
+prose-prefixed response loops — `extractPragmaLoopCommand` accepts exactly
+one fenced block with no text before or after — and the state died at
+the 100-turn cap. The persona-state cap held as designed: TURN-003's
+uncapping is the provider-tools loop only, which is exactly the
+sub-agent-bounding rationale recorded in its case. Adjacent check: the
+existing MCPINJ provider-tools green boot re-run on the changed probe —
+exit 0, same shape as `green-int001-turn003`.
+
+Claim boundary: the FSM/loop/resolver/control mechanism chain works live
+on this build through the scripted provider; no claim about persona
+answer quality on real routes, and no task-success claim. The gate is
+the standing adjacency check for future engine/loop changes, and the
+capability is now a verified instrument for self-improvement use —
+prosecutor-verified harness changes and dogfood evidence for the
+recorded-need mechanisms (long persona turns exercise the sync fork).
+
 ### M2b — Classify the captured session-start failure
 
 **Resolved 2026-09-11 — classification correct; no open defect.** The

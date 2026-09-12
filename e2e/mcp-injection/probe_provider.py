@@ -24,6 +24,13 @@ Profiles:
     finish_reason=length response with content cut mid-word (TOK-001 probe);
     the loop must classify the truncated termination (baseline: silent
     exit 0 success; candidate: truncation error, exit != 0).
+  orchestration: persona-keyed responses for the ORCH capability gate — the
+    system message of each request names the active persona (architect,
+    implementer, prosecutor, repair); each scripted answer is pragma-loop
+    text carrying one fenced bash block that writes the state artifact and
+    echoes the COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT sentinel, so a real
+    `pragma orchestration run` boot walks architect → implementer →
+    prosecutor → APPROVE verdict without any inference spend.
 
 Usage: probe_provider.py <workdir> <profile> [delay_seconds]
 """
@@ -154,8 +161,11 @@ def truncated_text_response():
     }
 
 def final_text_response():
+    return text_response("PROBE_COMPLETE")
+
+def text_response(content):
     return {
-        "id": "chatcmpl-probe-final",
+        "id": "chatcmpl-probe-final-" + str(int(time.time() * 1000) % 100000),
         "object": "chat.completion",
         "created": int(time.time()),
         "model": "probe-model",
@@ -164,13 +174,54 @@ def final_text_response():
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": "PROBE_COMPLETE",
+                    "content": content,
                 },
                 "finish_reason": "stop",
             }
         ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
     }
+
+def _persona_bash_block(script):
+    # One fenced bash block per the pragma-loop runtime contract; the loop
+    # executes the script and the sentinel in its output completes the state.
+    return "```bash\n" + script + "\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\n```"
+
+def orchestration_persona_response(system_text):
+    if "You are the architect" in system_text:
+        script = (
+            "mkdir -p /tmp/pragma\n"
+            "printf 'Task: create /tmp/pragma/orch-gate.txt containing exactly "
+            "gate-ok.\\nApproach: one printf shell action.\\n' > /tmp/pragma/architect-brief.md"
+        )
+    elif "You are the implementer" in system_text:
+        script = (
+            "mkdir -p /tmp/pragma\n"
+            "printf 'gate-ok\\n' > /tmp/pragma/orch-gate.txt\n"
+            "printf 'Created /tmp/pragma/orch-gate.txt with content gate-ok via printf.\\n' "
+            "> /tmp/pragma/implementer-report.md"
+        )
+    elif "You are the prosecutor" in system_text:
+        script = (
+            "mkdir -p /tmp/pragma\n"
+            "test \"$(cat /tmp/pragma/orch-gate.txt)\" = \"gate-ok\"\n"
+            "printf 'Findings:\\nDeliverable present with exact required content, "
+            "verified by string equality.\\n\\nRequired repair:\\nNone\\n\\n"
+            "Decision:\\nAPPROVE\\n' > /tmp/pragma/prosecutor-verdict.md"
+        )
+    elif "You are the repair" in system_text:
+        script = (
+            "mkdir -p /tmp/pragma\n"
+            "printf 'gate-ok\\n' > /tmp/pragma/orch-gate.txt\n"
+            "printf 'Findings:\\nRe-created the deliverable.\\n\\nRequired repair:\\nNone\\n\\n"
+            "Decision:\\nAPPROVE\\n' > /tmp/pragma/prosecutor-verdict.md"
+        )
+    else:
+        return final_text_response()
+    # The pragma loop's extraction contract: exactly one fenced bash block
+    # with no prose before or after it (extractPragmaLoopCommand rejects
+    # anything else), so the scripted persona response is block-only.
+    return text_response(_persona_bash_block(script))
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -201,8 +252,20 @@ class Handler(BaseHTTPRequestHandler):
         with lock:
             counter["n"] += 1
             seq = counter["n"]
+            body = json.loads(raw.decode())
             with open(requests_path, "a") as f:
-                f.write(json.dumps({"seq": seq, "path": self.path, "body": json.loads(raw.decode())}) + "\n")
+                f.write(json.dumps({"seq": seq, "path": self.path, "body": body}) + "\n")
+        if PROFILE == "orchestration":
+            if seq == 1:
+                time.sleep(min(DELAY, 5.0))
+            system_text = ""
+            for message in body.get("messages", []):
+                if isinstance(message, dict) and message.get("role") == "system":
+                    content = message.get("content")
+                    if isinstance(content, str):
+                        system_text += content
+            self._send_json(200, orchestration_persona_response(system_text))
+            return
         if PROFILE in ("provider-tools", "websearch", "subagent", "parallel") and seq == 1:
             time.sleep(DELAY)
             self._send_json(200, tool_calls_response())

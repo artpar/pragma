@@ -1,0 +1,40 @@
+[orchestration: architect-implementer-prosecutor initial=architect]
+
+[orchestration: architect persona=architect]
+```bash
+mkdir -p /tmp/pragma
+printf 'Task: create /tmp/pragma/orch-gate.txt containing exactly gate-ok.\nApproach: one printf shell action.\n' > /tmp/pragma/architect-brief.md
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+```
+[state architect complete in 5s]
+
+[transition: architect --complete--> implementer]
+
+[orchestration: implementer persona=implementer]
+```bash
+mkdir -p /tmp/pragma
+printf 'gate-ok\n' > /tmp/pragma/orch-gate.txt
+printf 'Created /tmp/pragma/orch-gate.txt with content gate-ok via printf.\n' > /tmp/pragma/implementer-report.md
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+```
+[state implementer complete in 0s]
+
+[transition: implementer --complete--> prosecutor]
+
+[orchestration: prosecutor persona=prosecutor]
+```bash
+mkdir -p /tmp/pragma
+test "$(cat /tmp/pragma/orch-gate.txt)" = "gate-ok"
+printf 'Findings:\nDeliverable present with exact required content, verified by string equality.\n\nRequired repair:\nNone\n\nDecision:\nAPPROVE\n' > /tmp/pragma/prosecutor-verdict.md
+echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT
+```
+[state prosecutor complete in 0s]
+
+[transition: prosecutor --complete--> route_prosecutor_verdict]
+
+[control: route_prosecutor_verdict (artifact_verdict)]
+[control: route_prosecutor_verdict emitted approve]
+
+[transition: route_prosecutor_verdict --approve--> done]
+
+[orchestration: done]
