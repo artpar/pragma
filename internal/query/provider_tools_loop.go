@@ -25,9 +25,9 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 	defer engine.runStopHook(ch)
 
 	maxTurns := engine.config.MaxTurns
-	if maxTurns <= 0 {
-		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: maxTurns <= 0")
-		maxTurns = DefaultMaxTurns
+	if maxTurns < 0 {
+		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: maxTurns < 0")
+		maxTurns = 0
 	}
 	warnTurn := turnBudgetWarnTurn(maxTurns)
 
@@ -43,7 +43,9 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		return
 	}
 
-	for turn := 0; turn < maxTurns; turn++ {
+	// TURN-003: maxTurns == 0 means no turn cap (operator directive
+	// 2026-09-12); the loop ends on end-turn, error, or interrupt.
+	for turn := 0; maxTurns <= 0 || turn < maxTurns; turn++ {
 		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "for: turn < maxTurns")
 		if err := ctx.Err(); err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")

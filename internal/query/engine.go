@@ -16,9 +16,12 @@ import (
 	"github.com/artpar/pragma/internal/toolresult"
 )
 
-// DefaultMaxTurns is the maximum number of agentic loop iterations before
-// the engine stops to prevent runaway tool-calling loops.
-const DefaultMaxTurns = 100
+// DefaultSubAgentMaxTurns bounds sub-agent loops when the parent runs
+// uncapped (TURN-003): the interactive root loop has no default turn cap
+// (operator directive 2026-09-12, after TURN-001/002's cap deaths), but a
+// drifting sub-agent would block the parent's synchronous fork
+// indefinitely with no one watching — the runaway guard stays for subs.
+const DefaultSubAgentMaxTurns = 100
 
 const (
 	LoopModePragma        = "pragma"
@@ -30,7 +33,7 @@ type EngineConfig struct {
 	Model                     string
 	LoopMode                  string
 	MaxTokens                 int
-	MaxTurns                  int // 0 means use DefaultMaxTurns
+	MaxTurns                  int // 0 = no turn cap (TURN-003); >0 bounds the loop
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
 	ResponseSchema            json.RawMessage
@@ -151,12 +154,18 @@ func (engine *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 		Worktree:          snap.Worktree,
 		ArtifactSessionID: snap.SessionID(),
 	})
+	// TURN-003: an uncapped parent still gets a bounded sub — a drifting
+	// sub-agent blocks this synchronous fork indefinitely otherwise.
+	subCfg := engine.config
+	if subCfg.MaxTurns <= 0 {
+		subCfg.MaxTurns = DefaultSubAgentMaxTurns
+	}
 	sub := &Engine{
 		provider:     engine.provider,
 		store:        subStore,
 		costTracker:  engine.costTracker,
 		bus:          engine.bus,
-		config:       engine.config,
+		config:       subCfg,
 		compactor:    engine.compactor,
 		autoTracker:  engine.autoTracker,
 		windowConfig: engine.windowConfig,
