@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -115,9 +117,102 @@ func TestModelDialogEscClearsFilterBeforeDismissing(t *testing.T) {
 
 func TestModelDialogCurrentModelHighlighted(t *testing.T) {
 	d := newModelDialogFixture()
-	rendered := d.View(80)
+	rendered := d.View(80, 40)
 	if !contains(rendered, "(current)") {
 		t.Error("current model marker missing from dialog view")
+	}
+}
+
+func TestModelDialogRendersBoundedWindow(t *testing.T) {
+	// The catalog can hold hundreds of "provider/model" entries; the
+	// dialog must render a bounded window, not dump every row at once.
+	models := make([]string, 300)
+	for i := range models {
+		models[i] = fmt.Sprintf("provider-a/model-%03d", i)
+	}
+	var d modelDialog
+	d.Show(models, "provider-a/model-000")
+
+	rendered := d.View(80, 24)
+	if lines := strings.Count(rendered, "\n"); lines >= 24 {
+		t.Fatalf("dialog rendered %d lines for a 24-row terminal, want a bounded window", lines)
+	}
+	if !contains(rendered, "model-000") {
+		t.Error("current model should be visible in the initial window")
+	}
+	if !contains(rendered, "more below") {
+		t.Error("missing indicator that the list continues below the window")
+	}
+	if !contains(rendered, "showing ") {
+		t.Error("missing position footer (showing X–Y of N)")
+	}
+	// Bounded rendering must not depend on catalog size.
+	renderedAgain := d.View(80, 24)
+	if strings.Count(renderedAgain, "\n") != strings.Count(rendered, "\n") {
+		t.Error("re-render should be stable, not grow")
+	}
+}
+
+func TestModelDialogScrollsSelectionIntoView(t *testing.T) {
+	models := make([]string, 300)
+	for i := range models {
+		models[i] = fmt.Sprintf("provider-a/model-%03d", i)
+	}
+	var d modelDialog
+	d.Show(models, "provider-a/model-000")
+
+	// Walk the selection far past the first window.
+	for i := 0; i < 40; i++ {
+		if selected := d.Update(tea.KeyMsg{Type: tea.KeyDown}); selected != "" {
+			t.Fatalf("arrow down unexpectedly selected %q", selected)
+		}
+	}
+	if d.selected != 40 {
+		t.Fatalf("selected = %d, want 40", d.selected)
+	}
+
+	rendered := d.View(80, 24)
+	if !contains(rendered, "model-040") {
+		t.Error("selected model must be visible after scrolling down")
+	}
+	if !contains(rendered, "more above") {
+		t.Error("missing indicator that the list continues above the window")
+	}
+}
+
+func TestModelDialogFilterOnLargeCatalog(t *testing.T) {
+	models := make([]string, 300)
+	for i := range models {
+		models[i] = fmt.Sprintf("provider-a/model-%03d", i)
+	}
+	var d modelDialog
+	d.Show(models, "")
+
+	// Type a filter matching only model-257. Sent as one batched event:
+	// a lone first rune '2' would be interpreted as a digit jump (which
+	// only applies to single-rune input while the filter is empty).
+	if selected := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("257")}); selected != "" {
+		t.Fatalf("typing filter unexpectedly selected %q", selected)
+	}
+	visible := d.visible()
+	if len(visible) != 1 || visible[0] != "provider-a/model-257" {
+		t.Fatalf("visible after filter = %v, want [provider-a/model-257]", visible)
+	}
+
+	// The filtered window shows the match without scroll indicators.
+	rendered := d.View(80, 24)
+	if !contains(rendered, "model-257") {
+		t.Error("filtered match missing from rendered dialog")
+	}
+	if contains(rendered, "more below") || contains(rendered, "more above") {
+		t.Error("single match should not carry scroll indicators")
+	}
+
+	if selected := d.Update(tea.KeyMsg{Type: tea.KeyEnter}); selected != "provider-a/model-257" {
+		t.Fatalf("Enter selected %q, want provider-a/model-257", selected)
+	}
+	if d.active {
+		t.Error("dialog should be dismissed after selection")
 	}
 }
 

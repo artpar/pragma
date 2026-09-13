@@ -533,7 +533,7 @@ func (m Model) viewportContent() string {
 	if m.modelDlg.active {
 		observe.GlobalTrace("if: m.modelDlg.active")
 		b.WriteString("\n")
-		b.WriteString(m.modelDlg.View(m.width))
+		b.WriteString(m.modelDlg.View(m.width, m.viewport.Height))
 	}
 
 	if m.resumeDlg.active {
