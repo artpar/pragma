@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/pragma/internal/buildinfo"
 	"github.com/artpar/pragma/internal/hook"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -88,6 +89,39 @@ func (engine *Engine) systemWithMCPStatus(system model.SystemPrompt) model.Syste
 	}
 	b.WriteString("\nUse this mcp_servers metadata as the authoritative MCP server configuration and connection status. When asked which MCP servers are configured, active, inactive, connected, failed, pending, or disabled, answer directly from mcp_servers without calling tools. ListMcpResourcesTool lists resources only and must not be used to infer MCP server status.")
 
+	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
+	blocks = append(blocks, system.Blocks...)
+	blocks = append(blocks, model.SystemBlock{Text: b.String(), Cacheable: false})
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
+	return model.SystemPrompt{Blocks: blocks}
+}
+
+// systemWithHarnessManifest appends the authoritative identity and budget
+// block (HMB-001): the model must never infer the harness from tool shapes
+// and must know its per-turn output budget before spending it (HMB-002).
+func (engine *Engine) systemWithHarnessManifest(system model.SystemPrompt) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var b strings.Builder
+	b.WriteString("# Harness manifest\n\n")
+	b.WriteString("You are running inside pragma — no other harness. These identity and budget facts are authoritative; never infer the harness from tool shapes, and answer identity questions from this manifest.\n\n")
+	fmt.Fprintf(&b, "harness: pragma\n")
+	fmt.Fprintf(&b, "version: %s (%s)\n", buildinfo.Version, buildinfo.Commit)
+	fmt.Fprintf(&b, "provider: %s\n", engine.provider.Name())
+	fmt.Fprintf(&b, "model: %s\n", engine.config.Model)
+	fmt.Fprintf(&b, "loop: %s\n", engine.config.LoopMode)
+	if engine.config.MaxTurns > 0 {
+		observe.GlobalTrace("if: engine.config.MaxTurns > 0")
+		fmt.Fprintf(&b, "max_turns: %d\n", engine.config.MaxTurns)
+	} else {
+		observe.GlobalTrace("else: engine.config.MaxTurns > 0")
+		b.WriteString("max_turns: uncapped\n")
+	}
+	if engine.config.MaxTokens > 0 {
+		observe.GlobalTrace("if: engine.config.MaxTokens > 0")
+		fmt.Fprintf(&b, "output_token_budget_per_turn: %d\n", engine.config.MaxTokens)
+		b.WriteString("\nA turn that reaches the output budget is cut mid-response. Write durable records before long reasoning so a truncated turn loses nothing.\n")
+	}
 	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
 	blocks = append(blocks, system.Blocks...)
 	blocks = append(blocks, model.SystemBlock{Text: b.String(), Cacheable: false})

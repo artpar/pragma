@@ -43,6 +43,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		return
 	}
 
+	lastOutputTokens := 0
 	for turn := 0; maxTurns <= 0 || turn < maxTurns; turn++ {
 		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "for: turn < maxTurns")
 		if err := ctx.Err(); err != nil {
@@ -64,11 +65,26 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 				return
 			}
 		}
+		if turn > 0 && engine.config.MaxTokens > 0 && lastOutputTokens*2 >= engine.config.MaxTokens {
+			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: lastOutputTokens*2 >= engine.config.MaxTokens")
+			noticeAt := time.Now()
+			if err := engine.appendConversationMessage(model.Message{
+				ID:        model.NewUUID(),
+				Role:      model.RoleUser,
+				Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(noticeAt) + "\n" + outputBudgetNotice(lastOutputTokens, engine.config.MaxTokens)}},
+				Timestamp: noticeAt,
+			}); err != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
+				ch <- ErrorEvent{Err: err}
+				return
+			}
+		}
 
 		snap := engine.store.Snapshot()
 		resolvedModel := firstNonEmpty(snap.Model, snap.Conversation.Model, engine.config.Model)
 		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
 		system = engine.systemWithMCPStatus(system)
+		system = engine.systemWithHarnessManifest(system)
 		tools := providerToolDefs()
 		tools = engine.withWebSearchTool(tools)
 		tools = engine.withSubAgentTool(tools)
@@ -100,6 +116,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		}
 		ch <- ModelResponseEvent{Model: resolvedModel, StopReason: response.StopReason}
 		emitProviderToolsContent(response, ch)
+		lastOutputTokens = response.Usage.OutputTokens
 
 		if err := engine.appendConversationMessage(model.Message{
 			ID:        model.NewUUID(),
@@ -144,8 +161,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			pending.Add(1)
 			go func(i int, call model.ToolCallPart) {
 				defer pending.Done()
-				// TUI-004: stream the running call's output-so-far to the
-				// event channel; the final ToolResultEvent supersedes it.
+
 				onLive := func(tail string) {
 					ch <- ToolOutputEvent{ToolCallID: call.ID, Output: tail, Running: true}
 				}
@@ -349,6 +365,21 @@ func turnBudgetNotice(used, maxTurns int) string {
 	observe.GlobalTrace("return: fmt.Sprintf(\"%s %d of %d provider-tools turns used; %d remain. The loop stops...")
 	return fmt.Sprintf("%s %d of %d provider-tools turns used; %d remain. The loop stops when the budget is exhausted; the conversation is preserved and a new prompt continues it. Prioritize now: finish the current step, then either complete the task or write a concise handoff (state, decisions, evidence locations, next action) so a continued session can resume without redoing work.",
 		turnBudgetNoticeMarker, used, maxTurns, remaining)
+}
+
+const outputBudgetNoticeMarker = "[pragma output-budget "
+
+// outputBudgetNotice is appended as a companion user message after any turn
+// that consumed at least half the output-token budget (HMB-002), so the
+// model can write records before its next long reasoning burst instead of
+// learning the budget only at truncation.
+func outputBudgetNotice(used, maxTokens int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: notice")
+	observe.GlobalTrace("return: fmt.Sprintf(\"%s the previous turn used %d of %d output tokens. A turn that re...")
+	return fmt.Sprintf("%s the previous turn used %d of %d output tokens. A turn that reaches the budget is cut mid-response with no warning. Before long reasoning, write durable records (state, decisions, evidence locations, next action) so a truncated turn loses nothing.",
+		outputBudgetNoticeMarker, used, maxTokens)
 }
 
 func (engine *Engine) completeProviderToolsResponse(ctx context.Context, params provider.RequestParams, ch chan<- LoopEvent) (model.Response, error) {
