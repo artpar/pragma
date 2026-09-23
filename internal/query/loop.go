@@ -122,6 +122,7 @@ func (engine *Engine) systemWithHarnessManifest(system model.SystemPrompt) model
 		fmt.Fprintf(&b, "output_token_budget_per_turn: %d\n", engine.config.MaxTokens)
 		b.WriteString("\nA turn that reaches the output budget is cut mid-response. Write durable records before long reasoning so a truncated turn loses nothing.\n")
 	}
+	b.WriteString("\nTurn contract: a response with no tool calls ends your turn and returns control to the operator. While owed work remains and budgets allow, keep working — make a tool call rather than a closing text, and write reports to files. To explicitly continue after a text response, end it with the line [pragma-continue].\n")
 	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
 	blocks = append(blocks, system.Blocks...)
 	blocks = append(blocks, model.SystemBlock{Text: b.String(), Cacheable: false})

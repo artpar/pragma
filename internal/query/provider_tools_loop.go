@@ -44,6 +44,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 	}
 
 	lastOutputTokens := 0
+	selfContinues := 0
 	for turn := 0; maxTurns <= 0 || turn < maxTurns; turn++ {
 		observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "for: turn < maxTurns")
 		if err := ctx.Err(); err != nil {
@@ -137,6 +138,22 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		}
 		if response.StopReason != model.StopToolUse && len(toolCalls) == 0 {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: response.StopReason != model.StopToolUse && len(toolCalls) == 0")
+			if selfContinues < maxSelfContinues && responseEndsWithSelfContinue(response) {
+				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: responseEndsWithSelfContinue(response)")
+				selfContinues++
+				noticeAt := time.Now()
+				if err := engine.appendConversationMessage(model.Message{
+					ID:        model.NewUUID(),
+					Role:      model.RoleUser,
+					Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(noticeAt) + "\n" + selfContinueNotice(selfContinues)}},
+					Timestamp: noticeAt,
+				}); err != nil {
+					observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
+					ch <- ErrorEvent{Err: err}
+					return
+				}
+				continue
+			}
 			ch <- TurnCompleteEvent{Response: response, StopReason: response.StopReason}
 			return
 		}
@@ -380,6 +397,40 @@ func outputBudgetNotice(used, maxTokens int) string {
 	observe.GlobalTrace("return: fmt.Sprintf(\"%s the previous turn used %d of %d output tokens. A turn that re...")
 	return fmt.Sprintf("%s the previous turn used %d of %d output tokens. A turn that reaches the budget is cut mid-response with no warning. Before long reasoning, write durable records (state, decisions, evidence locations, next action) so a truncated turn loses nothing.",
 		outputBudgetNoticeMarker, used, maxTokens)
+}
+
+const selfContinueMarker = "[pragma-continue]"
+
+// maxSelfContinues bounds consecutive marker continuations so a model that
+// always emits the marker cannot drive an unbounded loop (HMB-003); the
+// turn budget applies independently.
+const maxSelfContinues = 10
+
+// responseEndsWithSelfContinue reports whether the response's final text
+// part, trimmed, ends with the self-continue marker (HMB-003): the agent
+// explicitly keeps the turn alive instead of yielding to the operator.
+func responseEndsWithSelfContinue(response model.Response) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	var last string
+	for _, part := range response.Content {
+		observe.GlobalTrace("range response.Content")
+		if tp, ok := part.(model.TextPart); ok {
+			observe.GlobalTrace("if: ok")
+			last = tp.Text
+		}
+	}
+	observe.GlobalTrace("return: strings.HasSuffix(strings.TrimSpace(last), selfContinueMarker)")
+	return strings.HasSuffix(strings.TrimSpace(last), selfContinueMarker)
+}
+
+func selfContinueNotice(n int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: notice")
+	observe.GlobalTrace("return: fmt.Sprintf(\"%s self-continue %d: the agent marked owed work as remaining; th...")
+	return fmt.Sprintf("%s self-continue %d: the agent marked owed work as remaining; the turn continues. Keep driving: make tool calls, write reports to files, and end with terminal text only when the queue is empty or a human is needed (cap %d consecutive self-continues).",
+		selfContinueMarker, n, maxSelfContinues)
 }
 
 func (engine *Engine) completeProviderToolsResponse(ctx context.Context, params provider.RequestParams, ch chan<- LoopEvent) (model.Response, error) {
