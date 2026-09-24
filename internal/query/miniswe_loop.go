@@ -365,14 +365,9 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 		// leave this a no-op.
 		// Scoped activations (run.MessageStartIndexes set — orchestration
 		// state runs that request only their own conversation slice) skip
-		// the trigger: compaction replaces the WHOLE conversation, which
-		// would invalidate the scope's start index into the message array.
-		// IncrementTurn below is the ONE per-iteration turn advance
-		// (2e9f01b / CMP-001 F4 semantics): the pragma loop's old
-		// post-assistant increment site was removed with this port — a
-		// second increment inside the same iteration would expire
-		// MinTurnsCooldown within the compaction's own iteration and let a
-		// still-over-threshold conversation re-compact immediately.
+		// the trigger — and only the trigger: compaction replaces the
+		// WHOLE conversation, which would invalidate the scope's start
+		// index into the message array.
 		if len(run.MessageStartIndexes) == 0 && engine.compactor != nil && engine.autoTracker != nil {
 			// CMP-001.4 F6 bound: when the tracker is disabled, the
 			// breaker has tripped, or the cooldown is still active,
@@ -456,6 +451,23 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 					// ctx check exits cleanly.
 				}
 			}
+		}
+		// CMP-001.3.F2: IncrementTurn is deliberately OUTSIDE the scope
+		// gate above — it is the ONE per-iteration turn advance
+		// (2e9f01b / CMP-001 F4 semantics) and runs for every
+		// model-request iteration, scoped ones included: a scoped
+		// iteration still appends its turns to the engine's whole
+		// conversation, and the FinalTextOnly sub-loop of this same
+		// function increments per model request unconditionally. When the
+		// port kept this inside the scope gate, scoped runs advanced the
+		// cooldown zero turns per iteration — the opposite semantics —
+		// while nothing else changed: the pragma loop's old post-assistant
+		// increment site was removed with the port (a second increment
+		// inside the same iteration would expire MinTurnsCooldown within
+		// the compaction's own iteration and let a still-over-threshold
+		// conversation re-compact immediately).
+		if engine.autoTracker != nil {
+			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: engine.autoTracker != nil")
 			engine.autoTracker.IncrementTurn()
 		}
 

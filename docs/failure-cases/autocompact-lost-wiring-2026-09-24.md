@@ -1782,3 +1782,145 @@ pass silently.
   own state; only compaction reaches `SessionRewrite`), noted here as
   an observation, not a defect claim.
 - No live-provider behavior is claimed.
+
+---
+
+## Revision CMP-001.3.F2 (2026-09-24): the port scoped IncrementTurn along
+## with the trigger — scoped iterations stopped advancing the shared
+## cooldown
+
+Source: queue item CMP-001.3.F2 (critic finding C-2, low severity,
+confirmed, from the CMP-001.3 re-audit). Every sub-claim was verified
+against the tree at `9010d35` (unrelated in-flight working-tree edits
+stashed for the verification, restored after) before any change.
+
+### Verification of the payload claims
+
+- CONFIRMED (structural): the CMP-001.3 port's per-iteration
+  `IncrementTurn` sits inside the unscoped-only gate
+  (`len(run.MessageStartIndexes) == 0 && engine.compactor != nil &&
+  engine.autoTracker != nil`, `internal/query/miniswe_loop.go:376` at
+  9010d35; the increment at :459). At the audited port commit `1b4fb1b`
+  the same structure held (gate :376, increment :443-444 — the payload's
+  ":370,442" is that commit's comment/increment lines). Scoped main-loop
+  iterations therefore advance the cooldown ZERO turns per
+  model-request iteration.
+- CONFIRMED (the removed baseline): the pre-port site was unconditional
+  post-assistant — `git show 1b4fb1b^:internal/query/miniswe_loop.go`
+  lines 370-374 carry `if engine.autoTracker != nil { ...
+  IncrementTurn() }` after `appendPragmaLoopAssistantTurn`, with no
+  scope condition, exactly as the payload cites. The port deleted it and
+  re-added the increment inside the scope gate — an undocumented
+  behavior change for scoped runs, not a preservation.
+- CONFIRMED: the FinalTextOnly sub-loop's increment stays unconditional
+  (`miniswe_loop.go:312-315`, gated only on tracker presence) — the two
+  sub-paths of `runPragmaLoopWithInitialPrompt` carried opposite
+  increment semantics.
+- CONFIRMED: the claimed invariant "one IncrementTurn per
+  model-request iteration" (the port's own commit message; the code
+  comment "IncrementTurn below is the ONE per-iteration turn advance";
+  `internal/compact/auto.go` "IncrementTurn must still run every
+  iteration ... the cooldown expires by counting model-request
+  iterations") was false for scoped iterations, and the drift direction
+  is safe: fewer increments only delay cooldown expiry (later
+  re-compaction); the breaker is untouched.
+- PARTIALLY REFUTED (premise stale at HEAD): the parenthetical
+  "(orchestration state runs on shared-tracker engines)" was true at
+  `1b4fb1b` but is superseded at HEAD: CMP-001.4a (`a229500`)
+  nil'd fork compaction deps, so persona/persistent state runs —
+  `engineForOrchestrationState` forks — carry a nil tracker and advance
+  nothing. The remaining LIVE shared-tracker scoped path is the
+  root-engine run: a persona-less control state with
+  `foreach_next`/`handoff_mode: persona` gets the ROOT engine
+  (`stateRunsPersona` false → root), and its persona handoff then runs
+  the pragma loop scoped on it (`runPersonaForState` → `RunStateEvents`
+  → `RunPragmaLoopWithSystemCompletionCheckOptions`, runner.go:740/828/
+  969). Validation permits that shape
+  (orchestration.go:543-551 only constrains personas that ARE set);
+  shipped definitions do not use it (`task-evidence-item-loop.yaml`'s
+  `next_item` carries its own persona → fork). The defect is therefore
+  real on the reachable-but-currently-unused root path — and the
+  within-root asymmetry (FinalTextOnly vs scoped) is real on any
+  live-tracker engine.
+- PARTIALLY REFUTED ("undocumented"): CMP-001.4a's boundary section
+  already recorded the FinalTextOnly/scoped increment asymmetry as a
+  deferred separate finding (this item), so the record was not silent.
+  But the mechanism-level documentation asserted the opposite: the
+  gate comment claimed the increment is "the ONE per-iteration turn
+  advance" while scoped iterations skipped it, and the CMP-001.3 claim
+  boundary said "counts one model-request iteration per cooldown
+  advance" with no scoped exception. Documented-as-deferred, wrong at
+  the mechanism site — treated as a defect, not a documentation nit.
+
+### RED (unchanged tree `9010d35`, real production paths only)
+
+`internal/query/autocompact_scoped_increment_test.go`
+`TestPragmaLoopScopedIterationsAdvanceSharedCooldown`: an engine with
+live compaction deps over an over-threshold conversation runs, via the
+real entry points — `Engine.Run` (unscoped, the plain `pragma` session
+dispatch) and `RunPragmaLoopWithSystemCompletionCheckOptions` with
+`PragmaLoopRunOptions{}` (scoped, the exact orchestration
+non-persistent state shape) — three turns: run 1 compacts and ends one
+iteration later (cooldown 1/2); run 2 is the scoped run (two
+model-request iterations); run 3 must compact on its FIRST iteration
+because the scoped run's two increments expired the cooldown.
+Failed with:
+`run 3 CompactionStartedEvent count = 0, want 1 — the scoped run's 2
+model-request iterations did not advance the shared cooldown
+(CMP-001.3.F2)`.
+
+### Change (one mechanism): IncrementTurn hoisted out of the scope gate
+
+`internal/query/miniswe_loop.go` main loop: `IncrementTurn` moved from
+inside the `len(run.MessageStartIndexes) == 0 && ...` gate to its own
+block right after it, gated only on `engine.autoTracker != nil` —
+identical semantics to the FinalTextOnly sub-loop of the same function
+(one increment per model-request iteration, tracker presence the only
+condition). The TRIGGER stays scope-gated (compaction would invalidate
+the scope's start index — load-bearing, unchanged, and pinned by the
+new gate's run-2 assertion of zero compaction events). For unscoped
+runs nothing moves: the increment still executes exactly once per
+iteration, at the same position (after the trigger check, before the
+request build), so the CMP-001.1 F4 single-increment semantics are
+preserved and the compaction's own iteration still counts as one turn.
+The gate comment now states the scope gate skips the trigger and only
+the trigger.
+
+### Gates (this revision)
+
+- RED above at unchanged `9010d35`; GREEN after the one change:
+  `go test ./internal/query/ -run 'TestPragmaLoopScopedIterationsAdvanceSharedCooldown' -count=1 -v`
+  — PASS.
+- Adjacent compaction family
+  (`TestPragmaLoopAutoCompact*|TestProviderToolsLoopAutoCompact*|TestPersistentForkPragmaLoop*|TestFork*`)
+  — 13/13 PASS, including the CMP-001.1 F4 single-increment cooldown
+  pin for the unscoped path, the CMP-001.3 trigger/replaces gate, and
+  the CMP-001.4a/CMP-001.3.F1 fork gates (forks carry nil trackers —
+  unchanged by this fix).
+- `go test ./internal/query/ -count=1` ok (6.6s); `-count=1 -race` ok
+  (11.3s).
+- `go test ./internal/compact/ ./internal/orchestration/
+  ./internal/session/ ./internal/cli/ -count=1` — ok.
+- `go vet ./internal/query/` clean; both changed files gofmt-clean.
+
+### Claim boundary
+
+- Scoped pragma-loop iterations on tracker-bearing engines now advance
+  the shared cooldown one turn per model-request iteration — restoring
+  the removed `1b4fb1b^` semantics and unifying the main loop with the
+  FinalTextOnly sub-path. Scoped runs still NEVER compact (the trigger
+  remains scope-gated; gated by the new test). Fork/subagent engines
+  (nil trackers) are unaffected — behaviorally identical before and
+  after.
+- Observable-resolution limit, documented: the compaction trigger is
+  binary, so the new gate pins "the scoped run's iterations advanced
+  the cooldown across the 1/2 → expired boundary" — an at-least-one
+  pin per scoped run — while "exactly one (not two) per scoped
+  iteration" is not separable through compaction behavior (a scoped
+  run cannot compact, so intra-run boundaries are invisible). Exactly-
+  one is structurally the same single statement the F4 gate pins for
+  the unscoped path; a second increment site remains absent.
+- No live-provider behavior is claimed. The payload's "safe direction"
+  assessment is confirmed in the RED trace: without scoped increments,
+  re-compaction was only delayed (run 3 would have compacted one
+  iteration later), never armed early.
