@@ -966,3 +966,147 @@ than strictly necessary — a documented trade-off (bounded growth and a
 reachable trigger over the unverified 1M catalog claim). When a live
 response verifies a bigger envelope, the table entry is the single
 place to update. No live-provider behavior is claimed.
+
+---
+
+## Revision CMP-001.2.F1 (2026-09-24): the F3 preservation was built
+## from the stale pre-compaction snapshot — operator input delivered
+## during the in-flight summary call was destroyed
+
+Source: queue item CMP-001.2.F1 (critic finding C-1 from the CMP-001.2
+audit cycle). Every payload sub-claim was verified against the tree
+(a5621e8-era line numbers in the payload drifted to 133/149/176-184/
+348-380 in the working tree — same code, not a refutation) and the
+defect was reproduced through the real production path before any
+change; nothing was refuted.
+
+### Verified (payload claims)
+
+- The compaction success branch derived its re-append set from the
+  PRE-compaction snapshot: `compSnap := engine.store.Snapshot()`
+  (provider_tools_loop.go, taken before the trigger decision), the
+  summary call `engine.compactor.Compact(ctx, compSnap...)` ran over
+  that snapshot, and the success branch computed
+  `pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)`
+  — from the stale snapshot — then wholesale-replaced
+  `s.Conversation.Messages` with `[summary + pending]` inside one
+  `store.Update`.
+- During that summary call (a provider round-trip), the busy-turn CLI
+  path (internal/cli/run.go RunInput busy branch) calls
+  `rt.Engine.AppendUserInput(input)` and acknowledges with
+  `QueuedPromptEvent` — the operator is told the input was queued into
+  the conversation. `AppendUserInput` appends DIRECTLY to the store when
+  the conversation tail is not a dangling tool_use — and in the
+  compaction window the tail is the unanswered turn prompt, so mid-call
+  input always takes the direct-append path. The appended message
+  landed in the store between compSnap and the wholesale replacement,
+  so the replacement (built only from compSnap-derived pending)
+  destroyed it: gone from the store, absent from the post-compaction
+  model request, and — via the F2 rewrite, which writes whatever the
+  store holds — gone from the durable session file too, with no later
+  checkpoint to resurrect it.
+- The pragma loop (miniswe_loop.go, CMP-001.3's port of "the exact
+  CMP-001 mechanism as it stands after revisions .1/.2") inherited the
+  identical defect — the same `pending := pendingUnansweredUserPrompts(
+  compSnap.Conversation.Messages)` line — so the DEFAULT loop mode was
+  equally affected.
+
+### Record correction (this section amends the record's own claims)
+
+The CMP-001.2 F3 section stated: "Mid-turn operator input queued by
+INT-001 drains before the next iteration's check and is preserved by
+the same rule." That boundary claim was FALSE for input arriving
+during the in-flight summary call: such input does not drain (it
+appends directly — the tail is not dangling), it is not in compSnap,
+and it was wholesale-destroyed. Only input that reached the store
+BEFORE the compaction check (parked-then-drained, or direct appends
+before iteration start) was preserved by the F3 rule. This revision
+fixes the mechanism so the claim holds for the whole mid-turn window;
+the sentence above should be read as corrected by this section.
+
+### RED (unchanged production tree, real loop + real busy-turn delivery)
+
+`go test ./internal/query/ -run 'MidCallOperatorInput' -count=1`
+(`internal/query/autocompact_midcall_input_test.go`, two gates) failed
+on both loops with
+`mid-turn operator input (MIDGATE-9c21) was destroyed from the store by
+the compaction replacement (CMP-001.2.F1)`
+— the gate parks the loop INSIDE the gated compaction summary call
+(after compSnap, before the replacement), delivers operator input
+through the same entry point the busy-turn path uses
+(`Engine.AppendUserInput`), asserts the input is in the store WHILE the
+summary is still parked (direct-append precondition pinned — so the
+later loss can only be the replacement's doing), releases the summary,
+and then asserts the input survives in the store and in the
+post-compaction model request. The model-request leg failed behind the
+store leg (assertion order); the store leg is the destruction point.
+This independently reproduces the audit's "gated-summary probe"
+(store + model-request assertions) on the current tree.
+
+### Change (one mechanism): derive the re-appended pending prompts from
+### the LIVE store state, inside the atomic replacement
+
+Both compaction success branches (provider_tools_loop.go,
+miniswe_loop.go) now compute `pendingUnansweredUserPrompts` from
+`s.Conversation.Messages` INSIDE the replacement `store.Update`, never
+from compSnap. `StateStore.Update` holds the store mutex across the
+whole callback, so reading the unanswered tail and writing the
+replacement is atomic with respect to every concurrent store append
+(`AppendUserInput`'s direct append, `drainPendingUserInputs`): operator
+input landing before the read is preserved as part of the re-appended
+pending tail; input landing after the replacement write stays in the
+conversation as a normal post-compaction message and reaches the next
+request. There is no destruction window left. compSnap remains the
+input to the token count and the summary call (decision-time and
+summarized state — unchanged semantics).
+
+GREEN with the same gates: both gates pass — the store retains the
+mid-call input verbatim, the post-compaction request carries [summary,
+pending turn prompt, mid-call input], and the summary-bearing
+assertions of the original CMP-001/F3 gates are unchanged.
+
+### Gates (this revision)
+
+- `go test ./internal/query/ -run 'MidCallOperatorInput' -count=1` —
+  2/2 PASS (provider-tools + pragma/default mode).
+- `go test ./internal/query/ -run 'AutoCompact|MidCall|ParksBehindDangling|DeliversQueuedInput' -count=1`
+  — the full CMP-001 family (trigger/replaces, pending prompt,
+  cooldown, circuit breaker, request shape, reserve, fork leak,
+  session rewrite, pragma-loop gates) plus the INT-001 parking/delivery
+  gates — ok.
+- `go test ./internal/query/ -count=1` and `-count=1 -race` — ok
+  (13.0s race).
+- `go test ./internal/compact/ ./internal/session/
+  ./internal/orchestration/ ./internal/cli/ -count=1` — ok (incl. the
+  F2 session-rewrite gate and the INT-001 CLI queue gate).
+- `go test ./... -count=1` — green except the pre-existing
+  `TestProviderToolsCLIContract` acceptance/environment failure
+  (cmd/pragma), re-verified failing identically at pristine HEAD
+  (181bae9) in a disposable worktree with these changes absent.
+- `go vet ./internal/query/` clean; all three changed/added Go files
+  gofmt-clean.
+
+### Claim boundary
+
+- Store and model-request preservation are pinned directly by the two
+  gates, deterministically, through the real loops. The session-file
+  leg is not separately gated: the F2 gate
+  (`TestAutoCompactRewritesResumableSessionFile`) already pins that the
+  rewrite writes whatever the store holds, and the mid-call input's own
+  checkpoint persists it when it lands outside the atomic window
+  (post-rewrite appends are beyond the rewritten `SessionLastIdx`).
+- Parked inputs (operator input delivered while the tail is a dangling
+  tool_use) are outside this window and untouched: in the compaction
+  window the tail is never dangling, so mid-call input always appends
+  directly. Whether the pragma loop should ever drain its parked queue
+  (it currently has no drain call site — parked input there survives
+  compaction by not being in the store) is a separate open question,
+  not introduced or changed by this revision.
+- A summary call that observes input arriving DURING it cannot include
+  it in the summary text (the summarizer saw only compSnap) — by
+  design: the fixed mechanism re-appends such input verbatim AFTER the
+  summary instead, which is strictly lossless.
+- No live-provider behavior is claimed. CMP-001.2.F2 (rewrite-error
+  recovery), CMP-001.2.F3 (manual /compact pending semantics),
+  CMP-001.2.F4 (token guard on the re-appended tail) remain open queue
+  items, unaffected by this fix.

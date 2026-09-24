@@ -427,8 +427,22 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 						// observation at the tail of a later iteration) must
 						// still reach the model verbatim. Re-append the
 						// unanswered user text messages after the summary.
-						pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)
+						// CMP-001.2.F1: derive the pending prompts from the
+						// LIVE store state inside the replacement Update,
+						// never from the pre-compaction snapshot — compSnap is
+						// stale for the whole summary call, and operator input
+						// delivered mid-summary (INT-001 busy-turn path,
+						// AppendUserInput — the tail here is the unanswered
+						// prompt, so it appends directly) was wholesale-
+						// destroyed by a replacement built only from compSnap.
+						// StateStore.Update holds the store lock across the
+						// callback, so reading the tail and writing the
+						// replacement in one Update is atomic wrt any
+						// concurrent AppendUserInput/drain append: input
+						// landing before the read is preserved as pending,
+						// input landing after the write stays appended.
 						engine.store.Update(func(s *app.AppState) {
+							pending := pendingUnansweredUserPrompts(s.Conversation.Messages)
 							repl := compResult.ReplacementMessages
 							if len(pending) > 0 {
 								repl = append(append([]model.Message{}, repl...), pending...)
