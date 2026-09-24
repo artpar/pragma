@@ -165,6 +165,10 @@ def main():
     stamp = time.strftime("%Y%m%d-%H%M%S")
 
     for cycle in range(1, args.cycles + 1):
+        # v1.4: reload the queue each cycle so externally-inserted items
+        # (operator directives, human notes) are never clobbered by this
+        # process's in-memory copy when it saves.
+        queue = load_queue(args.queue)
         idx = next((i for i, it in enumerate(queue) if it.get("status") == "open"), None)
         if idx is None:
             print("cycle %d: queue empty - done" % cycle)
