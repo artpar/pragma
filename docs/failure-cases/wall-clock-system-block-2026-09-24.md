@@ -182,6 +182,52 @@
   `provider_tools_mcp_test.go`, `turn_cap_removal_test.go`) were
   verified already gofmt-divergent at `ff6bb03` and were left alone
   (pre-existing, out of this case's scope).
+- Revision note (2026-09-24, attempt 3 — independent re-verification before
+  the landing commit; attempt 2 verified the tree but died before
+  committing, leaving its full change set staged): every claim and gate was
+  re-executed from scratch at `ff6bb03` + the staged candidate, with the
+  worktree confirmed equal to the index over `internal/query` before
+  starting. RED reproduced against the unchanged `ff6bb03` production code
+  (worktree copies of `loop.go`/`provider_tools_loop.go`/`engine.go`
+  reverted to HEAD, index untouched, then restored from the index): the
+  four defect gates fail with exactly the recorded messages ("request 0
+  system carries 0 wall-clock stamps, want exactly 1"; "request 1 carries
+  4 messages, want 3"; "request 2 message 3 is a stamp-only user message
+  (CLK-002 ban)" — the real companion, re-observed; reserve 1003 vs 1108)
+  while the two adjacency gates pass on the baseline. GREEN reproduced
+  after restore: all six gates pass, full
+  `go test ./internal/query/... -count=1` ok, full
+  `go test ./internal/...` clean (30 packages ok, 14 with no test files,
+  0 FAIL — attempt 2's note counted 25 ok; the tree is green under either
+  count). gofmt re-verified: no touched file is listed; the four divergent
+  files (`bash_live_output_test.go`, `harness_manifest_test.go`,
+  `provider_tools_mcp_test.go`, `turn_cap_removal_test.go`) confirmed
+  gofmt-divergent as HEAD blobs, pre-existing and untouched. Wire gates
+  re-run against the preserved captures: `clkgreen` passes on both
+  `candidate-clk2-v2-2026-09-24` and attempt 1's
+  `candidate-clk2-2026-09-24` (the re-written assertion.json is
+  content-identical to the staged copy), and fails on the preserved CLK-001
+  capture (`candidate-clk-2026-09-11`) with the recorded "request seq=1
+  system carries 0 wall-clock stamps" — the pre-CLK-002 wire shape. The
+  external MCPINJ-001 `green` server-count divergence reproduced as well
+  (3 servers today vs 4 recorded; not attributed to CLK-002). The
+  payload's remaining claims were re-checked against the code: the
+  companion append at HEAD, `RenderMessage`'s bare `❯` user rendering,
+  `ExtractUserTextPrompts` pollution, `translate.go` text-before-results
+  order, the incremental session writer serializing
+  `Conversation.Messages` 1:1, and the untouched first-line-stamp notice
+  sites (turn-budget, output-budget, self-continue). None refuted; nothing
+  changed in production or tests beyond this note.
+  Landing provenance: while attempt 3 was verifying, the orchestrator's
+  queue-bookkeeping commit `3335c23` (2026-09-24 16:51, "queue:
+  BENCH-mapper-redesign…") swept the entire staged CLK-002 set (the
+  verified mechanism, gates, e2e captures, this record, and the agent.md
+  entry) into the tree under a non-case-referencing message; the
+  case-referencing landing commit for the record (the CLK-002-titled tip
+  carrying this attempt-3 note) sits directly on top of it.
+  `internal/query` is identical between that staged set and that tip
+  (worktree clean over the package), so every gate reported here ran on
+  exactly the committed mechanism.
 - Claim boundary: conversation cleanliness and model-visible per-request
   clock are proven. That the system-block clock changes model behavior
   (latency management) is a live-effect question, not a claim here.
