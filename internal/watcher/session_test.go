@@ -127,6 +127,27 @@ func TestSessionStateExecutingTools(t *testing.T) {
 	}
 }
 
+func TestSessionStateCountsStampSizedUserMessages(t *testing.T) {
+	s := NewSessionState("/tmp/logs/x.jsonl")
+	// META-001: a wall-clock stamp-only companion message (harness
+	// boilerplate, ~15 estimated tokens) must be counted as ergonomics
+	// noise; real operator content and tool results must not be.
+	lines := []string{
+		`{"kind":"MessageAppended","time":"2026-09-24T11:59:54+05:30","role":"user","content_types":["text"],"token_estimate":15}`,
+		`{"kind":"MessageAppended","time":"2026-09-24T12:00:10+05:30","role":"user","content_types":["text"],"token_estimate":23}`,        // another stamp
+		`{"kind":"MessageAppended","time":"2026-09-24T12:00:20+05:30","role":"user","content_types":["text"],"token_estimate":2}`,         // operator "go"
+		`{"kind":"MessageAppended","time":"2026-09-24T12:00:30+05:30","role":"user","content_types":["text","text"],"token_estimate":15}`, // multi-part real content
+		`{"kind":"MessageAppended","time":"2026-09-24T12:00:40+05:30","role":"user","content_types":["tool_result"],"token_estimate":15}`,
+		`{"kind":"MessageAppended","time":"2026-09-24T12:00:50+05:30","role":"assistant","content_types":["text"],"token_estimate":15}`,
+	}
+	for _, line := range lines {
+		s.Apply(mustEvent(t, line))
+	}
+	if s.StampishUserMsgs != 2 {
+		t.Errorf("StampishUserMsgs = %d, want 2 (only the stamp-sized single-text user messages)", s.StampishUserMsgs)
+	}
+}
+
 func TestSessionStateLoopDetection(t *testing.T) {
 	s := NewSessionState("/tmp/logs/x.jsonl")
 	completed := func(at string) string {

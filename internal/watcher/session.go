@@ -89,6 +89,13 @@ type SessionState struct {
 	// MCP server status: name -> last known status.
 	Servers map[string]string `json:"mcp_servers,omitempty"`
 
+	// Ergonomics (META-001): user text-only messages with stamp-sized
+	// token estimates are almost always harness-injected boilerplate
+	// (wall-clock stamps, notices) rather than operator content. High
+	// counts signal conversation noise the operator pays for in context
+	// and attention. Post-CLK-002 this should read zero.
+	StampishUserMsgs int `json:"stampish_user_msgs"`
+
 	// Detected alerts, newest last. Bounded by maxAlerts.
 	Alerts []Alert `json:"alerts"`
 
@@ -146,6 +153,10 @@ func (s *SessionState) Apply(ev observe.Event) []Alert {
 	case observe.MessageAppended:
 		s.Messages++
 		s.LastRole = e.Role
+		if e.Role == "user" && len(e.ContentTypes) == 1 && e.ContentTypes[0] == "text" &&
+			e.TokenEstimate >= 8 && e.TokenEstimate <= 25 {
+			s.StampishUserMsgs++
+		}
 		if e.Role == "user" {
 			// Operator prompt or tool results: the next API request
 			// is (about to be) in flight.

@@ -35,14 +35,15 @@ type PostMortem struct {
 	ContextPeak int `json:"context_peak"`
 
 	// End cause evidence.
-	LastStopReason string            `json:"last_stop_reason,omitempty"`
-	StopReasons    map[string]int    `json:"stop_reasons,omitempty"`
-	LastError      string            `json:"last_error,omitempty"`
-	LoopSuspected  bool              `json:"loop_suspected"`
-	TopTools       []ToolCount       `json:"top_tools,omitempty"`
-	MCPServers     map[string]string `json:"mcp_servers,omitempty"`
-	FinalStatus    string            `json:"final_status"`
-	AlertKinds     map[string]int    `json:"alert_kinds,omitempty"`
+	LastStopReason   string            `json:"last_stop_reason,omitempty"`
+	StopReasons      map[string]int    `json:"stop_reasons,omitempty"`
+	LastError        string            `json:"last_error,omitempty"`
+	LoopSuspected    bool              `json:"loop_suspected"`
+	StampishUserMsgs int               `json:"stampish_user_msgs"`
+	TopTools         []ToolCount       `json:"top_tools,omitempty"`
+	MCPServers       map[string]string `json:"mcp_servers,omitempty"`
+	FinalStatus      string            `json:"final_status"`
+	AlertKinds       map[string]int    `json:"alert_kinds,omitempty"`
 }
 
 // ToolCount is a tool-name usage count, used in post-mortems.
@@ -56,28 +57,29 @@ type ToolCount struct {
 // disappeared (the observer computes it just before writing).
 func BuildPostMortem(s *SessionState, observedAt time.Time, finalStatus string) PostMortem {
 	pm := PostMortem{
-		Session:        s.Name,
-		Model:          s.Model,
-		FirstEvent:     formatTime(s.FirstEventAt),
-		LastEvent:      formatTime(s.LastEventAt),
-		ObservedAt:     observedAt.Format("2006-01-02 15:04:05"),
-		Turns:          s.Turns,
-		APICalls:       s.APICalls,
-		ToolCalls:      s.ToolCalls,
-		ToolErrors:     s.ToolErrors,
-		Retries:        s.Retries,
-		Failures:       s.Failures,
-		OutputTokens:   s.OutputTokens,
-		MaxTokenHits:   s.MaxHits,
-		ContextFill:    s.ContextFill,
-		ContextPeak:    s.ContextPeak,
-		LastStopReason: s.LastStopReason,
-		StopReasons:    s.StopReasonCounts,
-		LastError:      s.LastError,
-		LoopSuspected:  s.loopAlerted,
-		MCPServers:     s.Servers,
-		FinalStatus:    finalStatus,
-		AlertKinds:     map[string]int{},
+		Session:          s.Name,
+		Model:            s.Model,
+		FirstEvent:       formatTime(s.FirstEventAt),
+		LastEvent:        formatTime(s.LastEventAt),
+		ObservedAt:       observedAt.Format("2006-01-02 15:04:05"),
+		Turns:            s.Turns,
+		APICalls:         s.APICalls,
+		ToolCalls:        s.ToolCalls,
+		ToolErrors:       s.ToolErrors,
+		Retries:          s.Retries,
+		Failures:         s.Failures,
+		OutputTokens:     s.OutputTokens,
+		MaxTokenHits:     s.MaxHits,
+		ContextFill:      s.ContextFill,
+		ContextPeak:      s.ContextPeak,
+		LastStopReason:   s.LastStopReason,
+		StopReasons:      s.StopReasonCounts,
+		LastError:        s.LastError,
+		LoopSuspected:    s.loopAlerted,
+		StampishUserMsgs: s.StampishUserMsgs,
+		MCPServers:       s.Servers,
+		FinalStatus:      finalStatus,
+		AlertKinds:       map[string]int{},
 	}
 	for _, a := range s.Alerts {
 		pm.AlertKinds[a.Kind]++
