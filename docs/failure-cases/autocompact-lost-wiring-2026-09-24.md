@@ -90,3 +90,118 @@ conversation growth, 2026-09-11/12). With the trigger wired, the threshold
 for this session would still have been ≈961k — unreachable before router
 pain. The 345k overrun needs BOTH mechanisms; this case restores the
 trigger, CMP-002 calibrates the window.
+
+---
+
+## Revision CMP-001.1 (2026-09-24): double IncrementTurn + dead breaker assertion
+
+Source: independent fresh-instance audit of commit `42c45b4`; queue item
+CMP-001.1. Both payload findings were verified against the code before any
+change; neither was refuted.
+
+### F4 (confirmed): duplicate per-iteration IncrementTurn halved the
+MinTurnsCooldown death-spiral guard
+
+Verified call sites, both inside `runProviderToolsLoop`'s
+`for turn := 0; ...` iteration:
+
+- `internal/query/provider_tools_loop.go:138` — added by the CMP-001 fix
+  itself (port of the `2e9f01b` pragma-loop block, whose only increment
+  sat inside the compaction-deps guard);
+- `internal/query/provider_tools_loop.go:283` — end-of-iteration
+  increment dating to the loop's creation in `95621ad`
+  (`git log -L 280,286`), i.e. dead bookkeeping until CMP-001 wired the
+  trigger, then a live double-increment.
+
+With both sites active, a successful compaction at iteration k
+(`RecordSuccess` → `turnsSinceCompact = 0`) receives two increments within
+iteration k (line 138 mid-iteration, line 283 at iteration end), so
+`turnsSinceCompact = 2 ≥ MinTurnsCooldown` already holds at the top of
+iteration k+1 — the `t.compacted && t.turnsSinceCompact < MinTurnsCooldown`
+guard (`internal/compact/auto.go:51`) no longer blocks anything, and a
+still-over-threshold conversation re-compacts on the immediately following
+iteration (the #24179 death spiral the cooldown exists to stop).
+
+RED (before the fix):
+`go test ./internal/query/ -run TestProviderToolsLoopAutoCompactCooldownBlocksImmediateRetrigger -count=1`
+failed with
+`run 1 CompactionStartedEvent count = 2, want 1 (MinTurnsCooldown=2 must block the immediately following iteration)`
+— the scripted summary is itself huge, so the post-compaction conversation
+stays above the 904-token threshold and only the cooldown can block the
+re-trigger; the unchanged loop compacted twice back-to-back.
+
+Fix (one mechanism change): removed the end-of-iteration site (the
+`if engine.autoTracker != nil { ... IncrementTurn() }` block after
+`drainPendingUserInputs`), keeping exactly one increment per model-request
+iteration inside the compaction-deps guard — the `2e9f01b` semantics the
+CMP-001 block ported. Site choice is load-bearing, not stylistic: the
+end-turn path returns at the `TurnCompleteEvent` send, before the
+end-of-iteration site, so keeping that site instead would leave an
+end-turn-only session permanently cooldown-locked after its first
+successful compaction (`turnsSinceCompact` could never reach 2 across
+runs). The test's second phase pins this: after run 1 (which ends on
+end_turn), run 2 must compact again — proving the cooldown expires across
+end-turn boundaries. GREEN after the fix, alongside the two original
+CMP-001 gates (unchanged expectations: the breaker path never calls
+`RecordSuccess`, so cooldown cannot engage there).
+
+### F7 (confirmed): dead assertion in the breaker test
+
+`TestProviderToolsLoopAutoCompactCircuitBreaker` guarded its
+big-text-preservation check behind
+`if len(store.Snapshot().Conversation.Messages) <= len(conv.Messages)` —
+always false, because the loop appends the initial prompt before iteration
+0, so the snapshot always has ≥7 messages against the 6 originals. The
+`original messages lost` assertion was unreachable; the test could not
+fail for the regression it was written for.
+
+Proof by temporary production mutation (three executable steps, all
+observed): (1) mutating the compaction-failure branch to rewrite every
+message's content to same-size "mutated" text (token count and event flow
+preserved: 3 attempts, 3 failures, breaker, turn complete) left the
+breaker test PASSING — the dead assertion executed nothing; (2) after the
+test fix, the same mutation failed it with
+`original messages lost after failed compactions`; (3) reverting the
+mutation restored PASS. Two cruder mutations (replace all messages with
+one short message) were caught by earlier assertions (`compaction
+attempts = 1, want 3` — <4 messages → ErrTooFewMessages, and under-threshold
+token counts stop further attempts), which is why the proof mutation keeps
+count and size while destroying only the original text.
+
+Fix (one change, test-only): the original-preservation check now runs
+unconditionally over the snapshot — the conversation legitimately grows
+past the originals (prompt, assistant turns, tool results, stamps), so a
+message-count comparison can never gate it.
+
+### Adjacent observations (verified, deliberately unchanged)
+
+- `internal/query/miniswe_loop.go` carries two `IncrementTurn` sites
+  (lines 313, 372, both predating CMP-001) but never calls
+  `ShouldAutoCompact` anywhere, so no cooldown guard is active in that
+  loop today — the increments are dead bookkeeping, not a halved guard.
+  Candidate for a future case if miniswe ever wires the trigger.
+- `go test ./cmd/pragma/ -run TestProviderToolsCLIContract -count=1`
+  fails at pristine `42c45b4` AND at `1a9fbdc` (pre-dates the audited
+  commit, reproduced in clean worktrees) with
+  `stdout did not contain final answer` — a pre-existing acceptance/
+  environment failure unrelated to CMP-001 and to this revision; not
+  investigated further here. Everything else in `go test ./...` is green.
+- `gofmt -l internal/query/` flags three unrelated pre-existing files
+  (`bash_live_output_test.go`, `harness_manifest_test.go`,
+  `parallel_dispatch_test.go`); untouched to keep this change
+  single-mechanism. Both files changed here are gofmt-clean.
+
+### Gates (this revision)
+
+- `go test ./internal/query/ -run 'TestProviderToolsLoopAutoCompact' -count=1 -v`
+  — 3/3 PASS (trigger/replaces, cooldown re-trigger gate, circuit breaker).
+- `go test ./internal/query/ -count=1 -race` — ok (9.8s, full package).
+- `go test ./internal/compact/ ./internal/cli/ -count=1` — ok.
+- `go test ./... -count=1` — ok except the pre-existing
+  `TestProviderToolsCLIContract` failure documented above.
+
+Claim boundary: proven locally, deterministically — the cooldown now counts
+one model-request iteration per iteration (re-trigger blocked at k+1,
+permitted from k+2, expiring across end-turn boundaries), and the breaker
+test's preservation assertion is executable. No live-provider evidence is
+claimed; window calibration (CMP-002) remains open.

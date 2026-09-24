@@ -122,6 +122,113 @@ func TestProviderToolsLoopAutoCompactTriggersAndReplaces(t *testing.T) {
 	}
 }
 
+// TestProviderToolsLoopAutoCompactCooldownBlocksImmediateRetrigger guards
+// the MinTurnsCooldown death-spiral cooldown (#24179): after a successful
+// compaction, the immediately following loop iteration must NOT compact
+// again even when the compacted conversation is still over the threshold,
+// and the cooldown must expire once two model-request iterations have
+// passed. The compaction summary is deliberately huge so the post-
+// compaction conversation stays above the 904-token threshold — only the
+// cooldown can block the re-trigger.
+func TestProviderToolsLoopAutoCompactCooldownBlocksImmediateRetrigger(t *testing.T) {
+	hugeSummary := strings.Repeat("word ", 3000)
+	callInput, err := json.Marshal(map[string]string{"cmd": "true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		// Run 1, call 1: compaction summary (huge — stays over threshold).
+		{Content: []model.ContentPart{model.TextPart{Text: hugeSummary}}, StopReason: model.StopEndTurn},
+		// Run 1, call 2: one tool-use iteration so the loop iterates while
+		// the cooldown should be holding.
+		{Content: []model.ContentPart{model.ToolCallPart{ID: model.NewUUID(), Name: "Bash", Input: callInput}}, StopReason: model.StopToolUse},
+		// Run 1, call 3: end the turn.
+		{Content: []model.ContentPart{model.TextPart{Text: "done"}}, StopReason: model.StopEndTurn},
+		// Run 2, call 4: compaction summary for the second turn.
+		{Content: []model.ContentPart{model.TextPart{Text: hugeSummary}}, StopReason: model.StopEndTurn},
+		// Run 2, call 5: end the turn.
+		{Content: []model.ContentPart{model.TextPart{Text: "done again"}}, StopReason: model.StopEndTurn},
+	}}
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	bigText := strings.Repeat("word ", 3000)
+	conv.Messages = []model.Message{
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          t.TempDir(),
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(64), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModeProviderTools,
+		MaxTokens: 4096,
+	})
+	engine.SetCompaction(CompactionDeps{
+		Compactor:   compact.NewService(prov, observe.NewEventBus(64), model.NewCostTracker(0), "test-model"),
+		AutoTracker: compact.NewAutoTracker(false),
+		WindowConfig: compact.WindowConfig{
+			ContextWindow:   20_000,
+			MaxOutput:       4096,
+			SystemPromptEst: 2000,
+		},
+	})
+
+	countStarted := func(events []LoopEvent) int {
+		var started int
+		for _, ev := range events {
+			if _, ok := ev.(CompactionStartedEvent); ok {
+				started++
+			}
+		}
+		return started
+	}
+
+	// First run: one compaction, then one tool-use iteration, then
+	// end-turn. The compaction must not re-trigger on the immediately
+	// following iteration even though the huge summary keeps the
+	// conversation over the threshold.
+	events1 := collectPragmaLoopEvents(engine.Run(t.Context(), "first turn"))
+	for _, ev := range events1 {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		}
+	}
+	if n := countStarted(events1); n != 1 {
+		t.Fatalf("run 1 CompactionStartedEvent count = %d, want 1 (MinTurnsCooldown=2 must block the immediately following iteration)", n)
+	}
+	if prov.calls != 3 {
+		t.Fatalf("provider calls after run 1 = %d, want 3 (summary + tool-use request + final request)", prov.calls)
+	}
+
+	// Second run: the cooldown must have expired across the end-turn
+	// boundary — run 1 made two model-request iterations, so the still-
+	// over-threshold conversation compacts again. If the only per-
+	// iteration increment sat at the end of the tool-use path, an
+	// end-turn-only session would stay cooldown-locked forever after
+	// its first successful compaction.
+	events2 := collectPragmaLoopEvents(engine.Run(t.Context(), "second turn"))
+	for _, ev := range events2 {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		}
+	}
+	if n := countStarted(events2); n != 1 {
+		t.Fatalf("run 2 CompactionStartedEvent count = %d, want 1 (cooldown must expire after two iterations)", n)
+	}
+	if prov.calls != 5 {
+		t.Fatalf("provider calls after run 2 = %d, want 5 (two summaries + three model requests)", prov.calls)
+	}
+}
+
 // failingCompactProvider passes model requests through to the scripted
 // provider but fails every compaction (summary) request, to exercise the
 // CMP-001 failure path and the circuit breaker.
@@ -222,20 +329,20 @@ func TestProviderToolsLoopAutoCompactCircuitBreaker(t *testing.T) {
 	if len(attempts) != 3 || attempts[0] != 1 || attempts[1] != 2 || attempts[2] != 3 {
 		t.Fatalf("failure attempts = %v, want [1 2 3]", attempts)
 	}
-	// The conversation must be untouched — failed compaction never replaces.
-	if len(store.Snapshot().Conversation.Messages) <= len(conv.Messages) {
-		// messages grew only by prompt/tools/results, but the big-text
-		// originals must still be present
-		var hasOriginal bool
-		for _, msg := range store.Snapshot().Conversation.Messages {
-			for _, part := range msg.Content {
-				if tp, ok := part.(model.TextPart); ok && tp.Text == bigText {
-					hasOriginal = true
-				}
+	// The conversation must be untouched — failed compaction never
+	// replaces the big-text originals. This check runs unconditionally:
+	// the loop legitimately grows the conversation past the 6 originals
+	// (prompt, assistant turns, tool results, stamps), so guarding it
+	// behind a message-count comparison made the assertion unreachable.
+	var hasOriginal bool
+	for _, msg := range store.Snapshot().Conversation.Messages {
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok && tp.Text == bigText {
+				hasOriginal = true
 			}
 		}
-		if !hasOriginal {
-			t.Fatalf("original messages lost after failed compactions")
-		}
+	}
+	if !hasOriginal {
+		t.Fatalf("original messages lost after failed compactions")
 	}
 }

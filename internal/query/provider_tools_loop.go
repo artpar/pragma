@@ -87,6 +87,13 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		// provider-tools loop was written without it (95621ad) and every
 		// default-mode session ran with auto-compaction silently dead.
 		// Nil deps (subagent engines, #27794) leave this a no-op.
+		// IncrementTurn below is the ONE per-iteration turn advance
+		// (2e9f01b semantics): MinTurnsCooldown must count model-request
+		// iterations, and the end-turn path returns before any end-of-
+		// iteration bookkeeping, so an increment there would lock an
+		// end-turn-only session into a permanent cooldown while a second
+		// one here would expire the cooldown inside the compaction's own
+		// iteration (CMP-001 F4 revision).
 		if engine.compactor != nil && engine.autoTracker != nil {
 			compSnap := engine.store.Snapshot()
 			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
@@ -277,11 +284,6 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		}
 
 		engine.drainPendingUserInputs()
-
-		if engine.autoTracker != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: engine.autoTracker != nil")
-			engine.autoTracker.IncrementTurn()
-		}
 	}
 
 	ch <- ErrorEvent{Err: fmt.Errorf("provider tools loop exceeded maximum of %d turns", maxTurns)}
