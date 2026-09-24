@@ -563,3 +563,193 @@ Claim boundary: proven locally, deterministically — fork engines created
 by `ForkFreshConversation` carry nil compaction deps in every production
 path, and a fork's compaction failures/turns no longer touch the root
 engine's breaker or cooldown. No live-provider behavior is claimed.
+
+---
+
+## Revision CMP-001.4b (2026-09-24): the token count ignored the request shape; the precise network-count path was untested and unbounded
+
+Source: queue item CMP-001.4b (the F6 split of CMP-001.4); the three
+request-shape RED gates below were drafted by the parent CMP-001.4 worker
+before it died at the 80-turn cap, verified RED for the stated reasons on
+the unchanged tree (`b0b06c3` + untracked gates), and driven GREEN here.
+Every F6 sub-claim was verified against the tree before any change; the
+suggestion "consider caching or heuristic-first" was analyzed and
+rejected (below), not silently implemented.
+
+### Verification of the payload claims
+
+- Precise branch never tested: CONFIRMED. The pre-existing autocompact
+  gates (`internal/query/autocompact_test.go`,
+  `internal/query/miniswe_loop_test.go`) all drive
+  `pragmaLoopTestProvider`/`failingCompactProvider`, which do not
+  implement `provider.TokenCounter` — the `counter.CountTokens` branch
+  (provider_tools_loop / miniswe_loop trigger blocks) never executed
+  under any test. The only counting provider in the tree is the one this
+  revision commits (`countingProvider`).
+- Google CountTokens is a network call per request: CONFIRMED.
+  `internal/provider/google/provider.go:106-123` —
+  `p.client.Models.CountTokens(...)` is the Gemini CountTokens REST API
+  through the genai SDK client; one round-trip per call. The CMP-001
+  trigger called it once per model-request iteration (and fed8bd7^ had
+  called it up to twice per iteration: `autoCompactBeforeRequest` plus
+  `isAtBlockingLimit`).
+- Estimate counts only APIMessages, diverging from fed8bd7^
+  requestTokenCount: CONFIRMED. Both trigger blocks used
+  `compact.EstimateConversationTokens(conv.APIMessages())` (messages
+  only; no system, no tool schemas) and the precise call sent
+  `System: conv.System` with NO tools. `git show fed8bd7^:internal/
+  query/loop.go:586-608` — `requestTokenCount` built
+  `provider.RequestParams{Model, Messages, System, Tools}` and used it
+  for BOTH the precise count and the `EstimateRequestTokens` fallback.
+  Nuance verified per loop: in the provider-tools loop the request
+  system is `WithCustomSystemPrompt(conv.System)` + MCP status + harness
+  manifest + patch guidance and the full toolset (providerToolDefs +
+  websearch + subagent + MCP defs) — ALL invisible to both pre-F6
+  counts. In the pragma loop `run.System` (custom prompt +
+  `pragmaLoopSystemPrompt`) is stored as `Conversation.System` at loop
+  start (`setConversationSystemPrompt`, miniswe_loop.go:282), so the
+  pre-F6 PRECISE call there did carry the request system, but its
+  heuristic counted messages only — gate 3 below failed on exactly that
+  path. Both undercounts delay the trigger past the fed8bd7^ semantics.
+
+### RED (unchanged tree, before any change; assertions preserved verbatim)
+
+- `go test ./internal/query/ -run TestProviderToolsLoopAutoCompactEstimateCountsRequestShape -count=1`
+  failed: `CompactionStartedEvent count = 0, want 1` — a conversation
+  whose messages are far below the 904-token threshold but whose system
+  block alone (~3,125 heuristic tokens) is far above it never compacted,
+  although every request carries that block.
+- `go test ./internal/query/ -run TestProviderToolsLoopPreciseCounterCountsRequestShape -count=1`
+  failed: `count request system blocks missing request payload:
+  manifest=false conversation-system=true` — the precise call ran (the
+  branch was reachable) but counted an unshaped request: raw conversation
+  system, no manifest, no tools.
+- `go test ./internal/query/ -run TestPragmaLoopAutoCompactEstimateCountsSystemPrompt -count=1`
+  failed: `CompactionStartedEvent count = 0, want 1` — a pragma session
+  whose fixed system overhead alone (~3,125 heuristic tokens of custom
+  prompt) crossed the threshold never triggered.
+- Bound gates (drafted with this revision, RED on the request-shape fix
+  already applied, so only the bound differs):
+  `TestProviderToolsLoopPreciseCounterSkipsCooldownIterations` failed
+  with `CountTokens calls = 3, want 2` (iteration 1 inside
+  MinTurnsCooldown=2 burned a network call for a decision already fixed
+  false), and `TestProviderToolsLoopPreciseCounterStopsAfterBreakerTrips`
+  failed with `CountTokens calls = 4, want 3` (every post-breaker
+  iteration burned one for the rest of the session).
+
+### Change 1 (one mechanism): count the REQUEST shape — restore the
+### fed8bd7^ requestTokenCount semantics
+
+`internal/query/engine.go` gains `requestTokenCount(ctx, resolvedModel,
+messages, system, tools)`: build `provider.RequestParams` over the given
+request shape, prefer the provider's precise `CountTokens` over that
+exact shape, fall back to `compact.EstimateRequestTokens` over the same
+shape (verbatim fed8bd7^ body, minus the stale debug.Log).
+
+- `provider_tools_loop.go`: the per-iteration system/tools build was
+  HOISTED above the compaction check (single build, reused by the
+  request), and the trigger now counts
+  `requestTokenCount(..., APIMessages(), system, tools)`. The request
+  messages are re-snapshotted after the trigger so a compaction this
+  iteration is reflected; system/tools are compaction-invariant
+  (compaction rewrites `Conversation.Messages` only) so they are reused.
+  The provider-tools request messages are the raw conversation messages
+  (`messagesForRequestChecked` only slices and validates — that loop
+  applies no tool-result budget), so counting raw `APIMessages()` IS
+  counting the request payload.
+- `miniswe_loop.go` (pragma loop): the trigger counts
+  `requestTokenCount(..., APIMessages(), run.System, nil)` — `run.System`
+  is the exact system every pragma request carries
+  (`buildPragmaLoopTurnRequest`), and pragma requests carry no tool
+  schemas. Unscoped runs (the only ones reaching the trigger) request
+  the full conversation.
+
+Gate 2 additionally pins strict parity (`reflect.DeepEqual`) between the
+count request's System/Tools and the model request's — count and request
+share one hoisted build and cannot diverge again.
+
+### Change 2 (one mechanism): bound the precise path to iterations whose
+### decision a count can change
+
+`internal/compact/auto.go` gains `AutoCompactEligible()`: false exactly
+when `ShouldAutoCompact` is false for EVERY token count — disabled,
+breaker tripped (`consecutiveFailures >= MaxConsecutiveFailures`), or
+cooldown active (`compacted && turnsSinceCompact < MinTurnsCooldown`),
+the three state checks that short-circuit before the threshold
+comparison. Both loops now skip the count (and the trigger) when
+ineligible; `IncrementTurn` still runs every iteration — the cooldown
+expires by counting model-request iterations (CMP-001 F4 semantics; the
+cooldown gate stays green). The breaker never un-trips (RecordSuccess is
+unreachable once ShouldAutoCompact is false), so post-breaker sessions
+stop counting entirely; every successful compaction skips the next
+MinTurnsCooldown iterations' counts.
+
+Pinned by `TestAutoCompactEligibleNeverDisagreesWithShouldAutoCompact`
+(internal/compact): across the reachable tracker state matrix,
+`ShouldAutoCompact(c) == Eligible() && c >= threshold` for counts
+{0, threshold-1, threshold, threshold+1, 1<<30} — the bound can never
+suppress a trigger a count would have produced.
+
+### Considered and rejected (with evidence, from the payload's
+### "consider caching or heuristic-first")
+
+- Caching: content-keyed count caches cannot hit — between compactions
+  the conversation only grows (`appendConversationMessage` is the only
+  mutation path; compaction is the only replacement), so every
+  iteration's count key is new. A cache would bound nothing.
+- Heuristic-first dead band (only call CountTokens when the heuristic
+  estimate is within some band of the threshold): the heuristic is
+  bytes/4 (`compact/tokens.go`), which undercounts dense content (JSON
+  tool schemas: punctuation like `","` tokenizes to ~3 tokens per 3
+  bytes, up to ~4x the heuristic) by an unbounded, uncalibratable
+  factor; any band suppresses the counter exactly in the iterations
+  where the heuristic underestimates the true count — re-introducing
+  the trigger-delay defect class this case family exists to fix, with
+  no local evidence to size the band. It also contradicts the
+  precise-counter contract the RED gates pin: when the provider
+  implements TokenCounter, its count decides. Rejected; the count-
+  independent eligibility bound (change 2) is the provably-safe subset.
+
+### Gates (this revision)
+
+GREEN after the changes:
+- `go test ./internal/query/ -run 'RequestShape|SystemPrompt|PreciseCounter' -count=1 -v`
+  — 5/5 F6 gates PASS (3 shape gates incl. strict parity + 2 bound
+  gates).
+- `go test ./internal/query/ -run 'AutoCompact' -count=1` — the full
+  CMP-001 family (trigger/replaces, pending prompt, cooldown
+  re-trigger, circuit breaker, session rewrite, fork leak) stays green.
+- `go test ./internal/query/ -count=1` and `-count=1 -race` — ok (11.4s
+  race).
+- `go test ./internal/compact/ -run TestAutoCompactEligible -count=1` —
+  ok (property matrix, >50 states).
+- `go test ./internal/orchestration/ ./internal/session/ ./internal/provider/google/ -count=1`
+  — ok.
+- `go test ./... -count=1` — green except the three documented
+  pre-existing failures, none introduced here: the sibling CMP-001.4c RED
+  gates (`TestShouldAutoCompactZeroWindowNeverTriggers` — untouched
+  `ShouldAutoCompact`/`AutoCompactThreshold`; and
+  `TestBuildCompactionDepsCalibratesSystemPromptEstToLoopMode` —
+  untouched `BuildCompactionDeps` in cli/run.go) and the
+  `TestProviderToolsCLIContract` acceptance/environment failure
+  documented since CMP-001.1. Both .4c gates fail for their own stated
+  F8 reasons (verified by reading the failure output; their subjects are
+  code this revision does not touch).
+- `go vet ./internal/query/ ./internal/compact/` clean; all six
+  changed/added Go files are gofmt-clean.
+
+Claim boundary: proven locally, deterministically — both loops' token
+counts now reflect the request shape (messages + the exact system and
+tool schemas the request carries, precise counter preferred, heuristic
+of the same shape as fallback), and the precise path no longer runs in
+iterations whose trigger decision no count can change. No live-provider
+behavior is claimed; the Google CountTokens network-call cost is code-
+verified, not wire-measured. The counting uses the RAW conversation
+messages; if a future change makes the provider-tools request apply
+tool-result budgeting (the fed8bd7^ runLoop did), the count would
+overestimate versus the budgeted request — the safe direction — and
+that divergence would deserve its own gate. CMP-001.4c (F8 window
+calibration + zero-window guard) and CMP-002 (morphllm ContextWindow)
+remain open; the .4a critic findings C-1..C-4 (config-closure leaks,
+persistent-fork relief valve, pragma-loop fork coverage) are queued
+separately.

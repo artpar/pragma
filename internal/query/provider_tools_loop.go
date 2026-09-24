@@ -89,6 +89,22 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			}
 		}
 
+		// Build this iteration's request system and toolset BEFORE the
+		// compaction check: the token count (CMP-001.4 F6) must be taken
+		// over the exact request shape the model request carries, and
+		// the request build below reuses them so count and request can
+		// never diverge.
+		snap := engine.store.Snapshot()
+		resolvedModel := firstNonEmpty(snap.Model, snap.Conversation.Model, engine.config.Model)
+		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
+		system = engine.systemWithMCPStatus(system)
+		system = engine.systemWithHarnessManifest(system)
+		tools := providerToolDefs()
+		tools = engine.withWebSearchTool(tools)
+		tools = engine.withSubAgentTool(tools)
+		tools = engine.withMCPToolDefs(ctx, tools)
+		system = engine.systemWithPatchGuidance(system, tools)
+
 		// CMP-001: consult the auto-compact tracker before each request.
 		// The then-default loop carried this trigger since 2e9f01b; the
 		// provider-tools loop was written without it (95621ad). The
@@ -106,92 +122,96 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		// one here would expire the cooldown inside the compaction's own
 		// iteration (CMP-001 F4 revision).
 		if engine.compactor != nil && engine.autoTracker != nil {
-			compSnap := engine.store.Snapshot()
-			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
-			if counter, ok := engine.provider.(provider.TokenCounter); ok {
-				precise, countErr := counter.CountTokens(ctx, provider.RequestParams{
-					Model:    firstNonEmpty(compSnap.Model, compSnap.Conversation.Model, engine.config.Model),
-					Messages: compSnap.Conversation.APIMessages(),
-					System:   compSnap.Conversation.System,
-				})
-				if countErr == nil {
-					tokenCount = precise
-				}
-			}
-			if engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig) {
-				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
-				ch <- CompactionStartedEvent{}
-				compResult, compErr := engine.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
-				switch {
-				case compErr != nil && ctx.Err() == nil:
-					// A real failure: count it and possibly trip the breaker.
-					tripped := engine.autoTracker.RecordFailure()
-					ch <- CompactionFailedEvent{
-						Attempt:  engine.autoTracker.FailureCount(),
-						MaxRetry: compact.MaxConsecutiveFailures,
-						ErrorMsg: compErr.Error(),
-					}
-					if tripped {
-						engine.bus.Emit(observe.ErrorOccurred{
-							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-							Severity:     "warn",
-							Component:    "compact",
-							ErrorType:    "circuit_breaker_tripped",
-							ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
-						})
-						ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
-					}
-				case compErr == nil:
-					engine.autoTracker.RecordSuccess()
-					// CMP-001.2 F3: compaction replaces the WHOLE
-					// conversation, but the operator's pending prompt
-					// (appended at turn start, not yet answered) must
-					// still reach the model verbatim — the 2e9f01b pragma
-					// loop never compacted a pending prompt because its
-					// trigger ran after the assistant response. Re-append
-					// the unanswered user text messages after the summary.
-					pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)
-					engine.store.Update(func(s *app.AppState) {
-						repl := compResult.ReplacementMessages
-						if len(pending) > 0 {
-							repl = append(append([]model.Message{}, repl...), pending...)
+			// CMP-001.4 F6 bound: when the tracker is disabled, the
+			// breaker has tripped, or the cooldown is still active,
+			// ShouldAutoCompact is false for EVERY token count, so skip
+			// computing one (provider CountTokens is a network call on
+			// Google). IncrementTurn below still runs every iteration —
+			// the cooldown expires by counting model-request iterations.
+			if engine.autoTracker.AutoCompactEligible() {
+				compSnap := engine.store.Snapshot()
+				// CMP-001.4 F6: count the REQUEST shape — the hoisted
+				// system/tools are the exact payload this iteration's model
+				// request carries, and the provider-tools request messages
+				// are the raw conversation messages (messagesForRequestChecked
+				// only slices and validates). The pre-F6 code counted
+				// APIMessages only and sent the precise counter the raw
+				// conversation system with no tools — both undercounted the
+				// real request payload, delaying the trigger past the
+				// fed8bd7^ requestTokenCount semantics.
+				tokenCount := engine.requestTokenCount(ctx,
+					firstNonEmpty(compSnap.Model, compSnap.Conversation.Model, engine.config.Model),
+					compSnap.Conversation.APIMessages(), system, tools)
+				if engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig) {
+					observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
+					ch <- CompactionStartedEvent{}
+					compResult, compErr := engine.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
+					switch {
+					case compErr != nil && ctx.Err() == nil:
+						// A real failure: count it and possibly trip the breaker.
+						tripped := engine.autoTracker.RecordFailure()
+						ch <- CompactionFailedEvent{
+							Attempt:  engine.autoTracker.FailureCount(),
+							MaxRetry: compact.MaxConsecutiveFailures,
+							ErrorMsg: compErr.Error(),
 						}
-						s.Conversation.Messages = repl
-						s.Conversation.UpdatedAt = time.Now()
-					})
-					// CMP-001.2 F2: the compaction REPLACED
-					// Conversation.Messages, but the incremental session
-					// checkpoint is index-based — it would skip the summary
-					// and the first post-compaction exchange (all land
-					// below the stale SessionLastIdx), leaving the file
-					// with the full pre-compaction history for --resume to
-					// resurrect. Rewrite the durable session file, exactly
-					// as manual /compact does (slash RewriteSession →
-					// rewriteCurrentSession).
-					if err := engine.rewriteSession(); err != nil {
-						observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
-						ch <- ErrorEvent{Err: fmt.Errorf("rewrite session after compaction: %w", err)}
-						return
+						if tripped {
+							engine.bus.Emit(observe.ErrorOccurred{
+								EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+								Severity:     "warn",
+								Component:    "compact",
+								ErrorType:    "circuit_breaker_tripped",
+								ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
+							})
+							ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
+						}
+					case compErr == nil:
+						engine.autoTracker.RecordSuccess()
+						// CMP-001.2 F3: compaction replaces the WHOLE
+						// conversation, but the operator's pending prompt
+						// (appended at turn start, not yet answered) must
+						// still reach the model verbatim — the 2e9f01b pragma
+						// loop never compacted a pending prompt because its
+						// trigger ran after the assistant response. Re-append
+						// the unanswered user text messages after the summary.
+						pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)
+						engine.store.Update(func(s *app.AppState) {
+							repl := compResult.ReplacementMessages
+							if len(pending) > 0 {
+								repl = append(append([]model.Message{}, repl...), pending...)
+							}
+							s.Conversation.Messages = repl
+							s.Conversation.UpdatedAt = time.Now()
+						})
+						// CMP-001.2 F2: the compaction REPLACED
+						// Conversation.Messages, but the incremental session
+						// checkpoint is index-based — it would skip the summary
+						// and the first post-compaction exchange (all land
+						// below the stale SessionLastIdx), leaving the file
+						// with the full pre-compaction history for --resume to
+						// resurrect. Rewrite the durable session file, exactly
+						// as manual /compact does (slash RewriteSession →
+						// rewriteCurrentSession).
+						if err := engine.rewriteSession(); err != nil {
+							observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
+							ch <- ErrorEvent{Err: fmt.Errorf("rewrite session after compaction: %w", err)}
+							return
+						}
+						ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
 					}
-					ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
+					// compErr != nil && ctx.Err() != nil: the loop is being
+					// torn down — no failure count, no event, next iteration's
+					// ctx check exits cleanly.
 				}
-				// compErr != nil && ctx.Err() != nil: the loop is being
-				// torn down — no failure count, no event, next iteration's
-				// ctx check exits cleanly.
 			}
 			engine.autoTracker.IncrementTurn()
 		}
 
-		snap := engine.store.Snapshot()
-		resolvedModel := firstNonEmpty(snap.Model, snap.Conversation.Model, engine.config.Model)
-		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
-		system = engine.systemWithMCPStatus(system)
-		system = engine.systemWithHarnessManifest(system)
-		tools := providerToolDefs()
-		tools = engine.withWebSearchTool(tools)
-		tools = engine.withSubAgentTool(tools)
-		tools = engine.withMCPToolDefs(ctx, tools)
-		system = engine.systemWithPatchGuidance(system, tools)
+		// Re-snapshot after the compaction check: a compaction this
+		// iteration replaced the conversation messages, so the request
+		// messages must come from the post-compaction state. System and
+		// tools are unchanged by compaction and are reused from above.
+		snap = engine.store.Snapshot()
 		messages, err := engine.messagesForRequestChecked(snap.Conversation)
 		if err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")

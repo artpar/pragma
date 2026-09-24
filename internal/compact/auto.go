@@ -58,6 +58,26 @@ func (t *AutoTracker) ShouldAutoCompact(tokenCount int, wc WindowConfig) bool {
 	return tokenCount >= AutoCompactThreshold(wc)
 }
 
+// AutoCompactEligible reports whether a token count could change
+// ShouldAutoCompact's decision this turn. When the tracker is disabled,
+// the circuit breaker has tripped, or the post-compaction cooldown is
+// still active, ShouldAutoCompact returns false for EVERY token count —
+// its state checks short-circuit before the threshold comparison — so
+// callers can skip computing a count entirely (CMP-001.4 F6: provider
+// CountTokens is a network call on Google). Each condition here mirrors
+// a verbatim early-return of ShouldAutoCompact; the equivalence is
+// pinned by TestAutoCompactEligibleNeverDisagreesWithShouldAutoCompact.
+// IncrementTurn must still run every iteration regardless of
+// eligibility — the cooldown expires by counting iterations.
+func (t *AutoTracker) AutoCompactEligible() bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: !t.disabled && t.consecutiveFailures < MaxConsecutiveFailures && !(t.compacted && t.turnsSinceCompact < MinTurnsCooldown)")
+	return !t.disabled &&
+		t.consecutiveFailures < MaxConsecutiveFailures &&
+		!(t.compacted && t.turnsSinceCompact < MinTurnsCooldown)
+}
+
 // RecordSuccess resets the failure counter and starts the cooldown timer.
 func (t *AutoTracker) RecordSuccess() {
 	observe.GlobalTrace("enter")

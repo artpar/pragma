@@ -350,6 +350,37 @@ func (engine *Engine) setConversationSystemPrompt(system model.SystemPrompt) {
 	})
 }
 
+// requestTokenCount returns the token count for the model REQUEST the
+// loop is about to build: messages plus the system prompt and tool
+// schemas the request actually carries (CMP-001.4 F6). This restores
+// the fed8bd7^ requestTokenCount semantics the CMP-001..CMP-001.3
+// restoration left messages-only: a messages-only count undercounts by
+// the request system (custom prompt, harness manifest, MCP status,
+// patch guidance) and the tool schemas, delaying the trigger. The
+// provider's precise counter — Google's Gemini CountTokens is a network
+// call — is consulted over the same request shape and wins when it
+// succeeds; the heuristic estimate of the same shape is the fallback.
+func (engine *Engine) requestTokenCount(ctx context.Context, resolvedModel string, messages []model.Message, system model.SystemPrompt, tools []model.ToolDef) int {
+	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "enter")
+	defer observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "exit")
+	countParams := provider.RequestParams{
+		Model:    resolvedModel,
+		Messages: messages,
+		System:   system,
+		Tools:    tools,
+	}
+	if counter, ok := engine.provider.(provider.TokenCounter); ok {
+		observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "if: ok")
+		if precise, err := counter.CountTokens(ctx, countParams); err == nil {
+			observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "if: err == nil")
+			observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: precise")
+			return precise
+		}
+	}
+	observe.TraceCtx(ctx, "query", "Engine.requestTokenCount", "return: compact.EstimateRequestTokens(countParams)")
+	return compact.EstimateRequestTokens(countParams)
+}
+
 func (engine *Engine) appendConversationMessage(msg model.Message) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

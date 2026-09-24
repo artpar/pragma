@@ -375,76 +375,86 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 		// MinTurnsCooldown within the compaction's own iteration and let a
 		// still-over-threshold conversation re-compact immediately.
 		if len(run.MessageStartIndexes) == 0 && engine.compactor != nil && engine.autoTracker != nil {
-			compSnap := engine.store.Snapshot()
-			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
-			if counter, ok := engine.provider.(provider.TokenCounter); ok {
-				precise, countErr := counter.CountTokens(ctx, provider.RequestParams{
-					Model:    firstNonEmpty(compSnap.Model, compSnap.Conversation.Model, engine.config.Model),
-					Messages: compSnap.Conversation.APIMessages(),
-					System:   compSnap.Conversation.System,
-				})
-				if countErr == nil {
-					tokenCount = precise
-				}
-			}
-			if engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig) {
-				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
-				ch <- CompactionStartedEvent{}
-				compResult, compErr := engine.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
-				switch {
-				case compErr != nil && ctx.Err() == nil:
-					// A real failure: count it and possibly trip the breaker.
-					tripped := engine.autoTracker.RecordFailure()
-					ch <- CompactionFailedEvent{
-						Attempt:  engine.autoTracker.FailureCount(),
-						MaxRetry: compact.MaxConsecutiveFailures,
-						ErrorMsg: compErr.Error(),
-					}
-					if tripped {
-						engine.bus.Emit(observe.ErrorOccurred{
-							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
-							Severity:     "warn",
-							Component:    "compact",
-							ErrorType:    "circuit_breaker_tripped",
-							ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
-						})
-						ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
-					}
-				case compErr == nil:
-					engine.autoTracker.RecordSuccess()
-					// CMP-001.2 F3: compaction replaces the WHOLE
-					// conversation, but the unanswered operator prompt
-					// (appended before iteration 0, or the fresh bash
-					// observation at the tail of a later iteration) must
-					// still reach the model verbatim. Re-append the
-					// unanswered user text messages after the summary.
-					pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)
-					engine.store.Update(func(s *app.AppState) {
-						repl := compResult.ReplacementMessages
-						if len(pending) > 0 {
-							repl = append(append([]model.Message{}, repl...), pending...)
+			// CMP-001.4 F6 bound: when the tracker is disabled, the
+			// breaker has tripped, or the cooldown is still active,
+			// ShouldAutoCompact is false for EVERY token count, so skip
+			// computing one (provider CountTokens is a network call on
+			// Google). IncrementTurn below still runs every iteration —
+			// the cooldown expires by counting model-request iterations.
+			if engine.autoTracker.AutoCompactEligible() {
+				compSnap := engine.store.Snapshot()
+				// CMP-001.4 F6: count the REQUEST shape. run.System is the
+				// exact system every pragma-loop request carries
+				// (buildPragmaLoopTurnRequest); pragma-loop requests carry no
+				// tool schemas, and unscoped runs (the only ones reaching
+				// this block) request the full conversation. Restores the
+				// fed8bd7^ requestTokenCount semantics — the pre-F6 estimate
+				// counted APIMessages only and the pre-F6 precise call sent
+				// the raw conversation system, undercounting the request
+				// payload the model actually receives and delaying the
+				// trigger.
+				tokenCount := engine.requestTokenCount(ctx,
+					firstNonEmpty(compSnap.Model, compSnap.Conversation.Model, engine.config.Model),
+					compSnap.Conversation.APIMessages(), run.System, nil)
+				if engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig) {
+					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
+					ch <- CompactionStartedEvent{}
+					compResult, compErr := engine.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
+					switch {
+					case compErr != nil && ctx.Err() == nil:
+						// A real failure: count it and possibly trip the breaker.
+						tripped := engine.autoTracker.RecordFailure()
+						ch <- CompactionFailedEvent{
+							Attempt:  engine.autoTracker.FailureCount(),
+							MaxRetry: compact.MaxConsecutiveFailures,
+							ErrorMsg: compErr.Error(),
 						}
-						s.Conversation.Messages = repl
-						s.Conversation.UpdatedAt = time.Now()
-					})
-					// CMP-001.2 F2: the compaction REPLACED
-					// Conversation.Messages, but the incremental session
-					// checkpoint is index-based — it would skip the
-					// summary and the first post-compaction exchange (all
-					// land below the stale SessionLastIdx), leaving the
-					// file with the full pre-compaction history for
-					// --resume to resurrect. Rewrite the durable session
-					// file, exactly as manual /compact does.
-					if err := engine.rewriteSession(); err != nil {
-						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
-						ch <- ErrorEvent{Err: fmt.Errorf("rewrite session after compaction: %w", err)}
-						return
+						if tripped {
+							engine.bus.Emit(observe.ErrorOccurred{
+								EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+								Severity:     "warn",
+								Component:    "compact",
+								ErrorType:    "circuit_breaker_tripped",
+								ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
+							})
+							ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
+						}
+					case compErr == nil:
+						engine.autoTracker.RecordSuccess()
+						// CMP-001.2 F3: compaction replaces the WHOLE
+						// conversation, but the unanswered operator prompt
+						// (appended before iteration 0, or the fresh bash
+						// observation at the tail of a later iteration) must
+						// still reach the model verbatim. Re-append the
+						// unanswered user text messages after the summary.
+						pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)
+						engine.store.Update(func(s *app.AppState) {
+							repl := compResult.ReplacementMessages
+							if len(pending) > 0 {
+								repl = append(append([]model.Message{}, repl...), pending...)
+							}
+							s.Conversation.Messages = repl
+							s.Conversation.UpdatedAt = time.Now()
+						})
+						// CMP-001.2 F2: the compaction REPLACED
+						// Conversation.Messages, but the incremental session
+						// checkpoint is index-based — it would skip the
+						// summary and the first post-compaction exchange (all
+						// land below the stale SessionLastIdx), leaving the
+						// file with the full pre-compaction history for
+						// --resume to resurrect. Rewrite the durable session
+						// file, exactly as manual /compact does.
+						if err := engine.rewriteSession(); err != nil {
+							observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
+							ch <- ErrorEvent{Err: fmt.Errorf("rewrite session after compaction: %w", err)}
+							return
+						}
+						ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
 					}
-					ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
+					// compErr != nil && ctx.Err() != nil: the loop is being
+					// torn down — no failure count, no event, next iteration's
+					// ctx check exits cleanly.
 				}
-				// compErr != nil && ctx.Err() != nil: the loop is being
-				// torn down — no failure count, no event, next iteration's
-				// ctx check exits cleanly.
 			}
 			engine.autoTracker.IncrementTurn()
 		}
