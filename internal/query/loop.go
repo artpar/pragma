@@ -226,18 +226,3 @@ func (engine *Engine) messagesForRequestFrom(conv model.Conversation, start int)
 	observe.GlobalTrace("return: scoped.APIMessages()")
 	return scoped.APIMessages()
 }
-
-func messageHasToolResult(msg model.Message) bool {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	for _, part := range msg.Content {
-		observe.GlobalTrace("range msg.Content")
-		if _, ok := part.(model.ToolResultPart); ok {
-			observe.GlobalTrace("if: ok")
-			observe.GlobalTrace("return: true")
-			return true
-		}
-	}
-	observe.GlobalTrace("return: false")
-	return false
-}

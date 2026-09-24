@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -425,31 +424,18 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 						// conversation, but the unanswered operator prompt
 						// (appended before iteration 0, or the fresh bash
 						// observation at the tail of a later iteration) must
-						// still reach the model verbatim. Re-append the
-						// unanswered user text messages after the summary.
-						// CMP-001.2.F1: derive the pending prompts from the
-						// LIVE store state inside the replacement Update,
-						// never from the pre-compaction snapshot — compSnap is
-						// stale for the whole summary call, and operator input
-						// delivered mid-summary (INT-001 busy-turn path,
-						// AppendUserInput — the tail here is the unanswered
-						// prompt, so it appends directly) was wholesale-
-						// destroyed by a replacement built only from compSnap.
-						// StateStore.Update holds the store lock across the
-						// callback, so reading the tail and writing the
-						// replacement in one Update is atomic wrt any
-						// concurrent AppendUserInput/drain append: input
-						// landing before the read is preserved as pending,
-						// input landing after the write stays appended.
-						engine.store.Update(func(s *app.AppState) {
-							pending := pendingUnansweredUserPrompts(s.Conversation.Messages)
-							repl := compResult.ReplacementMessages
-							if len(pending) > 0 {
-								repl = append(append([]model.Message{}, repl...), pending...)
-							}
-							s.Conversation.Messages = repl
-							s.Conversation.UpdatedAt = time.Now()
-						})
+						// still reach the model verbatim.
+						// CMP-001.2.F1: the pending set is derived from the
+						// LIVE store state inside the replacement, never from
+						// the pre-compaction snapshot, so operator input
+						// delivered mid-summary survives. CMP-001.2.F3: both
+						// auto loops and manual /compact apply compaction
+						// results through the one shared application point,
+						// compact.ApplyResult — the semantics (pending
+						// re-append after the summary, atomic live-state
+						// derivation) live there and cannot diverge between
+						// paths again.
+						compact.ApplyResult(engine.store, compResult)
 						// CMP-001.2 F2: the compaction REPLACED
 						// Conversation.Messages, but the incremental session
 						// checkpoint is index-based — it would skip the

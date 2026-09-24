@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 
+	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 )
@@ -29,7 +30,7 @@ func validateToolResultPairing(messages []model.Message) error {
 			}
 		case model.RoleUser:
 			observe.GlobalTrace("case: model.RoleUser")
-			if !messageHasToolResult(msg) {
+			if !compact.MessageHasToolResult(msg) {
 				continue
 			}
 			if i == 0 || messages[i-1].Role != model.RoleAssistant || len(toolCallIDs(messages[i-1])) == 0 {

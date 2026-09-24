@@ -173,31 +173,18 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 						// (appended at turn start, not yet answered) must
 						// still reach the model verbatim — the 2e9f01b pragma
 						// loop never compacted a pending prompt because its
-						// trigger ran after the assistant response. Re-append
-						// the unanswered user text messages after the summary.
-						// CMP-001.2.F1: derive the pending prompts from the
-						// LIVE store state inside the replacement Update,
-						// never from the pre-compaction snapshot — compSnap is
-						// stale for the whole summary call, and operator input
-						// delivered mid-summary (INT-001 busy-turn path,
-						// AppendUserInput — the tail here is the unanswered
-						// prompt, so it appends directly) was wholesale-
-						// destroyed by a replacement built only from compSnap.
-						// StateStore.Update holds the store lock across the
-						// callback, so reading the tail and writing the
-						// replacement in one Update is atomic wrt any
-						// concurrent AppendUserInput/drain append: input
-						// landing before the read is preserved as pending,
-						// input landing after the write stays appended.
-						engine.store.Update(func(s *app.AppState) {
-							pending := pendingUnansweredUserPrompts(s.Conversation.Messages)
-							repl := compResult.ReplacementMessages
-							if len(pending) > 0 {
-								repl = append(append([]model.Message{}, repl...), pending...)
-							}
-							s.Conversation.Messages = repl
-							s.Conversation.UpdatedAt = time.Now()
-						})
+						// trigger ran after the assistant response.
+						// CMP-001.2.F1: the pending set is derived from the
+						// LIVE store state inside the replacement, never from
+						// the pre-compaction snapshot, so operator input
+						// delivered mid-summary survives. CMP-001.2.F3: both
+						// auto loops and manual /compact apply compaction
+						// results through the one shared application point,
+						// compact.ApplyResult — the semantics (pending
+						// re-append after the summary, atomic live-state
+						// derivation) live there and cannot diverge between
+						// paths again.
+						compact.ApplyResult(engine.store, compResult)
 						// CMP-001.2 F2: the compaction REPLACED
 						// Conversation.Messages, but the incremental session
 						// checkpoint is index-based — it would skip the summary
@@ -442,38 +429,6 @@ func conversationTailHasDanglingToolUse(conv model.Conversation) bool {
 	}
 	observe.GlobalTrace("return: false")
 	return false
-}
-
-// pendingUnansweredUserPrompts returns the operator prompts waiting for a
-// model response when compaction fires: user messages that sit after the
-// conversation's last assistant message, carry no tool results, and are not
-// internal (CMP-001.2 F3). Tool-result messages are deliberately excluded —
-// re-appending them without their tool_use assistant message would break
-// tool_result pairing; they stay part of the summarized history.
-func pendingUnansweredUserPrompts(messages []model.Message) []model.Message {
-	observe.GlobalTrace("enter")
-	defer observe.GlobalTrace("exit")
-	tailStart := len(messages)
-	for tailStart > 0 && messages[tailStart-1].Role == model.RoleUser {
-		observe.GlobalTrace("for: tailStart > 0 && messages[tailStart-1].Role == model.RoleUser")
-		tailStart--
-	}
-	if tailStart == len(messages) {
-		observe.GlobalTrace("if: tailStart == len(messages)")
-		observe.GlobalTrace("return: nil")
-		return nil
-	}
-	var pending []model.Message
-	for _, msg := range messages[tailStart:] {
-		observe.GlobalTrace("range messages[tailStart:]")
-		if msg.Flags.IsInternal || messageHasToolResult(msg) {
-			observe.GlobalTrace("if: msg.Flags.IsInternal || messageHasToolResult(msg)")
-			continue
-		}
-		pending = append(pending, msg)
-	}
-	observe.GlobalTrace("return: pending")
-	return pending
 }
 
 // turnBudgetNoticeMarker prefixes the in-conversation turn-budget warning.

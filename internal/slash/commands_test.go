@@ -7,7 +7,10 @@ import (
 	"testing"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
+	"github.com/artpar/pragma/internal/provider"
 )
 
 func TestHandleClear(t *testing.T) {
@@ -211,6 +214,109 @@ func TestHandleCompactNilCompactor(t *testing.T) {
 	}
 	if !strings.Contains(result.DisplayText, "not available") {
 		t.Error("should indicate compaction not available")
+	}
+}
+
+// compactSummaryProvider is the minimal provider the manual /compact gates
+// need: one scripted summary response (compact.Service calls Complete).
+type compactSummaryProvider struct {
+	text string
+}
+
+func (p *compactSummaryProvider) Name() string { return "test" }
+
+func (p *compactSummaryProvider) Stream(context.Context, provider.RequestParams) (<-chan provider.StreamChunk, error) {
+	return nil, errors.New("Stream is not used by this test provider")
+}
+
+func (p *compactSummaryProvider) Complete(_ context.Context, _ provider.RequestParams) (model.Response, error) {
+	return model.Response{
+		Content:    []model.ContentPart{model.TextPart{Text: p.text}},
+		StopReason: model.StopEndTurn,
+	}, nil
+}
+
+func (p *compactSummaryProvider) SupportsFeature(provider.Feature) bool { return false }
+
+func (p *compactSummaryProvider) Pricing(string) (model.Pricing, bool) { return model.Pricing{}, false }
+
+func (p *compactSummaryProvider) ContextWindow(string) (int, bool) { return 200_000, true }
+
+// TestHandleCompactPreservesUnansweredPrompt pins the manual /compact leg of
+// the CMP-001.2 F3 semantics ("never compact an unanswered prompt"): an
+// operator prompt left unanswered by an errored turn — the loops emit
+// ErrorEvent and return without appending any assistant message, so the
+// prompt sits unanswered at the tail — must survive /compact verbatim,
+// exactly as the auto-compaction path preserves it (pending re-append after
+// the summary). The scripted summary deliberately omits the marker, so the
+// only way the prompt reaches the next model request is a re-appended
+// message.
+func TestHandleCompactPreservesUnansweredPrompt(t *testing.T) {
+	prov := &compactSummaryProvider{text: "Summary: earlier discussion about the build."}
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	big := strings.Repeat("history ", 120)
+	conv.Messages = []model.Message{
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: big}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: big}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: big}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: big}}},
+		// The turn errored after this prompt was appended (provider
+		// failure / max-tokens truncation): no assistant message ever
+		// answered it, and the operator's next action is /compact.
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "RIVERGATE-7f3a: please fix the login flow next"}}},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          t.TempDir(),
+		Model:        "test-model",
+		Provider:     "test",
+	})
+	deps := Deps{
+		Store:     store,
+		Compactor: compact.NewService(prov, observe.NewEventBus(64), model.NewCostTracker(0), "test-model"),
+	}
+
+	result, err := handleCompact(context.Background(), "", deps)
+	if err != nil {
+		t.Fatalf("handleCompact error: %v", err)
+	}
+	if !result.RewriteSession {
+		t.Fatal("manual /compact must keep RewriteSession (the session file rewrite)")
+	}
+
+	msgs := store.Snapshot().Conversation.Messages
+	if len(msgs) != 2 {
+		t.Fatalf("post-/compact conversation holds %d messages, want 2 [summary, re-appended prompt] — manual /compact replaced everything with the summary alone and the unanswered operator prompt (RIVERGATE-7f3a) was swallowed (CMP-001.2.F3)", len(msgs))
+	}
+	if !msgs[0].Flags.IsCompactSummary {
+		t.Fatal("message 0 after /compact must be the compaction summary (IsCompactSummary flag)")
+	}
+	tail := msgs[len(msgs)-1]
+	if tail.Role != model.RoleUser || tail.Flags.IsCompactSummary {
+		t.Fatalf("message after the summary must be the re-appended operator prompt, got role=%s IsCompactSummary=%v", tail.Role, tail.Flags.IsCompactSummary)
+	}
+	var tailText string
+	for _, part := range tail.Content {
+		if tp, ok := part.(model.TextPart); ok {
+			tailText += tp.Text
+		}
+	}
+	if !strings.Contains(tailText, "RIVERGATE-7f3a") {
+		t.Fatalf("the unanswered operator prompt was not re-appended verbatim after the summary — with a summary that omits it, the prompt never reaches the model again (CMP-001.2.F3)")
+	}
+
+	// The next model request is built from APIMessages: it must carry
+	// [summary, unanswered prompt] — the marker in particular.
+	var apiText string
+	for _, msg := range store.Snapshot().Conversation.APIMessages() {
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok {
+				apiText += tp.Text + "\n"
+			}
+		}
+	}
+	if !strings.Contains(apiText, "RIVERGATE-7f3a") {
+		t.Fatal("post-/compact APIMessages lost the unanswered prompt — the next model request would not carry it (CMP-001.2.F3)")
 	}
 }
 

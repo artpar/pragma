@@ -1232,3 +1232,137 @@ closeFn).
   the fix is the repair, deliberately NOT a clamp — clamping the index
   to the compacted length alone would splice ALL compacted messages
   onto the pre-compaction bulk (duplicated history), which is worse.
+
+---
+
+## Revision CMP-001.2.F3 (2026-09-24): manual /compact swallowed the
+## unanswered prompt — the F3 semantics lived only in the auto loops
+
+Source: queue item CMP-001.2.F3 (critic finding C-3 from the CMP-001.2
+audit cycle). Every payload claim was verified against the tree before
+any change; nothing was refuted. Payload line numbers (commands.go
+162-177, compact.go 60-66) drifted to 151-180 / 58-64 — same code, line
+drift, not a refutation.
+
+### Verified (payload claims)
+
+- `handleCompact` called `deps.Compactor.Compact` then
+  `compact.ApplyResult(deps.Store, result)` with no pending re-append
+  (slash/commands.go) — confirmed by reading the handler.
+- `compact.ApplyResult` replaced the ENTIRE message array with the
+  summary: `s.Conversation.Messages = result.ReplacementMessages`
+  (compact.go) — confirmed.
+- The F3 "never compact an unanswered prompt" semantics existed only in
+  the auto loops: both compaction success branches inlined
+  `pendingUnansweredUserPrompts` re-append inside their own
+  `store.Update` (provider_tools_loop.go, miniswe_loop.go), while
+  `ApplyResult` — whose ONLY production caller was the manual path —
+  had none. Confirmed.
+- Scenario reachability (the harm claim): confirmed mechanically. On a
+  provider error or max-tokens truncation the loops emit ErrorEvent and
+  return WITHOUT appending any assistant message, so the turn prompt
+  sits unanswered at the conversation tail (the max-tokens path even
+  tells the operator "the conversation is preserved — continue with a
+  new prompt or --resume"). Slash commands run exactly in that state
+  (busy turns reject slash input), so the operator's natural next
+  action — `/compact` — compacted the unanswered prompt away with the
+  rest of the history: it reached the model only if the summarizer
+  happened to retain it, and via `RewriteSession → rewriteCurrentSession`
+  (which writes whatever the store holds) it was gone from the durable
+  session file too.
+
+### RED (unchanged tree, real production path)
+
+`go test ./internal/slash/ -run TestHandleCompactPreservesUnansweredPrompt -count=1`
+failed with
+`post-/compact conversation holds 1 messages, want 2 [summary, re-appended prompt] — manual /compact replaced everything with the summary alone and the unanswered operator prompt (RIVERGATE-7f3a) was swallowed (CMP-001.2.F3)`.
+The gate drives the REAL `handleCompact` with a real `compact.Service`
+over a scripted summary that deliberately omits the marker, so the only
+way the prompt could reach the next model request was a re-appended
+message; the store held the summary alone.
+
+### Change (one mechanism): the compaction application semantics now
+### live in exactly one place — `compact.ApplyResult`
+
+- `compact.ApplyResult` (the application point its own doc comment
+  already claimed to be) now derives `PendingUnansweredUserPrompts`
+  from the LIVE store state inside its single `store.Update` (the
+  CMP-001.2.F1 atomicity semantics) and re-appends them verbatim after
+  `result.ReplacementMessages` — the CMP-001.2 F3 semantics, applied to
+  every ApplyResult caller, which fixes the manual path.
+- The pending detection moved to the compact package as exported
+  `PendingUnansweredUserPrompts` (+ `MessageHasToolResult`, which it
+  needs; query's tool-pairing validator now calls the same definition);
+  the local query copy and the duplicated inline replacement blocks are
+  deleted. Both auto loops now apply their compaction results through
+  `compact.ApplyResult(engine.store, compResult)` instead of re-stating
+  the replacement inline. This is behavior-identical for the loops (the
+  inline Update body was exactly the fixed ApplyResult body: live-state
+  pending derivation, summary, re-append, timestamp) — pinned by the
+  existing gates — and it removes the structural cause of this defect:
+  two application sites whose semantics could (and did) diverge, with
+  the manual path forgotten when F3 was implemented.
+
+### Gates (this revision)
+
+- RED → GREEN:
+  `go test ./internal/slash/ -run TestHandleCompactPreservesUnansweredPrompt -count=1`
+  (RED message above; PASS after the fix; the nil-Compactor gate
+  unchanged).
+- Adjacent (auto paths through the shared ApplyResult, both loops):
+  `go test ./internal/query/ -run 'AutoCompact|MidCall' -count=1` — 10/10
+  PASS (trigger/replaces, pending-prompt preservation, mid-call operator
+  input on BOTH loops, cooldown, circuit breaker, request-shape and
+  system-prompt estimate gates) — the loops' behavior through the shared
+  application point is indistinguishable from the previous inline
+  replacement.
+- `go test ./internal/query/ -count=1` ok (6.8s);
+  `-count=1 -race` ok (11.4s).
+- `go test ./internal/compact/ ./internal/slash/ ./internal/session/
+  ./internal/cli/ -count=1` — ok (incl. the F2 session-rewrite and
+  checkpoint-recovery gates and the INT-001 CLI gates).
+- `go test ./... -count=1` — green except the pre-existing
+  `TestProviderToolsCLIContract` acceptance/environment failure
+  (cmd/pragma), re-verified failing identically at pristine HEAD
+  (f7bab39) in a disposable worktree with these changes absent.
+- `go vet ./internal/compact/ ./internal/query/ ./internal/slash/`
+  clean; all seven changed/added files gofmt-clean (one trailing
+  blank line introduced by the helper deletion in loop.go was fixed).
+
+### Claim boundary
+
+- Proven locally, deterministically, through the real `handleCompact`
+  → real `compact.Service` → real `ApplyResult` path: an operator
+  prompt left unanswered by an errored turn survives `/compact`
+  verbatim, and the post-compaction conversation is [summary,
+  unanswered prompt]. The session-file leg follows the store
+  (`RewriteSession` → `rewriteCurrentSession` writes what the store
+  holds), same reasoning as the CMP-001.2.F1 boundary.
+- The auto loops' observable behavior is unchanged (gates above); the
+  unification is the mechanism, not a behavior change.
+- Manual /compact cannot race operator input the way the auto path
+  could (busy turns reject slash commands, so nothing appends during a
+  manual summary call); the live-state derivation in ApplyResult is
+  nevertheless the same atomic semantics for both paths.
+- This revision also closes the manual-path leg of the CMP-001.2.F1
+  cycle's critic finding C-1 ("Same-class destruction window remains
+  live and ungated in the manual /compact path": operator text submitted
+  during the manual compaction summary call — busy-turn AppendUserInput
+  under the held input turn — was destroyed by the summary-only
+  replacement, with no gate): ApplyResult now derives the pending tail
+  from the live store state under the store lock, so such input is
+  preserved (input landing before the read joins the re-appended tail)
+  and the manual path is gated. The MidCall gates exercise exactly this
+  derivation now that the loops apply results through ApplyResult, and
+  the new manual gate covers the manual entry point. The F1 cycle's
+  remaining critic findings (C-2 internal-message exclusion — deliberate,
+  documented there as unreachable today; C-3 coverage gaps on
+  later-iteration interleavings) are unaffected by this revision.
+- Tool-result and internal (hook-context) messages in the unanswered
+  tail are still NOT re-appended — the F3 exclusions (tool_result
+  pairing, internal context) apply to the manual path now too, by the
+  shared definition.
+- No live-provider behavior is claimed. Queue items CMP-001.2.F4
+  (token guard on the re-appended tail) and CMP-001.4b critic finding
+  C-2 (compaction-invariant overhead vs threshold) remain open;
+  CMP-001.2.F1/.F2/.F3 are now closed.

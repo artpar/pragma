@@ -56,11 +56,27 @@ type CompactResult struct {
 }
 
 // ApplyResult atomically applies a compaction result to conversation state.
+// The summary replaces the history, and the operator's pending unanswered
+// prompts — the trailing user messages no assistant reply has answered yet —
+// are re-appended verbatim after the summary so they still reach the model:
+// the "never compact an unanswered prompt" semantics (CMP-001.2 F3), applied
+// uniformly to manual /compact and auto-compaction since CMP-001.2.F3 (the
+// manual path previously replaced ALL messages with the summary alone, so an
+// operator prompt left unanswered by an errored turn was swallowed when the
+// operator then ran /compact). The pending set is derived from the LIVE
+// store state inside this single Update — StateStore.Update holds the store
+// lock across the callback — so operator input delivered during the
+// in-flight summary call survives the replacement (CMP-001.2.F1).
 func ApplyResult(store *app.StateStore, result CompactResult) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	store.Update(func(s *app.AppState) {
-		s.Conversation.Messages = result.ReplacementMessages
+		pending := PendingUnansweredUserPrompts(s.Conversation.Messages)
+		repl := result.ReplacementMessages
+		if len(pending) > 0 {
+			repl = append(append([]model.Message{}, repl...), pending...)
+		}
+		s.Conversation.Messages = repl
 		s.Conversation.UpdatedAt = time.Now()
 	})
 }
