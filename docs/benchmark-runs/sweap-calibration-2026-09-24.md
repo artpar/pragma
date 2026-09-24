@@ -64,3 +64,17 @@ verified clean under emulation (--help boots, opens files, exits 0).
 Attempt 2 relaunched 15:38 with the go1.26.8 toolchain (output dir
 20260924T100832Z). Standing rule recorded: linux/amd64 emulation-target builds
 of pragma must use go >= 1.26 (local macOS-native builds unaffected).
+
+## Pipeline defect found by attempt 2 (recorded before attempt 3)
+
+Attempt 2 (output dir 20260924T100832Z) cleared the runtime layer and ran
+~25 minutes of real work (repo survey completed in 12m1s; acceptance mapper
+started), then failed on a POLICY cap: `state "swe_acceptance_mapper"
+failed: agentic loop exceeded maximum of 5 turns`. The state's final turn
+was coherent work-in-progress (bash writing + validating
+acceptance-map.json), not flailing; 12 wire captures recorded. Fix:
+benchmark profile `orchestrations/swe-bench-pro-engineering-loop.yaml`
+swe_acceptance_mapper max_turns 5 -> 8 (commit `ae7635d`; survey state
+uses 10 for comparison). Candidate therefore moves forward, re-declared
+BEFORE attempt 3: frozen at `ae7635d` (the profile fix is part of the
+candidate; the plan does not permit running an unfixed profile).
