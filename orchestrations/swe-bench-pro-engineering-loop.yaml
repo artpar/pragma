@@ -20,7 +20,7 @@ states:
   - id: swe_acceptance_mapper
     persona: swe_acceptance_mapper
     task_prompt: full
-    max_turns: 5
+    max_turns: 8
     shell_policy:
       require_patterns:
         - '/tmp/pragma/swe/acceptance-map\.json'
