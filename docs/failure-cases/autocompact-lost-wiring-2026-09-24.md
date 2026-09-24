@@ -1924,3 +1924,208 @@ the trigger.
   assessment is confirmed in the RED trace: without scoped increments,
   re-compaction was only delayed (run 3 would have compacted one
   iteration later), never armed early.
+
+---
+
+## Revision CMP-001.3.F3 (2026-09-24): the FinalTextOnly sub-loop had
+## no unscoped trigger — the record overstated coverage for persistent
+## final_text-capture states
+
+Source: queue item CMP-001.3.F3 (critic finding C-3, severity low,
+confidence plausible, from the CMP-001.3 audit cycle). Every payload
+sub-claim was verified against the tree before any change; nothing was
+refuted. One payload line range needed reconciliation (below).
+
+### Verified (payload claims, against the pre-fix tree)
+
+- "Independent predicates" — CONFIRMED: `RunStateEvents` builds
+  `query.PragmaLoopRunOptions{IncludePriorConversation:
+  stateUsesPersistentConversation(state), FinalTextOnly:
+  stateCapturesFinalText(state), ...}` (runner.go:960-963, exact — the
+  payload's :961-963). `stateUsesPersistentConversation` is
+  `state.Conversation == "persistent"` (runner.go:365-370);
+  `stateCapturesFinalText` is "any output artifact with
+  `RuntimeCapture.Type == "final_text"`" (runner.go:1698-1708, exact).
+  Nothing couples them: `validateStateExecution` rejects
+  persistent-without-persona (orchestration.go:474-477) but no rule
+  rejects persistent + final_text, and `validateArtifactList` only
+  checks the capture type's membership in {command_evidence,
+  final_text}. No shipped definition combines the two today
+  (`swe_validation_gate` in orchestrations/swe-bench-pro-engineering-
+  loop.yaml is final_text but scoped; `swe_single_engineer` is
+  persistent but command_evidence) — the combination is valid-but-
+  currently-unused, which is why the gap was never observed live.
+- "Runs the untouched FinalTextOnly sub-loop with no compaction trigger
+  even over threshold" — CONFIRMED: `runPragmaLoopWithInitialPrompt`
+  dispatched `if opts.FinalTextOnly` BEFORE the main loop
+  (miniswe_loop.go:289 pre-fix), returns on every path, and the
+  sub-loop body (289-336) contained no `ShouldAutoCompact` — the only
+  pragma-loop trigger was the main-loop block (:371-454 pre-fix; the
+  payload's ":290-341" is that sub-loop region — same code, line drift
+  from the .F2 revision's edits, not a refutation). The sub-loop DID
+  increment the shared tracker per iteration (CMP-001.3.F2), so it
+  booked cooldown turns on a trigger it could never fire.
+- "Unscoped ... even over threshold" — CONFIRMED: with
+  `IncludePriorConversation` the run passes NO message-start index
+  (`RunPragmaLoopWithSystemCompletionCheckOptions`), so sub-loop
+  requests carry the FULL accumulated conversation — a persistent
+  capture state re-entered on an over-window fork (or a run whose
+  rejected drafts accumulate — each rejection appends an assistant
+  draft plus a corrective user message, up to MaxTurns) sent
+  over-window requests with no compaction anywhere on its path.
+- "The stated rationale ('not the default mode') does not address this
+  combination" — CONFIRMED: the CMP-001.3 section's coverage sentence
+  ("Unscoped pragma-loop runs — plain `pragma` interactive and
+  `--prompt` sessions, and orchestration persistent-conversation
+  states — carry the trigger") puts persistent-conversation states IN
+  the trigger-carrying set, while its FinalTextOnly rationale ("that
+  path never compacts and is not the default mode") addressed only the
+  default-mode question. The two claims are disjoint for plain
+  sessions but overlap exactly on persistent capture states: an
+  unscoped run that takes the triggerless sub-loop. The record
+  overstated coverage.
+- Production-reachability nuance (documented, NOT a refutation): at
+  HEAD every persistent state requires a persona (validation), so
+  `engineForOrchestrationState` (runner.go:333-355) always returns a
+  fork, and CMP-001.4a nil'd fork compaction deps — a persistent
+  capture state therefore lacked the trigger for TWO independent
+  reasons (nil deps AND the triggerless sub-loop). The CMP-001.3.F1
+  revision already corrected the record's persistent-state leg for the
+  deps reason. This finding's unique, still-live leg is the second one:
+  even on a deps-bearing engine (the CMP-001.4a re-enable path: "the
+  fork must construct its OWN tracker/compactor/window and rebind
+  SessionRewrite to its own store"), a persistent capture state would
+  STILL not compact, because the sub-loop never consulted the tracker
+  at all.
+
+### RED (unchanged tree `ef1cbd6`, real production entry points)
+
+`internal/query/autocompact_finaltext_test.go` (committed with this
+revision), three gates driving the REAL
+`Engine.RunPragmaLoopWithSystemCompletionCheckOptions` with the exact
+`RunStateEvents` options shape for a persistent final_text-capture
+state (`PragmaLoopRunOptions{IncludePriorConversation: true,
+FinalTextOnly: true, FinalTextCheck: ...}`) over live compaction deps
+(threshold 904) and a ~22.5k-token conversation:
+
+- `TestPragmaLoopFinalTextOnlyUnscopedAutoCompactTriggersAndReplaces`
+  FAILED with `CompactionStartedEvent count = 0, want 1 — the
+  unscoped FinalTextOnly sub-loop (the orchestration
+  persistent-capture-state shape) never consulted the auto-compact
+  tracker even over threshold (CMP-001.3.F3)`.
+- `TestPragmaLoopFinalTextOnlyCooldownBlocksImmediateRetrigger` FAILED
+  with `CompactionStartedEvent = 0, CompactionEvent = 0, want 1/1` —
+  the same missing trigger observed through the cooldown scenario (a
+  deliberately huge summary so only MinTurnsCooldown can block the
+  re-trigger; this gate doubles as the CMP-001.1 F4 single-increment
+  pin for the port — a ported block carrying its own IncrementTurn
+  would expire the cooldown inside the compaction's own iteration and
+  re-compact at k+1).
+- `TestPragmaLoopFinalTextOnlyScopedSkipsCompaction` PASSED pre-fix
+  (trivially — there was no trigger) and is the load-bearing boundary
+  pin for the port: a SCOPED FinalTextOnly run (no
+  IncludePriorConversation — the shape of a root-engine capture state)
+  must NEVER compact, even with live deps over an over-threshold
+  conversation, because compaction replaces the WHOLE conversation and
+  would invalidate the scope's start index; it also pins the scoped
+  request slicing (no prior-conversation text, the turn prompt
+  present).
+
+### Change (one mechanism): the unscoped trigger now has ONE
+### implementation, called by BOTH sub-paths of the loop
+
+`internal/query/miniswe_loop.go`: the main loop's CMP-001.3 trigger
+block (with all its accumulated semantics — CMP-001.1 F4
+single-increment, CMP-001.2 F1/F2/F3 application, CMP-001.4 F6
+request-shape count + eligibility bound) is extracted verbatim into
+`Engine.maybeAutoCompactPragmaLoop(ctx, ch, run) bool` — one
+implementation, returning false only when the caller must abort
+(failed post-compaction session rewrite; ErrorEvent already emitted).
+Both sub-paths of `runPragmaLoopWithInitialPrompt` now call it at the
+top of each model-request iteration: the main shell-action loop
+(:489) and the FinalTextOnly capture sub-loop (:412). The sub-loop's
+existing per-iteration IncrementTurn is UNTOUCHED — the helper contains
+no IncrementTurn by design (the CMP-001.1 F4 class: a trigger-side
+increment next to the sub-path's own would double-count the compaction's
+own iteration and halve MinTurnsCooldown), pinned by the cooldown gate.
+Scope gate (MessageStartIndexes), deps gate (compactor + autoTracker),
+and the F6 `AutoCompactEligible()` count bound are all preserved inside
+the helper, so a scoped capture run (or a nil-deps fork — CMP-001.4a)
+still skips the trigger exactly as before; nothing about the main
+loop's observable behavior changes (the extraction is behavior-
+identical for it, pinned by the existing gates below).
+
+### Record correction (this section amends the record's own claims)
+
+- The CMP-001.3 revision's sentence "Unscoped pragma-loop runs — ...
+  and orchestration persistent-conversation states — carry the
+  trigger" is now mechanically true: BOTH sub-paths of
+  `runPragmaLoopWithInitialPrompt` consult the tracker when the run is
+  unscoped and deps exist. Read with the CMP-001.3.F1 correction
+  (forks carry nil deps), the production coverage statement becomes:
+  unscoped runs on deps-bearing engines (plain pragma sessions, and any
+  future fork that constructs its own deps per the CMP-001.4a re-enable
+  path) carry the trigger, including persistent capture states.
+- The CMP-001.3 revision's "The FinalTextOnly sub-loop (orchestration
+  capture states) and its increment are untouched: that path never
+  compacts and is not the default mode" is corrected: the sub-loop's
+  increment is still untouched, but the sub-loop NOW carries the
+  shared trigger. "Not the default mode" was never a sufficient reason
+  for the unscoped capture-state shape — the rationale addressed the
+  default-mode question, not the combination its own coverage
+  sentence claimed.
+- The CMP-001.4a boundary is unchanged by this revision: forks still
+  never auto-compact until they construct their own deps, and a fork
+  that does so now gets a WORKING trigger on its capture states too.
+
+### Gates (this revision)
+
+- RED → GREEN: the three gates above (RED messages quoted; all PASS
+  after the one-mechanism change).
+- Adjacent (the sub-loop's own behavior + the compaction family):
+  `go test ./internal/query/ -run 'AutoCompact|MidCall|Fork|RequestShape|SystemPrompt|PreciseCounter|Reserve|FinalTextOnly|Scoped' -count=1`
+  — ok, including `TestPragmaLoopFinalTextOnlyDoesNotExecuteBash`,
+  `TestPragmaLoopFinalTextOnlyRetriesInvalidFinalText` (the pre-existing
+  sub-loop gates: no bash execution, check-retry flow — unchanged by
+  the trigger port), `TestPragmaLoopAutoCompactTriggersAndReplaces`,
+  `TestPragmaLoopAutoCompactCooldownBlocksImmediateRetrigger`,
+  `TestPragmaLoopScopedIterationsAdvanceSharedCooldown` (the .F2 gate —
+  main-loop increment semantics unchanged by the extraction),
+  `TestPersistentForkPragmaLoopNeverCompactsOrRewritesRootSession`
+  (the .F1 gate — nil-deps forks still never compact).
+- `go test ./internal/query/ -count=1` — ok (6.6s); `-count=1 -race` —
+  ok (11.2s).
+- `go test ./internal/compact/ ./internal/orchestration/
+  ./internal/session/ ./internal/slash/ ./internal/cli/ -count=1` — ok.
+- `go test ./... -count=1` — green except the pre-existing
+  `TestProviderToolsCLIContract` acceptance/environment failure
+  (cmd/pragma), re-verified failing identically at `ef1cbd6` with these
+  changes stashed.
+- `go vet ./internal/query/` clean; both changed/added files
+  gofmt-clean.
+
+### Claim boundary
+
+- Proven locally, deterministically: an UNSCOPED FinalTextOnly run on a
+  deps-bearing engine compacts before its next model request when over
+  threshold, preserves the pending turn prompt verbatim
+  (`compact.ApplyResult` semantics, shared with the main loop and
+  manual /compact), rewrites the session file, completes its final-text
+  flow normally, and its cooldown counts exactly one increment per
+  model-request iteration. A SCOPED FinalTextOnly run never compacts
+  (pinned). The main loop's observable compaction behavior is
+  unchanged (behavior-identical extraction, pinned by the existing
+  family).
+- No production orchestration run changes behavior today: persistent
+  states run on nil-deps forks (CMP-001.4a), and scoped capture states
+  were already exempt — the new trigger is live exactly when the
+  CMP-001.4a re-enable path (fork's own deps + own SessionRewrite) is
+  taken, or for any future direct caller of the pragma loop with
+  IncludePriorConversation + FinalTextOnly on a deps-bearing engine.
+- The sub-loop's final-text acceptance/rejection loop, budget notices,
+  and MaxTurns exhaustion are untouched; compaction only replaces the
+  accumulated conversation between iterations, and a rejected draft's
+  history lands in the summary like any other prefix.
+- No live-provider behavior is claimed. The queue's related items
+  (CMP-001.2.F3.F1/F2 sub-branches, CMP-001.4b C-2 small-window
+  threshold) are unchanged.
