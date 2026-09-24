@@ -463,3 +463,230 @@ func TestProviderToolsLoopAutoCompactCircuitBreaker(t *testing.T) {
 		t.Fatalf("original messages lost after failed compactions")
 	}
 }
+
+// TestPragmaLoopAutoCompactTriggersAndReplaces guards CMP-001.3: the
+// DEFAULT loop mode is pragma (flags.go defaults --loop to "pragma" and
+// Engine.Run's default branch runs runPragmaLoop), and that loop never
+// consulted the auto-compact tracker — the default-mode loop lost the
+// trigger when fed8bd7 deleted autoCompactBeforeRequest and made the
+// miniswe-aligned runPragmaLoop the default dispatch. CMP-001 restored
+// the trigger only in provider-tools mode. A default-mode session far
+// above the threshold must trigger compaction before its next model
+// request, and that request must carry the summary plus the pending
+// (unanswered) operator prompt verbatim.
+func TestPragmaLoopAutoCompactTriggersAndReplaces(t *testing.T) {
+	// Call 1: compaction summary (compact.Service calls provider.Complete)
+	// — deliberately does not mention the marker, so the only way the
+	// marker can reach the model is the preserved pending prompt.
+	// Call 2: final-answer model turn over the compacted conversation —
+	// plain text with no bash block ends a pragma-loop turn.
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "Summary: user asked questions, assistant answered."}},
+			StopReason: model.StopEndTurn,
+		},
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "OK, noted."}},
+			StopReason: model.StopEndTurn,
+		},
+	}}
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	// ~15000 chars = ~3750 heuristic tokens per message; six messages put
+	// the conversation far above the 904-token threshold configured below.
+	bigText := strings.Repeat("word ", 3000)
+	conv.Messages = []model.Message{
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: "more questions"}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: "more answers"}}},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          t.TempDir(),
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	// LoopModePragma is the shipped default — the loop under test is
+	// exactly the one a plain `pragma` session runs.
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(64), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModePragma,
+		MaxTokens: 4096,
+	})
+	// EffectiveWindow = 20000 - 4096 - 2000 = 13904; threshold = 904.
+	engine.SetCompaction(CompactionDeps{
+		Compactor:   compact.NewService(prov, observe.NewEventBus(64), model.NewCostTracker(0), "test-model"),
+		AutoTracker: compact.NewAutoTracker(false),
+		WindowConfig: compact.WindowConfig{
+			ContextWindow:   20_000,
+			MaxOutput:       4096,
+			SystemPromptEst: 2000,
+		},
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "RIVERMARK-53fd: finish the task"))
+
+	var started, compacted, failed, complete int
+	var postTokens, preTokens int
+	for _, ev := range events {
+		switch e := ev.(type) {
+		case CompactionStartedEvent:
+			started++
+		case CompactionEvent:
+			compacted++
+			preTokens, postTokens = e.PreTokens, e.PostTokens
+		case CompactionFailedEvent:
+			failed++
+		case TurnCompleteEvent:
+			complete++
+		}
+	}
+	if started != 1 {
+		t.Fatalf("CompactionStartedEvent count = %d, want 1 — the default pragma loop never consulted the auto-compact tracker", started)
+	}
+	if compacted != 1 {
+		t.Fatalf("CompactionEvent count = %d, want 1", compacted)
+	}
+	if failed != 0 {
+		t.Fatalf("CompactionFailedEvent count = %d, want 0", failed)
+	}
+	if complete != 1 {
+		t.Fatalf("TurnCompleteEvent count = %d, want 1", complete)
+	}
+	if postTokens >= preTokens {
+		t.Fatalf("post tokens %d not below pre tokens %d", postTokens, preTokens)
+	}
+	if prov.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2 (summary + model request)", prov.calls)
+	}
+	// The post-compaction model request must carry the replacement
+	// conversation (smaller than the 7-message original incl. the appended
+	// prompt) rather than the full history.
+	if len(prov.requests[1].Messages) >= len(conv.Messages)+1 {
+		t.Fatalf("post-compaction request carries %d messages, want fewer than the %d-message original",
+			len(prov.requests[1].Messages), len(conv.Messages)+1)
+	}
+	var sawSummary, sawPendingPrompt bool
+	for _, msg := range prov.requests[1].Messages {
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok {
+				if strings.Contains(tp.Text, "Summary: user asked questions") {
+					sawSummary = true
+				}
+				if strings.Contains(tp.Text, "RIVERMARK-53fd") {
+					sawPendingPrompt = true
+				}
+			}
+		}
+	}
+	if !sawSummary {
+		t.Fatalf("post-compaction request does not contain the compaction summary")
+	}
+	if !sawPendingPrompt {
+		t.Fatalf("post-compaction request lost the pending prompt (RIVERMARK-53fd): the unanswered operator prompt was compacted away and never reached the model")
+	}
+}
+
+// TestPragmaLoopAutoCompactCooldownBlocksImmediateRetrigger pins the
+// CMP-001.1 F4 semantics for the pragma loop port: exactly one
+// IncrementTurn per model-request iteration. The pragma loop carried a
+// post-assistant increment site since before CMP-001; if it survived
+// next to the ported trigger block, two increments would land inside the
+// compaction's own iteration and MinTurnsCooldown=2 would stop blocking
+// anything — a still-over-threshold conversation would re-compact on the
+// immediately following iteration (the #24179 death spiral).
+func TestPragmaLoopAutoCompactCooldownBlocksImmediateRetrigger(t *testing.T) {
+	hugeSummary := strings.Repeat("word ", 3000)
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		// Run 1, call 1: compaction summary (huge — stays over threshold).
+		{Content: []model.ContentPart{model.TextPart{Text: hugeSummary}}, StopReason: model.StopEndTurn},
+		// Run 1, call 2: one bash iteration so the loop iterates while the
+		// cooldown should be holding.
+		{Content: []model.ContentPart{model.TextPart{Text: "```bash\ntrue\n```"}}, StopReason: model.StopEndTurn},
+		// Run 1, call 3: end the turn.
+		{Content: []model.ContentPart{model.TextPart{Text: "done"}}, StopReason: model.StopEndTurn},
+		// Run 2, call 4: compaction summary for the second turn.
+		{Content: []model.ContentPart{model.TextPart{Text: hugeSummary}}, StopReason: model.StopEndTurn},
+		// Run 2, call 5: end the turn.
+		{Content: []model.ContentPart{model.TextPart{Text: "done again"}}, StopReason: model.StopEndTurn},
+	}}
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	bigText := strings.Repeat("word ", 3000)
+	conv.Messages = []model.Message{
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          t.TempDir(),
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(64), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModePragma,
+		MaxTokens: 4096,
+	})
+	engine.SetCompaction(CompactionDeps{
+		Compactor:   compact.NewService(prov, observe.NewEventBus(64), model.NewCostTracker(0), "test-model"),
+		AutoTracker: compact.NewAutoTracker(false),
+		WindowConfig: compact.WindowConfig{
+			ContextWindow:   20_000,
+			MaxOutput:       4096,
+			SystemPromptEst: 2000,
+		},
+	})
+
+	countStarted := func(events []LoopEvent) int {
+		var started int
+		for _, ev := range events {
+			if _, ok := ev.(CompactionStartedEvent); ok {
+				started++
+			}
+		}
+		return started
+	}
+
+	// First run: one compaction, then one bash iteration, then end-turn.
+	// The compaction must not re-trigger on the immediately following
+	// iteration even though the huge summary keeps the conversation over
+	// the threshold.
+	events1 := collectPragmaLoopEvents(engine.Run(t.Context(), "first turn"))
+	for _, ev := range events1 {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		}
+	}
+	if n := countStarted(events1); n != 1 {
+		t.Fatalf("run 1 CompactionStartedEvent count = %d, want 1 (MinTurnsCooldown=2 must block the immediately following iteration)", n)
+	}
+	if prov.calls != 3 {
+		t.Fatalf("provider calls after run 1 = %d, want 3 (summary + bash request + final request)", prov.calls)
+	}
+
+	// Second run: the cooldown must have expired across the end-turn
+	// boundary — run 1 made two model-request iterations, so the still-
+	// over-threshold conversation compacts again.
+	events2 := collectPragmaLoopEvents(engine.Run(t.Context(), "second turn"))
+	for _, ev := range events2 {
+		if e, ok := ev.(ErrorEvent); ok {
+			t.Fatalf("unexpected ErrorEvent: %v", e.Err)
+		}
+	}
+	if n := countStarted(events2); n != 1 {
+		t.Fatalf("run 2 CompactionStartedEvent count = %d, want 1 (cooldown must expire after two iterations)", n)
+	}
+	if prov.calls != 5 {
+		t.Fatalf("provider calls after run 2 = %d, want 5 (two summaries + three model requests)", prov.calls)
+	}
+}

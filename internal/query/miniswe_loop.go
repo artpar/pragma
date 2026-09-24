@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
@@ -345,6 +347,101 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 			return
 		}
 
+		// CMP-001.3: consult the auto-compact tracker before each request,
+		// exactly as the provider-tools loop does since CMP-001. The
+		// default-mode loop is THIS one — `--loop` defaults to "pragma"
+		// (flags.go) and Engine.Run's default branch dispatches here. The
+		// then-default loop carried this trigger since 2e9f01b; fed8bd7
+		// deleted autoCompactBeforeRequest and made the miniswe-aligned
+		// runPragmaLoop the default dispatch, so default-mode sessions ran
+		// with auto-compaction silently dead until CMP-001 restored it —
+		// but only for provider-tools. Nil deps (subagent engines, #27794)
+		// leave this a no-op.
+		// Scoped activations (run.MessageStartIndexes set — orchestration
+		// state runs that request only their own conversation slice) skip
+		// the trigger: compaction replaces the WHOLE conversation, which
+		// would invalidate the scope's start index into the message array.
+		// IncrementTurn below is the ONE per-iteration turn advance
+		// (2e9f01b / CMP-001 F4 semantics): the pragma loop's old
+		// post-assistant increment site was removed with this port — a
+		// second increment inside the same iteration would expire
+		// MinTurnsCooldown within the compaction's own iteration and let a
+		// still-over-threshold conversation re-compact immediately.
+		if len(run.MessageStartIndexes) == 0 && engine.compactor != nil && engine.autoTracker != nil {
+			compSnap := engine.store.Snapshot()
+			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
+			if counter, ok := engine.provider.(provider.TokenCounter); ok {
+				precise, countErr := counter.CountTokens(ctx, provider.RequestParams{
+					Model:    firstNonEmpty(compSnap.Model, compSnap.Conversation.Model, engine.config.Model),
+					Messages: compSnap.Conversation.APIMessages(),
+					System:   compSnap.Conversation.System,
+				})
+				if countErr == nil {
+					tokenCount = precise
+				}
+			}
+			if engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig) {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
+				ch <- CompactionStartedEvent{}
+				compResult, compErr := engine.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
+				switch {
+				case compErr != nil && ctx.Err() == nil:
+					// A real failure: count it and possibly trip the breaker.
+					tripped := engine.autoTracker.RecordFailure()
+					ch <- CompactionFailedEvent{
+						Attempt:  engine.autoTracker.FailureCount(),
+						MaxRetry: compact.MaxConsecutiveFailures,
+						ErrorMsg: compErr.Error(),
+					}
+					if tripped {
+						engine.bus.Emit(observe.ErrorOccurred{
+							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+							Severity:     "warn",
+							Component:    "compact",
+							ErrorType:    "circuit_breaker_tripped",
+							ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
+						})
+						ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
+					}
+				case compErr == nil:
+					engine.autoTracker.RecordSuccess()
+					// CMP-001.2 F3: compaction replaces the WHOLE
+					// conversation, but the unanswered operator prompt
+					// (appended before iteration 0, or the fresh bash
+					// observation at the tail of a later iteration) must
+					// still reach the model verbatim. Re-append the
+					// unanswered user text messages after the summary.
+					pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)
+					engine.store.Update(func(s *app.AppState) {
+						repl := compResult.ReplacementMessages
+						if len(pending) > 0 {
+							repl = append(append([]model.Message{}, repl...), pending...)
+						}
+						s.Conversation.Messages = repl
+						s.Conversation.UpdatedAt = time.Now()
+					})
+					// CMP-001.2 F2: the compaction REPLACED
+					// Conversation.Messages, but the incremental session
+					// checkpoint is index-based — it would skip the
+					// summary and the first post-compaction exchange (all
+					// land below the stale SessionLastIdx), leaving the
+					// file with the full pre-compaction history for
+					// --resume to resurrect. Rewrite the durable session
+					// file, exactly as manual /compact does.
+					if err := engine.rewriteSession(); err != nil {
+						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
+						ch <- ErrorEvent{Err: fmt.Errorf("rewrite session after compaction: %w", err)}
+						return
+					}
+					ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
+				}
+				// compErr != nil && ctx.Err() != nil: the loop is being
+				// torn down — no failure count, no event, next iteration's
+				// ctx check exits cleanly.
+			}
+			engine.autoTracker.IncrementTurn()
+		}
+
 		request, workDir, err := engine.buildPragmaLoopTurnRequest(run)
 		if err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
@@ -365,11 +462,6 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 			ch <- ErrorEvent{Err: err}
 			return
-		}
-
-		if engine.autoTracker != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: engine.autoTracker != nil")
-			engine.autoTracker.IncrementTurn()
 		}
 
 		if assistantTurn.Action.Kind == pragmaLoopActionFinal {

@@ -316,3 +316,131 @@ future change lets the store diverge from what the model sees, that is a
 new case. Window calibration (CMP-002) and the queue items CMP-001.3/4
 remain open. The pre-existing `TestProviderToolsCLIContract` acceptance
 failure documented in CMP-001.1 is unchanged and untouched here.
+
+---
+
+## Revision CMP-001.3 (2026-09-24): the DEFAULT loop mode never had the restored trigger; record's mode/history claims corrected
+
+Source: independent fresh-instance audit of commit `42c45b4`; queue item
+CMP-001.3, finding F1 (and the CMP-001.1-reaudit critic finding C-1 that
+first surfaced it). Every F1 sub-claim was verified against the code and
+git history before any change; none was refuted.
+
+### History verification (all claims reproduced against the tree)
+
+- `--loop` defaults to `"pragma"` — `internal/cli/flags.go:30`, and has
+  since `95621ad` introduced the flag (verified at 95621ad, 4a7dc99,
+  42c45b4, c183083, 39044b1, HEAD). `Engine.Run`'s default branch
+  dispatches to `runPragmaLoop` (`internal/query/loop.go:34-36`);
+  `deps.go:377` defaults `LoopMode` to `LoopModePragma`; subagent engines
+  are forced to provider-tools (`subagent.go:111`). So the DEFAULT mode
+  is the pragma loop, not provider-tools.
+- `runPragmaLoop` never consulted the tracker: no `ShouldAutoCompact`
+  anywhere in `miniswe_loop.go` — `git log -S'ShouldAutoCompact' --
+  internal/query/miniswe_loop.go` is empty across the file's entire
+  history (created 532ee5b). It carried only two `IncrementTurn` sites.
+- The default-mode loop lost the trigger at `fed8bd7`: at `fed8bd7^`
+  the default dispatch (`Engine.Run`, loop.go:52) ran `runLoop`, whose
+  iteration called `autoCompactBeforeRequest` (defined at
+  fed8bd7^:503-504, called at :198, `ShouldAutoCompact` at :522 — the
+  payload's ":504" is the function body start). `fed8bd7` ("Remove stale
+  web and handoff code") deleted `runLoop`/`autoCompactBeforeRequest`
+  (0 matches in fed8bd7's loop.go) and pointed `Engine.Run` at the
+  triggerless `runPragmaLoop` (fed8bd7 loop.go:42). The miniswe loop
+  never carried the trigger itself — "lost at fed8bd7" means the DEFAULT
+  mode lost it, exactly.
+- Before this revision the only production trigger call was
+  `provider_tools_loop.go` (now :114; the payload's :103 and the re-audit
+  critic's :110 are the same line drifting across CMP-001.1/.2 edits).
+  Compaction deps are injected regardless of loop mode
+  (`run.go:1224-1225` interactive, `:1616-1617` non-interactive,
+  `:1119` rebind), so default-mode engines ran with live deps and a
+  dead trigger.
+- The postmortem session that seeded CMP-001 ran provider-tools because
+  the wrappers select it explicitly (`tools/harbor_pragma_agent.py:137`,
+  `tools/self_improve.py:88` pass `--loop provider-tools`), not because
+  it is the default.
+
+### Record corrections (this section amends the record's own claims)
+
+- The original record's "every default-mode session since
+  (`--loop provider-tools`) runs with auto-compaction silently dead"
+  conflated two loops and was wrong on both counts: provider-tools is
+  NOT the default mode, and the actually-default pragma loop did not
+  merely "keep" its trigger — the default mode lost the trigger at
+  fed8bd7, before 95621ad existed. The correct statement: default-mode
+  (pragma-loop) sessions have run with auto-compaction silently dead
+  since fed8bd7 (2026-06-08); provider-tools sessions since 95621ad;
+  CMP-001 repaired provider-tools only.
+- The original mechanism note "pragma loop mode untouched" and the
+  provider_tools_loop.go comment "The pragma loop carried this trigger
+  since 2e9f01b" (fixed in this revision) both rested on the wrong
+  history above. At 2e9f01b the trigger lived in the then-default loop;
+  the miniswe-aligned `runPragmaLoop` that is today's default never had
+  it.
+
+### Change (one mechanism): the CMP-001 trigger block ported into the pragma loop
+
+`internal/query/miniswe_loop.go` `runPragmaLoopWithInitialPrompt` main
+turn loop (block at ~349-443, `ShouldAutoCompact` at :383): the exact
+CMP-001 mechanism as it stands after revisions .1/.2 — deps guard, token
+count (provider `TokenCounter` when implemented, heuristic fallback),
+`ShouldAutoCompact`, `CompactionStartedEvent`, `Compact`, failure →
+`CompactionFailedEvent`/breaker → `CompactionDisabledEvent`, success →
+`RecordSuccess` + `pendingUnansweredUserPrompts` re-append +
+`store.Update` replacement + `rewriteSession()` + `CompactionEvent`,
+with the ONE per-iteration `IncrementTurn` inside the guard. The old
+post-assistant increment site in the main loop was REMOVED with the port
+— keeping it would double-increment per iteration and halve
+`MinTurnsCooldown` (the CMP-001.1 F4 defect); the cooldown test below
+pins that. The FinalTextOnly sub-loop (orchestration capture states) and
+its increment are untouched: that path never compacts and is not the
+default mode.
+
+Pragma-loop-specific gate (documented, load-bearing): scoped activations
+— `run.MessageStartIndexes` set, i.e. orchestration state runs whose
+requests are sliced to their own conversation segment — skip the
+trigger, because compaction replaces the WHOLE conversation and would
+invalidate the scope's start index (the provider-tools loop has no
+scoping concept, so its port needed no such gate). Unscoped pragma-loop
+runs — plain `pragma` interactive and `--prompt` sessions, and
+orchestration persistent-conversation states — carry the trigger.
+
+Comment-only correction in `provider_tools_loop.go` (the wrong
+"carried this trigger since 2e9f01b" history); no behavior change there.
+
+### Gates (this revision)
+
+RED (unchanged tree, before the port): both new tests failed with
+`CompactionStartedEvent count = 0, want 1` —
+`go test ./internal/query/ -run 'TestPragmaLoopAutoCompact' -count=1`.
+
+GREEN after the port:
+- `go test ./internal/query/ -run 'TestProviderToolsLoopAutoCompact|TestPragmaLoopAutoCompact' -count=1 -v`
+  — 6/6 PASS (4 provider-tools gates unchanged + the 2 new pragma-loop
+  gates: trigger/replaces/pending-prompt-preserved, and the
+  cooldown single-increment pin mirroring CMP-001.1's).
+- `go test ./internal/query/ -count=1 -race` — ok (10.4s).
+- `go test ./internal/compact/ ./internal/cli/ ./internal/orchestration/ -count=1` — ok.
+- `go test ./internal/cli/ -count=1 -race` — ok (added per the CMP-001.2
+  re-audit C-5 note that cli had not been race-gated).
+- `go test ./... -count=1` — green except the pre-existing
+  `TestProviderToolsCLIContract` failure documented in CMP-001.1
+  (unrelated: provider-tools acceptance/environment; unchanged).
+- `go vet ./internal/query/` clean; the three changed Go files are
+  gofmt-clean (pre-existing gofmt drift in other query test files is
+  untouched, per the CMP-001.1 note).
+
+Claim boundary: proven locally, deterministically — the default pragma
+loop now consults the auto-compact tracker before each request build,
+replaces the conversation with the summary while preserving the pending
+unanswered prompt verbatim, rewrites the session file, and counts one
+model-request iteration per cooldown advance. Subagent engines (nil
+autoTracker) are unaffected; `DISABLE_AUTO_COMPACT` unchanged; scoped
+orchestration activations and FinalTextOnly capture states do NOT
+compact (documented above). Orchestration unscoped state runs run on
+forked engines that inherit the root's compaction deps (pre-existing
+fork-deps leak, filed as CMP-001.4 F5 — nil-ing fork deps there will
+simply disable orchestration compaction; this port is compatible with
+either resolution). No live-provider behavior is claimed; window
+calibration (CMP-002) and CMP-001.4 remain open.

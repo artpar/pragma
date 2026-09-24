@@ -83,10 +83,14 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		}
 
 		// CMP-001: consult the auto-compact tracker before each request.
-		// The pragma loop carried this trigger since 2e9f01b; the
-		// provider-tools loop was written without it (95621ad) and every
-		// default-mode session ran with auto-compaction silently dead.
-		// Nil deps (subagent engines, #27794) leave this a no-op.
+		// The then-default loop carried this trigger since 2e9f01b; the
+		// provider-tools loop was written without it (95621ad). The
+		// default-mode trigger itself was lost earlier, at fed8bd7, which
+		// deleted autoCompactBeforeRequest and made the miniswe-aligned
+		// runPragmaLoop the default dispatch — this block restored it for
+		// provider-tools mode, CMP-001.3 for the default pragma loop
+		// (miniswe_loop.go). Nil deps (subagent engines, #27794) leave
+		// this a no-op.
 		// IncrementTurn below is the ONE per-iteration turn advance
 		// (2e9f01b semantics): MinTurnsCooldown must count model-request
 		// iterations, and the end-turn path returns before any end-of-
