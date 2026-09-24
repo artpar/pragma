@@ -110,7 +110,6 @@ func (engine *Engine) executeSubAgentTool(ctx context.Context, call model.ToolCa
 	sub, _ := engine.ForkFreshConversation()
 	sub.config.LoopMode = LoopModeProviderTools
 	sub.config.DisableSubAgents = true
-	sub.autoTracker = nil
 
 	var result strings.Builder
 	var usage model.TokenUsage

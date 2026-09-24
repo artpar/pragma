@@ -444,3 +444,122 @@ fork-deps leak, filed as CMP-001.4 F5 — nil-ing fork deps there will
 simply disable orchestration compaction; this port is compatible with
 either resolution). No live-provider behavior is claimed; window
 calibration (CMP-002) and CMP-001.4 remain open.
+
+---
+
+## Revision CMP-001.4a (2026-09-24): fork engines inherit the root's live compaction deps (F5)
+
+Source: queue item CMP-001.4a (the F5 split of CMP-001.4 after the
+parent's worker died at the 80-turn cap); triple-corroborated (original
+audit F5, cycle-3 critic C-5, cycle-4 critic C-1/CMP-001.3.F1). Every F5
+sub-claim was verified against the tree at `c4e8c36` before any change;
+nothing was refuted.
+
+### Verification of the payload claims
+
+- ForkFreshConversation copied `compactor`/`autoTracker`/`windowConfig`
+  into the child struct literal (`internal/query/engine.go:184-187` at
+  `c4e8c36`; the payload's `:165-172` is line drift from the
+  CMP-001.1/.2/.3 edits — same code, not a refutation).
+- The Agent tool nils only the tracker (`internal/query/subagent.go:113`,
+  exact): `compactor`/`windowConfig` were still inherited there. That path
+  was nevertheless trigger-safe because the loop guard requires BOTH
+  `compactor != nil && autoTracker != nil`
+  (`provider_tools_loop.go:108`, `miniswe_loop.go:377`).
+- Orchestration persona forks inherit the LIVE deps
+  (`internal/orchestration/runner.go:348-355`, exact): both fork paths —
+  persistent-conversation states (`:348-350`) and non-persistent persona
+  states (`:353-355`) — call the same constructor, and no fork path
+  constructs fresh deps (production `SetCompaction`/compDeps injection
+  exists only for root engines: `cli/run.go:1120,1225,1617`).
+- `AutoTracker` is mutex-less (`internal/compact/auto.go` — plain fields,
+  no synchronization): its breaker (`consecutiveFailures`) and cooldown
+  (`turnsSinceCompact`) book ONE conversation's model history, so a
+  shared instance mixes conversations.
+- The consequence chain is live for forks, both directions:
+  (a) fork trigger guards pass with the inherited deps
+  (`provider_tools_loop.go:108`, `miniswe_loop.go:377` for unscoped runs —
+  orchestration persona state engines run exactly that pragma loop via
+  `RunStateEvents` → `RunPragmaLoopWithSystemCompletionCheckOptions`,
+  `runner.go:969`), so a fork's `RecordFailure`/`RecordSuccess`/
+  `IncrementTurn` mutate the ROOT's tracker; (b) the FinalTextOnly
+  sub-loop's unconditional `IncrementTurn` (`miniswe_loop.go:313-315`)
+  advanced the shared tracker even for scoped capture-state runs.
+
+RED (unchanged tree `c4e8c36`, real fork engines through
+`ForkFreshConversation` + the provider-tools loop — the exact Agent-tool
+fork shape):
+`go test ./internal/query/ -run 'TestForkFreshConversationDoesNotInheritCompactionDeps|TestForkCompactionFailuresDoNotTripRootBreaker' -count=1`
+failed with
+`fork inherited the root's live AutoTracker — a mutex-less tracker shared across conversations lets persona-fork failures trip the root breaker and persona turns advance the root cooldown (CMP-001.4 F5)`
+and
+`root breaker contaminated by the fork run: 3 compaction failures counted toward the root (CMP-001.4 F5)`
+— a fork whose every compaction fails left the ROOT tracker at
+FailureCount 3, so the root's own over-threshold conversation could never
+auto-compact again.
+
+### Change (one mechanism): the fork constructor no longer inherits compaction deps
+
+`internal/query/engine.go` `ForkFreshConversation`: the child struct
+literal drops `compactor`/`autoTracker`/`windowConfig` (doc comment
+updated). All fork paths route through this one constructor — the
+exhaustive production call-site list is `subagent.go:110` (Agent tool),
+`orchestration/runner.go:348` and `:353` (persona forks) — so nil-ing at
+the constructor covers ALL fork paths with one edit. `subagent.go`'s
+`sub.autoTracker = nil` is removed as behavior-identical cleanup within
+the same mechanism (after the constructor fix it assigned nil to an
+already-nil field).
+
+### Gates (this revision)
+
+GREEN after the fix:
+- `go test ./internal/query/ -run 'TestForkFreshConversationDoesNotInheritCompactionDeps|TestForkCompactionFailuresDoNotTripRootBreaker' -count=1 -v`
+  — 2/2 PASS (fork deps nil, root keeps its own; fork run leaves the
+  root breaker clean and the root still auto-compacts).
+- `go test ./internal/query/ -count=1 -race` — no races; the only
+  failures are the three pre-existing RED gates of queue item CMP-001.4b
+  (`autocompact_request_shape_test.go` — request-shape token estimates,
+  F6), verified failing identically with this fix stashed (i.e. they are
+  not regressions of this change and are out of scope here).
+- `go test ./internal/orchestration/ ./internal/session/ -count=1` — ok.
+- `go test ./internal/compact/ -count=1` — fails only on the pre-existing
+  CMP-001.4c RED gate (`auto_zero_window_test.go`, F8 zero-window
+  threshold; unrelated package, untouched here).
+- `go test ./internal/cli/ -count=1` — fails only on the pre-existing
+  CMP-001.4c RED gates (`compaction_window_calibration_test.go`, F8
+  SystemPromptEst calibration). The `TestProviderToolsCLIContract`
+  acceptance/environment failure documented in CMP-001.1 did not occur
+  in this session's run.
+- `go vet ./internal/query/` clean; all three changed/added Go files are
+  gofmt-clean.
+
+### Boundary (deliberate semantics, documented)
+
+- Forks now NEVER auto-compact. This is the resolution the CMP-001.3
+  revision already recorded as compatible ("nil-ing fork deps there will
+  simply disable orchestration compaction"): per-conversation tracker
+  state cannot be shared across conversations without exactly this
+  breaker/cooldown contamination. Persona fork conversations are bounded
+  by orchestration state runs and `MaxTurns`; if fork auto-compaction is
+  ever wanted, the fork must construct its OWN tracker/compactor/window
+  and rebind `SessionRewrite` to its own store — inheritance is the bug,
+  not the wiring shape.
+- CMP-001.3.F1's session-rewrite aspect (a fork's compaction rewriting
+  the ROOT's session file through the inherited `SessionRewrite` config
+  closure) is DEFUSED, not removed: `rewriteSession()` is called only
+  from the two compaction success branches
+  (`miniswe_loop.go`, `provider_tools_loop.go`), which are unreachable on
+  a deps-nil fork. The config field itself is still copied with
+  `subCfg := engine.config`; re-enabling fork compaction without
+  rebinding it would resurrect that leak.
+- The FinalTextOnly/scoped IncrementTurn asymmetry inside one engine
+  (CMP-001.3.F2) is untouched; with fork deps nil, its cross-conversation
+  exposure is gone, and the within-root drift remains a separate finding.
+- The remaining CMP-001.4 splits (.4b precise-token/request-shape
+  counting, .4c window calibration + zero-window guard) and CMP-002
+  (morphllm ContextWindow) are unchanged and open.
+
+Claim boundary: proven locally, deterministically — fork engines created
+by `ForkFreshConversation` carry nil compaction deps in every production
+path, and a fork's compaction failures/turns no longer touch the root
+engine's breaker or cooldown. No live-provider behavior is claimed.

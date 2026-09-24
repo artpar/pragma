@@ -151,6 +151,10 @@ func NewEngine(
 // state. It shares runtime dependencies with the parent engine but keeps a
 // separate conversation store so revisiting that state preserves only that
 // state's model history.
+// Compaction dependencies are NOT shared: they are per-conversation state
+// (the AutoTracker's breaker/cooldown book a single conversation's model
+// history), so the fork keeps them nil — auto-compaction is disabled on
+// forks, matching the CompactionDeps contract for subagent engines.
 func (engine *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -176,16 +180,18 @@ func (engine *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 		observe.GlobalTrace("if: subCfg.MaxTurns <= 0")
 		subCfg.MaxTurns = DefaultSubAgentMaxTurns
 	}
+	// CMP-001.4 F5: do not inherit compactor/autoTracker/windowConfig.
+	// A fork has a fresh conversation; sharing the parent's live deps would
+	// let a fork's compaction failures trip the root's circuit breaker and
+	// the fork's iterations advance the root's cooldown through one
+	// mutex-less AutoTracker.
 	sub := &Engine{
-		provider:     engine.provider,
-		store:        subStore,
-		costTracker:  engine.costTracker,
-		bus:          engine.bus,
-		config:       subCfg,
-		compactor:    engine.compactor,
-		autoTracker:  engine.autoTracker,
-		windowConfig: engine.windowConfig,
-		hookMgr:      engine.hookMgr,
+		provider:    engine.provider,
+		store:       subStore,
+		costTracker: engine.costTracker,
+		bus:         engine.bus,
+		config:      subCfg,
+		hookMgr:     engine.hookMgr,
 		contentReplacementState: toolresult.ReconstructContentReplacementState(
 			conversation.APIMessages(),
 			engine.config.ContentReplacementRecords,
