@@ -422,6 +422,28 @@ def clk_stamps(body):
     return out
 
 
+def system_text(body):
+    """The text of the request's system message, '' when absent (CLK-002)."""
+    msgs = body.get("messages", [])
+    if not msgs or msgs[0].get("role") != "system":
+        return ""
+    content = msgs[0].get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(p.get("text", "") for p in content
+                         if isinstance(p, dict) and p.get("type") == "text")
+    return ""
+
+
+def system_stamps(body):
+    """The wall-clock stamps carried in the request's system message
+    (the per-request clock block, CLK-002)."""
+    return [m.group(1) for m in
+            re.finditer(r"^\[pragma wall-clock (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\]$",
+                        system_text(body), re.M)]
+
+
 def assert_clkred(reqs, expect):
     """CLK-001 wire gate. expect=clkred (baseline): the wire carries zero
     wall-clock stamps while the loop still completes the scripted profile
@@ -440,11 +462,15 @@ def assert_clkred(reqs, expect):
 
 
 def assert_clkgreen(reqs):
-    """CLK-001 wire gate (candidate): the prompt message on every request
-    opens with a wall-clock prefix line; the final request carries a
-    post-tools companion user message that is exactly the stamp; stamps
-    parse as RFC3339 and are monotonic non-decreasing within the request."""
+    """CLK-001/CLK-002 wire gate (candidate): the prompt message on every
+    request opens with a wall-clock prefix line; every request's system
+    message carries exactly one wall-clock stamp (the per-request clock
+    block); NO user message exists that is only a wall-clock stamp (the
+    CLK-001 companion is banned by operator directive 2026-09-24, CLK-002);
+    stamps parse as RFC3339 and are monotonic non-decreasing within the
+    request, and the system clock never runs backwards across requests."""
     check(len(reqs) >= 2, "expected >= 2 requests on the wire, got %d" % len(reqs))
+    prev_system_clock = None
     for meta, body in reqs:
         stamps = clk_stamps(body)
         check(len(stamps) >= 1,
@@ -462,25 +488,29 @@ def assert_clkgreen(reqs):
         check(parsed == sorted(parsed),
               "stamps are not monotonic within request seq=%d: %s"
               % (meta["sequence"], [p.isoformat() for p in parsed]))
+        sys_clock = system_stamps(body)
+        check(len(sys_clock) == 1,
+              "request seq=%d system carries %d wall-clock stamps, want exactly 1 (the per-request clock block, CLK-002)"
+              % (meta["sequence"], len(sys_clock)))
+        if prev_system_clock is not None:
+            from datetime import datetime
+            check(datetime.fromisoformat(sys_clock[0].replace("Z", "+00:00")) >=
+                  datetime.fromisoformat(prev_system_clock.replace("Z", "+00:00")),
+                  "system clock ran backwards: request seq=%d %s after %s"
+                  % (meta["sequence"], sys_clock[0], prev_system_clock))
+        prev_system_clock = sys_clock[0]
+    for meta, body in reqs:
+        for text in user_texts(body):
+            check(not CLK_STAMP_RE.match(text.strip()),
+                  "request seq=%d carries a stamp-only user message (CLK-002 ban): %r"
+                  % (meta["sequence"], text))
     meta, body = reqs[-1]
-    msgs = body.get("messages", [])
-    saw_tool = False
-    companion = None
-    for m in msgs:
-        if m.get("role") == "tool":
-            saw_tool = True
-        elif m.get("role") == "user":
-            content = m.get("content")
-            text = content if isinstance(content, str) else None
-            if saw_tool and text is not None and CLK_STAMP_RE.match(text.strip()):
-                companion = text
-    check(companion is not None,
-          "final request lacks the post-tools companion stamp user message")
     names = tool_names(body)
     check("Bash" in names and "apply_patch" in names,
           "candidate loop shape broken: built-ins missing from tool list")
     print("PASS clkgreen.prefix: prompt stamp line on all %d requests" % len(reqs))
-    print("PASS clkgreen.companion: post-tools companion stamp present on the final request")
+    print("PASS clkgreen.nocompanion: no stamp-only user message on any request (CLK-002 ban)")
+    print("PASS clkgreen.system: per-request clock block stamp in every request's system")
     print("PASS clkgreen.monotonic: RFC3339 stamps non-decreasing on every request")
 
 

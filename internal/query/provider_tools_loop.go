@@ -99,6 +99,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
 		system = engine.systemWithMCPStatus(system)
 		system = engine.systemWithHarnessManifest(system)
+		system = engine.systemWithWallClock(system, time.Now())
 		tools := providerToolDefs()
 		tools = engine.withWebSearchTool(tools)
 		tools = engine.withSubAgentTool(tools)
@@ -329,16 +330,6 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			ch <- ErrorEvent{Err: err}
 			return
 		}
-		if err := engine.appendConversationMessage(model.Message{
-			ID:        model.NewUUID(),
-			Role:      model.RoleUser,
-			Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(time.Now())}},
-			Timestamp: time.Now(),
-		}); err != nil {
-			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
-			ch <- ErrorEvent{Err: err}
-			return
-		}
 
 		engine.drainPendingUserInputs()
 	}
@@ -353,7 +344,7 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 // message parks instead — a user message between a tool call and its
 // results would serialize before the tool results and break tool_result
 // pairing. Parked messages flush at the loop's next safe point
-// (drainPendingUserInputs, after each companion append).
+// (drainPendingUserInputs, after each tool-results append).
 func (engine *Engine) AppendUserInput(text string) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -391,7 +382,7 @@ func (engine *Engine) AppendUserInput(text string) error {
 }
 
 // drainPendingUserInputs flushes parked operator messages into the
-// conversation at a pairing-safe point (after the companion append). It
+// conversation at a pairing-safe point (after the tool-results append). It
 // holds pendingUserInputsMu for the whole flush so a concurrent
 // AppendUserInput cannot interleave: parked messages land in submission
 // order, before any later direct append.
@@ -482,11 +473,13 @@ const wallClockStampMarker = "[pragma wall-clock "
 
 // wallClockStamp returns the append-time stamp line for engine-appended
 // user messages (CLK-001). RFC3339 keeps the timezone explicit. The stamp
-// rides as a first line inside text-only appends (prompt, turn-budget
-// notice); after a tool-results batch it rides as a companion user message
-// — the position and wire shape the TURN-001 notice proved live — because a
-// text part inside the results message would serialize before its tool
-// results (an unproven user-before-tools order on this route).
+// rides as a first line inside text-only appends (prompt, notices,
+// queued operator input); after a tool-results batch the current time
+// rides in the per-request systemWithWallClock block instead (CLK-002)
+// because a text part inside the results message would serialize before
+// its tool results (an unproven user-before-tools order on this route),
+// and a stamp-only companion user message is banned by operator
+// directive (2026-09-24).
 func wallClockStamp(now time.Time) string {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -534,7 +527,7 @@ func turnBudgetNotice(used, maxTurns int) string {
 
 const outputBudgetNoticeMarker = "[pragma output-budget "
 
-// outputBudgetNotice is appended as a companion user message after any turn
+// outputBudgetNotice is appended as a user message after any turn
 // that consumed at least half the output-token budget (HMB-002), so the
 // model can write records before its next long reasoning burst instead of
 // learning the budget only at truncation.

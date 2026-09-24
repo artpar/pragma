@@ -16,7 +16,7 @@ import (
 // conversation without breaking tool_result pairing — it parks while the
 // tail is an assistant tool_use awaiting results and flushes at the loop's
 // next safe point; through a real loop run it is delivered on the next
-// request after the tool results and companion.
+// request after the tool results.
 
 func TestAppendUserInputParksBehindDanglingToolUse(t *testing.T) {
 	engine := newProviderToolsTestEngine(t, &pragmaLoopTestProvider{})
@@ -50,7 +50,8 @@ func TestAppendUserInputParksBehindDanglingToolUse(t *testing.T) {
 		t.Fatalf("tail must still be the assistant tool_use message; got role %q", msgs[len(msgs)-1].Role)
 	}
 
-	// The loop completes the batch: tool results, then the companion.
+	// The loop completes the batch: the tool results append is itself the
+	// safe point (no stamp-only companion follows — CLK-002 ban).
 	if err := engine.appendConversationMessage(model.Message{
 		ID:        model.NewUUID(),
 		Role:      model.RoleUser,
@@ -59,16 +60,8 @@ func TestAppendUserInputParksBehindDanglingToolUse(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.appendConversationMessage(model.Message{
-		ID:        model.NewUUID(),
-		Role:      model.RoleUser,
-		Content:   []model.ContentPart{model.TextPart{Text: wallClockStamp(time.Now())}},
-		Timestamp: time.Now(),
-	}); err != nil {
-		t.Fatal(err)
-	}
 
-	// Drain at the safe point: the parked note lands after the companion.
+	// Drain at the safe point: the parked note lands after the results.
 	engine.drainPendingUserInputs()
 	msgs = engine.store.Snapshot().Conversation.Messages
 	tail := msgs[len(msgs)-1]
@@ -145,9 +138,10 @@ func TestProviderToolsLoopDeliversQueuedInputAtNextRequest(t *testing.T) {
 	}
 
 	// The second request carries the queued note as a user message after
-	// the tool results and the companion.
+	// the tool results — and no stamp-only user message (CLK-002 ban).
 	req2 := prov.requests[1].Messages
-	resultsIdx, companionIdx, noteIdx := -1, -1, -1
+	assertNoStampOnlyUserMessages(t, req2, "request 2")
+	resultsIdx, noteIdx := -1, -1
 	for i, msg := range req2 {
 		for _, part := range msg.Content {
 			switch p := part.(type) {
@@ -156,25 +150,20 @@ func TestProviderToolsLoopDeliversQueuedInputAtNextRequest(t *testing.T) {
 					resultsIdx = i
 				}
 			case model.TextPart:
-				// The companion is the stamp-only user message (the prompt
-				// and the queued note carry a stamp line plus body text).
-				if _, stampOnly := parseWallClockStamp(p.Text); stampOnly && msg.Role == model.RoleUser {
-					companionIdx = i
-				}
 				if strings.Contains(p.Text, "mid-turn operator note") {
 					noteIdx = i
 				}
 			}
 		}
 	}
-	if resultsIdx < 0 || companionIdx < 0 {
-		t.Fatalf("request 2 missing tool results (%d) or companion (%d)", resultsIdx, companionIdx)
+	if resultsIdx < 0 {
+		t.Fatalf("request 2 missing tool results (%d)", resultsIdx)
 	}
 	if noteIdx < 0 {
 		t.Fatalf("queued note never reached request 2; messages: %+v", req2)
 	}
-	if noteIdx < companionIdx || companionIdx < resultsIdx {
-		t.Fatalf("order broken: results=%d companion=%d note=%d (note must follow the companion)", resultsIdx, companionIdx, noteIdx)
+	if noteIdx < resultsIdx {
+		t.Fatalf("order broken: results=%d note=%d (note must follow the results batch)", resultsIdx, noteIdx)
 	}
 
 	// The note persisted in the conversation for later requests.

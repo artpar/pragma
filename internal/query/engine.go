@@ -393,9 +393,10 @@ func (engine *Engine) requestTokenCount(ctx context.Context, resolvedModel strin
 //
 // provider-tools: the custom prompt (prepended by WithCustomSystemPrompt),
 // the conversation's system blocks (re-sent verbatim each iteration),
-// MCP status, harness manifest, patch guidance, and the static tool
-// schemas (providerToolDefs, WebSearch, Agent). PragmaLoopSystemPrompt
-// is NOT counted — provider-tools requests never carry it.
+// MCP status, harness manifest, the per-request wall-clock block (CLK-002),
+// patch guidance, and the static tool schemas (providerToolDefs,
+// WebSearch, Agent). PragmaLoopSystemPrompt is NOT counted —
+// provider-tools requests never carry it.
 //
 // pragma (default): the loop replaces the conversation system with
 // custom prompt + PragmaLoopSystemPrompt (run.System, stored via
@@ -418,6 +419,7 @@ func (engine *Engine) EstimateCompactionReserve() int {
 		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
 		system = engine.systemWithMCPStatus(system)
 		system = engine.systemWithHarnessManifest(system)
+		system = engine.systemWithWallClock(system, time.Now())
 		tools := providerToolDefs()
 		tools = engine.withWebSearchTool(tools)
 		tools = engine.withSubAgentTool(tools)

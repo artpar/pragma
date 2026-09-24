@@ -212,3 +212,14 @@ cross-provider switching over the resume rebind path
 docs/cross-provider-model-catalog-2026-09-12.md),
 `go test ./internal/cli -run "TestQualifiedModelIDs|TestRefresh|TestKnows|TestParseModelTarget" -count=1`
 and `go test ./internal/tui -run TestModelDialog -count=1`.
+Tenth: stamp-only wall-clock user messages polluted the conversation —
+the CLK-001 companion rendered as a bare user turn in the operator TUI
+and serialized into session files (operator directive, 2026-09-24,
+CLK-002; record in
+docs/failure-cases/wall-clock-system-block-2026-09-24.md); the
+provider-tools loop now carries the per-request clock in a dynamic
+system block (`systemWithWallClock`, rebuilt every request build) and
+no longer appends any stamp-only user message,
+`go test ./internal/query -run TestProviderToolsLoopWallClockStampsTextAppendsAndRequestSystem -count=1`
+plus the INT-001 queue-delivery, sibling-dispatch, pragma-mode, and
+compaction-reserve gates listed there.

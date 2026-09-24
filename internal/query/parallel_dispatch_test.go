@@ -36,7 +36,7 @@ func parallelDispatchResponses() []model.Response {
 			StopReason: model.StopToolUse,
 		},
 		{
-			Content:   []model.ContentPart{model.TextPart{Text: "done"}},
+			Content:    []model.ContentPart{model.TextPart{Text: "done"}},
 			StopReason: model.StopEndTurn,
 		},
 	}
@@ -94,10 +94,10 @@ func TestProviderToolsLoopDispatchesSiblingCallsConcurrently(t *testing.T) {
 	}
 
 	// Results message: call order preserved, one user message, both calls
-	// paired, and the CLK-001 companion still follows.
+	// paired, and no stamp-only companion follows (CLK-002 ban).
 	req1 := prov.requests[1].Messages
-	if len(req1) != 4 {
-		t.Fatalf("request 1 carries %d messages, want 4 (prompt, assistant, results, companion)", len(req1))
+	if len(req1) != 3 {
+		t.Fatalf("request 1 carries %d messages, want 3 (prompt, assistant, results)", len(req1))
 	}
 	resultsMsg := req1[2]
 	if len(resultsMsg.Content) != 2 {
@@ -118,9 +118,7 @@ func TestProviderToolsLoopDispatchesSiblingCallsConcurrently(t *testing.T) {
 	if !strings.Contains(first.Content, "PAR_BLOCKER_DONE") || !strings.Contains(second.Content, "PAR_QUICK_DONE") {
 		t.Fatalf("results content mismatch: %q / %q", first.Content, second.Content)
 	}
-	if _, ok := parseWallClockStamp(req1[3].Content[0].(model.TextPart).Text); !ok {
-		t.Fatalf("companion stamp missing after parallel results")
-	}
+	assertNoStampOnlyUserMessages(t, req1, "request 1")
 }
 
 // Hazard invariant: two same-batch apply_patch calls on one file must both
@@ -134,8 +132,8 @@ func TestProviderToolsLoopSerializesSameBatchApplyPatch(t *testing.T) {
 
 	patchCalls := make([]model.ContentPart, 0, 2)
 	for _, p := range []struct {
-	id    string
-	patch string
+		id    string
+		patch string
 	}{
 		{"call-par-patch-one", patchOne},
 		{"call-par-patch-two", patchTwo},

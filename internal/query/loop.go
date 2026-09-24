@@ -130,6 +130,31 @@ func (engine *Engine) systemWithHarnessManifest(system model.SystemPrompt) model
 	return model.SystemPrompt{Blocks: blocks}
 }
 
+// wallClockSystemBlockBodyText is the fixed body of the per-request clock
+// block; wall_clock_test.go mirrors it as a literal and pins it equal.
+const wallClockSystemBlockBodyText = "The current wall-clock time as this request was built. User-role messages appended by the harness carry the same stamp as the first line of their text at the time they were added; tool-results messages carry no text (a text part would serialize before the tool results and break pairing), so a results batch is timed by this block on the request that follows it."
+
+// systemWithWallClock appends the per-request wall-clock block (CLK-002):
+// the model must see the current time each turn, but no user message may
+// exist just to carry a timestamp (operator directive 2026-09-24 — the
+// CLK-001 stamp-only companion is banned). The block is rebuilt on every
+// request build so the clock is current; text appends keep their
+// first-line stamps; the tool-results message stays tool-results-only
+// (CLK-001 pairing constraint), so a results batch is timed by this block
+// on the request that follows it.
+func (engine *Engine) systemWithWallClock(system model.SystemPrompt, now time.Time) model.SystemPrompt {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
+	blocks = append(blocks, system.Blocks...)
+	blocks = append(blocks, model.SystemBlock{
+		Text:      "# Wall clock\n\n" + wallClockStamp(now) + "\n\n" + wallClockSystemBlockBodyText,
+		Cacheable: false,
+	})
+	observe.GlobalTrace("return: model.SystemPrompt{Blocks: blocks}")
+	return model.SystemPrompt{Blocks: blocks}
+}
+
 func (engine *Engine) systemWithPatchGuidance(system model.SystemPrompt, tools []model.ToolDef) model.SystemPrompt {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

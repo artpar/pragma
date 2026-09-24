@@ -12,17 +12,31 @@ import (
 	"github.com/artpar/pragma/internal/observe"
 )
 
-// CLK-001 gates: every user-role message the provider-tools loop appends
-// carries its append wall-clock time, visible to the model on the request
-// messages. The stamp rides as a first line on text-only appends (prompt,
-// turn-budget notice) and as a companion user message after a
-// tool-results batch; the results message itself stays tool-results-only;
-// assistant messages are unstamped; pragma loop mode carries no stamps.
+// CLK-001/CLK-002 gates: every user-role message the provider-tools loop
+// appends carries its append wall-clock time, visible to the model on the
+// request messages. The stamp rides as a first line on text-only appends
+// (prompt, notices); the results message itself stays tool-results-only;
+// the per-request clock rides in a dynamic system block, NEVER as a
+// stamp-only user message (the CLK-001 companion is banned, CLK-002);
+// assistant messages are unstamped; pragma loop mode carries no stamps and
+// no clock block.
 
 // wallClockStampMarkerText mirrors the production marker as a literal so the
 // gate compiles on the pre-change baseline and fails at runtime, not at
 // compile time.
 const wallClockStampMarkerText = "[pragma wall-clock "
+
+// wallClockSystemBlockBody mirrors the production per-request clock block
+// body (CLK-002) as a literal so these gates compile on the pre-change
+// baseline and fail at runtime, not at compile time. systemWithWallClock
+// must keep its wording in sync with this literal or the gates fail.
+const wallClockSystemBlockBody = "The current wall-clock time as this request was built. User-role messages appended by the harness carry the same stamp as the first line of their text at the time they were added; tool-results messages carry no text (a text part would serialize before the tool results and break pairing), so a results batch is timed by this block on the request that follows it."
+
+// wallClockSystemBlockText builds the mirrored per-request clock block
+// (CLK-002) for a given stamp time.
+func wallClockSystemBlockText(now time.Time) string {
+	return "# Wall clock\n\n" + wallClockStamp(now) + "\n\n" + wallClockSystemBlockBody
+}
 
 var wallClockStampLine = regexp.MustCompile(`^\[pragma wall-clock (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))\]$`)
 
@@ -49,6 +63,45 @@ func splitWallClockPrefix(text string) (time.Time, string, bool) {
 	return ts, rest, true
 }
 
+// systemWallClockStamps returns the wall-clock stamps carried by a
+// request's system prompt blocks (the per-request clock block, CLK-002).
+func systemWallClockStamps(system model.SystemPrompt) []time.Time {
+	var stamps []time.Time
+	for _, block := range system.Blocks {
+		for _, line := range strings.Split(block.Text, "\n") {
+			if ts, ok := parseWallClockStamp(line); ok {
+				stamps = append(stamps, ts)
+			}
+		}
+	}
+	return stamps
+}
+
+// assertNoStampOnlyUserMessages enforces the CLK-002 ban: no user message
+// whose entire text content is a bare wall-clock stamp — the operator
+// directive forbids user messages that exist only to carry a timestamp.
+func assertNoStampOnlyUserMessages(t *testing.T, msgs []model.Message, where string) {
+	t.Helper()
+	for i, msg := range msgs {
+		if msg.Role != model.RoleUser {
+			continue
+		}
+		var texts []string
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok {
+				texts = append(texts, tp.Text)
+			}
+		}
+		if len(texts) == 0 {
+			continue
+		}
+		joined := strings.Join(texts, "\n")
+		if _, stampOnly := parseWallClockStamp(joined); stampOnly {
+			t.Fatalf("%s message %d is a stamp-only user message (CLK-002 ban): %q", where, i, joined)
+		}
+	}
+}
+
 func wallClockStampedResponses() []model.Response {
 	bashInput, err := json.Marshal(map[string]string{"cmd": "true"})
 	if err != nil {
@@ -62,13 +115,13 @@ func wallClockStampedResponses() []model.Response {
 			StopReason: model.StopToolUse,
 		},
 		{
-			Content: []model.ContentPart{model.TextPart{Text: "done"}},
+			Content:    []model.ContentPart{model.TextPart{Text: "done"}},
 			StopReason: model.StopEndTurn,
 		},
 	}
 }
 
-func TestProviderToolsLoopWallClockStampsOnAppendedUserMessages(t *testing.T) {
+func TestProviderToolsLoopWallClockStampsTextAppendsAndRequestSystem(t *testing.T) {
 	prov := &pragmaLoopTestProvider{responses: wallClockStampedResponses()}
 	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
 	store := app.NewStateStore(app.AppState{
@@ -111,17 +164,37 @@ func TestProviderToolsLoopWallClockStampsOnAppendedUserMessages(t *testing.T) {
 		t.Fatalf("prompt body = %q, want %q", rest, "work")
 	}
 
-	// Request 1: prompt, assistant(tool call), user(results-only),
-	// user(stamp companion).
+	// CLK-002: every request's system carries the per-request clock block —
+	// exactly one wall-clock stamp, carried as a block, never a user message.
+	for i, rp := range prov.requests {
+		sysStamps := systemWallClockStamps(rp.System)
+		if len(sysStamps) != 1 {
+			t.Fatalf("request %d system carries %d wall-clock stamps, want exactly 1 (the per-request clock block, CLK-002)", i, len(sysStamps))
+		}
+		want := wallClockSystemBlockText(sysStamps[0])
+		var blockText string
+		for _, block := range rp.System.Blocks {
+			if strings.Contains(block.Text, wallClockStampMarkerText) {
+				blockText = block.Text
+				break
+			}
+		}
+		if blockText != want {
+			t.Fatalf("request %d clock block = %q, want %q", i, blockText, want)
+		}
+	}
+
+	// Request 1: prompt, assistant(tool call), user(results-only) — and NO
+	// stamp-only user message anywhere (the CLK-001 companion is banned).
 	req1 := prov.requests[1].Messages
-	if len(req1) != 4 {
-		t.Fatalf("request 1 carries %d messages, want 4 (prompt, assistant, results, companion)", len(req1))
+	if len(req1) != 3 {
+		t.Fatalf("request 1 carries %d messages, want 3 (prompt, assistant, results) — no stamp-only companion (CLK-002)", len(req1))
 	}
 	if req1[1].Role != model.RoleAssistant {
 		t.Fatalf("request 1 message 1 role = %q, want assistant", req1[1].Role)
 	}
-	if req1[2].Role != model.RoleUser || req1[3].Role != model.RoleUser {
-		t.Fatalf("request 1 tail roles = %q,%q, want user,user", req1[2].Role, req1[3].Role)
+	if req1[2].Role != model.RoleUser {
+		t.Fatalf("request 1 tail role = %q, want user", req1[2].Role)
 	}
 
 	// The results message stays tool-results-only: every part is a tool
@@ -138,23 +211,20 @@ func TestProviderToolsLoopWallClockStampsOnAppendedUserMessages(t *testing.T) {
 		t.Fatalf("results ToolCallID = %q, want call-wallclock-a", rp.ToolCallID)
 	}
 
-	// The companion carries exactly the stamp.
-	companion := req1[3]
-	if len(companion.Content) != 1 {
-		t.Fatalf("companion carries %d parts, want 1", len(companion.Content))
-	}
-	ctp, ok := companion.Content[0].(model.TextPart)
-	if !ok {
-		t.Fatalf("companion content[0] is %T, want model.TextPart", companion.Content[0])
-	}
-	companionStamp, ok := parseWallClockStamp(ctp.Text)
-	if !ok {
-		t.Fatalf("companion text = %q, want wall-clock stamp only", ctp.Text)
-	}
+	// No user message anywhere in the request — or in the persisted
+	// conversation, which session files serialize 1:1 — is stamp-only.
+	assertNoStampOnlyUserMessages(t, req1, "request 1")
+	assertNoStampOnlyUserMessages(t, engine.store.Snapshot().Conversation.Messages, "persisted conversation")
 
-	// Monotonic: the prompt stamp must not postdate the results companion.
-	if promptStamp.After(companionStamp) {
-		t.Fatalf("prompt stamp %v is after companion stamp %v", promptStamp, companionStamp)
+	// Monotonic: the prompt stamp must not postdate the request-0 clock
+	// block, and the clock must not run backwards across requests.
+	sys0 := systemWallClockStamps(prov.requests[0].System)[0]
+	sys1 := systemWallClockStamps(prov.requests[1].System)[0]
+	if promptStamp.After(sys0) {
+		t.Fatalf("prompt stamp %v is after request-0 clock %v", promptStamp, sys0)
+	}
+	if sys0.After(sys1) {
+		t.Fatalf("clock ran backwards across requests: %v then %v", sys0, sys1)
 	}
 
 	// Assistant messages carry no stamps.
@@ -170,9 +240,9 @@ func TestProviderToolsLoopWallClockStampsOnAppendedUserMessages(t *testing.T) {
 	}
 
 	// Exactly one stamp per engine-appended user message: request 1 carries
-	// the prompt prefix and the companion.
-	if n := countWallClockStamps(req1); n != 2 {
-		t.Fatalf("request 1 carries %d stamps, want 2 (prompt + companion)", n)
+	// only the prompt prefix (the per-turn clock rides in the system block).
+	if n := countWallClockStamps(req1); n != 1 {
+		t.Fatalf("request 1 carries %d stamps, want 1 (the prompt prefix; the clock block is not a user message)", n)
 	}
 }
 
@@ -236,6 +306,9 @@ func TestPragmaLoopModeCarriesNoWallClockStamps(t *testing.T) {
 	for i, req := range prov.requests {
 		if n := countWallClockStamps(req.Messages); n != 0 {
 			t.Fatalf("pragma-mode request %d carries %d stamps, want 0", i, n)
+		}
+		if n := len(systemWallClockStamps(req.System)); n != 0 {
+			t.Fatalf("pragma-mode request %d system carries %d wall-clock stamps, want 0 — the clock block lives in the provider-tools loop only", i, n)
 		}
 	}
 }

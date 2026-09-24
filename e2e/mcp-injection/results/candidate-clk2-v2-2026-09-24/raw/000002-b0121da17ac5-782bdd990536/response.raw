@@ -1,0 +1,1 @@
+{"id": "chatcmpl-probe-final-88165", "object": "chat.completion", "created": 1790248488, "model": "probe-model", "choices": [{"index": 0, "message": {"role": "assistant", "content": "PROBE_COMPLETE"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}

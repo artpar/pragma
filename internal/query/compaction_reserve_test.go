@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/artpar/pragma/internal/app"
 	"github.com/artpar/pragma/internal/compact"
@@ -85,17 +86,22 @@ func TestEstimateCompactionReserveCountsProviderToolsFixedPayload(t *testing.T) 
 	for _, tool := range tools {
 		toolTokens += compact.EstimateToolDefTokens(tool)
 	}
-	// The manifest and patch-guidance blocks the loop appends every
-	// iteration (MCP statuses unconfigured -> no MCP block).
+	// The manifest, per-request wall-clock (CLK-002), and patch-guidance
+	// blocks the loop appends every iteration (MCP statuses unconfigured ->
+	// no MCP block). The clock block is mirrored as a literal so this gate
+	// compiles on the pre-CLK-002 baseline and fails at runtime.
 	system := engine.systemWithHarnessManifest(model.SystemPrompt{})
 	system = engine.systemWithPatchGuidance(system, tools)
 	blockTokens := compact.EstimateSystemPromptTokens(system)
+	blockTokens += compact.EstimateSystemPromptTokens(model.SystemPrompt{
+		Blocks: []model.SystemBlock{{Text: wallClockSystemBlockText(time.Now()), Cacheable: false}},
+	})
 
 	if toolTokens == 0 {
 		t.Fatalf("fixture drift: static tool schemas estimated at 0 tokens")
 	}
 	if reserve != toolTokens+blockTokens {
-		t.Fatalf("provider-tools reserve = %d, want exactly tool schemas (%d) + manifest/patch blocks (%d) = %d — the reserve must count the tool schemas and fixed system blocks the requests re-send after compaction (CMP-001.4 F8)",
+		t.Fatalf("provider-tools reserve = %d, want exactly tool schemas (%d) + manifest/clock/patch blocks (%d) = %d — the reserve must count the tool schemas and fixed system blocks the requests re-send after compaction (CMP-001.4 F8)",
 			reserve, toolTokens, blockTokens, toolTokens+blockTokens)
 	}
 }
