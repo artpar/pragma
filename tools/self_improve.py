@@ -56,6 +56,9 @@ Rules:
 - Amend the related case record under docs/failure-cases/ with a revision
   note (what was verified, refuted, changed).
 - Commit locally with a case-referencing message. NEVER push.
+- NEVER edit docs/self-improvement-queue.jsonl - the orchestrator owns the
+  queue file. Report status changes only in your final message block.
+  Editing the queue corrupts the loop (observed: items silently deleted).
 - End your final message with exactly this block (single-line JSON):
 ===WORKER-REPORT-START===
 {{"verified": ["..."], "refuted": ["..."], "tests": "...", "commit": "<hash or none>"}}
@@ -114,6 +117,16 @@ def load_queue(path):
 
 
 def save_queue(path, items):
+    # v1.7: merge external writes (supervisor inserts, other tools) just
+    # before saving - full-file rewrites are the deletion vector.
+    try:
+        disk = load_queue(path)
+        known = {i["id"] for i in items}
+        for d in disk:
+            if d.get("id") not in known and d.get("status") == "open":
+                items.append(d)
+    except Exception:
+        pass
     with open(path, "w") as fh:
         for item in items:
             fh.write(json.dumps(item) + "\n")
