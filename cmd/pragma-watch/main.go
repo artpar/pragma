@@ -34,19 +34,27 @@ const (
 )
 
 type config struct {
-	home         string
-	interval     time.Duration
-	activeWithin time.Duration
-	stallAfter   time.Duration
-	ctxWindow    int
-	showTools    int
-	once         bool
-	jsonOut      bool
-	noColor      bool
-	recordDir    string // when set, durably record alerts + post-mortems
-	daemon       bool   // spawn a detached recording daemon
-	daemonChild  bool   // internal: this process IS the daemon
-	report       bool   // print the durable record digest and exit
+	home           string
+	interval       time.Duration
+	activeWithin   time.Duration
+	stallAfter     time.Duration
+	ctxWindow      int
+	showTools      int
+	once           bool
+	jsonOut        bool
+	noColor        bool
+	recordDir      string // when set, durably record alerts + post-mortems
+	daemon         bool   // spawn a detached recording daemon
+	daemonChild    bool   // internal: this process IS the daemon
+	report         bool   // print the durable record digest and exit
+	meta           bool   // run the model-critic meta-observer loop in the foreground
+	metaDaemon     bool   // spawn the detached meta-observer daemon
+	metaChild      bool   // internal: this process IS the meta daemon
+	criticProvider string
+	criticModel    string
+	criticEvery    time.Duration
+	criticMaxCalls int
+	queuePath      string
 }
 
 // tailer follows one event log file incrementally, keeping any partial
@@ -325,6 +333,14 @@ func main() {
 	flag.BoolVar(&cfg.daemon, "daemon", false, "spawn a detached recording daemon (survives this terminal and every pragma session)")
 	flag.BoolVar(&cfg.daemonChild, "daemon-child", false, "internal: run as the daemon child")
 	flag.BoolVar(&cfg.report, "report", false, "print the durable record digest (post-mortems + alert history) and exit")
+	flag.BoolVar(&cfg.meta, "meta", false, "run the model-critic meta-observer loop in the foreground (samples each live session tail every --critic-every)")
+	flag.BoolVar(&cfg.metaDaemon, "meta-daemon", false, "spawn a detached meta-observer daemon (survives this terminal and every pragma session)")
+	flag.BoolVar(&cfg.metaChild, "meta-child", false, "internal: run as the meta-observer daemon child")
+	flag.StringVar(&cfg.criticProvider, "critic-provider", "morphllm", "provider for the meta-observer's critic calls")
+	flag.StringVar(&cfg.criticModel, "critic-model", "", "model for critic calls (default: the provider's default; rotate to break correlated blind spots)")
+	flag.DurationVar(&cfg.criticEvery, "critic-every", 3*time.Minute, "meta-observer sampling cadence")
+	flag.IntVar(&cfg.criticMaxCalls, "critic-max-calls", 60, "max critic calls per rolling hour (mechanical budget bound)")
+	flag.StringVar(&cfg.queuePath, "queue", "", "self-improvement queue file findings are appended to (default: findings file only)")
 	flag.Parse()
 
 	switch {
@@ -340,6 +356,20 @@ func main() {
 		return
 	case cfg.daemon:
 		if err := startDaemon(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "pragma-watch: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case cfg.metaDaemon:
+		if err := startMetaDaemon(cfg, cfg.queuePath); err != nil {
+			fmt.Fprintf(os.Stderr, "pragma-watch: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case cfg.meta, cfg.metaChild:
+		// Foreground meta-observer loop; the daemon child is the same
+		// loop with stdio redirected to the record dir's meta.log.
+		if err := runMeta(cfg, cfg.queuePath); err != nil {
 			fmt.Fprintf(os.Stderr, "pragma-watch: %v\n", err)
 			os.Exit(1)
 		}
