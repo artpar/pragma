@@ -177,6 +177,52 @@ For issue-by-issue stabilization work, use
 
 All observability flows through `internal/observe/EventBus`. No ad-hoc logging. Every boundary crossing emits a typed Event. Events are simultaneously logged, recorded (replay), metriced, and audited. Permission denials are tracked with a `WasExecuted` field to catch enforcement bugs.
 
+### Self-observation: pragma-watch
+
+`pragma-watch` is a standalone read-only observer for running pragma
+sessions. It tails the event logs pragma itself writes
+(`~/.pragma/logs/*.jsonl`), discovers live pragma processes via `ps`, and
+renders a live dashboard: per-session status (in-flight model call,
+executing tools, awaiting user, ended), context fill, turns, tool calls,
+retries, failures, and MCP server health. It detects tool loops, retry
+storms, context-window pressure (`--ctx <tokens>`), and stalled requests
+(`--stall <dur>`).
+
+```bash
+make watch                      # build bin/pragma-watch
+./bin/pragma-watch               # live dashboard (Ctrl-C to stop)
+./bin/pragma-watch --once        # single snapshot
+./bin/pragma-watch --json        # NDJSON snapshots for scripted consumers
+./bin/pragma-watch --ctx 200000  # enable context % alerts
+```
+
+It never touches pragma state — only the logs pragma produces.
+
+### Self-improvement loop: daemon + post-mortems
+
+A dashboard dies with the terminal, so for durable self-observation the
+watcher also runs as a detached recording daemon:
+
+```bash
+./bin/pragma-watch --daemon       # spawn detached daemon (survives everything)
+./bin/pragma-watch --report       # digest of everything recorded so far
+```
+
+The daemon polls every second, widens its active window to 1h, and writes
+to `~/.pragma/observations/`:
+
+- `alerts.jsonl` — every alert (tool loops, retry storms, context
+  pressure, MCP disconnects, stalls) with session, level, and time.
+- `postmortems/<session>.postmortem.json` — written the moment a session's
+  pragma process disappears: final status, context peak, stop-reason
+  histogram, top tools, loop evidence, last error.
+- `daemon.log` / `daemon.pid` — daemon activity and lifecycle.
+
+Future sessions consume the record with `--report` (the harness
+self-evolution skill points sessions at this). This closes the loop:
+sessions die, the daemon survives them and records how they ended, and the
+next session reads the record instead of starting blind.
+
 ## Running Tests
 
 ```bash

@@ -1,4 +1,5 @@
 BINARY := bin/pragma
+BINARY_WATCH := bin/pragma-watch
 
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -9,7 +10,7 @@ LDFLAGS   := -X github.com/artpar/pragma/internal/buildinfo.Version=$(VERSION) \
              -X github.com/artpar/pragma/internal/buildinfo.Date=$(DATE) \
              -X github.com/artpar/pragma/internal/buildinfo.GoVersion=$(GOVERSION)
 
-.PHONY: build test smoke ci clean completions instrument
+.PHONY: build watch test smoke ci clean completions instrument
 
 # Re-run AST instrumentation (idempotent)
 instrument:
@@ -19,6 +20,11 @@ instrument:
 build: instrument
 	@mkdir -p bin
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/pragma/
+
+# Build the self-observer (no instrumentation needed)
+watch:
+	@mkdir -p bin
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY_WATCH) ./cmd/pragma-watch/
 
 # Generate shell completion scripts
 completions: build
