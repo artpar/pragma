@@ -2091,6 +2091,16 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 		if d.SessionWriter == nil || closed {
 			return nil
 		}
+		// CMP-001.2.F5: this checkpoint runs on whichever goroutine
+		// appended the message — the loop goroutine for engine
+		// appends, the UI goroutine for mid-turn operator input
+		// (INT-001 AppendUserInput). The post-compaction rewrite on
+		// the loop goroutine (SetSessionRewrite hook) writes the same
+		// index, so both persistence paths must hold d.sessionMu; the
+		// desync recovery below rewrites via rewriteSessionLocked
+		// because the lock is already held here.
+		d.sessionMu.Lock()
+		defer d.sessionMu.Unlock()
 		snap := d.Store.Snapshot()
 		if d.SessionLastIdx > len(snap.Conversation.Messages) {
 			// CMP-001.2 F2 recovery: the store's message array shrank
@@ -2106,7 +2116,7 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 			// lost. The only correct persistence from this state is a
 			// full rewrite from the current store, exactly as the
 			// compaction success path does.
-			if err := rewriteCurrentSession(d); err != nil {
+			if err := rewriteSessionLocked(d); err != nil {
 				return fmt.Errorf("rewrite session after desynced checkpoint index: %w", err)
 			}
 		} else {
@@ -2147,6 +2157,22 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 }
 
 func rewriteCurrentSession(d *Deps) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	// CMP-001.2.F5: serialize with the checkpoint path — this runs on the
+	// loop goroutine right after auto-compaction while the UI goroutine
+	// can concurrently checkpoint a mid-turn operator input (INT-001)
+	// through makeSessionSaveClose's saveFn; both write SessionLastIdx.
+	d.sessionMu.Lock()
+	defer d.sessionMu.Unlock()
+	return rewriteSessionLocked(d)
+}
+
+// rewriteSessionLocked rewrites the durable session file with the full
+// current store state and re-bases SessionLastIdx. Callers must hold
+// d.sessionMu (rewriteCurrentSession, and the desync recovery inside
+// makeSessionSaveClose's saveFn).
+func rewriteSessionLocked(d *Deps) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
 	if d.SessionWriter == nil {

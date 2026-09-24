@@ -63,10 +63,23 @@ type Deps struct {
 	SessionHeader     session.HeaderData
 	SessionWriter     *session.Writer
 	SessionLastIdx    int
-	ModelSwitcher     func(string) error
-	ModelCatalog      *ModelCatalog
-	Cleanup           func()
-	recorder          *observe.Recorder
+	// sessionMu serializes durable session persistence across goroutines
+	// (CMP-001.2.F5): the loop goroutine's post-compaction full rewrite
+	// (SetSessionRewrite hook → rewriteCurrentSession) and the UI
+	// goroutine's mid-turn operator-input checkpoint (AppendUserInput →
+	// checkpointSession → makeSessionSaveClose's saveFn) both read and
+	// write SessionLastIdx/SessionHeader. The session Writer is internally
+	// mutex-protected but the index is plain shared state; this lock also
+	// keeps an incremental checkpoint from splicing onto a half-rewritten
+	// file. The one-time setup writers of SessionLastIdx/SessionHeader
+	// (startSessionForCurrentConversation, Resume, clear) run at
+	// admission-serialized points where no engine loop or queued-input
+	// checkpoint can be in flight, so they write without the lock.
+	sessionMu     sync.Mutex
+	ModelSwitcher func(string) error
+	ModelCatalog  *ModelCatalog
+	Cleanup       func()
+	recorder      *observe.Recorder
 }
 
 type SetupDepsOptions struct {

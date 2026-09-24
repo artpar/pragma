@@ -1492,3 +1492,148 @@ tail itself.
   inherits that fix through the shared `PendingUnansweredUserPrompts`
   definition.
 - No live-provider behavior is claimed.
+
+## Revision CMP-001.2.F5 (2026-09-24): loop-side rewriteCurrentSession is
+## a second unsynchronized writer of SessionLastIdx (critic C-5)
+
+Queue item CMP-001.2.F5, severity low, confidence plausible. Payload
+claim: the new loop-side rewriteCurrentSession adds a second
+unsynchronized writer of `d.SessionLastIdx` alongside the UI-goroutine
+`AppendUserInput → checkpointSession → saveFn` path — a genuine data
+race during the operator-input-during-compaction window; the session
+Writer itself is mutex-safe so the exposure is the shared index int;
+and the cli package was not gated under `-race`.
+
+### Verified (payload claims, against HEAD 294f00f)
+
+- rewriteCurrentSession (run.go:2149-2182) writes
+  `d.SessionLastIdx = len(snap.Conversation.Messages)` (:2182) with no
+  synchronization, on the loop goroutine — it is the body of every
+  `SetSessionRewrite` hook (run.go:451/822/1226/1642) and runs right
+  after auto-compaction applies its result
+  (provider_tools_loop.go:197, miniswe_loop.go:447).
+- saveFn (makeSessionSaveClose, run.go:2086-2152) reads
+  `d.SessionLastIdx` (:2095 guard, :2113 loop) and writes it (:2121),
+  and is reachable from the UI goroutine: RunInput:254 →
+  `Engine.AppendUserInput` (provider_tools_loop.go:348-382) →
+  checkpointSession (engine.go:453-463) → the SetSessionCheckpoint
+  saveFn wired next to every SetSessionRewrite.
+- No lock in common: AppendUserInput holds only `pendingUserInputsMu`
+  during its checkpoint, which the compaction rewrite path does not
+  take — the two run unsynchronized. The session Writer is
+  mutex-protected (internal/session/writer.go `mu sync.Mutex`), the
+  index is not.
+- The CMP-001.2 gate list had no cli `-race` run (only
+  `./internal/query` was race-gated).
+- Beyond the payload: the window is not compaction-specific. Since
+  INT-001 (2026-09-12) the loop-side engine appends
+  (provider_tools_loop.go:36/66/80/245/268/324 →
+  appendConversationMessage → checkpointSession → saveFn, no
+  `pendingUserInputsMu` held) already raced the UI-side saveFn on the
+  same index; F5's rewriteCurrentSession added a third concurrent
+  writer. One persistence lock closes the whole class.
+
+### Evidence inaccuracies (claim survives them)
+
+- rewriteCurrentSession does not READ `d.SessionLastIdx`; it writes it
+  (it also reads/writes `d.SessionHeader` at :2151-2155 — the same
+  unsynchronized exposure, covered by the same fix).
+- The payload's line ranges drift ~40 lines from HEAD (":2063-2091"
+  and ":2107-2144" are saveFn ~:2086-2152 and rewriteCurrentSession
+  ~:2149-2182); "run.go:254" and "provider_tools_loop.go:349-357" are
+  exact/near-exact (AppendUserInput call :254, message construction
+  :349-357, checkpoint :382).
+- Severity "low" confirmed: the race is a memory-model violation with
+  a possible (not deterministic) interleaved persistence — a torn
+  aligned int is not observable on amd64/arm64, and the file-level
+  operations are individually serialized by the Writer mutex.
+
+### RED (unchanged tree at 294f00f, in a scratch worktree, `-race`)
+
+New regression `TestOperatorInputDuringCompactionRewriteIsSerialized`
+(internal/cli/autocompact_session_race_test.go): both goroutines of
+the window run the exact production functions — the loop side calls
+rewriteCurrentSession (the SetSessionRewrite hook body) 32×, the UI
+side calls engine.AppendUserInput (INT-001 mid-turn path, through the
+real saveFn checkpoint) 32×, over a real resumed-session JSONL. The
+compaction TRIGGER is driven directly (no provider compaction
+request) because the subject is persistence serialization, not the
+trigger; the end-to-end trigger path stays covered by
+TestAutoCompactRewritesResumableSessionFile.
+
+`go test ./internal/cli -run TestOperatorInputDuringCompactionRewriteIsSerialized -count=1 -race`:
+
+```
+WARNING: DATA RACE
+Write at 0x00c000469820 by goroutine 22: internal/cli/run.go:2121
+  (saveFn) ← query/engine.go:462 checkpointSession ←
+  query/provider_tools_loop.go:382 AppendUserInput
+Previous write at 0x00c000469820 by goroutine 21:
+  internal/cli/run.go:2182 (rewriteCurrentSession, loop side)
+WARNING: DATA RACE
+Write at 0x00c000469820 by goroutine 21: internal/cli/run.go:2182
+  (rewriteCurrentSession)
+Previous read at 0x00c000469820 by goroutine 22: internal/cli/run.go:2095
+  (saveFn index guard)
+--- FAIL: race detected during execution of test
+```
+
+Without `-race` the same test PASSES on the unfixed tree: the
+functional assertions (index == live length after the window; all 32
+mid-window operator inputs durable; seeds preserved) are consistency
+invariants of the GREEN state, not a deterministic message-loss
+repro — consistent with severity "low" and with the Writer's own
+mutex keeping individual entries intact.
+
+### Change (one mechanism): a session-persistence mutex
+
+`Deps.sessionMu sync.Mutex` now serializes durable session persistence
+across goroutines: makeSessionSaveClose's saveFn takes it for the whole
+checkpoint (index read/write + incremental writes + metadata), and
+rewriteCurrentSession takes it around the full rewrite
+(`rewriteSessionLocked`, extracted so the saveFn desync recovery —
+which already holds the lock — rewrites without re-locking). The
+one-time setup writers of SessionLastIdx/SessionHeader
+(startSessionForCurrentConversation, Resume, clear) stay lock-free:
+they run at admission-serialized points where no engine loop or
+queued-input checkpoint can be in flight (slash commands are
+busy-rejected mid-turn). Lock order is uniformly
+`pendingUserInputsMu → sessionMu → Writer.mu`; no inverse order
+exists, so no new deadlock surface.
+
+### Gates (this revision)
+
+- RED → GREEN: the command above, FAIL (race report) at 294f00f →
+  PASS at the fixed tree (`-race`, 2.3s).
+- `go test ./internal/cli -count=1 -race` — ok (2.7s; the gate the
+  critic noted missing from CMP-001.2 — now run and clean, 31 tests).
+- `go test ./internal/cli -count=1` — ok (31 tests, includes the F2
+  rewrite, F2-recovery, and INT-001 queue gates).
+- `go test ./internal/query -run 'TestProviderToolsLoopAutoCompact'
+  -count=1` — ok; `go test ./internal/query ./internal/compact
+  ./internal/session -count=1` — ok; `go test ./internal/query
+  -count=1 -race` — ok (11.5s).
+- `go vet ./internal/cli ./internal/query` — clean; the changed files
+  (deps.go, run.go, autocompact_session_race_test.go) gofmt-clean.
+
+### Claim boundary
+
+- The `closed` flag shared by saveFn/closeFn in makeSessionSaveClose
+  remains unsynchronized: closeFn runs at teardown after the engine
+  loop has ended; if a shutdown-vs-checkpoint race ever becomes
+  reachable it is a separate case.
+- No message loss is claimed as reproduced on the unfixed tree: the
+  defect is the unsynchronized shared state (Go memory model) and the
+  possibility of an incremental checkpoint splicing onto a mid-rewrite
+  file; the race report is the deterministic evidence.
+- No live-provider behavior is claimed.
+
+### Provenance note
+
+The fix was committed from a working tree that carried an unrelated
+uncommitted instrumentation pass (observe.GlobalTrace additions and
+comment strips in internal/metaobserve, internal/watcher,
+internal/compact, internal/cli/run.go — another live session's in-
+flight work). The commit was staged selectively to contain only this
+revision's files/hunks; the instrumentation pass is untouched in the
+working tree.
