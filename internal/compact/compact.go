@@ -51,8 +51,12 @@ type CompactResult struct {
 	Summary             string          // formatted summary text
 	ReplacementMessages []model.Message // summary msg to replace conversation
 	PreTokenCount       int
-	PostTokenCount      int
-	MessagesRemoved     int
+	// PostTokenCount estimates the post-compaction conversation: the
+	// replacement summary PLUS the pending unanswered prompts that
+	// ApplyResult re-appends after it (CMP-001.2 F4 — previously the
+	// summary alone, under-reporting whenever a prompt was preserved).
+	PostTokenCount  int
+	MessagesRemoved int
 }
 
 // ApplyResult atomically applies a compaction result to conversation state.
@@ -162,7 +166,24 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 	summaryMsg.Content = stripEmptyTextParts(summaryMsg.Content)
 
 	replacements := []model.Message{summaryMsg}
-	postTokens := EstimateConversationTokens(replacements)
+	// CMP-001.2 F4: the acceptance guard and PostTokenCount must measure
+	// the conversation that will exist after ApplyResult re-appends the
+	// pending unanswered prompts behind the summary — not the summary
+	// alone. The pre-F4 guard compared the summary against prefix+tail,
+	// so with a multi-prompt unanswered tail (an errored turn plus
+	// queued INT-131 input — every trailing user message is re-appended
+	// verbatim) a summary larger than the prefix it replaces was
+	// accepted, leaving the post-compaction conversation LARGER than
+	// the original, and PostTokenCount under-reported the real post-
+	// compaction request. Counted from this input snapshot, the tail is
+	// the lower bound: ApplyResult re-derives the set from LIVE store
+	// state, so input delivered during the summary call is re-appended
+	// (and reaches the model) but is not in this count.
+	guarded := replacements
+	if pending := PendingUnansweredUserPrompts(messages); len(pending) > 0 {
+		guarded = append(append([]model.Message{}, replacements...), pending...)
+	}
+	postTokens := EstimateConversationTokens(guarded)
 	if postTokens >= preTokens {
 		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: postTokens >= preTokens")
 		s.emitFailed("compaction_grew", fmt.Sprintf("post=%d >= pre=%d tokens", postTokens, preTokens))

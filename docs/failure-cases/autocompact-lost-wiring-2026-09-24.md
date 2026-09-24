@@ -1363,6 +1363,132 @@ message; the store held the summary alone.
   pairing, internal context) apply to the manual path now too, by the
   shared definition.
 - No live-provider behavior is claimed. Queue items CMP-001.2.F4
-  (token guard on the re-appended tail) and CMP-001.4b critic finding
-  C-2 (compaction-invariant overhead vs threshold) remain open;
-  CMP-001.2.F1/.F2/.F3 are now closed.
+  and CMP-001.4b critic finding C-2 (compaction-invariant overhead vs
+  threshold) — CMP-001.2.F1/.F2/.F3/.F4 are now closed; see the F4
+  revision below for the token-guard boundary that remains.
+
+## Revision CMP-001.2.F4 (2026-09-24): no token guard on the re-appended
+## pending tail — acceptance check and PostTokens measured the summary alone
+
+Source: queue item CMP-001.2.F4 (critic finding C-4 from the CMP-001.2
+audit cycle, confidence "plausible"). Every payload claim was verified
+against the tree before any change; nothing was refuted. Payload line
+numbers drifted (compact.go 133-141/155-161 → the same code now at
+164-170 after the F1/F3 revisions reshaped the region;
+provider_tools_loop.go 142-149/:172 → 187/:202) — line drift, not a
+refutation.
+
+### Verified (payload claims)
+
+- `Service.Compact` computed `postTokens` on `replacements` =
+  `[summaryMsg]` alone, and the `ErrCompactionGrew` acceptance check
+  (`postTokens >= preTokens`) compared that summary-only count against
+  `preTokens` — the token estimate of the WHOLE input conversation,
+  pending tail included. Confirmed.
+- `CompactResult.PostTokenCount` carried that same summary-only count.
+  Confirmed.
+- The pending re-append happens later, inside `compact.ApplyResult`'s
+  `store.Update` (provider_tools_loop.go:187, miniswe_loop.go:438,
+  slash/commands.go handleCompact) — i.e. AFTER the acceptance check
+  had already passed. Confirmed.
+- `CompactionEvent{PostTokens: compResult.PostTokenCount}`
+  (provider_tools_loop.go:202, miniswe_loop.go:452) reported the
+  summary-only count to the operator, while `RecordSuccess` and the
+  cooldown engaged on `compErr == nil` regardless of the tail's size.
+  Confirmed.
+- Multi-prompt tail reachability: `PendingUnansweredUserPrompts`
+  re-appends EVERY trailing user message after the last assistant
+  (walk-back in pending.go; only IsInternal and tool-result messages
+  are excluded). An errored turn leaves its prompt unanswered (the
+  loops emit ErrorEvent and return without appending an assistant
+  message — the F3 scenario), and INT-131 mid-turn input appends
+  further user messages behind it, so the tail can hold several
+  messages. Confirmed.
+- Consequence, verified as arithmetic in the RED gates: with a pending
+  tail, the pre-F4 guard compared summary vs (prefix+tail), so a
+  summary LARGER than the prefix it replaces was accepted whenever the
+  tail was big enough — the accepted "compaction" left the conversation
+  LARGER than the original — and PostTokenCount under-reported the
+  real post-compaction conversation for every preserved prompt. The
+  claim's over-window consequence is real but bounded (see the claim
+  boundary below): compaction cannot shrink a pending prompt by policy
+  (F3 preserves it verbatim), so what F4 actually repairs is the
+  missing growth guard and the dishonest count, not window overflow
+  caused by the tail alone.
+
+### Refuted: none.
+
+### RED (unchanged tree, real production path)
+
+Three gates, all failing for the claimed reason at HEAD `06b8c47`:
+
+- `go test ./internal/compact/ -run TestCompactGrewGuardCoversReappendedPendingTail -count=1`
+  failed with
+  `expected ErrCompactionGrew: the summary replaces only a 20-token prefix while the re-appended pending tail adds 908 tokens back, so the result grows the 928-token conversation — Compact accepted it (err=<nil>)`
+  — the real `compact.Service` over a scripted summary; the input is
+  the errored-turn-plus-INT-131 shape (4 tiny answered messages, 2
+  unanswered trailing user prompts).
+- `go test ./internal/compact/ -run TestCompactPostTokensIncludeReappendedPendingTail -count=1`
+  failed with
+  `PostTokenCount = 50, want 433 (summary + re-appended pending tail) — the count reports the summary alone`.
+- `go test ./internal/query/ -run TestProviderToolsLoopCompactionEventPostTokensCoverPendingTail -count=1`
+  failed with
+  `CompactionEvent.PostTokens = 49 does not even cover the re-appended pending prompt (1504 tokens)`
+  — the real `runProviderToolsLoop` compacts the seeded above-threshold
+  conversation at iteration 0 with the run prompt as the pending tail.
+
+### Change (one mechanism): the guard and the reported count now measure
+### the conversation ApplyResult will leave
+
+In `Service.Compact` (internal/compact/compact.go), the guarded set is
+the replacement summary PLUS `PendingUnansweredUserPrompts(messages)`
+(the snapshot's trailing unanswered prompts): the `ErrCompactionGrew`
+check now compares (summary+tail) against the original (prefix+tail) —
+the summary must be smaller than the prefix it actually replaces — and
+`CompactResult.PostTokenCount` (which both loops' `CompactionEvent` and
+the manual /compact display carry) includes the tail.
+`ReplacementMessages` stays `[summaryMsg]`; `ApplyResult` still
+re-appends the LIVE tail, so nothing is appended twice. Counted from
+the input snapshot, the tail is a lower bound of what ApplyResult
+re-appends: operator input delivered during the summary call is
+re-appended from live state (the F1 semantics) and reaches the model,
+but is not in this event's count — the reported number can lag by
+whatever a concurrent AppendUserInput adds, never by the preserved
+tail itself.
+
+### Gates (this revision)
+
+- RED → GREEN: the three gates above, all PASS after the fix.
+- Adjacent: `go test ./internal/compact/ ./internal/slash/
+  ./internal/query/ ./internal/cli/ -count=1` — ok (query includes the
+  F3 preserve-pending gates, the mid-call-input gates on both loops,
+  cooldown, breaker, and request-shape gates; their summaries stay far
+  below their prefixes, so the tightened guard still accepts them).
+  `go test ./internal/query/ ./internal/compact/ -count=1 -race` — ok
+  (11.4s / 1.6s).
+- `go vet ./internal/compact/ ./internal/query/` clean; the changed
+  files are gofmt-clean.
+
+### Claim boundary
+
+- When the pending tail ALONE is near or over the window (one huge
+  unanswered prompt), a genuinely shrinking compaction is still
+  accepted and the post-compaction request stays over-window: inherent
+  to the F3 "never compact an unanswered prompt" policy, which must
+  deliver the prompt verbatim. What changed is that PostTokens reports
+  that honestly (summary+tail, not the summary alone) and the guard
+  rejects every result that does not actually shrink the conversation.
+- Mid-summary-call operator input (the F1 window) is re-appended from
+  live state but not counted in this compaction's event (the count is
+  snapshot-derived, a lower bound). The F1 MidCall gates are unaffected.
+- `MessagesRemoved` (the "(N messages removed)" half of the manual
+  display) still counts len(input messages) — still overstated when a
+  tail is preserved; that is queue item CMP-001.2.F3.F2, unchanged
+  here.
+- The second-compaction shape (an old IsCompactSummary message walked
+  back into the pending set — queue item CMP-001.2.F3.F1) is unchanged:
+  this revision only changes the guard/count inputs; if F3.F1 is fixed
+  by excluding summaries from the pending set, the guard input
+  inherits that fix through the shared `PendingUnansweredUserPrompts`
+  definition.
+- No live-provider behavior is claimed.
