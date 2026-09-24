@@ -208,10 +208,19 @@ def main():
                 report = extract_block(fh.read(), "===WORKER-REPORT-START===", "===WORKER-REPORT-END===")
 
         if rc != 0 and not committed:
-            item["status"] = "failed"
-            item["last_error"] = "worker exit %d" % rc
+            # v1.3 (cycle-5 dogfood): a worker that dies at its turn cap
+            # mid-work has not disproven the item — requeue with an
+            # attempt count instead of permanently failing it. Bundles
+		        # that exceed one capped session should be split in the queue.
+            attempts = item.get("attempts", 0) + 1
+            item["attempts"] = attempts
+            item["last_error"] = "worker exit %d (attempt %d)" % (rc, attempts)
+            if attempts >= 3:
+                item["status"] = "needs_attention"
+            else:
+                item["status"] = "open"
             save_queue(args.queue, queue)
-            print("  worker failed without commit - item marked failed, moving on")
+            print("  worker died without commit (attempt %d) - requeued" % attempts)
             continue
 
         item["status"] = "worker_done" if committed else "no_change"
