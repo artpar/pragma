@@ -170,6 +170,9 @@ def main():
         # v1.4: reload the queue each cycle so externally-inserted items
         # (operator directives, human notes) are never clobbered by this
         # process's in-memory copy when it saves.
+        # v1.6: compile fresh every cycle - worker fixes become the next
+        # cycle's runtime (no stale-binary generations).
+        subprocess.run(["make", "build"], cwd=REPO, capture_output=True)
         queue = load_queue(args.queue)
         idx = next((i for i, it in enumerate(queue) if it.get("status") == "open"), None)
         if idx is None:
