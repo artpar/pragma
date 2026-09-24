@@ -40,8 +40,20 @@ type EngineConfig struct {
 	CustomSystemPrompt        string
 	ContentReplacementRecords []model.ContentReplacementRecord
 	RecordContentReplacements func([]model.ContentReplacementRecord) error
-	SessionCheckpoint         func() error
-	MCPServerStatuses         func() []MCPServerStatus
+	// SessionCheckpoint incrementally persists appended conversation
+	// messages to the durable session file (index-based; wired to
+	// makeSessionSaveClose in cli/run.go).
+	SessionCheckpoint func() error
+	// SessionRewrite rewrites the durable session file from the current
+	// store state (truncate + full rewrite). Auto-compaction must use it
+	// because it REPLACES store.Conversation.Messages: the incremental
+	// checkpoint writer is index-based and would skip the compacted
+	// summary plus the first post-compaction exchange, so a later --resume
+	// would replay the full pre-compaction history (CMP-001.2 F2). Wired
+	// by the CLI runtimes to rewriteCurrentSession; nil (subagent engines,
+	// tests without a session writer) is a no-op.
+	SessionRewrite    func() error
+	MCPServerStatuses func() []MCPServerStatus
 	// MCPToolDefs returns tool definitions for connected MCP servers. When
 	// set, the provider-tools loop injects them into the model tool list
 	// (names are "mcp__<server>__<tool>"; see internal/mcp/adapter.go).
@@ -289,6 +301,14 @@ func (engine *Engine) SetSessionCheckpoint(checkpoint func() error) {
 	engine.config.SessionCheckpoint = checkpoint
 }
 
+// SetSessionRewrite wires the full-session-rewrite hook (CMP-001.2 F2):
+// called by the loop after auto-compaction replaces the conversation.
+func (engine *Engine) SetSessionRewrite(rewrite func() error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	engine.config.SessionRewrite = rewrite
+}
+
 // ResetSessionState rebuilds read-time replacement tracking after the active
 // conversation/session changes.
 func (engine *Engine) ResetSessionState(contentReplacementRecords []model.ContentReplacementRecord) {
@@ -341,6 +361,20 @@ func (engine *Engine) checkpointSession() error {
 	}
 	observe.GlobalTrace("return: engine.config.SessionCheckpoint()")
 	return engine.config.SessionCheckpoint()
+}
+
+// rewriteSession persists the full current conversation by rewriting the
+// durable session file (CMP-001.2 F2). No-op when no hook is wired.
+func (engine *Engine) rewriteSession() error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if engine.config.SessionRewrite == nil {
+		observe.GlobalTrace("if: engine.config.SessionRewrite == nil")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	observe.GlobalTrace("return: engine.config.SessionRewrite()")
+	return engine.config.SessionRewrite()
 }
 
 // AppendHookContext appends hook-produced context as an internal user message

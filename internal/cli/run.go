@@ -452,6 +452,8 @@ func (rt *InteractiveRuntime) closeCurrentSessionAfterClear(ctx context.Context)
 	if rt.Engine != nil {
 		observe.TraceCtx(ctx, "cli", "InteractiveRuntime.closeCurrentSessionAfterClear", "if: rt.Engine != nil")
 		rt.Engine.SetSessionCheckpoint(rt.sessionSave)
+		// CMP-001.2 F2: auto-compaction rewrites the whole session file.
+		rt.Engine.SetSessionRewrite(func() error { return rewriteCurrentSession(rt.Deps) })
 	}
 	observe.TraceCtx(ctx, "cli", "InteractiveRuntime.closeCurrentSessionAfterClear", "return: nil")
 	return nil
@@ -821,6 +823,8 @@ func (rt *InteractiveRuntime) Resume(sessionID string) error {
 	rt.Engine.ResetSessionState(sess.ContentReplacements)
 	rt.sessionSave, rt.sessionClose = makeSessionSaveClose(rt.Deps)
 	rt.Engine.SetSessionCheckpoint(rt.sessionSave)
+	// CMP-001.2 F2: auto-compaction rewrites the whole session file.
+	rt.Engine.SetSessionRewrite(func() error { return rewriteCurrentSession(rt.Deps) })
 	if err := startSessionRecording(rt.Deps); err != nil {
 		observe.GlobalTrace("if: err != nil")
 		observe.GlobalTrace("return: err")
@@ -1222,6 +1226,8 @@ func BuildInteractiveRuntimeWithOptions(cmd *cobra.Command, prompter permission.
 
 	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
 	engine.SetSessionCheckpoint(sessionSaveFn)
+	// CMP-001.2 F2: auto-compaction rewrites the whole session file.
+	engine.SetSessionRewrite(func() error { return rewriteCurrentSession(d) })
 
 	slashCmds := slash.NewRegistry()
 	skillCatalog := runtimeSkillCatalog(d)
@@ -1638,6 +1644,8 @@ func runNonInteractive(cmd *cobra.Command, opts nonInteractiveRunOptions) error 
 
 	sessionSaveFn, sessionCloseFn := makeSessionSaveClose(d)
 	engine.SetSessionCheckpoint(sessionSaveFn)
+	// CMP-001.2 F2: auto-compaction rewrites the whole session file.
+	engine.SetSessionRewrite(func() error { return rewriteCurrentSession(d) })
 
 	ctx := cmd.Context()
 	promptHookResult, err := acceptPromptSubmission(ctx, d, prompt)

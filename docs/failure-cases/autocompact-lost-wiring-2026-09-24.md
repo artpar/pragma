@@ -205,3 +205,114 @@ one model-request iteration per iteration (re-trigger blocked at k+1,
 permitted from k+2, expiring across end-turn boundaries), and the breaker
 test's preservation assertion is executable. No live-provider evidence is
 claimed; window calibration (CMP-002) remains open.
+
+---
+
+## Revision CMP-001.2 (2026-09-24): session-persistence desync + swallowed pending prompt
+
+Source: independent fresh-instance audit of commit `42c45b4`; queue item
+CMP-001.2. Both payload findings (F2, F3) were verified against the actual
+code before any change; neither was refuted. One mechanism-level fix per
+finding, each gated RED→GREEN.
+
+### F2 (confirmed): auto-compaction desyncs the session file; --resume resurrects the pre-compaction history
+
+Verified mechanism chain:
+
+- `runProviderToolsLoop`'s compaction success branch (provider_tools_loop.go)
+  replaced `store.Conversation.Messages` with `compResult.ReplacementMessages`
+  and never touched the session file — no rewrite, no checkpoint call.
+- The incremental session writer (`makeSessionSaveClose`, run.go:2053) writes
+  by INDEX: `for i := d.SessionLastIdx; i < len(messages); i++`, then
+  `SessionLastIdx = len(messages)`. `SessionLastIdx` is an index into the
+  PRE-compaction array. After the replacement the new array is far shorter,
+  so the summary and the first post-compaction appends (which land below the
+  stale index) are never written, and every later checkpoint silently skips
+  them.
+- On `--resume` (deps.go), the session replays every message from the file:
+  `conv = resumedConversation(sess, cwd)`, `SessionLastIdx = len(conv.Messages)`.
+  The file still held the full pre-compaction history, so the exact 345k-style
+  blowup CMP-001 fixed in memory resurrected from disk.
+- Manual `/compact` never had this bug: `handleCompact` returns
+  `RewriteSession: true` (slash/commands.go), and `runSlash` calls
+  `rewriteCurrentSession` (run.go), which truncates + rewrites the file and
+  resets `SessionLastIdx`. The auto path had no equivalent.
+
+RED (before the fix, real production path — loop + real `session.Writer`
++ real `session.Store.Load`, wired exactly as the runtimes wire
+`SetSessionCheckpoint`):
+`go test ./internal/cli/ -run TestAutoCompactRewritesResumableSessionFile -count=1`
+failed with `resumed session replays 7 messages (>= the 6-message
+pre-compaction history) — the compacted conversation was not persisted`;
+the reloaded file contained the 6 big pre-compaction messages + the prompt,
+no summary, no post-compaction assistant reply. (First RED run surfaced a
+fixture bug — seed messages without IDs are deduped to one entry by the
+writer's ID-based dedup; fixed by minting IDs like real engine appends do.
+The production defect then failed for the stated reason.)
+
+Fix (one mechanism): a full-session-rewrite hook mirroring the checkpoint
+hook. `EngineConfig.SessionRewrite func() error` + `SetSessionRewrite` +
+nil-safe `rewriteSession()`; the loop's compaction success branch calls it
+after applying the replacement (a failed rewrite errors the turn, same as
+the manual path). run.go wires it next to every `SetSessionCheckpoint`
+site (4 sites: interactive setup, post-/clear re-init, Resume, both
+non-interactive runs) to a closure over the existing `rewriteCurrentSession(d)`.
+Nil hook (subagent engines, sessionless tests) is a no-op. GREEN with the
+same test: the file now carries the summary + post-compaction exchange and
+no bulk history.
+
+### F3 (confirmed): the pending prompt is compacted away and never reaches the model
+
+Verified mechanism chain: the loop appends the stamped prompt BEFORE the
+iteration (provider_tools_loop.go top), the compaction check runs at the TOP
+of iteration 0 over the full conversation including that unanswered prompt,
+and `compact.Service.Compact` replaces ALL messages with a single summary
+message (compact.go `replacements := []model.Message{summaryMsg}`);
+`CompactUserMessage(formatted, false)` wraps the bare summary with no
+follow-up directive (prompt.go). The operator's prompt reached the model
+only if the summarizer happened to retain it — the verbatim prompt was
+swallowed. The 2e9f01b pragma loop never compacted a pending prompt: its
+trigger ran AFTER the assistant response was appended, so the tail was
+always answered; the port to top-of-iteration (CMP-001) created the
+swallow.
+
+RED (before the fix):
+`go test ./internal/query/ -run TestProviderToolsLoopAutoCompactPreservesPendingPrompt -count=1`
+failed with `post-compaction request lost the pending prompt (RIVERGATE-7f3a):
+the unanswered operator prompt was compacted away and never reached the model`
+— the scripted summary deliberately omits the marker, so the only way it
+could reach the model was the preserved prompt message.
+
+Fix (one mechanism): `pendingUnansweredUserPrompts` — the trailing run of
+user messages after the conversation's last assistant message, keeping the
+text-only, non-internal ones; re-appended after the summary inside the same
+`store.Update`, so the model request carries [summary, prompt].
+Deliberate exclusions (documented boundary): tool-result messages are not
+re-appended (orphan tool_results without their tool_use would break
+tool_result pairing — they stay summarized), and internal (hook-context)
+messages are not re-appended. Mid-turn operator input queued by INT-001
+drains before the next iteration's check and is preserved by the same rule.
+GREEN: the post-compaction request carries the marker verbatim and the
+store retains the prompt; the summary-bearing assertions of the original
+CMP-001 gate are unchanged.
+
+### Gates (this revision)
+
+- `go test ./internal/cli/ -run TestAutoCompactRewritesResumableSessionFile -count=1` — PASS.
+- `go test ./internal/query/ -run 'TestProviderToolsLoopAutoCompact' -count=1 -v` — 4/4 PASS
+  (trigger/replaces, pending-prompt preservation, cooldown re-trigger gate, circuit breaker).
+- `go test ./internal/query/ ./internal/compact/ ./internal/session/ -count=1` — ok.
+- `go test ./internal/cli/ -count=1` — ok.
+- `go test ./internal/query/ -count=1 -race` — ok.
+- `go vet ./internal/query/ ./internal/cli/` — clean; all five files changed here
+  are gofmt-clean (five other pre-existing gofmt-dirty test files in
+  query/compact are untouched, matching the CMP-001.1 note).
+
+Claim boundary: proven locally, deterministically. The session-file rewrite
+and prompt preservation are proven through the real loop, session writer,
+and session loader; no live-provider behavior is claimed. The rewrite
+correctly rewrites whatever the STORE holds at compaction time — if a
+future change lets the store diverge from what the model sees, that is a
+new case. Window calibration (CMP-002) and the queue items CMP-001.3/4
+remain open. The pre-existing `TestProviderToolsCLIContract` acceptance
+failure documented in CMP-001.1 is unchanged and untouched here.

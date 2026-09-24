@@ -132,10 +132,36 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 					}
 				case compErr == nil:
 					engine.autoTracker.RecordSuccess()
+					// CMP-001.2 F3: compaction replaces the WHOLE
+					// conversation, but the operator's pending prompt
+					// (appended at turn start, not yet answered) must
+					// still reach the model verbatim — the 2e9f01b pragma
+					// loop never compacted a pending prompt because its
+					// trigger ran after the assistant response. Re-append
+					// the unanswered user text messages after the summary.
+					pending := pendingUnansweredUserPrompts(compSnap.Conversation.Messages)
 					engine.store.Update(func(s *app.AppState) {
-						s.Conversation.Messages = compResult.ReplacementMessages
+						repl := compResult.ReplacementMessages
+						if len(pending) > 0 {
+							repl = append(append([]model.Message{}, repl...), pending...)
+						}
+						s.Conversation.Messages = repl
 						s.Conversation.UpdatedAt = time.Now()
 					})
+					// CMP-001.2 F2: the compaction REPLACED
+					// Conversation.Messages, but the incremental session
+					// checkpoint is index-based — it would skip the summary
+					// and the first post-compaction exchange (all land
+					// below the stale SessionLastIdx), leaving the file
+					// with the full pre-compaction history for --resume to
+					// resurrect. Rewrite the durable session file, exactly
+					// as manual /compact does (slash RewriteSession →
+					// rewriteCurrentSession).
+					if err := engine.rewriteSession(); err != nil {
+						observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: err != nil")
+						ch <- ErrorEvent{Err: fmt.Errorf("rewrite session after compaction: %w", err)}
+						return
+					}
 					ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
 				}
 				// compErr != nil && ctx.Err() != nil: the loop is being
@@ -380,6 +406,38 @@ func conversationTailHasDanglingToolUse(conv model.Conversation) bool {
 	}
 	observe.GlobalTrace("return: false")
 	return false
+}
+
+// pendingUnansweredUserPrompts returns the operator prompts waiting for a
+// model response when compaction fires: user messages that sit after the
+// conversation's last assistant message, carry no tool results, and are not
+// internal (CMP-001.2 F3). Tool-result messages are deliberately excluded —
+// re-appending them without their tool_use assistant message would break
+// tool_result pairing; they stay part of the summarized history.
+func pendingUnansweredUserPrompts(messages []model.Message) []model.Message {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	tailStart := len(messages)
+	for tailStart > 0 && messages[tailStart-1].Role == model.RoleUser {
+		observe.GlobalTrace("for: tailStart > 0 && messages[tailStart-1].Role == model.RoleUser")
+		tailStart--
+	}
+	if tailStart == len(messages) {
+		observe.GlobalTrace("if: tailStart == len(messages)")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	var pending []model.Message
+	for _, msg := range messages[tailStart:] {
+		observe.GlobalTrace("range messages[tailStart:]")
+		if msg.Flags.IsInternal || messageHasToolResult(msg) {
+			observe.GlobalTrace("if: msg.Flags.IsInternal || messageHasToolResult(msg)")
+			continue
+		}
+		pending = append(pending, msg)
+	}
+	observe.GlobalTrace("return: pending")
+	return pending
 }
 
 // turnBudgetNoticeMarker prefixes the in-conversation turn-budget warning.

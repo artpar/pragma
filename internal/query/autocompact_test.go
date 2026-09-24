@@ -122,6 +122,123 @@ func TestProviderToolsLoopAutoCompactTriggersAndReplaces(t *testing.T) {
 	}
 }
 
+// TestProviderToolsLoopAutoCompactPreservesPendingPrompt guards the
+// CMP-001.2 F3 defect: auto-compaction fires at the TOP of an iteration,
+// after the operator's prompt was appended but before any response exists.
+// The compaction replacement used to swallow that unanswered prompt — the
+// model's next request carried only the summary, so the operator's prompt
+// never reached the model verbatim (only whatever the summarizer happened
+// to retain). The 2e9f01b pragma loop never compacted a pending prompt:
+// its trigger ran after the assistant response was appended, so the
+// conversation tail was always answered.
+func TestProviderToolsLoopAutoCompactPreservesPendingPrompt(t *testing.T) {
+	// Call 1: compaction summary — deliberately does NOT mention the
+	// pending prompt, so the only way the marker can reach the model is
+	// the preserved prompt message itself.
+	// Call 2: end-turn response over the compacted conversation.
+	prov := &pragmaLoopTestProvider{responses: []model.Response{
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "Summary: routine question and answer exchanges."}},
+			StopReason: model.StopEndTurn,
+		},
+		{
+			Content:    []model.ContentPart{model.TextPart{Text: "Checklist delivered."}},
+			StopReason: model.StopEndTurn,
+		},
+	}}
+
+	conv := model.NewConversation(model.SystemPrompt{}, "test-model", "test", t.TempDir())
+	bigText := strings.Repeat("word ", 3000)
+	// The conversation ends on an assistant message, so the only message
+	// after the last assistant response is the prompt the loop appends at
+	// turn start — the pending prompt that compaction must not swallow.
+	conv.Messages = []model.Message{
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleUser, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+		{Role: model.RoleAssistant, Content: []model.ContentPart{model.TextPart{Text: bigText}}},
+	}
+	store := app.NewStateStore(app.AppState{
+		Conversation: conv,
+		CWD:          t.TempDir(),
+		Model:        "test-model",
+		Provider:     "test",
+		MaxTokens:    4096,
+	})
+	engine := NewEngine(prov, store, model.NewCostTracker(0), observe.NewEventBus(64), EngineConfig{
+		Model:     "test-model",
+		LoopMode:  LoopModeProviderTools,
+		MaxTokens: 4096,
+	})
+	// EffectiveWindow = 20000 - 4096 - 2000 = 13904; threshold = 904.
+	engine.SetCompaction(CompactionDeps{
+		Compactor:   compact.NewService(prov, observe.NewEventBus(64), model.NewCostTracker(0), "test-model"),
+		AutoTracker: compact.NewAutoTracker(false),
+		WindowConfig: compact.WindowConfig{
+			ContextWindow:   20_000,
+			MaxOutput:       4096,
+			SystemPromptEst: 2000,
+		},
+	})
+
+	events := collectPragmaLoopEvents(engine.Run(t.Context(), "RIVERGATE-7f3a: what is the deploy checklist status?"))
+
+	var started, complete int
+	for _, ev := range events {
+		switch ev.(type) {
+		case CompactionStartedEvent:
+			started++
+		case TurnCompleteEvent:
+			complete++
+		}
+	}
+	if started != 1 {
+		t.Fatalf("CompactionStartedEvent count = %d, want 1", started)
+	}
+	if complete != 1 {
+		t.Fatalf("TurnCompleteEvent count = %d, want 1", complete)
+	}
+	if prov.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2 (summary + response)", prov.calls)
+	}
+	// The post-compaction model request must carry the pending prompt
+	// verbatim alongside the summary — not the summary alone.
+	var sawSummary, sawPrompt bool
+	for _, msg := range prov.requests[1].Messages {
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok {
+				if strings.Contains(tp.Text, "routine question and answer exchanges") {
+					sawSummary = true
+				}
+				if strings.Contains(tp.Text, "RIVERGATE-7f3a") {
+					sawPrompt = true
+				}
+			}
+		}
+	}
+	if !sawSummary {
+		t.Fatalf("post-compaction request does not contain the compaction summary")
+	}
+	if !sawPrompt {
+		t.Fatalf("post-compaction request lost the pending prompt (RIVERGATE-7f3a): the unanswered operator prompt was compacted away and never reached the model")
+	}
+	// The durable conversation must retain the pending prompt after the
+	// summary as well, not just the single replacement summary message.
+	var storeHasPrompt bool
+	for _, msg := range store.Snapshot().Conversation.Messages {
+		for _, part := range msg.Content {
+			if tp, ok := part.(model.TextPart); ok && strings.Contains(tp.Text, "RIVERGATE-7f3a") {
+				storeHasPrompt = true
+			}
+		}
+	}
+	if !storeHasPrompt {
+		t.Fatalf("compacted conversation dropped the pending prompt from the conversation store")
+	}
+}
+
 // TestProviderToolsLoopAutoCompactCooldownBlocksImmediateRetrigger guards
 // the MinTurnsCooldown death-spiral cooldown (#24179): after a successful
 // compaction, the immediately following loop iteration must NOT compact
