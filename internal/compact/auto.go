@@ -53,6 +53,22 @@ func (t *AutoTracker) ShouldAutoCompact(tokenCount int, wc WindowConfig) bool {
 		observe.GlobalTrace("return: false")
 		return false
 	}
+
+	// CMP-001.4 F8: a zero/unconfigured window must DISABLE the trigger,
+	// not arm it. A zero WindowConfig yields AutoCompactThreshold 0 (the
+	// clamp floor), so every cooldown-eligible iteration satisfied
+	// tokenCount >= threshold and compaction — a provider call that
+	// replaces the whole conversation — fired every MinTurnsCooldown
+	// turns forever, whatever the conversation size. An unknown window
+	// means the safe threshold is unknown; refuse to compact on it. This
+	// also restores the CompactionDeps contract ("pass nil/zero values
+	// to disable auto-compaction"): SetCompaction with live deps but a
+	// zero WindowConfig now means disabled, not compact-every-cooldown.
+	if wc.ContextWindow <= 0 {
+		observe.GlobalTrace("if: wc.ContextWindow <= 0")
+		observe.GlobalTrace("return: false")
+		return false
+	}
 	observe.GlobalTrace("return: tokenCount >= AutoCompactThreshold(wc)")
 
 	return tokenCount >= AutoCompactThreshold(wc)

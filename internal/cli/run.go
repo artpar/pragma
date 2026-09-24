@@ -2037,14 +2037,37 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 	autoTracker := compact.NewAutoTracker(disableAutoCompact)
 
 	ctxWindow := 200_000
-	if cw, ok := d.Prov.ContextWindow(d.Cfg.Model); ok {
-		observe.GlobalTrace("if: ok")
+	// CMP-001.4 F8 zero-window guard, wiring side: a provider lookup of
+	// 0 must not arm a zero WindowConfig (AutoCompactThreshold 0 =
+	// compaction every cooldown); keep the default instead.
+	if cw, ok := d.Prov.ContextWindow(d.Cfg.Model); ok && cw > 0 {
+		observe.GlobalTrace("if: ok && cw > 0")
 		ctxWindow = cw
 	}
 
-	sysTokEst := compact.EstimateSystemPromptTokens(model.SystemPrompt{
-		Blocks: []model.SystemBlock{{Text: query.PragmaLoopSystemPrompt()}},
-	})
+	// CMP-001.4 F8: calibrate the death-spiral reserve to the request
+	// shape the ACTIVE loop mode actually re-sends after compaction. The
+	// pre-F8 estimate was PragmaLoopSystemPrompt for every mode — a
+	// payload provider-tools requests never carry at all — while the
+	// fixed payload they DO carry (custom prompt + conversation system +
+	// harness manifest + MCP status + patch guidance + tool schemas) was
+	// counted nowhere, so the reserve under-counted the post-compaction
+	// re-injection by all of it.
+	var sysTokEst int
+	if d.Engine != nil {
+		observe.GlobalTrace("if: d.Engine != nil")
+		sysTokEst = d.Engine.EstimateCompactionReserve()
+	} else {
+		// No production path reaches here without an engine (RegisterTools
+		// sets d.Engine before every BuildCompactionDeps call), but keep a
+		// mode-independent floor: the pragma-mode fixed payload.
+		sysTokEst = compact.EstimateSystemPromptTokens(model.SystemPrompt{
+			Blocks: []model.SystemBlock{
+				{Text: d.EngineCfg.CustomSystemPrompt},
+				{Text: query.PragmaLoopSystemPrompt()},
+			},
+		})
+	}
 	observe.GlobalTrace("return: query.CompactionDeps{\n\tCompactor:\tcompactor,\n\tAutoTracker:\tautoTracker,\n\tWind...")
 
 	return query.CompactionDeps{

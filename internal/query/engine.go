@@ -381,6 +381,62 @@ func (engine *Engine) requestTokenCount(ctx context.Context, resolvedModel strin
 	return compact.EstimateRequestTokens(countParams)
 }
 
+// EstimateCompactionReserve estimates the tokens of the request-fixed
+// payload the active loop mode re-sends with every model request — the
+// payload auto-compaction cannot remove (compact.ApplyResult replaces
+// only messages) and WindowConfig.SystemPromptEst must reserve so a
+// post-compaction request (summary + fixed payload) sits below the
+// trigger threshold instead of re-compacting immediately (death-spiral
+// prevention #24179; CMP-001.4 F8).
+//
+// Mode shapes, mirroring each loop's request builder exactly:
+//
+// provider-tools: the custom prompt (prepended by WithCustomSystemPrompt),
+// the conversation's system blocks (re-sent verbatim each iteration),
+// MCP status, harness manifest, patch guidance, and the static tool
+// schemas (providerToolDefs, WebSearch, Agent). PragmaLoopSystemPrompt
+// is NOT counted — provider-tools requests never carry it.
+//
+// pragma (default): the loop replaces the conversation system with
+// custom prompt + PragmaLoopSystemPrompt (run.System, stored via
+// setConversationSystemPrompt); requests carry no tools, manifest,
+// MCP status, or patch guidance.
+//
+// Boundary: injected MCP tool schemas are excluded — withMCPToolDefs
+// needs a live context and the set is dynamic across the session, so it
+// cannot be counted at wiring time. The trigger's own count
+// (requestTokenCount, CMP-001.4 F6) includes them at decision time, so
+// only the reserve under-counts, by the MCP schema size alone.
+func (engine *Engine) EstimateCompactionReserve() int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if engine.config.LoopMode == LoopModeProviderTools {
+		observe.GlobalTrace("if: engine.config.LoopMode == LoopModeProviderTools")
+		// Mirror runProviderToolsLoop's per-iteration request build
+		// (provider_tools_loop.go) minus the ctx-dependent MCP tool defs.
+		snap := engine.store.Snapshot()
+		system := engine.WithCustomSystemPrompt(snap.Conversation.System)
+		system = engine.systemWithMCPStatus(system)
+		system = engine.systemWithHarnessManifest(system)
+		tools := providerToolDefs()
+		tools = engine.withWebSearchTool(tools)
+		tools = engine.withSubAgentTool(tools)
+		system = engine.systemWithPatchGuidance(system, tools)
+		est := compact.EstimateSystemPromptTokens(system)
+		for _, tool := range tools {
+			observe.GlobalTrace("range tools")
+			est += compact.EstimateToolDefTokens(tool)
+		}
+		observe.GlobalTrace("return: est")
+		return est
+	}
+	// Pragma loop: run.System is exactly the fixed payload every
+	// request carries and the loop re-injects it as the conversation
+	// system after compaction (setConversationSystemPrompt).
+	observe.GlobalTrace("return: compact.EstimateSystemPromptTokens(engine.pragmaLoopSystemPrompt())")
+	return compact.EstimateSystemPromptTokens(engine.pragmaLoopSystemPrompt())
+}
+
 func (engine *Engine) appendConversationMessage(msg model.Message) error {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")

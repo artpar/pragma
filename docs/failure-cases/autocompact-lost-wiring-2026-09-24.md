@@ -753,3 +753,111 @@ calibration + zero-window guard) and CMP-002 (morphllm ContextWindow)
 remain open; the .4a critic findings C-1..C-4 (config-closure leaks,
 persistent-fork relief valve, pragma-loop fork coverage) are queued
 separately.
+
+## Revision CMP-001.4c (2026-09-24): the death-spiral reserve ignored the loop's actual request payload; a zero WindowConfig armed compaction instead of disabling it
+
+Source: queue item CMP-001.4c (the F8 split of CMP-001.4); the two RED
+gates below (`internal/compact/auto_zero_window_test.go`,
+`internal/cli/compaction_window_calibration_test.go`) were pre-drafted by
+the capped parent CMP-001.4 worker and kept as this item's baseline.
+
+### Verified (against the pre-fix tree at 411728b)
+
+F8 estimate miscalibration — confirmed for BOTH loop modes:
+- `BuildCompactionDeps` (run.go) computed
+  `SystemPromptEst = EstimateSystemPromptTokens(PragmaLoopSystemPrompt)`
+  ≈ 270 heuristic tokens for every mode. Provider-tools requests never
+  carry that prompt at all: their fixed payload is the custom prompt
+  (prepended by `WithCustomSystemPrompt`) + the conversation's system
+  blocks (re-sent verbatim each iteration, provider_tools_loop.go) +
+  MCP status + harness manifest + patch guidance + tool schemas
+  (Bash/apply_patch/WebSearch/Agent/MCP). The pragma loop's requests
+  carry custom prompt + PragmaLoopSystemPrompt (miniswe_loop.go
+  `pragmaLoopSystemPrompt()`), so even the default mode's reserve missed
+  the custom prompt.
+- The reserve's documented purpose is death-spiral prevention (#24179,
+  window.go SystemPromptEst): `compact.ApplyResult` replaces only
+  `Conversation.Messages` (compact.go) — the entire fixed payload above
+  is re-injected with the first post-compaction request, so the 270-token
+  reserve under-counted the re-injection by the custom prompt + system
+  blocks + manifest + MCP status + patch guidance + tool schemas. RED:
+  `SystemPromptEst = 270, want >= 3000` (provider-tools) / `want >= 1000`
+  (pragma) in the calibration gate.
+- Scope clarification (not a refutation): "counted nowhere" was already
+  historical for the TRIGGER count — F6 (95836f9) counts the request
+  shape, system + tools included, at decision time. The RESERVE was the
+  remaining uncounted site, which is what this revision fixes.
+
+F8 zero WindowConfig — confirmed mechanically, latent in production:
+- `WindowConfig{}` → `EffectiveWindow 0` → `AutoCompactThreshold`
+  clamps to 0 (window.go) → `ShouldAutoCompact` true for EVERY token
+  count whenever state checks pass → compaction (a provider call that
+  replaces the whole conversation) fires every `MinTurnsCooldown` turns
+  forever. RED: `ShouldAutoCompact(0, zero WindowConfig) = true`.
+- This contradicts the CompactionDeps contract ("pass nil/zero values to
+  disable auto-compaction"): live deps + zero window meant
+  compact-every-cooldown, not disabled.
+- No production caller passes a zero window today (all three
+  `SetCompaction` sites go through `BuildCompactionDeps`, ctxWindow
+  defaults to 200_000) — the hazard is the API contract plus any future
+  provider returning `(0, true)` from `ContextWindow`, which the wiring
+  now also rejects. The reachable LIVE variant of threshold-0 is a
+  CONFIGURED window smaller than buffer+reserve+maxOutput (e.g.
+  googlevertex's 8_192): the guard deliberately does not change that —
+  a configured window must still trigger (pinned by the gate) — and that
+  small-window every-cooldown behavior remains the open CMP-001.4b
+  critic finding C-2 (compaction-invariant overhead vs threshold).
+
+### Changes (one mechanism per defect)
+
+1. Zero-window guard — `internal/compact/auto.go`: `ShouldAutoCompact`
+   rejects `wc.ContextWindow <= 0` (unknown window = unknown safe
+   threshold = no trigger). `internal/cli/run.go` wiring side:
+   `BuildCompactionDeps` ignores non-positive `ContextWindow` lookups
+   (keeps the 200_000 default).
+2. Reserve calibration — `internal/query/engine.go` adds exported
+   `EstimateCompactionReserve()`: mode-aware, mirroring each loop's
+   request builder exactly (provider-tools: custom + conversation
+   system + MCP status + harness manifest + patch guidance + static tool
+   schemas, `providerToolDefs`/WebSearch/Agent; pragma: custom +
+   PragmaLoopSystemPrompt). `BuildCompactionDeps` uses it (nil-engine
+   fallback keeps a pragma-shape floor; no production path reaches it —
+   `RegisterTools` sets `d.Engine` before every call). Boundary:
+   injected MCP tool schemas are excluded from the reserve —
+   `withMCPToolDefs` needs a live context and the set is dynamic per
+   session; the trigger's own F6 count includes them at decision time,
+   so only the reserve under-counts, by the MCP schema size alone.
+
+### Gates and adjacent checks
+
+- RED on the pre-fix tree (unchanged code, pre-drafted gates):
+  `go test ./internal/compact/ -run TestShouldAutoCompactZeroWindowNeverTriggers`
+  → `ShouldAutoCompact(0, zero WindowConfig) = true`;
+  `go test ./internal/cli/ -run TestBuildCompactionDepsCalibratesSystemPromptEstToLoopMode`
+  → `SystemPromptEst = 270, want >= 3000/1000` (both modes).
+- New post-fix composition gates (`internal/query/compaction_reserve_test.go`),
+  RED-verified against the old estimation shape (estimator neutered to
+  the pre-F8 body, then restored): provider-tools reserve must equal
+  tool schemas (645) + manifest/patch blocks (358) = 1003 with empty
+  custom/system inputs — the old shape returned 270; pragma reserve must
+  equal est(custom+PragmaLoopSystemPrompt) = 1270, NOT counting the
+  conversation system the pragma loop replaces — the old shape returned
+  270.
+- GREEN: all gates pass; `go test ./internal/compact/ ./internal/query/
+  ./internal/cli/ -count=1` ok; `./internal/query/ -race` ok;
+  orchestration/session/provider-google ok; `go test ./...` green except
+  the pre-existing `TestProviderToolsCLIContract` (cmd/pragma), re
+  -verified failing identically at HEAD with these changes stashed.
+  `go vet ./internal/compact/ ./internal/query/ ./internal/cli/` clean;
+  changed/added files gofmt-clean (pre-existing unformatted files in
+  these packages were left untouched).
+
+Claim boundary: deterministic local proof only. The reserve is a
+bytes/4 heuristic over the exact request-fixed payload and is computed
+at wiring time (rebindCompaction refreshes it on model switch); a
+mid-session change to the conversation system after wiring is not
+re-estimated (safe direction — it can only under-reserve by the delta).
+No live-provider behavior is claimed. The small-window threshold-0 case
+and the post-compaction relief check (CMP-001.4b C-2) remain open and
+are NOT addressed by this revision; configured windows keep triggering
+as before.
