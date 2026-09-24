@@ -861,3 +861,108 @@ No live-provider behavior is claimed. The small-window threshold-0 case
 and the post-compaction relief check (CMP-001.4b C-2) remain open and
 are NOT addressed by this revision; configured windows keep triggering
 as before.
+
+---
+
+## Revision CMP-002 (2026-09-24): window calibration — per-model route policy table replaces the all-models 1M constant
+
+Queue item CMP-002 (the follow-up filed as out-of-scope above) delivered.
+Every payload claim was checked against the code and the recorded logs
+before any change; none was refuted outright, two carried unit/location
+nuances that are documented below instead.
+
+### Verified (payload claims)
+
+- `internal/provider/morphllm/provider.go:29` hardcoded
+  `ContextWindow = 1_000_000` — exact (line 29, const block). Its only
+  consumer was the `ContextWindow(modelID)` method, which returned it for
+  `DefaultModel` — and `ListModels()` serves exactly that one model, so
+  "for all models" held in effect; non-`DefaultModel` IDs already fell
+  through to the OpenAI-compatible parent (nuance, not a refutation).
+- Live 429 `raw_isl_tokens` evidence, medium class, 200K raw limit,
+  recorded 2026-09-11/12 — verified in the skill notes
+  (`~/.pragma/skills/harness-self-evolution/SKILL.md`), corroborated by
+  `docs/self-evolution-roadmap.md` (post-M4 live observations) and this
+  record. The verbatim router message is recorded in
+  `~/.pragma/logs/2026-09-11T18-50-33.jsonl`:
+  `queue raw_isl_tokens limit reached (current=291066, limit=200000)`
+  (retryable, retried to success — RTY-002). The tripping session peaked
+  at 206,838 input tokens.
+- "With the trigger wired, threshold is ~961k" — arithmetic-consistent:
+  `AutoCompactThreshold = ContextWindow − MaxOutput − SystemPromptEst −
+  13,000`; with the documented reserve shape (max output 16,384 +
+  ~10k system reserve, the exact fixture values in
+  `internal/compact/window_test.go`) the threshold is 960,616 ≈ 961k.
+- "Unreachable before router pain" — confirmed: every conversation ever
+  recorded on this route peaked at or below 345,219 input tokens
+  (2026-09-23 post-mortem, zero failures), and the single recorded
+  raw-policy trip happened inside a session peaking at 206,838 — both
+  far below ~961k.
+
+### Nuances (documented, nothing refuted)
+
+- "~200k" is a RAW-token policy number (input sequence length), not a
+  tokenized-window number, and the router escalates request class as
+  conversations grow: whale-class sessions ran clean at 265,376 and
+  345,219 input tokens with zero failures. 200K raw is therefore not a
+  hard per-request ceiling in input-token units — it is the only
+  recorded binding raw policy, and the conservative calibration floor.
+- The recorded raw↔tokenized ratio is unresolved (roadmap notes ≈2.8×
+  for the tripping request; the trip's 291,066 raw against the
+  session's 206,838 input peak is ≈1.41×). The calibration
+  conservatively treats the recorded raw policy number as the window in
+  input-token units rather than dividing by either ratio.
+- Evidence location nuance: "skill notes" is
+  `~/.pragma/skills/harness-self-evolution/SKILL.md`;
+  `~/.claude/skills` does not exist on this machine.
+
+### Changed (one mechanism)
+
+- `internal/provider/morphllm/provider.go`: the all-models
+  `ContextWindow = 1_000_000` const is replaced by a per-model route
+  policy table `modelContextWindows` whose `DefaultModel` entry is
+  `RecordedRouterRawTokenLimit = 200_000` (the recorded medium-class raw
+  policy, verbatim 429 quoted in the constant's comment).
+  `ContextWindow(modelID)` now resolves per-model from the table; absent
+  models still fall through to the parent (unchanged semantics). No
+  other file changed.
+- Deliverable option A (llmconfig metadata) was examined and rejected
+  with evidence: `llmconfig.Config` is the persona/state orchestration
+  override surface (consumed by `internal/orchestration/runner.go`'s LLM
+  resolver), while the default session route resolves its window through
+  `provider.ContextWindow` (`internal/cli/deps.go` token-monitor budget,
+  `BuildCompactionDeps` in `internal/cli/run.go`) — llmconfig metadata
+  would never reach the wiring this defect lives in. The route policy
+  table is where the resolution actually happens.
+- Threshold effect: with window 200,000 and the F8-calibrated reserves,
+  the trigger fires at roughly 150–161k input tokens — before the
+  recorded pain boundary (206,838) and long before the 345,219
+  unbounded-growth harm that opened this case.
+
+### RED/GREEN
+
+- RED (production tree unchanged, gates pre-drafted):
+  `go test ./internal/provider/morphllm/ -run 'TestMetadata|TestContextWindowCalibratedToRecordedRouterPolicy' -count=1`
+  → `TestMetadata: ContextWindow() = (1000000, true)` and the new gate:
+  `ContextWindow("morph-glm53-744b") = (1000000, true), want (200000, true)`.
+  The new gate also pins reachability: even the zero-reserve upper bound
+  of `AutoCompactThreshold` under the calibrated window (187,000) must
+  stay below the recorded pain boundary 206,838.
+- GREEN after the one-mechanism change: same run `ok`.
+- Adjacent: `go build ./...` clean; `go test ./internal/provider/...
+  ./internal/compact/ ./internal/query/ ./internal/cli/ -count=1` all ok
+  (including `TestProviderToolsCLIContract`, documented as pre-existing
+  flaky by earlier revisions — green this run); `go vet` clean on the
+  changed package; gofmt clean on both changed files.
+
+Claim boundary: deterministic local proof only. The 200,000 value is a
+conservative calibration to the only recorded binding raw policy — the
+same posture as the replaced constant's own comment ("keep the local
+budget conservative until a live model response provides an exact
+integer"). It is NOT a claim that 200K is the model's true context
+window: whale-class sessions ran clean at 265,376 and 345,219 input
+tokens, so the calibrated window will compact some sessions earlier
+than strictly necessary — a documented trade-off (bounded growth and a
+reachable trigger over the unverified 1M catalog claim). When a live
+response verifies a bigger envelope, the table entry is the single
+place to update. No live-provider behavior is claimed.

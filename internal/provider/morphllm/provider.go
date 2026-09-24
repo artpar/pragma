@@ -23,11 +23,34 @@ import (
 const (
 	DefaultBaseURL = "https://api.morphllm.com/v1"
 	DefaultModel   = "morph-glm53-744b"
-	// Morph's public catalog advertises a 1M-token context without a more
-	// precise value. Keep the local budget conservative until a live model
-	// response provides an exact integer.
-	ContextWindow = 1_000_000
+
+	// RecordedRouterRawTokenLimit is the raw input-sequence-length (ISL)
+	// token policy the morphllm router enforced live on its medium class —
+	// the only raw-size policy ever recorded on this route (CMP-002).
+	// Verbatim 429 (2026-09-11, retryable, retried to success):
+	//
+	//	queue raw_isl_tokens limit reached (current=291066, limit=200000)
+	//
+	// recorded in ~/.pragma/logs/2026-09-11T18-50-33.jsonl; the tripping
+	// session peaked at 206,838 input tokens. Morph's public catalog
+	// advertises a 1M-token context, but no live request has ever
+	// confirmed it — the largest clean session on record peaked at
+	// 345,219 input tokens (2026-09-23 post-mortem) — and the previous
+	// 1,000,000 placeholder left the auto-compact threshold (~961k after
+	// reserves) beyond every conversation the route has recorded. Keep the
+	// local budget at the recorded policy until a live model response
+	// provides a bigger verified envelope.
+	RecordedRouterRawTokenLimit = 200_000
 )
+
+// modelContextWindows is the route policy table resolving each model's
+// context window (CMP-002): windows are per-model and calibrated from
+// live-recorded router behavior instead of one hardcoded value covering
+// the whole route. Models absent from the table fall through to the
+// OpenAI-compatible parent, exactly as before.
+var modelContextWindows = map[string]int{
+	DefaultModel: RecordedRouterRawTokenLimit,
+}
 
 // Provider reuses Pragma's OpenAI-compatible wire adapter while retaining the
 // Morph identity and model metadata in sessions, accounting, and diagnostics.
@@ -105,10 +128,10 @@ func (p *Provider) Pricing(modelID string) (model.Pricing, bool) {
 func (p *Provider) ContextWindow(modelID string) (int, bool) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
-	if modelID == DefaultModel {
-		observe.GlobalTrace("if: modelID == DefaultModel")
-		observe.GlobalTrace("return: ContextWindow, true")
-		return ContextWindow, true
+	if cw, ok := modelContextWindows[modelID]; ok {
+		observe.GlobalTrace("if: cw, ok := modelContextWindows[modelID]; ok")
+		observe.GlobalTrace("return: cw, true")
+		return cw, true
 	}
 	observe.GlobalTrace("return: p.Provider.ContextWindow(modelID)")
 	return p.Provider.ContextWindow(modelID)
