@@ -1110,3 +1110,125 @@ assertions of the original CMP-001/F3 gates are unchanged.
   recovery), CMP-001.2.F3 (manual /compact pending semantics),
   CMP-001.2.F4 (token guard on the re-appended tail) remain open queue
   items, unaffected by this fix.
+---
+
+## Revision CMP-001.2.F2 (2026-09-24): no recovery for a failed
+## post-compaction session rewrite
+
+Source: queue item CMP-001.2.F2 (critic finding C-2 from the CMP-001.2
+audit cycle). Every payload claim was verified against the tree before
+any change (payload line numbers 160-166/2063-2091/2107-2144 had drifted
+to 210-213/2086-2094/2121-2154 — same code, line drift, not a
+refutation); nothing was refuted.
+
+### Verified (payload claims)
+
+- The rewrite error path leaves no recovery: provider_tools_loop.go
+  compaction success branch runs `RecordSuccess` (:170) and the
+  wholesale `store.Update` replacement (:192) BEFORE the rewrite; on
+  `rewriteSession()` error (:210) it emits one turn `ErrorEvent` and
+  returns — no repair, no index clamp. The default pragma loop carries
+  the identical branch (miniswe_loop.go:461; the payload cites only
+  provider-tools, same code via the CMP-001.3 port).
+- `rewriteCurrentSession` resets `d.SessionLastIdx = len(messages)` only
+  AFTER a successful `Rewrite` (run.go:2154), so the failed rewrite
+  leaves the index at its stale pre-compaction value (verified live in
+  the RED gate: after the failed rewrite, SessionLastIdx = 7 — six
+  seeded messages + the turn prompt already written by the turn-start
+  checkpoint — while the compacted store holds 2).
+- The next incremental checkpoint then writes NOTHING
+  (`for i := d.SessionLastIdx; i < len(...)` never enters with the index
+  past the end) and unconditionally resets `SessionLastIdx = len`
+  (run.go:2086-2094) — the desync is silently baked in. Later
+  checkpoints splice post-compaction messages onto the pre-compaction
+  file: the RED gate's reloaded file held 8 messages = the 6-message
+  bulk + the run-1 prompt + the run-2 assistant reply, with the summary,
+  the preserved prompt re-append, and the run-2 prompt all absent
+  (below the stale index). --resume resurrects the bulk history and
+  loses the summary/first exchange, exactly as claimed.
+- The same stale-index state arises from the manual path when
+  `rewriteCurrentSession` fails after `/compact` (runSlash error event,
+  run.go:345) — same absence of recovery.
+
+### RED (unchanged tree, real loop + real session writer + real loader)
+
+`go test ./internal/cli/ -run TestSessionCheckpointRecoversFromFailedCompactionRewrite -count=1`
+failed with
+`resumed session replays 8 messages (>= the 6-message pre-compaction history) — the failed post-compaction rewrite was never repaired: the next checkpoint wrote nothing below the stale index and spliced onto the pre-compaction file`.
+The gate drives the real `runProviderToolsLoop` twice: run 1 compacts
+(summary + preserved pending prompt, the full F1 mechanism) and the
+post-compaction rewrite FAILS — injected at the `EngineConfig.
+SessionRewrite` hook seam, the exact interface where a
+`rewriteCurrentSession` failure (session load, truncate, encode, sync)
+surfaces to the loop; premise legs assert the loop's real
+`rewrite session after compaction` error event and the stale index.
+Run 2 is the operator's next turn with the production wiring restored
+(real `rewriteCurrentSession` hook), so the recovery checkpoint runs
+real production code end to end; the file is then reloaded through
+`session.Store.Load` exactly as --resume does.
+
+### Change (one mechanism): the incremental checkpoint self-heals a
+### desynced index with a full rewrite
+
+`makeSessionSaveClose`'s saveFn (internal/cli/run.go): when
+`d.SessionLastIdx > len(snap.Conversation.Messages)` — the store's
+message array shrank below the last incrementally-written index, which
+only a compaction replacement can do, i.e. exactly the failed-rewrite
+state — the checkpoint performs a full `rewriteCurrentSession(d)` (the
+same truncate-and-rewrite the compaction success path uses) instead of
+silently writing nothing and clamping the index. GREEN with the same
+gate: the reloaded file carries [summary, preserved prompt, run-2
+prompt, assistant reply] and no bulk history. If the rewrite still
+fails (persistent IO failure), the checkpoint now returns a loud
+`rewrite session after desynced checkpoint index` error through the
+existing checkpoint error path (turn ErrorEvent), replacing the old
+silent corruption. One site covers every entry to the state: both
+loops' auto-compaction, the manual `/compact` failure, and the
+close-time final save (`closeCurrentSession` calls saveFn before
+closeFn).
+
+### Gates (this revision)
+
+- RED → GREEN:
+  `go test ./internal/cli/ -run TestSessionCheckpointRecoversFromFailedCompactionRewrite -count=1`
+  (RED message above; PASS after the fix).
+- Adjacent: `go test ./internal/cli/ -count=1` ok — includes the F2
+  success gate `TestAutoCompactRewritesResumableSessionFile` (the
+  successful rewrite path still resets the index and skips the
+  incremental writes, so the recovery branch is a strict addition) and
+  the INT-001 CLI gates; `-count=1 -race` ok (the recovery adds no new
+  unsynchronized index access — saveFn already read and wrote
+  `SessionLastIdx`, and `rewriteCurrentSession` already wrote it).
+- `go test ./internal/query/ -run 'AutoCompact|MidCall' -count=1` ok
+  (the whole compaction family, both loops);
+  `go test ./internal/query/ -count=1` ok (6.8s);
+  `./internal/session/ ./internal/compact/ ./internal/slash/` ok.
+- `go test ./... -count=1` green except the pre-existing
+  `TestProviderToolsCLIContract` acceptance/environment failure
+  (cmd/pragma), re-verified failing identically at pristine HEAD
+  (81372d6) in a disposable worktree with these changes absent.
+- `go vet ./internal/cli/` clean; both changed files gofmt-clean.
+
+### Claim boundary (deliberate semantics, documented)
+
+- The repair runs at the NEXT checkpoint (the next message append, or
+  the close-time save), not inside the loop's error branch — the loop
+  keeps its documented F2 semantics (a failed rewrite errors the turn).
+  A hard crash between the failed rewrite and the next checkpoint still
+  leaves the pre-compaction file on disk; resume then reads a
+  consistent (stale, bulk) conversation — no splice corruption, but
+  the compaction is lost for that file. That residual window needs an
+  atomic (temp+rename) rewrite to close, which is a separate mechanism.
+- A rewrite whose truncate partially destroyed the file before failing
+  may leave the file unloadable (no header) — the recovery's
+  `loadCurrentSessionForRewrite` then fails and the checkpoint errors
+  loudly instead of silently corrupting; repairing from an in-memory
+  header (d.SessionHeader) would be a further change, not made here.
+- The loop-side `ErrorEvent` + `return` on rewrite failure is unchanged:
+  RecordSuccess is kept (the compaction itself succeeded — the summary
+  IS in the store; only its persistence failed), so the cooldown still
+  engages and a re-trigger cannot undo the repair.
+- The payload's "no repair or index clamp" is confirmed as the defect;
+  the fix is the repair, deliberately NOT a clamp — clamping the index
+  to the compacted length alone would splice ALL compacted messages
+  onto the pre-compaction bulk (duplicated history), which is worse.

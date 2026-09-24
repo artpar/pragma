@@ -2092,17 +2092,36 @@ func makeSessionSaveClose(d *Deps) (saveFn func() error, closeFn func() error) {
 			return nil
 		}
 		snap := d.Store.Snapshot()
-		for i := d.SessionLastIdx; i < len(snap.Conversation.Messages); i++ {
-			if err := d.SessionWriter.WriteMessage(snap.Conversation.Messages[i]); err != nil {
+		if d.SessionLastIdx > len(snap.Conversation.Messages) {
+			// CMP-001.2 F2 recovery: the store's message array shrank
+			// below the last incrementally-written index. Compaction is
+			// the only wholesale replacement, so this is exactly the
+			// state a FAILED post-compaction rewrite leaves: the durable
+			// file still carries the pre-compaction bulk while the
+			// index points past the compacted array. The old incremental
+			// path silently wrote NOTHING here and then clamped the
+			// index to the shorter array, so every later checkpoint
+			// spliced post-compaction messages onto the wrong base and
+			// --resume resurrected the bulk history with the summary
+			// lost. The only correct persistence from this state is a
+			// full rewrite from the current store, exactly as the
+			// compaction success path does.
+			if err := rewriteCurrentSession(d); err != nil {
+				return fmt.Errorf("rewrite session after desynced checkpoint index: %w", err)
+			}
+		} else {
+			for i := d.SessionLastIdx; i < len(snap.Conversation.Messages); i++ {
+				if err := d.SessionWriter.WriteMessage(snap.Conversation.Messages[i]); err != nil {
+					return err
+				}
+			}
+			if err := d.SessionWriter.WriteOrchestrationArtifacts(snap.OrchestrationArtifacts); err != nil {
 				return err
 			}
-		}
-		if err := d.SessionWriter.WriteOrchestrationArtifacts(snap.OrchestrationArtifacts); err != nil {
-			return err
-		}
-		d.SessionLastIdx = len(snap.Conversation.Messages)
-		if err := d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap)); err != nil {
-			return err
+			d.SessionLastIdx = len(snap.Conversation.Messages)
+			if err := d.SessionWriter.WriteMetadata(sessionMetadataForSnapshot(d, snap)); err != nil {
+				return err
+			}
 		}
 		fileSize, _ := d.SessionWriter.Size()
 		if d.Bus != nil {
