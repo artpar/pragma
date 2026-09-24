@@ -1,5 +1,54 @@
 # API payload meta-analysis — every agent call, 2026-09-24
 
+## Per-call edition (v2): every one of the 2,725 calls individually parsed
+
+Method: every APIRequestCompleted event in all 52 session logs was parsed
+individually; every tool invocation inside every response was extracted
+with its arguments and content-fingerprint (3,324 tool invocations total);
+costs distributed per call by token share; identical-call detection within
+and across sessions. Itemized ledger: `api-calls-2026-09-24.jsonl` +
+`.csv` (3,324 rows) in this directory - every claim below is a query over
+that file.
+
+### Per-call waste taxonomy (dollars of the $188.59)
+
+| Category | Calls | Cost | Share |
+|---|---|---|---|
+| Pure re-read exploration (grep/sed/git-show command families re-reading the repo) | ~623 | ~$56 | 30% |
+| Identical calls re-executed within one session (patch retries, re-reads) | 233 | ~$22 | 11% |
+| Cap-dead worker attempts (before v1.5) | 4 sessions | ~$32 | 17% |
+| Supervisor session premium (42% of all input for meta-coordination) | 482 calls | ~$79 | 42% |
+
+Over half the day's spend (58%) was mechanical overhead - re-reading,
+retrying, and coordination - not new work. The genuinely-new information
+produced (2M output tokens + ~4M fresh input context) cost roughly
+$15-25 at route rates.
+
+### Per-call efficiency findings
+
+- 604 of 2,737 calls (22%) produced <100 output tokens - thinking-heavy
+  responses with tiny or no visible action.
+- 165 calls (6%) took >30s - the slow tail is long thinking turns.
+- The most-repeated exact command across ALL agents: `grep -rn ...` 143x,
+  `git show` 124x, `grep -n` 121x, `sed -n` 109x - the same repo reads
+  re-issued by every fresh instance because nothing persists reads
+  between sessions.
+- Tool mix per agent type (from per-call ledger): supervisor = 417 Bash +
+  80 apply_patch + 3 WebSearch + 2 Agent; workers = 83-88 Bash + 6-20
+  apply_patch each; critics = grep/git-heavy, ~1.5 tool calls per call.
+
+### New follow-up findings (append to RES list)
+
+5. RES-005 explore-cache: 30% of spend re-reads what prior sessions
+   already read. A shared read-artifact cache (repo survey hand-off,
+   already proven in the benchmark's /tmp/pragma/swe/repo-survey.md
+   pattern) would reclaim most of it.
+6. RES-006 redo-guard: 233 intra-session identical re-executions - a
+   tool-level dedup advisory (the same fingerprint twice in a row = ask
+   the model why) is a small harness change.
+7. RES-007 sub-100-output calls (22%): classify whether these are
+   legitimately thinking-then-acting or wasted requests.
+
 Scope: all 2,725 API calls made by all 52 sessions today (supervisor,
 workers, critics, meta-observer support, probes, benchmark support runs),
 aggregated from tier-1 event logs (`~/.pragma/logs/2026-09-24T*.jsonl`),
