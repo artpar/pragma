@@ -1637,3 +1637,148 @@ internal/compact, internal/cli/run.go — another live session's in-
 flight work). The commit was staged selectively to contain only this
 revision's files/hunks; the instrumentation pass is untouched in the
 working tree.
+
+---
+
+## Revision CMP-001.3.F1 (2026-09-24): the pragma-loop trigger on
+## orchestration persistent-state forks — every payload leg verified at
+## the audited commit, already defused at HEAD by CMP-001.4a; the path is
+## now gated
+
+Source: queue item CMP-001.3.F1 (critic finding C-1, severity medium,
+confidence confirmed). The payload audited commit `1b4fb1b` (the
+CMP-001.3 port) — established by exact line matches: engine.go:181-183,
+miniswe_loop.go:370/431, runner.go:348/961/864 all resolve to the cited
+code at `1b4fb1b`.
+
+### Verified (every payload claim reproduced at the audited commit)
+
+- Persistent orchestration states fork via `root.ForkFreshConversation`
+  (runner.go:348) and run the pragma loop UNSCOPED
+  (`IncludePriorConversation: stateUsesPersistentConversation`,
+  runner.go:961 — unscoped means `len(run.MessageStartIndexes) == 0`
+  passes the CMP-001.3 trigger gate, miniswe_loop.go:370).
+- The fork constructor copied `compactor`/`autoTracker`/`windowConfig`
+  (engine.go:181-183 at 1b4fb1b) and `subCfg := engine.config` copied
+  the root's `SessionRewrite` closure.
+- The fork's compaction success branch called `engine.rewriteSession()`
+  (miniswe_loop.go:431 at 1b4fb1b) → the root's closure →
+  `rewriteCurrentSession` (run.go:2107) — snapshots the ROOT `d.Store`
+  (:2121), rewrites the ROOT's durable session file, resets the ROOT
+  `SessionLastIdx` (:2140). The payload's ":2112,2131" is line drift
+  inside the same function.
+- One mutex-less `AutoTracker` shared root↔fork (auto.go:43-48 breaker
+  inside `ShouldAutoCompact`; no un-trip — `RecordSuccess` is
+  unreachable once tripped), so fork failures/cooldowns booked the
+  root's conversation.
+- `BindProvider` (runner.go:864, applyStateLLMRuntime) rebinds the
+  fork's provider; the compactor kept the ROOT's provider/model —
+  fork compaction summarized through the root's route even after the
+  persona rebind.
+- "The leak was dormant before this commit": before CMP-001.3 the pragma
+  loop had no trigger at all, so persistent-state forks could never
+  compact regardless of inherited deps.
+- Executable RED (the gate below) at `1b4fb1b`, probe output over the
+  real fork run: `started=2 compacted=1 failed=1 complete=1
+  rootRewritten=true rootProv.calls=1 rootFailures=0 rootEligible=false`
+  — every leg live and SILENT: the fork compacted twice (the first
+  attempt failed ErrTooFewMessages over 3 messages — `RecordFailure` on
+  the ROOT's tracker; the second succeeded — `RecordSuccess` cleared
+  the failure count and engaged the ROOT's cooldown), the fork's
+  compaction rewrote the ROOT's session through the inherited closure,
+  and the summary went through the ROOT's provider after the persona
+  rebind, with the run completing normally.
+
+### Refuted at HEAD (`a104fcb`): the defect no longer exists — CMP-001.4a
+### (`a229500`) already removed the fork inheritance
+
+- `ForkFreshConversation` drops `compactor`/`autoTracker`/`windowConfig`
+  for ALL fork paths (gated by
+  `TestForkFreshConversationDoesNotInheritCompactionDeps`); no
+  orchestration path re-injects deps (`SetCompaction` callers are
+  cli/run.go root engines only — grep-verified; `BindProvider` swaps
+  provider/model only).
+- Therefore the pragma-loop trigger guard (`compactor != nil &&
+  autoTracker != nil`, miniswe_loop.go:377) fails on every fork: no
+  `CompactionStartedEvent`, `rewriteSession` unreachable, root tracker
+  untouched, root provider never consulted by a fork. The payload's
+  consequence chain is defused at the constructor.
+- The `SessionRewrite` closure is still copied via
+  `subCfg := engine.config` (verified) — structurally present but
+  unreachable (`rewriteSession` has exactly two callers, both
+  compaction success branches). Documented as "DEFUSED, not removed" in
+  the CMP-001.4a revision.
+- The payload's "none of this is tested or documented beyond the
+  generic CMP-001.4 F5 note" was true at `1b4fb1b` but stale at HEAD:
+  CMP-001.4a's revision documents the fork-deps fix and gates the
+  constructor plus the provider-tools fork shape. The pragma-loop
+  persistent-fork shape — this payload's exact path — WAS the
+  remaining untested surface; closing it is this revision's change.
+
+### Change (test-only, one gate): the pragma-loop persistent-fork path
+### is now pinned
+
+`internal/query/autocompact_fork_pragma_test.go`
+`TestPersistentForkPragmaLoopNeverCompactsOrRewritesRootSession`: the
+exact production chain — a root engine with LIVE compaction deps
+(over-threshold root conversation) and a `SessionRewrite` hook,
+`root.ForkFreshConversation()` (the exact orchestration constructor
+call), a persona `BindProvider` rebind, and an UNSCOPED pragma-loop run
+(`RunPragmaLoopWithSystemCompletionCheckOptions` with
+`IncludePriorConversation`, the exact `RunStateEvents` invocation shape)
+whose conversation grows far over the threshold across bash-block turns.
+Asserts: zero compaction events of any kind, the run completes normally
+(TurnComplete=1, no ErrorEvent), the root's rewrite hook never fires,
+the root's compaction provider is never called, and the root's tracker
+stays clean (FailureCount=0, still ShouldAutoCompact-eligible). NO
+production change: the defect was already repaired by the sibling item,
+and the worker rules forbid production changes for refuted claims; the
+gate is the cheapest additional test for the remaining claim
+(methodology step 5) — it turns the CMP-001.4a "defused, not removed"
+boundary into an executable invariant, so re-enabling fork compaction
+without giving the fork its own deps and its own SessionRewrite cannot
+pass silently.
+
+### Gates (this revision)
+
+- RED at `1b4fb1b` (disposable worktree, the committed gate file
+  verbatim):
+  `CompactionStartedEvent count = 2, want 0 — the persistent-state
+  fork's compaction deps activated auto-compaction on the unscoped
+  pragma-loop run (CMP-001.3.F1)` (plus the probe legs quoted above).
+- GREEN at HEAD: the same gate PASS.
+- `go test ./internal/query/ -run 'Fork' -count=1` — 4/4 (the two
+  CMP-001.4a gates + this gate + the subagent turn-cap fork gate).
+- `go test ./internal/query/ -count=1` ok (6.7s); `-count=1 -race` ok
+  (11.1s); the full compaction family
+  (`AutoCompact|MidCall|Fork|RequestShape|SystemPrompt|PreciseCounter|Reserve`)
+  ok.
+- `go test ./internal/orchestration/ ./internal/compact/
+  ./internal/session/ ./internal/cli/ -count=1` — ok.
+- `go test ./... -count=1` — green except the pre-existing
+  `TestProviderToolsCLIContract` acceptance/environment failure
+  (cmd/pragma), documented since CMP-001.1; a test-only addition to
+  internal/query cannot affect that package's acceptance binary.
+- `go vet ./internal/query/` clean; the new file gofmt-clean.
+
+### Claim boundary / record corrections
+
+- The CMP-001.3 revision's claim-boundary sentence "Orchestration
+  unscoped state runs run on forked engines that inherit the root's
+  compaction deps (pre-existing fork-deps leak, filed as CMP-001.4
+  F5...)" described the tree as of `1b4fb1b` and is superseded at HEAD:
+  fork engines carry nil compaction deps, so orchestration unscoped
+  persona/persistent state runs execute with auto-compaction DISABLED —
+  the CMP-001.4a boundary (forks never auto-compact; re-enabling
+  requires the fork to construct its own deps and rebind its own
+  SessionRewrite to its own store).
+- Non-persona persistent states (`stateRunsPersona` false) run on the
+  ROOT engine, where trigger/rewrite/tracker are the root's own —
+  correct by the CMP-001.3 design and outside this finding.
+- Adjacent observed behavior, deliberately unchanged: the fork's
+  inherited `SessionCheckpoint` closure (config copy) invokes the
+  root's saveFn on fork appends — pre-existing since forks exist,
+  orthogonal to compaction (the checkpoint persists the root store's
+  own state; only compaction reaches `SessionRewrite`), noted here as
+  an observation, not a defect claim.
+- No live-provider behavior is claimed.
