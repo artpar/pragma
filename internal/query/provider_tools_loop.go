@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/artpar/pragma/internal/app"
+	"github.com/artpar/pragma/internal/compact"
 	"github.com/artpar/pragma/internal/mcp"
 	"github.com/artpar/pragma/internal/model"
 	"github.com/artpar/pragma/internal/observe"
@@ -79,6 +80,62 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 				ch <- ErrorEvent{Err: err}
 				return
 			}
+		}
+
+		// CMP-001: consult the auto-compact tracker before each request.
+		// The pragma loop carried this trigger since 2e9f01b; the
+		// provider-tools loop was written without it (95621ad) and every
+		// default-mode session ran with auto-compaction silently dead.
+		// Nil deps (subagent engines, #27794) leave this a no-op.
+		if engine.compactor != nil && engine.autoTracker != nil {
+			compSnap := engine.store.Snapshot()
+			tokenCount := compact.EstimateConversationTokens(compSnap.Conversation.APIMessages())
+			if counter, ok := engine.provider.(provider.TokenCounter); ok {
+				precise, countErr := counter.CountTokens(ctx, provider.RequestParams{
+					Model:    firstNonEmpty(compSnap.Model, compSnap.Conversation.Model, engine.config.Model),
+					Messages: compSnap.Conversation.APIMessages(),
+					System:   compSnap.Conversation.System,
+				})
+				if countErr == nil {
+					tokenCount = precise
+				}
+			}
+			if engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig) {
+				observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
+				ch <- CompactionStartedEvent{}
+				compResult, compErr := engine.compactor.Compact(ctx, compSnap.Conversation.APIMessages(), compSnap.Conversation.System, "")
+				switch {
+				case compErr != nil && ctx.Err() == nil:
+					// A real failure: count it and possibly trip the breaker.
+					tripped := engine.autoTracker.RecordFailure()
+					ch <- CompactionFailedEvent{
+						Attempt:  engine.autoTracker.FailureCount(),
+						MaxRetry: compact.MaxConsecutiveFailures,
+						ErrorMsg: compErr.Error(),
+					}
+					if tripped {
+						engine.bus.Emit(observe.ErrorOccurred{
+							EventHeader:  observe.NewEventHeader("ErrorOccurred", "", "", ""),
+							Severity:     "warn",
+							Component:    "compact",
+							ErrorType:    "circuit_breaker_tripped",
+							ErrorMessage: fmt.Sprintf("auto-compaction disabled after %d consecutive failures", compact.MaxConsecutiveFailures),
+						})
+						ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
+					}
+				case compErr == nil:
+					engine.autoTracker.RecordSuccess()
+					engine.store.Update(func(s *app.AppState) {
+						s.Conversation.Messages = compResult.ReplacementMessages
+						s.Conversation.UpdatedAt = time.Now()
+					})
+					ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
+				}
+				// compErr != nil && ctx.Err() != nil: the loop is being
+				// torn down — no failure count, no event, next iteration's
+				// ctx check exits cleanly.
+			}
+			engine.autoTracker.IncrementTurn()
 		}
 
 		snap := engine.store.Snapshot()
