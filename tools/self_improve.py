@@ -32,6 +32,10 @@ WORKER_MAX_TURNS = 80
 # Cycle-1 dogfood: a thorough critic (dual-worktree gate re-runs) needs
 # more than 40 turns; it died at the cap mid-audit without concluding.
 CRITIC_MAX_TURNS = 80
+# Hard spend ceilings (BUILD-budget-cap): each session aborts with a
+# distinct spend-ceiling error rather than exceeding the envelope.
+WORKER_MAX_COST = 15.0
+CRITIC_MAX_COST = 8.0
 
 WORKER_PROMPT = """You are a WORKER instance in pragma's self-improvement loop, working in {repo}.
 Read agent.md FIRST - the evidence-first methodology is mandatory (failure case
@@ -78,7 +82,7 @@ the commit survives audit cleanly):
 """
 
 
-def run_pragma(prompt, max_turns, log_path, model):
+def run_pragma(prompt, max_turns, log_path, model, max_cost):
     """Run a headless pragma session; returns (exit_code, wall_seconds)."""
     env = dict(os.environ)
     env["PRAGMA_BG_SESSION_LOG"] = log_path
@@ -86,6 +90,7 @@ def run_pragma(prompt, max_turns, log_path, model):
     proc = subprocess.run(
         [BIN, "--provider", "morphllm", "--model", model,
          "--loop", "provider-tools", "--max-turns", str(max_turns),
+         "--max-cost", str(max_cost),
          "--record", "-p", prompt],
         cwd=REPO, env=env, capture_output=True, text=True,
     )
@@ -187,7 +192,7 @@ def main():
             rc, secs = run_pragma(
                 WORKER_PROMPT.format(repo=REPO, qid=item["id"], title=item["title"],
                                      payload=json.dumps(item.get("payload", {}), indent=2)),
-                WORKER_MAX_TURNS, worker_log, args.worker_model)
+                WORKER_MAX_TURNS, worker_log, args.worker_model, WORKER_MAX_COST)
             print("  worker exit=%d wall=%.0fs log=%s cost=$%s" % (
                 rc, secs, worker_log, last_session_cost()))
 
@@ -216,7 +221,7 @@ def main():
             critic_log = os.path.join(LOGDIR, "%s-c%d-critic.log" % (stamp, cycle))
             crc, csecs = run_pragma(
                 CRITIC_PROMPT.format(repo=REPO, commit=head_after),
-                CRITIC_MAX_TURNS, critic_log, args.critic_model)
+                CRITIC_MAX_TURNS, critic_log, args.critic_model, CRITIC_MAX_COST)
             print("  critic exit=%d wall=%.0fs log=%s cost=$%s" % (
                 crc, csecs, critic_log, last_session_cost()))
             findings_raw = None

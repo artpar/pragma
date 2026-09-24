@@ -377,6 +377,7 @@ func SetupDepsWithOptions(cmd *cobra.Command, opts SetupDepsOptions) (*Deps, err
 		LoopMode:                  query.LoopModePragma,
 		MaxTokens:                 cfg.MaxTokens,
 		MaxTurns:                  cfg.MaxTurns,
+		MaxCostUSD:                cfg.MaxCostUSD,
 		Temperature:               cfg.Temperature,
 		ContentReplacementRecords: resumedContentReplacements,
 	}
@@ -547,6 +548,10 @@ func ApplyFlagOverrides(cmd *cobra.Command, cfg *config.Config) {
 	if cmd.Flags().Changed("max-turns") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"max-turns\")")
 		cfg.MaxTurns, _ = cmd.Flags().GetInt("max-turns")
+	}
+	if cmd.Flags().Changed("max-cost") {
+		observe.GlobalTrace("if: cmd.Flags().Changed(\"max-cost\")")
+		cfg.MaxCostUSD, _ = cmd.Flags().GetFloat64("max-cost")
 	}
 	if cmd.Flags().Changed("permission-mode") {
 		observe.GlobalTrace("if: cmd.Flags().Changed(\"permission-mode\")")

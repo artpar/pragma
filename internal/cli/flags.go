@@ -25,6 +25,7 @@ func RegisterFlags(cmd *cobra.Command) {
 	pf.Bool("trace", false, "record function-level flow tracing (high volume)")
 	pf.Bool("record", false, "record events to file")
 	pf.Int("max-turns", 0, "turn limit for the provider-tools loop (0 = no cap)")
+	pf.Float64("max-cost", 0, "hard per-session spend ceiling in USD; the loop aborts with a distinct error once reached (0 = uncapped)")
 	pf.String("permission-mode", "", "permission mode: default, acceptEdits, bypassPermissions, dontAsk")
 	pf.String("system-prompt", "", "custom system instructions prepended to Pragma's runtime system prompt")
 	pf.String("loop", "pragma", "agent loop mode: pragma, provider-tools")

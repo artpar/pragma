@@ -30,10 +30,14 @@ const (
 
 // EngineConfig holds query engine parameters derived from config + CLI flags.
 type EngineConfig struct {
-	Model                     string
-	LoopMode                  string
-	MaxTokens                 int
-	MaxTurns                  int // 0 = no turn cap (TURN-003); >0 bounds the loop
+	Model     string
+	LoopMode  string
+	MaxTokens int
+	MaxTurns  int // 0 = no turn cap (TURN-003); >0 bounds the loop
+	// MaxCostUSD is a hard per-session spend ceiling in USD. When >0 the
+	// loops abort with a distinct spend-ceiling error before the next
+	// provider request once accumulated cost reaches it. 0 = uncapped.
+	MaxCostUSD                float64
 	Temperature               *float64
 	Thinking                  *provider.ThinkingConfig
 	ResponseSchema            json.RawMessage

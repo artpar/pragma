@@ -346,6 +346,13 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 			ch <- ErrorEvent{Err: fmt.Errorf("context cancelled: %w", model.ErrContextCancelled)}
 			return
 		}
+		if engine.config.MaxCostUSD > 0 && engine.costTracker.TotalUSD() >= engine.config.MaxCostUSD {
+			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: spend ceiling reached")
+			ch <- ErrorEvent{Err: fmt.Errorf(
+				"session spend ceiling reached: $%.2f of $%.2f budget; the conversation is preserved — resume with a new prompt or --resume, or raise the ceiling",
+				engine.costTracker.TotalUSD(), engine.config.MaxCostUSD)}
+			return
+		}
 
 		// CMP-001.3: consult the auto-compact tracker before each request,
 		// exactly as the provider-tools loop does since CMP-001. The

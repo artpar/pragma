@@ -53,6 +53,13 @@ func (engine *Engine) runProviderToolsLoop(ctx context.Context, userMessage stri
 			ch <- ErrorEvent{Err: fmt.Errorf("context cancelled: %w", model.ErrContextCancelled)}
 			return
 		}
+		if engine.config.MaxCostUSD > 0 && engine.costTracker.TotalUSD() >= engine.config.MaxCostUSD {
+			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: spend ceiling reached")
+			ch <- ErrorEvent{Err: fmt.Errorf(
+				"session spend ceiling reached: $%.2f of $%.2f budget; the conversation is preserved — resume with a new prompt or --resume, or raise the ceiling",
+				engine.costTracker.TotalUSD(), engine.config.MaxCostUSD)}
+			return
+		}
 		if turn == warnTurn {
 			observe.TraceCtx(ctx, "query", "Engine.runProviderToolsLoop", "if: turn == warnTurn")
 			noticeAt := time.Now()
