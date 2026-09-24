@@ -180,6 +180,16 @@ func (engine *Engine) ForkFreshConversation() (*Engine, *app.StateStore) {
 		observe.GlobalTrace("if: subCfg.MaxTurns <= 0")
 		subCfg.MaxTurns = DefaultSubAgentMaxTurns
 	}
+	// CMP-001.4a.F1: do not inherit the root's SessionCheckpoint closure.
+	// The closure persists the ROOT engine's store (cli/run.go
+	// makeSessionSaveClose snapshots d.Store), while a fork appends to its
+	// own fresh store — so every fork append through the inherited closure
+	// did spurious root-session persistence work (a metadata entry
+	// rewrite per append plus a SessionSaved event keyed to the root
+	// conversation) and never persisted the fork's own messages. A fork
+	// that needs durable session persistence must bind its own checkpoint
+	// over its own store, mirroring the compaction re-enable path above.
+	subCfg.SessionCheckpoint = nil
 	// CMP-001.4 F5: do not inherit compactor/autoTracker/windowConfig.
 	// A fork has a fresh conversation; sharing the parent's live deps would
 	// let a fork's compaction failures trip the root's circuit breaker and

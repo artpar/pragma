@@ -2129,3 +2129,157 @@ identical for it, pinned by the existing gates below).
 - No live-provider behavior is claimed. The queue's related items
   (CMP-001.2.F3.F1/F2 sub-branches, CMP-001.4b C-2 small-window
   threshold) are unchanged.
+
+---
+
+## Revision CMP-001.4a.F1 (2026-09-24): the inherited SessionCheckpoint
+## closure made every fork append re-persist the ROOT session
+
+Source: queue item CMP-001.4a.F1 (critic finding C-1 from the CMP-001.4a
+audit cycle, severity medium, confidence confirmed). Every payload claim
+was verified against the tree at HEAD (`e9a8f9a`) before any change;
+payload line numbers drifted (engine.go :175 → the same `subCfg :=
+engine.config` at :176; provider_tools_loop :223/246/302/312 → :36/66/80/
+245/268/324; miniswe_loop :612/740/1393 → :672/800/1453; run.go :1228/
+1646 → :1224/1640, :2072/2080 → inside makeSessionSaveClose :2088-2122;
+:254 → :250) — same code, line drift, not refutations.
+
+### Verified (payload claims)
+
+- Forks inherit the ROOT's SessionCheckpoint closure: ForkFreshConversation
+  copies the whole root EngineConfig (`subCfg := engine.config`, engine.go)
+  including `SessionCheckpoint`, and NO fork path rebinds it (production
+  `SetSessionCheckpoint` callers are the four root-engine sites in
+  cli/run.go; grep-verified). The inheritance predates this case family
+  (the constructor since `27925a8` copied a config that already carried
+  the field) — pre-existing, NOT introduced by `a229500`, exactly as the
+  payload says.
+- The closure is live on EVERY fork append, unlike SessionRewrite:
+  `appendConversationMessage → checkpointSession →
+  config.SessionCheckpoint()` runs on every append of both loops forks
+  run (subagent forks → provider-tools loop, persona/orchestration forks
+  → pragma loop). SessionRewrite's only callers are the compaction
+  success branches, unreachable on deps-nil forks (the CMP-001.4a
+  "DEFUSED, not removed" boundary) — the checkpoint closure has no such
+  guard.
+- Per fork append it performs spurious ROOT-session persistence and
+  emits spurious events: the inherited closure is the root's
+  `makeSessionSaveClose` saveFn, which snapshots the ROOT `d.Store` (not
+  the fork's subStore — fork messages were never persisted by it, before
+  or after this fix), appends a `metadata` JSONL entry to the ROOT
+  session file unconditionally (`WriteMetadata → writeEntry`), re-sends
+  the root store's orchestration artifacts (`WriteOrchestrationArtifacts`
+  — a no-op only while the root store has none), stats the file, and
+  emits a `SessionSaved` event keyed to the ROOT conversation. RED (this
+  revision's gate, unchanged tree): a 2-append subagent-shaped fork turn
+  appended 2 metadata entries to the root session file and emitted 2
+  root-conversation SessionSaved events.
+
+### Refuted at HEAD (nothing changed for these legs)
+
+- "saveFn unsynchronized read-modify-writes d.SessionLastIdx" and the
+  derived "concurrent with the UI goroutine's mid-turn AppendUserInput
+  it can double-write the same message range into the root session file
+  (corrupted --resume)": STALE — CMP-001.2.F5 (`a104fcb`) already put
+  `d.sessionMu` around the whole saveFn index read/modify/write and
+  around `rewriteCurrentSession`. The fork-append checkpoint and the
+  UI-goroutine mid-turn checkpoint reach the SAME closure over the SAME
+  `d`, so both serialize on the same mutex; every steady-state writer of
+  `d.SessionLastIdx` holds the lock (the lock-free writers are the
+  admission-serialized one-time setup sites F5 documented). This is also
+  why the F5 record's own framing ("Since INT-001 the loop-side engine
+  appends ... already raced the UI-side saveFn ... One persistence lock
+  closes the whole class") is NOT the omission the payload alleges for
+  the RACE leg — fork appends are loop-side engine appends of exactly
+  that class, and the lock covers them. Executable refutation (committed
+  as a permanent -race gate): `TestForkCheckpointsAreSerializedWithRoot-
+  InputCheckpoints` passes at the UNCHANGED tree under `-race` — 16
+  fork-side AppendUserInput appends racing 16 root-side mid-turn
+  AppendUserInput appends leave `d.SessionLastIdx == len(root messages)`,
+  every root input durable EXACTLY once, and no fork text in the file.
+  The payload's run.go:2072/2080 citations describe the pre-F5 saveFn.
+- What the record framing DID omit (and this revision fixes): the
+  serialized behavior is still wrong — a fork append is not a root
+  session event, and per-append root metadata/artifact writes plus
+  root-keyed SessionSaved emissions are spurious. The CMP-001.3.F1
+  boundary had noted the inherited checkpoint as "an observation, not a
+  defect claim"; this revision treats the spurious-write leg as the
+  defect it is and gates it.
+
+### Change (one mechanism): the fork constructor drops the inherited
+### session-checkpoint closure
+
+`internal/query/engine.go` `ForkFreshConversation`: `subCfg.
+SessionCheckpoint = nil` next to the CMP-001.4a compaction-deps nil-ing
+(doc comment updated). One constructor edit covers ALL fork paths
+(Agent-tool subagents, orchestration persistent- and non-persistent
+persona forks — the same exhaustive call-site argument as CMP-001.4a).
+Semantics: a fork append no longer touches the ROOT session file or
+emits root session events; the root's own persistence is unchanged
+(root appends checkpoint through the root's own closure — gated).
+SessionRewrite remains copied-and-defused exactly as CMP-001.4a
+documented (its boundary is deliberate and its leak needs deps
+re-enabled first); a fork that ever wants durable persistence must
+bind its OWN checkpoint over its OWN store, mirroring the .4a
+re-enable path for compaction.
+
+### Gates (this revision)
+
+- RED (unchanged tree, before the fix):
+  `go test ./internal/cli/ -run TestForkAppendsDoNotTouchRootSessionPersistence -count=1`
+  failed with `fork appends appended 2 metadata entries to the ROOT
+  session file (want 0) — the fork inherited the root's SessionCheckpoint
+  closure, so every fork append re-persisted the root session
+  (CMP-001.4a.F1)` (the same checkpoint body also emits one root-keyed
+  SessionSaved event per append — the gate asserts 0 and would fail next
+  for the same reason; the metadata leg fails first).
+- GREEN after the one-mechanism fix: both new gates PASS —
+  `TestForkAppendsDoNotTouchRootSessionPersistence` (0 metadata entries,
+  0 SessionSaved events, no fork text in the root file, the 6 seeded
+  messages intact; the root's own INT-001 append still persists: 1
+  metadata entry, 7 messages, the operator input durable) and
+  `TestForkCheckpointsAreSerializedWithRootInputCheckpoints`
+  (pre-fix-passing -race refutation gate above — stays green: with the
+  fork checkpoint nil the fork side performs no root persistence at
+  all, and if fork checkpointing ever re-emerges without the shared
+  lock, the race gate catches it).
+- Adjacent: `go test ./internal/cli/ -count=1` ok (31 tests incl. the
+  F2 rewrite/recovery, F5 serialization, INT-001 queue gates);
+  `-count=1 -race` ok (2.9s); `go test ./internal/query/ -count=1` ok
+  (7.1s) and `-race` ok (12.6s) — fork constructor change: subagent,
+  orchestration-fork, and compaction-fork family gates green;
+  `./internal/orchestration/ ./internal/session/ ./internal/compact/
+  ./internal/slash/ -count=1` ok.
+- `go test ./... -count=1` — green except the pre-existing
+  `TestProviderToolsCLIContract` acceptance/environment failure
+  (cmd/pragma), re-verified failing identically at pristine HEAD
+  (`e9a8f9a`) in a disposable worktree with these changes absent.
+- `go vet ./internal/query/ ./internal/cli/` clean; both changed files
+  gofmt-clean.
+
+### Claim boundary
+
+- Proven locally, deterministically, through the real fork constructor,
+  real loops, real session writer/loader, and the real production saveFn
+  wiring: fork appends no longer perform any root-session persistence
+  work or emit root session events, and the root's own checkpoint path
+  is unaffected. The pre-F5 race/double-write leg is refuted at HEAD
+  with an executable -race gate (above), not merely asserted.
+- The fork's OWN conversation is still not durably persisted anywhere
+  (it never was — the inherited closure snapshotted the root store);
+  whether persona-fork conversations should persist is a design
+  question outside this defect. Fork orchestration artifacts were never
+  persisted by the fork's checkpoint (it wrote the ROOT store's
+  artifacts); the CLI's artifact ingestion path (run.go
+  upsertOrchestrationArtifact) owns root artifact persistence
+  independently of saveFn.
+- Removing the fork checkpoint also removes the fork-append leg of the
+  F2 desync-recovery trigger (`SessionLastIdx > len(root messages)`) —
+  the recovery still runs at the root's next append and at the
+  close-time save, the same coverage the root had before forks
+  appended.
+- `closed` in makeSessionSaveClose remains unsynchronized (documented,
+  unreachable-at-teardown in F5's boundary); nothing here changes it.
+- No live-provider behavior is claimed. Queue items CMP-001.4b C-2
+  (small-window threshold), CMP-001.2.F3.F1/F2 (pending-set summary
+  walk-back, MessagesRemoved count) remain open and untouched.
