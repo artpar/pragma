@@ -28,7 +28,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "bin", "pragma")
 LOGDIR = os.path.join(REPO, ".self-improve")
 
-WORKER_MAX_TURNS = 80
+# v1.5: cap-deaths burned ~$32 (37% of today spend) on 4 dead attempts;
+# successful big builds used 60-90 turns - give headroom to 110.
+WORKER_MAX_TURNS = 110
 # Cycle-1 dogfood: a thorough critic (dual-worktree gate re-runs) needs
 # more than 40 turns; it died at the cap mid-audit without concluding.
 CRITIC_MAX_TURNS = 80
