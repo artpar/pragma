@@ -23,10 +23,17 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(REPO, "bin", "pragma")
 LOGDIR = os.path.join(REPO, ".self-improve")
+# MM-001 mistake-memory: the failed worker's own tool errors live in its
+# durable session transcript, not in the bg worker log (which only ever
+# receives the final text - cap deaths leave it empty).
+SESSIONS_DIR = os.path.join(os.path.expanduser("~"), ".pragma", "sessions")
+WORKER_MARKER = "You are a WORKER instance in pragma's self-improvement loop"
+MAX_MISTAKES = 12
 
 # v1.5: cap-deaths burned ~$32 (37% of today spend) on 4 dead attempts;
 # successful big builds used 60-90 turns - give headroom to 110.
@@ -191,6 +198,104 @@ def extract_block(log_text, start, end):
     return m.group(1).strip() if m else None
 
 
+def summarize_tool_error(content, limit=240):
+    """Head of an errored tool result; for `Exit code: N` Bash results the
+    first following output line (e.g. the `--- FAIL:` line) is appended."""
+    lines = content.splitlines()
+    head = next((l.strip() for l in lines if l.strip()), "")
+    if not head:
+        return ""
+    if re.fullmatch(r"Exit code: \d+", head):
+        nxt = next((l.strip() for l in lines[1:] if l.strip()), "")
+        if nxt:
+            head = head + " - " + nxt
+    return head[:limit]
+
+
+def find_worker_session(sessions_dir, started_epoch, repo, qid):
+    """Newest session transcript dispatched from this orchestrator run:
+    header work_dir matches the repo, created_at is at/after the dispatch
+    timestamp, and the first user message carries the WORKER marker (so
+    item's Queue-item line (so critic/reader/operator sessions and workers
+    dispatched for a different queue item are never mistaken for it)."""
+    best_path, best_ts = None, None
+    try:
+        names = os.listdir(sessions_dir)
+    except OSError:
+        return None
+    for name in names:
+        if not name.endswith(".jsonl"):
+            continue
+        path = os.path.join(sessions_dir, name)
+        try:
+            with open(path) as fh:
+                header = json.loads(fh.readline())
+            if header.get("kind") != "header":
+                continue
+            data = header.get("data", {})
+            if data.get("work_dir") != repo:
+                continue
+            ts = datetime.fromisoformat(data.get("created_at", "")).timestamp()
+        except (ValueError, OSError, json.JSONDecodeError):
+            continue
+        if ts < started_epoch - 2 or (best_ts is not None and ts <= best_ts):
+            continue
+        try:
+            with open(path) as fh:
+                for line in fh:
+                    entry = json.loads(line)
+                    if entry.get("kind") != "message":
+                        continue
+                    edata = entry.get("data", {})
+                    if edata.get("role") != "user":
+                        continue
+                    text = "".join(
+                        p.get("data", {}).get("text", "")
+                        for p in edata.get("content", [])
+                        if p.get("type") == "text"
+                    )
+                    if WORKER_MARKER in text and ("Queue item %s:" % qid) in text:
+                        best_path, best_ts = path, ts
+                    break
+        except (OSError, json.JSONDecodeError):
+            continue
+    return best_path
+
+
+def extract_tool_errors(session_path, limit=8):
+    """The session's errored tool results (pragma's own is_error
+    classification) as mistake-memory entries, in order, deduped."""
+    calls = {}
+    errors = []
+    with open(session_path) as fh:
+        for line in fh:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("kind") != "message":
+                continue
+            data = entry.get("data", {})
+            for part in data.get("content", []):
+                pdata = part.get("data", {})
+                if part.get("type") == "tool_call":
+                    cmd = pdata.get("input", {}).get("cmd")
+                    brief = " ".join(cmd.split())[:80] if isinstance(cmd, str) else ""
+                    calls[pdata.get("id")] = (
+                        pdata.get("name", "tool") + ((" (%s)" % brief) if brief else "")
+                    )
+                elif part.get("type") == "tool_result" and pdata.get("is_error"):
+                    summary = summarize_tool_error(pdata.get("content", ""))
+                    if not summary:
+                        continue
+                    entry_text = "%s: %s" % (
+                        calls.get(pdata.get("tool_call_id"), "tool"), summary
+                    )
+                    if entry_text not in errors:
+                        errors.append(entry_text)
+    return errors[-limit:]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cycles", type=int, default=1)
@@ -231,6 +336,7 @@ def main():
         # Audit-only items (payload carries a commit): skip the worker.
         audit_only = "commit" in (item.get("payload") or {})
         worker_log = os.path.join(LOGDIR, "%s-c%d-worker.log" % (stamp, cycle))
+        worker_started = time.time()
         if audit_only:
             rc, secs = 0, 0.0
             head_before = item["payload"]["commit"]
@@ -263,14 +369,22 @@ def main():
             attempts = item.get("attempts", 0) + 1
             item["attempts"] = attempts
             item["last_error"] = "worker exit %d (attempt %d)" % (rc, attempts)
-            # mistake-memory: tail failures feed the retry prompt
+            # MM-001 mistake-memory: the failed worker's own tool errors
+            # (is_error tool results from its session transcript) feed the
+            # retry prompt verbatim. The bg worker log only ever carries
+            # final text — grepping it never fired on a real cap death and
+            # matched only narrative prose (see case record MM-001).
             try:
-                wtext = open(worker_log).read() if os.path.exists(worker_log) else ""
-                errs = re.findall(r"apply_patch verification failed[^.\n]{0,120}|hunk.*?did not match[^\n]{0,80}|exit status [1-9][^\n]{0,60}", wtext)[-6:]
-                if errs:
-                    item["mistakes"] = item.get("mistakes", []) + errs[-3:]
-            except Exception:
-                pass
+                sess = find_worker_session(SESSIONS_DIR, worker_started, REPO, item["id"])
+                if sess:
+                    item_mistakes = item.setdefault("mistakes", [])
+                    for err in extract_tool_errors(sess):
+                        if err not in item_mistakes:
+                            item_mistakes.append(err)
+                    if len(item_mistakes) > MAX_MISTAKES:
+                        item["mistakes"] = item_mistakes[-MAX_MISTAKES:]
+            except Exception as exc:
+                print("  mistake-memory extraction failed: %r" % exc)
             if attempts >= 3:
                 item["status"] = "needs_attention"
             else:
