@@ -47,6 +47,10 @@ Queue item {qid}: {title}
 Payload/instructions:
 {payload}
 
+Read docs/self-improvement-doctrine.md FIRST - the ten rules are mandatory.
+Prior attempt mistakes to avoid repeating verbatim (mistake-memory):
+{mistakes}
+
 Rules:
 - Verify every claim in the payload against the actual code before acting;
   label refuted claims and change nothing for them (document the refutation).
@@ -55,6 +59,13 @@ Rules:
   then gofmt.
 - Amend the related case record under docs/failure-cases/ with a revision
   note (what was verified, refuted, changed).
+- Commit AT GREEN, immediately - before docs/case-record polish. The
+  deliverable is the commit; polish can follow in a second commit.
+- Never chain grep/test with && (silent breakage burned 5+ sessions);
+  use echo markers between steps and check exit codes.
+- No git stash in the shared tree - if you need isolation, use a
+  detached worktree.
+- Stop when the deliverable is delivered - no citation goose-chases.
 - Commit locally with a case-referencing message. NEVER push.
 - NEVER edit docs/self-improvement-queue.jsonl - the orchestrator owns the
   queue file. Report status changes only in your final message block.
@@ -63,6 +74,20 @@ Rules:
 ===WORKER-REPORT-START===
 {{"verified": ["..."], "refuted": ["..."], "tests": "...", "commit": "<hash or none>"}}
 ===WORKER-REPORT-END===
+"""
+
+READER_PROMPT = """You are a READING ANALYST (doctrine rule 8) for queue item {qid}.
+Read the worker session output log at {session_log} - render EVERY API call
+individually with python (call number, time, tokens, stop, THINKING first
+150 chars, each TOOL + first 120 chars of args) and read them all.
+Then audit intent: wasted calls, redundant re-reads, confusion loops,
+mistakes that repeat prior attempts, post-deliverable tails, methodology
+violations (commit-at-GREEN, no &&-chains, no stash, stop-at-deliverable).
+Write docs/analyses/reading/{qid}-reader.md with the per-call narrative
+and findings. End with exactly this block (single-line JSON array):
+===WASTE-START===
+[{{"call": 12, "issue": "...", "cost": "low|medium|high"}}]
+===WASTE-END===
 """
 
 CRITIC_PROMPT = """You are an independent CRITIC instance in pragma's self-improvement loop,
@@ -213,7 +238,8 @@ def main():
         else:
             rc, secs = run_pragma(
                 WORKER_PROMPT.format(repo=REPO, qid=item["id"], title=item["title"],
-                                     payload=json.dumps(item.get("payload", {}), indent=2)),
+                                     payload=json.dumps(item.get("payload", {}), indent=2),
+                                     mistakes=json.dumps(item.get("mistakes", ["(first attempt)"]))),
                 WORKER_MAX_TURNS, worker_log, args.worker_model, WORKER_MAX_COST)
             print("  worker exit=%d wall=%.0fs log=%s cost=$%s" % (
                 rc, secs, worker_log, last_session_cost()))
@@ -237,6 +263,14 @@ def main():
             attempts = item.get("attempts", 0) + 1
             item["attempts"] = attempts
             item["last_error"] = "worker exit %d (attempt %d)" % (rc, attempts)
+            # mistake-memory: tail failures feed the retry prompt
+            try:
+                wtext = open(worker_log).read() if os.path.exists(worker_log) else ""
+                errs = re.findall(r"apply_patch verification failed[^.\n]{0,120}|hunk.*?did not match[^\n]{0,80}|exit status [1-9][^\n]{0,60}", wtext)[-6:]
+                if errs:
+                    item["mistakes"] = item.get("mistakes", []) + errs[-3:]
+            except Exception:
+                pass
             if attempts >= 3:
                 item["status"] = "needs_attention"
             else:
@@ -297,6 +331,33 @@ def main():
                     "source_cycle": item["id"],
                 })
             print("  critic findings: %d - re-queued" % len(findings))
+            # v1.8 reader phase: fresh instance reads the worker session
+            # call-by-call for intent-level waste (doctrine rule 8).
+            rlog = os.path.join(LOGDIR, "%s-c%d-reader.log" % (stamp, cycle))
+            rrc, rsecs = run_pragma(READER_PROMPT.format(
+                repo=REPO, session_log=worker_log, qid=item["id"]),
+                60, rlog, args.critic_model, CRITIC_MAX_COST)
+            waste = None
+            if os.path.exists(rlog):
+                with open(rlog) as fh:
+                    m = re.search(r"===WASTE-START===\s*\n(.*?)===WASTE-END===", fh.read(), re.DOTALL)
+                    if m:
+                        try: waste = json.loads(m.group(1).strip())
+                        except json.JSONDecodeError: waste = None
+            if waste:
+                item["reader_waste"] = waste
+                wlist = waste if isinstance(waste, list) else [waste]
+                for n, w in enumerate(wlist, 1):
+                    queue.append({
+                        "id": "%s.R%d" % (item["id"], n),
+                        "title": ("reader waste: %s" % str(w))[:140],
+                        "kind": "reading-finding",
+                        "payload": w if isinstance(w, dict) else {"finding": str(w)},
+                        "status": "open",
+                        "added_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "source_cycle": item["id"],
+                    })
+                print("  reader waste findings: %d - re-queued" % len(wlist))
         save_queue(args.queue, queue)
     return 0
 
