@@ -11,7 +11,9 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // instrumentConfig holds include/exclude rules parsed from flags.
@@ -59,11 +61,11 @@ func main() {
 	if cfg.excludePkg == nil {
 		cfg.excludePkg = make(map[string]bool)
 	}
-	cfg.excludePkg["observe"] = true // avoid circular
-	cfg.excludePkg["model"] = true   // model↔observe import cycle
-	cfg.excludePkg["app"] = true     // DAG: app has no internal deps
-	cfg.excludePkg["config"] = true  // DAG: config has no internal deps
-	cfg.excludePkg["session"] = true // DAG: session → model, config only
+	cfg.excludePkg["observe"] = true   // avoid circular
+	cfg.excludePkg["model"] = true     // model↔observe import cycle
+	cfg.excludePkg["app"] = true       // DAG: app has no internal deps
+	cfg.excludePkg["config"] = true    // DAG: config has no internal deps
+	cfg.excludePkg["session"] = true   // DAG: session → model, config only
 	cfg.excludePkg["util"] = true      // DAG: util has no internal deps
 	cfg.excludePkg["selftrace"] = true // feedback loop: reads same log GlobalTrace writes (ADR-028)
 
@@ -182,11 +184,11 @@ func processFile(fset *token.FileSet, filePath string, file *ast.File, pkgName s
 	// Ensure observe import
 	addImport(file, "github.com/artpar/pragma/internal/observe")
 
-	// Strip comments before writing — injected AST nodes have zero positions which
-	// causes go/format to float comments into the wrong places. We preserve the
-	// source comments by reading the original file and only replacing non-comment code.
-	// The pragmatic fix: clear comment map so go/format doesn't try to attach them.
-	file.Comments = nil
+	// Keep file.Comments intact: the rationale block comments above
+	// instrumented statements are failure-case citations. Injected nodes
+	// are anchored to real statement positions (makeTraceStmtAt), so
+	// go/format keeps every comment attached to the statement that
+	// follows it instead of letting it float.
 
 	// Write back
 	var buf bytes.Buffer
@@ -210,11 +212,11 @@ func processFile(fset *token.FileSet, filePath string, file *ast.File, pkgName s
 }
 
 type instrumenter struct {
-	fset         *token.FileSet
-	pkgName      string
-	cfg          instrumentConfig
-	totalPoints  int
-	instrPoints  int
+	fset        *token.FileSet
+	pkgName     string
+	cfg         instrumentConfig
+	totalPoints int
+	instrPoints int
 }
 
 func (inst *instrumenter) instrumentFunc(fn *ast.FuncDecl, displayName string, hasCtx bool) bool {
@@ -223,8 +225,9 @@ func (inst *instrumenter) instrumentFunc(fn *ast.FuncDecl, displayName string, h
 	// Function entry trace
 	inst.totalPoints++
 	if !hasExistingTrace(fn.Body) {
-		entryStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, displayName, "enter")
-		exitStmt := inst.makeDeferTraceStmt(hasCtx, inst.pkgName, displayName, "exit")
+		anchor := fn.Body.List[0].Pos()
+		entryStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, displayName, "enter", anchor)
+		exitStmt := inst.makeDeferTraceStmtAt(hasCtx, inst.pkgName, displayName, "exit", anchor)
 		fn.Body.List = append([]ast.Stmt{entryStmt, exitStmt}, fn.Body.List...)
 		inst.instrPoints++
 		modified = true
@@ -251,7 +254,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 			inst.totalPoints++
 			condStr := inst.exprString(s.Cond)
 			if !blockHasTraceAt(s.Body, 0) {
-				traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, "if: "+condStr)
+				traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, "if: "+condStr, blockAnchor(s.Body))
 				s.Body.List = append([]ast.Stmt{traceStmt}, s.Body.List...)
 				inst.instrPoints++
 				modified = true
@@ -260,7 +263,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 				inst.totalPoints++
 				if elseBlock, ok := s.Else.(*ast.BlockStmt); ok {
 					if !blockHasTraceAt(elseBlock, 0) {
-						traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, "else: "+condStr)
+						traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, "else: "+condStr, blockAnchor(elseBlock))
 						elseBlock.List = append([]ast.Stmt{traceStmt}, elseBlock.List...)
 						inst.instrPoints++
 						modified = true
@@ -271,7 +274,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 					inst.totalPoints++
 					elseCondStr := inst.exprString(elseIf.Cond)
 					if !blockHasTraceAt(elseIf.Body, 0) {
-						traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, "else-if: "+elseCondStr)
+						traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, "else-if: "+elseCondStr, blockAnchor(elseIf.Body))
 						elseIf.Body.List = append([]ast.Stmt{traceStmt}, elseIf.Body.List...)
 						inst.instrPoints++
 						modified = true
@@ -294,7 +297,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 					label = "case: " + inst.exprListString(cc.List)
 				}
 				if !stmtListHasTrace(cc.Body, 0) {
-					traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, label)
+					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon))
 					cc.Body = append([]ast.Stmt{traceStmt}, cc.Body...)
 					inst.instrPoints++
 					modified = true
@@ -316,7 +319,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 					label = "typecase: " + inst.exprListString(cc.List)
 				}
 				if !stmtListHasTrace(cc.Body, 0) {
-					traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, label)
+					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon))
 					cc.Body = append([]ast.Stmt{traceStmt}, cc.Body...)
 					inst.instrPoints++
 					modified = true
@@ -331,7 +334,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 				condStr = inst.exprString(s.Cond)
 			}
 			if !blockHasTraceAt(s.Body, 0) {
-				traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, "for: "+condStr)
+				traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, "for: "+condStr, blockAnchor(s.Body))
 				s.Body.List = append([]ast.Stmt{traceStmt}, s.Body.List...)
 				inst.instrPoints++
 				modified = true
@@ -342,7 +345,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 			inst.totalPoints++
 			rangeStr := "range " + inst.exprString(s.X)
 			if !blockHasTraceAt(s.Body, 0) {
-				traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, rangeStr)
+				traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, rangeStr, blockAnchor(s.Body))
 				s.Body.List = append([]ast.Stmt{traceStmt}, s.Body.List...)
 				inst.instrPoints++
 				modified = true
@@ -363,7 +366,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 					label = "select: " + inst.stmtString(cc.Comm)
 				}
 				if !stmtListHasTrace(cc.Body, 0) {
-					traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, label)
+					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon))
 					cc.Body = append([]ast.Stmt{traceStmt}, cc.Body...)
 					inst.instrPoints++
 					modified = true
@@ -379,7 +382,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 				// Idempotency: skip if the previous statement is already a trace with this message.
 				alreadyInstrumented := len(newList) > 0 && isTraceCallWithMsg(newList[len(newList)-1], msg)
 				if !alreadyInstrumented {
-					traceStmt := inst.makeTraceStmt(hasCtx, inst.pkgName, funcName, msg)
+					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, msg, s.Pos())
 					newList = append(newList, traceStmt)
 					inst.instrPoints++
 					modified = true
@@ -479,6 +482,9 @@ func setExprPos(expr ast.Expr, pos token.Pos) {
 		e.Lparen = pos
 		e.Rparen = pos
 		setExprPos(e.Fun, pos)
+		for _, arg := range e.Args {
+			setExprPos(arg, pos)
+		}
 	case *ast.SelectorExpr:
 		setExprPos(e.X, pos)
 	case *ast.Ident:
@@ -496,17 +502,44 @@ func (inst *instrumenter) makeDeferTraceStmt(hasCtx bool, pkg, fn, msg string) *
 	}
 }
 
+// makeDeferTraceStmtAt is makeDeferTraceStmt anchored to a real position.
+func (inst *instrumenter) makeDeferTraceStmtAt(hasCtx bool, pkg, fn, msg string, pos token.Pos) *ast.DeferStmt {
+	traceExpr := inst.makeTraceStmtAt(hasCtx, pkg, fn, msg, pos)
+	return &ast.DeferStmt{
+		Call: traceExpr.X.(*ast.CallExpr),
+	}
+}
+
+// blockAnchor is the position an injected trace inside a block should
+// carry: the block's first statement (or its closing brace for an empty
+// block). A real position keeps go/format from floating in-body comments
+// below the injected line — the comment stays above the statement it
+// documents.
+func blockAnchor(b *ast.BlockStmt) token.Pos {
+	if b == nil {
+		return token.NoPos
+	}
+	if len(b.List) == 0 {
+		return b.Rbrace
+	}
+	return b.List[0].Pos()
+}
+
+// clauseAnchor is blockAnchor for case/comm clause bodies.
+func clauseAnchor(body []ast.Stmt, colon token.Pos) token.Pos {
+	if len(body) > 0 {
+		return body[0].Pos()
+	}
+	return colon
+}
+
 func (inst *instrumenter) exprString(expr ast.Expr) string {
 	if expr == nil {
 		return ""
 	}
 	var buf bytes.Buffer
 	printer.Fprint(&buf, inst.fset, expr)
-	s := buf.String()
-	if len(s) > 80 {
-		s = s[:77] + "..."
-	}
-	return s
+	return truncateTraceText(canonicalTraceText(buf.String()), traceMsgMaxRunes)
 }
 
 func (inst *instrumenter) exprListString(exprs []ast.Expr) string {
@@ -515,10 +548,7 @@ func (inst *instrumenter) exprListString(exprs []ast.Expr) string {
 		parts[i] = inst.exprString(e)
 	}
 	s := strings.Join(parts, ", ")
-	if len(s) > 80 {
-		s = s[:77] + "..."
-	}
-	return s
+	return truncateTraceText(canonicalTraceText(s), traceMsgMaxRunes)
 }
 
 func (inst *instrumenter) stmtString(stmt ast.Stmt) string {
@@ -527,11 +557,28 @@ func (inst *instrumenter) stmtString(stmt ast.Stmt) string {
 	}
 	var buf bytes.Buffer
 	printer.Fprint(&buf, inst.fset, stmt)
-	s := buf.String()
-	if len(s) > 80 {
-		s = s[:77] + "..."
+	return truncateTraceText(canonicalTraceText(buf.String()), traceMsgMaxRunes)
+}
+
+const traceMsgMaxRunes = 80
+
+// canonicalTraceText collapses all whitespace runs — including the
+// newlines and tabs printer.Fprint emits for multi-line expressions —
+// into single spaces, so one expression yields one stable trace
+// message regardless of its source line layout.
+func canonicalTraceText(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// truncateTraceText bounds a trace message at maxRunes runes and marks
+// the cut with "...". Rune-safe, so a multi-byte rune (e.g. "—") is
+// never split into invalid UTF-8.
+func truncateTraceText(s string, maxRunes int) string {
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
 	}
-	return s
+	r := []rune(s)
+	return string(r[:maxRunes-3]) + "..."
 }
 
 // --- Detection helpers ---
@@ -611,8 +658,34 @@ func isTraceCallWithMsg(stmt ast.Stmt, msg string) bool {
 	if !ok {
 		return false
 	}
-	// lit.Value includes quotes, e.g., `"return: foo"`
-	return lit.Value == fmt.Sprintf("%q", msg)
+	// lit.Value includes quotes, e.g., `"return: foo"`.
+	existing, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return false
+	}
+	return traceMsgMatches(existing, msg)
+}
+
+// traceMsgMatches reports whether an existing trace message and the
+// message the instrumenter would emit cover the same statement:
+// equal after whitespace canonicalization, or one is the "..."
+// truncated form of the other. Committed trace messages predate the
+// truncation and the whitespace canonicalization (they are full-form,
+// single-space); a re-run must recognize them instead of inserting a
+// duplicate truncated line beside them.
+func traceMsgMatches(existing, computed string) bool {
+	e := canonicalTraceText(existing)
+	c := canonicalTraceText(computed)
+	if e == c {
+		return true
+	}
+	if strings.HasSuffix(c, "...") && strings.HasPrefix(e, strings.TrimSuffix(c, "...")) {
+		return true
+	}
+	if strings.HasSuffix(e, "...") && strings.HasPrefix(c, strings.TrimSuffix(e, "...")) {
+		return true
+	}
+	return false
 }
 
 // funcHasContext checks if the first parameter is context.Context AND is named
