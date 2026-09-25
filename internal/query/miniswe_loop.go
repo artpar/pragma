@@ -219,6 +219,7 @@ func (engine *Engine) WithCustomSystemPrompt(system model.SystemPrompt) model.Sy
 	custom := strings.TrimSpace(engine.config.CustomSystemPrompt)
 	if custom == "" {
 		observe.GlobalTrace("if: custom == \"\"")
+		observe.GlobalTrace("return: system")
 		return system
 	}
 	blocks := make([]model.SystemBlock, 0, len(system.Blocks)+1)
@@ -296,6 +297,7 @@ func (engine *Engine) maybeAutoCompactPragmaLoop(ctx context.Context, ch chan<- 
 	defer observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "exit")
 	if len(run.MessageStartIndexes) != 0 || engine.compactor == nil || engine.autoTracker == nil {
 		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "if: len(run.MessageStartIndexes) != 0 || engine.compactor == nil || engine.autoTracker == nil")
+		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "return: true")
 		return true
 	}
 	// CMP-001.4 F6 bound: when the tracker is disabled, the breaker has
@@ -306,6 +308,7 @@ func (engine *Engine) maybeAutoCompactPragmaLoop(ctx context.Context, ch chan<- 
 	// counting model-request iterations.
 	if !engine.autoTracker.AutoCompactEligible() {
 		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "if: !engine.autoTracker.AutoCompactEligible()")
+		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "return: true")
 		return true
 	}
 	compSnap := engine.store.Snapshot()
@@ -323,6 +326,7 @@ func (engine *Engine) maybeAutoCompactPragmaLoop(ctx context.Context, ch chan<- 
 		compSnap.Conversation.APIMessages(), run.System, nil)
 	if !engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig) {
 		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "if: !engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
+		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "return: true")
 		return true
 	}
 	observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "if: engine.autoTracker.ShouldAutoCompact(tokenCount, engine.windowConfig)")
@@ -331,6 +335,7 @@ func (engine *Engine) maybeAutoCompactPragmaLoop(ctx context.Context, ch chan<- 
 	switch {
 	case compErr != nil && ctx.Err() == nil:
 		// A real failure: count it and possibly trip the breaker.
+		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "case: compErr != nil && ctx.Err() == nil")
 		tripped := engine.autoTracker.RecordFailure()
 		ch <- CompactionFailedEvent{
 			Attempt:  engine.autoTracker.FailureCount(),
@@ -348,6 +353,7 @@ func (engine *Engine) maybeAutoCompactPragmaLoop(ctx context.Context, ch chan<- 
 			ch <- CompactionDisabledEvent{ConsecutiveFailures: compact.MaxConsecutiveFailures}
 		}
 	case compErr == nil:
+		observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "case: compErr == nil")
 		engine.autoTracker.RecordSuccess()
 		// CMP-001.2 F3: compaction replaces the WHOLE conversation, but
 		// the unanswered operator prompt (appended before iteration 0, or
@@ -372,6 +378,7 @@ func (engine *Engine) maybeAutoCompactPragmaLoop(ctx context.Context, ch chan<- 
 		if err := engine.rewriteSession(); err != nil {
 			observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "if: err != nil")
 			ch <- ErrorEvent{Err: fmt.Errorf("rewrite session after compaction: %w", err)}
+			observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "return: false")
 			return false
 		}
 		ch <- CompactionEvent{PreTokens: compResult.PreTokenCount, PostTokens: compResult.PostTokenCount}
@@ -379,6 +386,7 @@ func (engine *Engine) maybeAutoCompactPragmaLoop(ctx context.Context, ch chan<- 
 	// compErr != nil && ctx.Err() != nil: the loop is being torn down —
 	// no failure count, no event, the caller's next ctx check exits
 	// cleanly.
+	observe.TraceCtx(ctx, "query", "Engine.maybeAutoCompactPragmaLoop", "return: true")
 	return true
 }
 
@@ -409,6 +417,7 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 			// while unscoped runs were claimed to carry the trigger.
 			// Scoped capture runs (root-engine capture states) still skip
 			// the trigger inside the helper.
+			observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "for: turnIdx < run.MaxTurns")
 			if !engine.maybeAutoCompactPragmaLoop(ctx, ch, run) {
 				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: !engine.maybeAutoCompactPragmaLoop(ctx, ch, run)")
 				return
@@ -438,16 +447,21 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 				engine.autoTracker.IncrementTurn()
 			}
 			if opts.FinalTextCheck != nil {
+				observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: opts.FinalTextCheck != nil")
 				ok, message, err := opts.FinalTextCheck(turn.Text)
 				if err != nil {
+					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 					ch <- ErrorEvent{Err: err}
 					return
 				}
 				if !ok {
+					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: !ok")
 					if strings.TrimSpace(message) == "" {
+						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: strings.TrimSpace(message) == \"\"")
 						message = "Final text was rejected because it did not match the required output contract. Return only the required final text."
 					}
 					if err := engine.appendPragmaLoopUserMessage(appendPragmaLoopBudgetNotice(message, run, turnIdx)); err != nil {
+						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: err != nil")
 						ch <- ErrorEvent{Err: err}
 						return
 					}
@@ -542,7 +556,9 @@ func (engine *Engine) runPragmaLoopWithInitialPrompt(ctx context.Context, system
 					return
 				}
 				if !ok {
+					observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: !ok")
 					if strings.TrimSpace(message) == "" {
+						observe.TraceCtx(ctx, "query", "Engine.runPragmaLoopWithInitialPrompt", "if: strings.TrimSpace(message) == \"\"")
 						message = "Completion was rejected because required output artifacts are missing. Create the missing artifacts and echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT again."
 					}
 					if err := engine.appendPragmaLoopUserMessage(appendPragmaLoopBudgetNotice(message, run, turn)); err != nil {

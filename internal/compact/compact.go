@@ -181,6 +181,7 @@ func (s *Service) Compact(ctx context.Context, messages []model.Message, system 
 	// (and reaches the model) but is not in this count.
 	guarded := replacements
 	if pending := PendingUnansweredUserPrompts(messages); len(pending) > 0 {
+		observe.TraceCtx(ctx, "compact", "Service.Compact", "if: len(pending) > 0")
 		guarded = append(append([]model.Message{}, replacements...), pending...)
 	}
 	postTokens := EstimateConversationTokens(guarded)

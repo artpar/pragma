@@ -3,6 +3,7 @@ package watcher
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/artpar/pragma/internal/observe"
 	"os"
 	"path/filepath"
 	"sort"
@@ -56,6 +57,8 @@ type ToolCount struct {
 // finalStatus is the session's status at the moment its process
 // disappeared (the observer computes it just before writing).
 func BuildPostMortem(s *SessionState, observedAt time.Time, finalStatus string) PostMortem {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	pm := PostMortem{
 		Session:          s.Name,
 		Model:            s.Model,
@@ -82,9 +85,11 @@ func BuildPostMortem(s *SessionState, observedAt time.Time, finalStatus string) 
 		AlertKinds:       map[string]int{},
 	}
 	for _, a := range s.Alerts {
+		observe.GlobalTrace("range s.Alerts")
 		pm.AlertKinds[a.Kind]++
 	}
 	pm.TopTools = topTools(s.ToolCallCounts, 5)
+	observe.GlobalTrace("return: pm")
 	return pm
 }
 
@@ -92,50 +97,76 @@ func BuildPostMortem(s *SessionState, observedAt time.Time, finalStatus string) 
 // <session>.postmortem.json (atomic tmp+rename). The file name derives
 // from the event log name so writes are idempotent per session.
 func WritePostMortem(dir string, pm PostMortem) (string, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"create postmortem dir: %w\", err)")
 		return "", fmt.Errorf("create postmortem dir: %w", err)
 	}
 	name := strings.TrimSuffix(pm.Session, ".jsonl")
 	path := filepath.Join(dir, name+".postmortem.json")
 	b, err := json.MarshalIndent(pm, "", "  ")
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"marshal postmortem: %w\", err)")
 		return "", fmt.Errorf("marshal postmortem: %w", err)
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"write postmortem: %w\", err)")
 		return "", fmt.Errorf("write postmortem: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\", fmt.Errorf(\"rename postmortem: %w\", err)")
 		return "", fmt.Errorf("rename postmortem: %w", err)
 	}
+	observe.GlobalTrace("return: path, nil")
 	return path, nil
 }
 
 // AppendAlerts appends alerts as JSONL lines to the alerts log.
 func AppendAlerts(path string, alerts []Alert) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(alerts) == 0 {
+		observe.GlobalTrace("if: len(alerts) == 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: err")
 		return err
 	}
 	defer f.Close()
 	enc := json.NewEncoder(f)
 	for _, a := range alerts {
+		observe.GlobalTrace("range alerts")
 		if err := enc.Encode(a); err != nil {
+			observe.GlobalTrace("if: err != nil")
+			observe.GlobalTrace("return: err")
 			return err
 		}
 	}
+	observe.GlobalTrace("return: nil")
 	return nil
 }
 
 func topTools(counts map[string]int, n int) []ToolCount {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(counts) == 0 {
+		observe.GlobalTrace("if: len(counts) == 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	all := make([]ToolCount, 0, len(counts))
 	for name, count := range counts {
+		observe.GlobalTrace("range counts")
 		all = append(all, ToolCount{Name: name, Count: count})
 	}
 	sort.Slice(all, func(i, j int) bool {
@@ -145,14 +176,21 @@ func topTools(counts map[string]int, n int) []ToolCount {
 		return all[i].Name < all[j].Name
 	})
 	if len(all) > n {
+		observe.GlobalTrace("if: len(all) > n")
 		all = all[:n]
 	}
+	observe.GlobalTrace("return: all")
 	return all
 }
 
 func formatTime(t time.Time) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if t.IsZero() {
+		observe.GlobalTrace("if: t.IsZero()")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: t.Format(\"2006-01-02 15:04:05\")")
 	return t.Format("2006-01-02 15:04:05")
 }

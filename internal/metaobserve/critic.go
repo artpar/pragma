@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/artpar/pragma/internal/model"
+	"github.com/artpar/pragma/internal/observe"
 	"github.com/artpar/pragma/internal/provider"
 )
 
@@ -58,22 +59,30 @@ Return ONLY a JSON array (no prose, no code fence), at most 5 items:
 
 // CriticPrompt builds the system and user halves of the critic request.
 func CriticPrompt(digest string, queueTitles []string) (system, user string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 	if len(queueTitles) > 0 {
+		observe.GlobalTrace("if: len(queueTitles) > 0")
 		b.WriteString("EXISTING QUEUE ITEMS (do not duplicate these):\n")
 		for _, t := range queueTitles {
+			observe.GlobalTrace("range queueTitles")
 			b.WriteString("- " + truncateRunes(t, 110) + "\n")
 		}
 	} else {
+		observe.GlobalTrace("else: len(queueTitles) > 0")
 		b.WriteString("EXISTING QUEUE ITEMS: none readable.\n")
 	}
 	b.WriteString("\nSESSION TAIL DIGEST:\n")
 	b.WriteString(digest)
+	observe.GlobalTrace("return: criticSystem, b.String()")
 	return criticSystem, b.String()
 }
 
 // Judge runs one small model call over the digest and parses findings.
 func (c *ProviderCritic) Judge(ctx context.Context, digest string, queueTitles []string) ([]Finding, error) {
+	observe.TraceCtx(ctx, "metaobserve", "ProviderCritic.Judge", "enter")
+	defer observe.TraceCtx(ctx, "metaobserve", "ProviderCritic.Judge", "exit")
 	system, user := CriticPrompt(digest, queueTitles)
 	params := provider.RequestParams{
 		Model:     c.Model,
@@ -86,37 +95,53 @@ func (c *ProviderCritic) Judge(ctx context.Context, digest string, queueTitles [
 	}
 	resp, err := c.Prov.Complete(ctx, params)
 	if err != nil {
+		observe.TraceCtx(ctx, "metaobserve", "ProviderCritic.Judge", "if: err != nil")
+		observe.TraceCtx(ctx, "metaobserve", "ProviderCritic.Judge", "return: nil, fmt.Errorf(\"critic call: %w\", err)")
 		return nil, fmt.Errorf("critic call: %w", err)
 	}
+	observe.TraceCtx(ctx, "metaobserve", "ProviderCritic.Judge", "return: ParseFindings(responseText(resp)), nil")
 	return ParseFindings(responseText(resp)), nil
 }
 
 // responseText concatenates the text parts of a response.
 func responseText(resp model.Response) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var b strings.Builder
 	for _, part := range resp.Content {
+		observe.GlobalTrace("range resp.Content")
 		if tp, ok := part.(model.TextPart); ok {
+			observe.GlobalTrace("if: ok")
 			b.WriteString(tp.Text)
 		}
 	}
+	observe.GlobalTrace("return: b.String()")
 	return b.String()
 }
 
 // ParseFindings extracts the findings JSON array from critic text,
 // tolerating surrounding prose, and normalizes/bounds the result.
 func ParseFindings(text string) []Finding {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	start := strings.Index(text, "[")
 	end := strings.LastIndex(text, "]")
 	if start < 0 || end <= start {
+		observe.GlobalTrace("if: start < 0 || end <= start")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	var raw []Finding
 	if err := json.Unmarshal([]byte(text[start:end+1]), &raw); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	out := make([]Finding, 0, len(raw))
 	for _, f := range raw {
+		observe.GlobalTrace("range raw")
 		if !validKinds[f.Kind] {
+			observe.GlobalTrace("if: !validKinds[f.Kind]")
 			continue
 		}
 		f.Finding = truncateRunes(strings.TrimSpace(f.Finding), 400)
@@ -124,16 +149,21 @@ func ParseFindings(text string) []Finding {
 		f.Confidence = strings.ToLower(strings.TrimSpace(f.Confidence))
 		switch f.Confidence {
 		case "low", "medium", "high":
+			observe.GlobalTrace("case: \"low\", \"medium\", \"high\"")
 		default:
+			observe.GlobalTrace("default")
 			f.Confidence = "low"
 		}
 		if f.Finding == "" {
+			observe.GlobalTrace("if: f.Finding == \"\"")
 			continue
 		}
 		out = append(out, f)
 		if len(out) >= 5 {
+			observe.GlobalTrace("if: len(out) >= 5")
 			break
 		}
 	}
+	observe.GlobalTrace("return: out")
 	return out
 }

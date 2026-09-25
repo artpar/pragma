@@ -1038,6 +1038,7 @@ func (rt *InteractiveRuntime) switchProviderModel(providerName, modelID string) 
 	if key == "" && providerName != "google-vertex" {
 		observe.GlobalTrace("if: key == \"\" && providerName != \"google-vertex\"")
 		observe.GlobalTrace("return: fmt.Errorf(\"no API key for provider\")")
+		observe.GlobalTrace("return: fmt.Errorf(\"no API key for provider %q — add it to ~/.pragma/credentials.yml ...")
 		return fmt.Errorf("no API key for provider %q — add it to ~/.pragma/credentials.yml or set %s", providerName, envVarForProvider(providerName))
 	}
 	// Resolve short aliases before validating against the catalog.
@@ -1045,6 +1046,7 @@ func (rt *InteractiveRuntime) switchProviderModel(providerName, modelID string) 
 	if d.ModelCatalog != nil && !d.ModelCatalog.Knows(providerName, modelID) {
 		observe.GlobalTrace("if: !d.ModelCatalog.Knows(providerName, modelID)")
 		observe.GlobalTrace("return: fmt.Errorf(\"unknown model for provider\")")
+		observe.GlobalTrace("return: fmt.Errorf(\"unknown model %q for provider %s\", modelID, providerName)")
 		return fmt.Errorf("unknown model %q for provider %s", modelID, providerName)
 	}
 	cfg := d.Cfg
@@ -2061,6 +2063,7 @@ func BuildCompactionDeps(d *Deps) (query.CompactionDeps, *compact.Service) {
 		// No production path reaches here without an engine (RegisterTools
 		// sets d.Engine before every BuildCompactionDeps call), but keep a
 		// mode-independent floor: the pragma-mode fixed payload.
+		observe.GlobalTrace("else: d.Engine != nil")
 		sysTokEst = compact.EstimateSystemPromptTokens(model.SystemPrompt{
 			Blocks: []model.SystemBlock{
 				{Text: d.EngineCfg.CustomSystemPrompt},
@@ -2165,6 +2168,7 @@ func rewriteCurrentSession(d *Deps) error {
 	// through makeSessionSaveClose's saveFn; both write SessionLastIdx.
 	d.sessionMu.Lock()
 	defer d.sessionMu.Unlock()
+	observe.GlobalTrace("return: rewriteSessionLocked(d)")
 	return rewriteSessionLocked(d)
 }
 

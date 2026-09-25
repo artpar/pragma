@@ -118,10 +118,14 @@ const (
 
 // NewSessionState creates state for the log at path.
 func NewSessionState(path string) *SessionState {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	name := path
 	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		observe.GlobalTrace("if: i >= 0")
 		name = path[i+1:]
 	}
+	observe.GlobalTrace("return: &SessionState{ LogPath: path, Name: name, ToolCallCounts: map[string]int{}, S...")
 	return &SessionState{
 		LogPath:          path,
 		Name:             name,
@@ -136,11 +140,16 @@ func NewSessionState(path string) *SessionState {
 // Apply folds one parsed event into the state and returns any new alerts.
 // Unknown or irrelevant events update timestamps only.
 func (s *SessionState) Apply(ev observe.Event) []Alert {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if ev == nil {
+		observe.GlobalTrace("if: ev == nil")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	now := ev.EventTimestamp()
 	if s.FirstEventAt.IsZero() {
+		observe.GlobalTrace("if: s.FirstEventAt.IsZero()")
 		s.FirstEventAt = now
 	}
 	s.LastEventAt = now
@@ -149,8 +158,10 @@ func (s *SessionState) Apply(ev observe.Event) []Alert {
 	var alerts []Alert
 	switch e := ev.(type) {
 	case observe.UserTurnAccepted:
+		observe.GlobalTrace("typecase: observe.UserTurnAccepted")
 		s.Turns++
 	case observe.MessageAppended:
+		observe.GlobalTrace("typecase: observe.MessageAppended")
 		s.Messages++
 		s.LastRole = e.Role
 		if e.Role == "user" && len(e.ContentTypes) == 1 && e.ContentTypes[0] == "text" &&
@@ -164,6 +175,7 @@ func (s *SessionState) Apply(ev observe.Event) []Alert {
 			s.InFlightSince = now
 		}
 	case observe.APIRequestCompleted:
+		observe.GlobalTrace("typecase: observe.APIRequestCompleted")
 		s.APICalls++
 		s.Model = e.Model
 		s.LastStopReason = string(e.StopReason)
@@ -183,6 +195,7 @@ func (s *SessionState) Apply(ev observe.Event) []Alert {
 		alerts = append(alerts, s.applyToolCalls(e)...)
 		alerts = append(alerts, s.checkContext(now)...)
 	case observe.APIRequestFailed:
+		observe.GlobalTrace("typecase: observe.APIRequestFailed")
 		s.Failures++
 		s.LastError = fmt.Sprintf("%s: %s", e.ErrorType, truncate(e.ErrorMessage, 160))
 		if !e.Retryable {
@@ -191,6 +204,7 @@ func (s *SessionState) Apply(ev observe.Event) []Alert {
 				fmt.Sprintf("unretryable API failure: %s", s.LastError)))
 		}
 	case observe.APIRetryScheduled:
+		observe.GlobalTrace("typecase: observe.APIRetryScheduled")
 		s.Retries++
 		if s.Retries >= 5 && !s.retryAlerted {
 			s.retryAlerted = true
@@ -198,22 +212,28 @@ func (s *SessionState) Apply(ev observe.Event) []Alert {
 				fmt.Sprintf("retry storm: %d retries scheduled", s.Retries)))
 		}
 	case observe.ToolExecutionCompleted:
+		observe.GlobalTrace("typecase: observe.ToolExecutionCompleted")
 		if e.IsError {
 			s.ToolErrors++
 		}
 	case observe.ToolExecutionFailed:
+		observe.GlobalTrace("typecase: observe.ToolExecutionFailed")
 		s.ToolErrors++
 	case observe.MCPServerConnected:
+		observe.GlobalTrace("typecase: observe.MCPServerConnected")
 		s.Servers[e.ServerName] = "connected"
 	case observe.MCPServerDisconnected:
+		observe.GlobalTrace("typecase: observe.MCPServerDisconnected")
 		s.Servers[e.ServerName] = "disconnected"
 		alerts = append(alerts, s.alert(now, "mcp_down", LevelWarning,
 			fmt.Sprintf("MCP server %q disconnected: %s", e.ServerName, e.Reason)))
 	case observe.MCPHealthCheck:
+		observe.GlobalTrace("typecase: observe.MCPHealthCheck")
 		s.Servers[e.ServerName] = e.Status
 		// Periodic heartbeat; does not indicate conversational progress.
 		return alerts
 	case observe.ErrorOccurred:
+		observe.GlobalTrace("typecase: observe.ErrorOccurred")
 		alerts = append(alerts, s.alert(now, "error", levelFor(e.Severity),
 			fmt.Sprintf("%s: %s", e.Component, truncate(e.ErrorMessage, 160))))
 	}
@@ -221,18 +241,23 @@ func (s *SessionState) Apply(ev observe.Event) []Alert {
 	s.LastCoreEvent = s.LastEventKind
 	s.LastCoreAt = now
 	s.appendAlerts(alerts)
+	observe.GlobalTrace("return: alerts")
 	return alerts
 }
 
 // applyToolCalls extracts the tool calls requested in a completed response,
 // records them, and performs loop detection across consecutive responses.
 func (s *SessionState) applyToolCalls(e observe.APIRequestCompleted) []Alert {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	var content []struct {
 		Type string          `json:"type"`
 		Data json.RawMessage `json:"data"`
 	}
 	if len(e.Content) > 0 {
+		observe.GlobalTrace("if: len(e.Content) > 0")
 		if err := json.Unmarshal(e.Content, &content); err != nil {
+			observe.GlobalTrace("if: err != nil")
 			content = nil
 		}
 	}
@@ -240,7 +265,9 @@ func (s *SessionState) applyToolCalls(e observe.APIRequestCompleted) []Alert {
 	var prints []string
 	var alerts []Alert
 	for _, item := range content {
+		observe.GlobalTrace("range content")
 		if item.Type != "tool_call" {
+			observe.GlobalTrace("if: item.Type != \"tool_call\"")
 			continue
 		}
 		var call struct {
@@ -249,6 +276,7 @@ func (s *SessionState) applyToolCalls(e observe.APIRequestCompleted) []Alert {
 			Input json.RawMessage `json:"input"`
 		}
 		if err := json.Unmarshal(item.Data, &call); err != nil {
+			observe.GlobalTrace("if: err != nil")
 			continue
 		}
 		prints = append(prints, call.Name+"\x00"+string(call.Input))
@@ -261,6 +289,7 @@ func (s *SessionState) applyToolCalls(e observe.APIRequestCompleted) []Alert {
 			At:      e.EventTimestamp(),
 		})
 		if len(s.RecentTools) > maxRecentTools {
+			observe.GlobalTrace("if: len(s.RecentTools) > maxRecentTools")
 			s.RecentTools = s.RecentTools[len(s.RecentTools)-maxRecentTools:]
 		}
 	}
@@ -269,111 +298,154 @@ func (s *SessionState) applyToolCalls(e observe.APIRequestCompleted) []Alert {
 	// request the exact same tool set (same names, same inputs, same order).
 	fingerprint := strings.Join(prints, "\x01")
 	if len(prints) > 0 && fingerprint == s.consecPrint {
+		observe.GlobalTrace("if: len(prints) > 0 && fingerprint == s.consecPrint")
 		s.consecSame++
 	} else {
+		observe.GlobalTrace("else: len(prints) > 0 && fingerprint == s.consecPrint")
 		s.consecSame = 1
 		s.consecPrint = fingerprint
 	}
 	if s.consecSame >= 3 && !s.loopAlerted {
+		observe.GlobalTrace("if: s.consecSame >= 3 && !s.loopAlerted")
 		s.loopAlerted = true
 		name := "tools"
 		if len(prints) > 0 {
+			observe.GlobalTrace("if: len(prints) > 0")
 			name = strings.SplitN(prints[0], "\x00", 2)[0]
 		}
 		alerts = append(alerts, s.alert(e.EventTimestamp(), "tool_loop", LevelError,
 			fmt.Sprintf("suspected loop: identical tool set (%s) requested in %d consecutive responses", name, s.consecSame)))
 	} else if s.consecSame < 3 {
+		observe.GlobalTrace("else-if: s.consecSame < 3")
 		s.loopAlerted = false
 	}
+	observe.GlobalTrace("return: alerts")
 	return alerts
 }
 
 // checkContext emits context-window pressure alerts when a window is known.
 func (s *SessionState) checkContext(now time.Time) []Alert {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if s.ContextWindow <= 0 || s.ContextFill <= 0 {
+		observe.GlobalTrace("if: s.ContextWindow <= 0 || s.ContextFill <= 0")
+		observe.GlobalTrace("return: nil")
 		return nil
 	}
 	pct := 100 * float64(s.ContextFill) / float64(s.ContextWindow)
 	var alerts []Alert
 	if pct >= 95 && !s.warnedContext["95"] {
+		observe.GlobalTrace("if: pct >= 95 && !s.warnedContext[\"95\"]")
 		s.warnedContext["95"] = true
 		alerts = append(alerts, s.alert(now, "context", LevelError,
 			fmt.Sprintf("context fill %.0f%% of %s window", pct, HumanTokens(s.ContextWindow))))
 	} else if pct >= 80 && !s.warnedContext["80"] {
+		observe.GlobalTrace("else-if: pct >= 80 && !s.warnedContext[\"80\"]")
 		s.warnedContext["80"] = true
 		alerts = append(alerts, s.alert(now, "context", LevelWarning,
 			fmt.Sprintf("context fill %.0f%% of %s window", pct, HumanTokens(s.ContextWindow))))
 	}
+	observe.GlobalTrace("return: alerts")
 	return alerts
 }
 
 // Status derives a human status label plus a severity level for the session.
 // now is the observation time, not the last event time.
 func (s *SessionState) Status(now time.Time) (string, string) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if s.LastEventAt.IsZero() {
+		observe.GlobalTrace("if: s.LastEventAt.IsZero()")
+		observe.GlobalTrace("return: \"no events yet\", LevelInfo")
 		return "no events yet", LevelInfo
 	}
 	switch {
 	case s.InFlight:
+		observe.GlobalTrace("case: s.InFlight")
 		d := now.Sub(s.InFlightSince)
 		if s.StallAfter > 0 && d > s.StallAfter {
+			observe.GlobalTrace("return: fmt.Sprintf(\"STALLED in request %s (no completion since %s)\", Dur(d), s.InFli...")
 			return fmt.Sprintf("STALLED in request %s (no completion since %s)",
 				Dur(d), s.InFlightSince.Format("15:04:05")), LevelError
 		}
 		return fmt.Sprintf("model call in-flight %s", Dur(d)), LevelInfo
 	case s.LastStopReason == "end_turn":
+		observe.GlobalTrace("case: s.LastStopReason == \"end_turn\"")
 		return fmt.Sprintf("awaiting user (%s)", Dur(now.Sub(s.LastCoreAt))), LevelInfo
 	case s.LastStopReason == "max_tokens":
+		observe.GlobalTrace("case: s.LastStopReason == \"max_tokens\"")
 		return "turn ended at max_tokens", LevelWarning
 	case s.LastStopReason == "tool_use" && s.LastCoreEvent == "MessageAppended" && s.LastRole == "assistant":
 		// The model requested tools and its message was appended; the
 		// tools are executing until their results come back as the next
 		// user-role append.
+		observe.GlobalTrace("case: s.LastStopReason == \"tool_use\" && s.LastCoreEvent == \"MessageAppended\" && s.L...")
 		return fmt.Sprintf("executing tools %s", Dur(now.Sub(s.LastCoreAt))), LevelInfo
 	case s.LastCoreEvent == "APIRequestFailed":
+		observe.GlobalTrace("case: s.LastCoreEvent == \"APIRequestFailed\"")
 		return "turn failed", LevelError
 	case s.LastCoreEvent == "APIRequestCompleted":
+		observe.GlobalTrace("case: s.LastCoreEvent == \"APIRequestCompleted\"")
 		return "processing turn", LevelInfo
 	default:
+		observe.GlobalTrace("default")
 		return fmt.Sprintf("idle %s (last: %s)", Dur(now.Sub(s.LastCoreAt)), s.LastCoreEvent), LevelInfo
 	}
 }
 
 func (s *SessionState) alert(now time.Time, kind, level, msg string) Alert {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: Alert{Session: s.Name, Kind: kind, Level: level, Message: msg, At: now}")
 	return Alert{Session: s.Name, Kind: kind, Level: level, Message: msg, At: now}
 }
 
 func (s *SessionState) appendAlerts(alerts []Alert) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	s.Alerts = append(s.Alerts, alerts...)
 	if len(s.Alerts) > maxAlerts {
+		observe.GlobalTrace("if: len(s.Alerts) > maxAlerts")
 		s.Alerts = s.Alerts[len(s.Alerts)-maxAlerts:]
 	}
 }
 
 // ServerList returns MCP server names sorted alphabetically with status.
 func (s *SessionState) ServerList() string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(s.Servers) == 0 {
+		observe.GlobalTrace("if: len(s.Servers) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	names := make([]string, 0, len(s.Servers))
 	for name := range s.Servers {
+		observe.GlobalTrace("range s.Servers")
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	parts := make([]string, len(names))
 	for i, name := range names {
+		observe.GlobalTrace("range names")
 		parts[i] = name + "=" + s.Servers[name]
 	}
+	observe.GlobalTrace("return: strings.Join(parts, \", \")")
 	return strings.Join(parts, ", ")
 }
 
 func levelFor(severity string) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch severity {
 	case "error", "fatal", "critical":
+		observe.GlobalTrace("case: \"error\", \"fatal\", \"critical\"")
 		return LevelError
 	case "warn", "warning":
+		observe.GlobalTrace("case: \"warn\", \"warning\"")
 		return LevelWarning
 	default:
+		observe.GlobalTrace("default")
 		return LevelInfo
 	}
 }
@@ -382,19 +454,29 @@ func levelFor(severity string) string {
 // Prefers the common descriptive fields (cmd, query, file_path, ...) and
 // falls back to compact JSON.
 func SummarizeInput(input json.RawMessage) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(input) == 0 {
+		observe.GlobalTrace("if: len(input) == 0")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
 	var m map[string]any
 	if err := json.Unmarshal(input, &m); err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: truncate(string(input), 72)")
 		return truncate(string(input), 72)
 	}
 	for _, key := range []string{"cmd", "command", "query", "file_path", "path", "pattern", "url", "prompt", "description", "name"} {
+		observe.GlobalTrace("range []string{\"cmd\", \"command\", \"query\", \"file_path\", \"path\", \"pattern\", \"url\", \"p...")
 		if v, ok := m[key]; ok && v != nil {
+			observe.GlobalTrace("if: ok && v != nil")
 			switch t := v.(type) {
 			case string:
+				observe.GlobalTrace("typecase: string")
 				return truncate(strings.Join(strings.Fields(t), " "), 72)
 			default:
+				observe.GlobalTrace("typedefault")
 				b, err := json.Marshal(t)
 				if err != nil {
 					continue
@@ -405,42 +487,62 @@ func SummarizeInput(input json.RawMessage) string {
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
+		observe.GlobalTrace("if: err != nil")
+		observe.GlobalTrace("return: \"\"")
 		return ""
 	}
+	observe.GlobalTrace("return: truncate(string(b), 72)")
 	return truncate(string(b), 72)
 }
 
 func truncate(s string, n int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	if len(s) <= n {
+		observe.GlobalTrace("if: len(s) <= n")
+		observe.GlobalTrace("return: s")
 		return s
 	}
+	observe.GlobalTrace("return: s[:n-1] + \"…\"")
 	return s[:n-1] + "…"
 }
 
 // HumanTokens renders a token count in k/M units.
 func HumanTokens(n int) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch {
 	case n >= 1_000_000:
+		observe.GlobalTrace("case: n >= 1_000_000")
 		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 	case n >= 1_000:
+		observe.GlobalTrace("case: n >= 1_000")
 		return fmt.Sprintf("%.1fk", float64(n)/1_000)
 	default:
+		observe.GlobalTrace("default")
 		return fmt.Sprintf("%d", n)
 	}
 }
 
 // Dur renders a duration compactly (12s, 4m12s, 3h04m, 2d5h).
 func Dur(d time.Duration) string {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
 	switch {
 	case d < 0:
+		observe.GlobalTrace("case: d < 0")
 		return "0s"
 	case d < time.Minute:
+		observe.GlobalTrace("case: d < time.Minute")
 		return fmt.Sprintf("%.0fs", d.Seconds())
 	case d < time.Hour:
+		observe.GlobalTrace("case: d < time.Hour")
 		return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 	case d < 48*time.Hour:
+		observe.GlobalTrace("case: d < 48*time.Hour")
 		return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
 	default:
+		observe.GlobalTrace("default")
 		return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
 	}
 }
