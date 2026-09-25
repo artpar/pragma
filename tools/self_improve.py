@@ -54,6 +54,18 @@ NEAR_MISS_HINT = (
     "deliverable is the commit, not the working tree)."
 )
 
+# CMT-002: commit-delay check on NORMAL exits. Three cycles polished
+# post-GREEN before commit 1 (PACT-001 99409da1: GREEN 51 -> commit 88,
+# 37 calls, turn-budget warning one call after the commit; MM-001
+# 2d4a25ff: GREEN 53 -> commit 69; CMT-001 dd0c0e1e: GREEN 54 -> commit
+# 66) and all exited normally, so the rc!=0 near-miss branch never fired.
+# A worker that spends more than this many calls between its first GREEN
+# gate and its first commit is running rule-2's die-uncommitted risk; the
+# cycle is flagged (not failed). Legitimate GREEN -> adjacent tests ->
+# gofmt -> status -> commit fits within 6 calls; the recorded violations
+# are 12/16/37 (calibration in the CMT-001 case record revision note).
+COMMIT_DELAY_THRESHOLD = 6
+
 # v1.5: cap-deaths burned ~$32 (37% of today spend) on 4 dead attempts;
 # successful big builds used 60-90 turns - give headroom to 110.
 WORKER_MAX_TURNS = 110
@@ -87,6 +99,9 @@ Rules:
   note (what was verified, refuted, changed).
 - Commit AT GREEN, immediately - before docs/case-record polish. The
   deliverable is the commit; polish can follow in a second commit.
+- HARD RULE: commit the moment gates are green - README/polish belong to commit 2,
+  and so does any extra re-verification; nothing happens between the first
+  GREEN and commit 1.
 - Never chain grep/test with && (silent breakage burned 5+ sessions);
   use echo markers between steps and check exit codes.
 - No git stash in the shared tree - if you need isolation, use a
@@ -354,6 +369,101 @@ def last_test_gate_passed(session_path):
     return last_green
 
 
+def green_to_commit_distance(session_path):
+    """CMT-002: (first_green_call, commit_call) - 1-based assistant-call
+    indices of the session's meaningful GREEN gate and the first commit
+    after it; either may be None when the transcript lacks it.
+
+    The GREEN gate is the first PASSING test gate that follows the
+    session's first RED gate (the methodology's RED->GREEN transition) -
+    sessions with no RED fall back to the first passing gate overall. A
+    pre-RED baseline green (workers verifying payload claims run suites
+    before writing the RED test) must not anchor the distance. Test
+    commands issued inside heredoc scripts are not gates: their OUTPUT
+    echoes recorded markers (the dd0c0e1e call-32 false-gate class).
+    The commit is the first successful (not is_error) `git commit`
+    tool result AFTER that green; commits before it don't count.
+    """
+    calls = {}  # tool_call_id -> (call_idx, is_test, is_commit)
+    saw_red = False
+    first_green = None
+    pre_red_green = None  # first green seen before any red (fallback)
+    commit_after_pre_green = None
+    commit_call = None
+    idx = 0
+    with open(session_path) as fh:
+        for line in fh:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("kind") != "message":
+                continue
+            data = entry.get("data", {})
+            if data.get("role") == "assistant":
+                idx += 1
+                for part in data.get("content", []):
+                    pdata = part.get("data", {})
+                    if part.get("type") != "tool_call":
+                        continue
+                    cmd = pdata.get("input", {}).get("cmd")
+                    if not isinstance(cmd, str) or "<<" in cmd:
+                        continue  # heredoc scripts are not test gates
+                    calls[pdata.get("id")] = (
+                        idx,
+                        bool(TEST_CMD_RE.search(cmd)),
+                        bool(re.search(r"\bgit\s+commit\b", cmd)),
+                    )
+            elif data.get("role") == "user":
+                for part in data.get("content", []):
+                    pdata = part.get("data", {})
+                    if part.get("type") != "tool_result":
+                        continue
+                    info = calls.get(pdata.get("tool_call_id"))
+                    if info is None:
+                        continue
+                    cidx, is_test, is_commit = info
+                    content = pdata.get("content", "")
+                    if is_test:
+                        green = (
+                            not pdata.get("is_error")
+                            and isinstance(content, str)
+                            and bool(GREEN_GATE_RE.search(content))
+                            and not RED_GATE_RE.search(content)
+                        )
+                        if (isinstance(content, str)
+                                and RED_GATE_RE.search(content)):
+                            # FAIL markers count even when a `| tail` pipeline
+                            # masked the exit code into is_error=false
+                            saw_red = True
+                        elif green and first_green is None:
+                            if saw_red:
+                                first_green = cidx
+                            elif pre_red_green is None:
+                                pre_red_green = cidx
+                    if is_commit and not pdata.get("is_error"):
+                        # commits at/before the green (pre-work docs
+                        # commits) are not the measured commit
+                        if first_green is not None:
+                            if cidx > first_green and commit_call is None:
+                                commit_call = cidx
+                        elif (pre_red_green is not None
+                              and cidx > pre_red_green
+                              and commit_after_pre_green is None):
+                            # held until the scan resolves whether any red
+                            # follows (a later red moves the anchor to the
+                            # post-red GREEN and discards this commit)
+                            commit_after_pre_green = cidx
+    if first_green is None and not saw_red:
+        # no RED in the session: the first green anchors, and its first
+        # following commit is the measured commit
+        first_green = pre_red_green
+        commit_call = commit_after_pre_green
+    if first_green is None:
+        return None, None  # no anchor: distance undefined
+    return first_green, commit_call
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cycles", type=int, default=1)
@@ -478,6 +588,42 @@ def main():
                 print("  worker died without commit (attempt %d) - requeued" % attempts)
             save_queue(args.queue, queue)
             continue
+
+        # CMT-002: normal-exit commit-delay check. Best-effort GREEN-to-
+        # commit distance from the worker's durable session transcript
+        # (the bg worker log carries final text only - MM-001, wire-proven
+        # - so it can never carry per-call gate evidence). Flag, not fail.
+        if committed and not audit_only:
+            try:
+                sess = find_worker_session(
+                    SESSIONS_DIR, worker_started, REPO, item["id"])
+                if sess:
+                    first_green, commit_call = green_to_commit_distance(sess)
+                    if first_green is not None and commit_call is not None:
+                        delay = commit_call - first_green
+                        if delay > COMMIT_DELAY_THRESHOLD:
+                            item["commit_delay"] = {
+                                "first_green_call": first_green,
+                                "commit_call": commit_call,
+                                "calls": delay,
+                                "threshold": COMMIT_DELAY_THRESHOLD,
+                                "note": (
+                                    "commit landed %d calls after the first "
+                                    "GREEN gate - README/polish/re-verification "
+                                    "between GREEN and commit 1 (CMT-002, "
+                                    "doctrine rule 2: die-uncommitted risk)"
+                                    % delay
+                                ),
+                            }
+                            print(
+                                "  commit-delay: GREEN at call %d, commit at "
+                                "call %d (%d calls apart, threshold %d) - "
+                                "noted in item (CMT-002)"
+                                % (first_green, commit_call, delay,
+                                   COMMIT_DELAY_THRESHOLD)
+                            )
+            except Exception as exc:
+                print("  commit-delay check failed: %r" % exc)
 
         item["status"] = "worker_done" if committed else "no_change"
         item["worker_report"] = report or "(no report block)"

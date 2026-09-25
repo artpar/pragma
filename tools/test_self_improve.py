@@ -9,6 +9,7 @@ The dispatch path (queue load/save, attempt counting, requeue, prompt
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -375,6 +376,332 @@ class NearMissScriptedCycleTest(unittest.TestCase):
             self.assertEqual(item.get("status"), "open")
             self.assertEqual(item.get("attempts"), 2)
             self.assertIsNone(item.get("near_miss"))
+
+
+# ---------------------------------------------------------------------------
+# CMT-002: GREEN-to-commit distance on NORMAL exits. Three cycles
+# (PACT-001 99409da1: GREEN 51 -> commit 88; MM-001 2d4a25ff: GREEN 53 ->
+# commit 69; CMT-001 dd0c0e1e: GREEN 54 -> commit 66) committed 12-37 calls
+# after their first GREEN and all exited normally - CMT-001's near-miss
+# enforcement (rc != 0 and not committed) never fires on them.
+# ---------------------------------------------------------------------------
+
+
+def _tool_call(call_id, cmd):
+    return {
+        "type": "tool_call",
+        "data": {"id": call_id, "name": "Bash", "input": {"cmd": cmd}},
+    }
+
+
+def _tool_result(call_id, content, is_error=False):
+    data = {"tool_call_id": call_id, "content": content}
+    if is_error:
+        data["is_error"] = True
+    return {"type": "tool_result", "data": data}
+
+
+def _dispatch_user_message(qid):
+    text = si.WORKER_PROMPT.format(
+        repo=si.REPO, qid=qid, title="scripted commit-delay cycle",
+        payload="{}", mistakes='["(first attempt)"]',
+    )
+    return {
+        "kind": "message",
+        "data": {
+            "id": "msg-dispatch",
+            "role": "user",
+            "content": [{"type": "text", "data": {"text": text}}],
+            "timestamp": "2026-09-25T11:00:00+05:30",
+        },
+    }
+
+
+def _recorded_green_gate_parts(n):
+    """(tool_call, tool_result) carrying the recorded 06f603fb wall-clock
+    gate verbatim (cmd + result content from the greengate fixture); only
+    the ids are rewritten so multiple green gates can coexist in one file."""
+    green = result = None
+    for line in GREEN_GATE_FIXTURE.read_text().splitlines():
+        entry = json.loads(line)
+        if entry.get("kind") != "message":
+            continue
+        for part in entry["data"].get("content", []):
+            if part["type"] == "tool_call":
+                green = part
+            elif part["type"] == "tool_result":
+                result = part
+    call = json.loads(json.dumps(green))
+    call["data"]["id"] = "call-c2-green-%d" % n
+    res = json.loads(json.dumps(result))
+    res["data"]["tool_call_id"] = "call-c2-green-%d" % n
+    return call, res
+
+
+# specs: one assistant call each, in order. kind -> recorded-wire-shaped pair
+SPEC_PAIRS = {
+    # the RED gate: wire-shaped after the recorded CLK-002 attempt-2 reds
+    "red": (
+        "python3 -m unittest tools.test_self_improve -v 2>&1 | tail -25",
+        "Exit code: 1\n"
+        "FAIL: test_green (tools.test_self_improve.GreenGateDetectionTest"
+        ".test_detects_passing_last_gate_in_recorded_capdeath_session)\n"
+        "AssertionError: False is not true\n"
+        "FAILED (failures=1)\n",
+        True,
+    ),
+    # a heredoc script ABOUT test commands whose OUTPUT echoes green
+    # markers - the CMT-001 call-32 false-gate class (dd0c0e1e)
+    "heredoc": (
+        "python3 - <<'EOF'\n"
+        "for cmd in ['go test ./internal/query', 'python3 -m unittest tools.test_self_improve']:\n"
+        "    print(cmd)\n"
+        "print('ok  \\tgithub.com/artpar/pragma/internal/query\\t2.319s')\n"
+        "EOF",
+        "Exit code: 0\nok  \tgithub.com/artpar/pragma/internal/query\t2.319s\n",
+        False,
+    ),
+    # wire-shaped after the recorded c4fab51 commit (dd0c0e1e call 66)
+    "commit": (
+        'git add tools/self_improve.py tools/test_self_improve.py; '
+        'git commit -m "TEST-001: mechanism"',
+        "Exit code: 0\n[main abc1234] TEST-001: mechanism\n"
+        " 2 files changed, 30 insertions(+), 1 deletion(-)\n",
+        False,
+    ),
+    # a commit that landed but was flagged is_error by a trailing command -
+    # wire-shaped after the recorded 848f609 result (dd0c0e1e call 69)
+    "commit_err": (
+        'git add docs/failure-cases/x.md; git commit -m "case record"; '
+        "git log --oneline | grep -v x",
+        "Exit code: 1\n[main 848f609] case record\n"
+        " 1 file changed, 137 insertions(+)\n",
+        True,
+    ),
+    "filler": (
+        "ls docs/failure-cases",
+        "Exit code: 0\ncommit-at-green-near-miss-requeue-2026-09-25.md\n",
+        False,
+    ),
+}
+
+
+def write_delay_session(path, kinds, qid="TEST-001"):
+    """Write a synthetic worker session in the recorded wire format: header
+    + dispatch user message + one assistant/user pair per spec kind (green
+    specs carry the recorded gate verbatim)."""
+    lines = [json.dumps({
+        "kind": "header",
+        "data": {
+            "session_id": "c2-scripted",
+            "model": "morph-glm53-744b",
+            "provider": "morphllm",
+            "work_dir": si.REPO,
+            "git_remote": "https://github.com/artpar/pragma.git",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "system": {"blocks": None},
+        },
+    })]
+    lines.append(json.dumps(_dispatch_user_message(qid)))
+    greens = 0
+    for n, kind in enumerate(kinds, 1):
+        if kind == "green":
+            greens += 1
+            call, result = _recorded_green_gate_parts(greens)
+        else:
+            cmd, content, is_error = SPEC_PAIRS[kind]
+            call = _tool_call("call-c2-%s-%d" % (kind, n), cmd)
+            result = _tool_result("call-c2-%s-%d" % (kind, n), content, is_error)
+        lines.append(json.dumps({
+            "kind": "message",
+            "data": {
+                "id": "msg-a%d" % n, "role": "assistant",
+                "content": [call], "timestamp": "2026-09-25T11:00:0%d+05:30" % (n % 10),
+            },
+        }))
+        lines.append(json.dumps({
+            "kind": "message",
+            "data": {
+                "id": "msg-u%d" % n, "role": "user",
+                "content": [result], "timestamp": "2026-09-25T11:00:0%d+05:30" % (n % 10),
+            },
+        }))
+    Path(path).write_text("\n".join(lines) + "\n")
+
+
+class CommitDelayRuleTest(unittest.TestCase):
+    """CMT-002 deliverable: one hard line in the WORKER_PROMPT - the
+    existing rule alone did not stop 3/3 cycles polishing before commit 1."""
+
+    def test_worker_prompt_carries_commit_the_moment_gates_are_green(self):
+        self.assertIn(
+            "commit the moment gates are green",
+            si.WORKER_PROMPT,
+            "the worker prompt must carry the CMT-002 hard rule",
+        )
+        self.assertIn(
+            "README/polish belong to commit 2",
+            si.WORKER_PROMPT,
+            "README/polish must be explicitly banished to commit 2",
+        )
+
+
+class GreenToCommitDistanceTest(unittest.TestCase):
+    def _write(self, kinds):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        path = str(Path(tmp) / "worker-session.jsonl")
+        write_delay_session(path, kinds)
+        return path
+
+    def test_distance_on_delay_session(self):
+        dist = getattr(si, "green_to_commit_distance", None)
+        self.assertTrue(
+            callable(dist), "green_to_commit_distance mechanism absent (CMT-002)"
+        )
+        # RED at 1, GREEN at 2, nine filler calls, commit at 12 (K=10)
+        path = self._write(["red", "green"] + ["filler"] * 9 + ["commit"])
+        self.assertEqual(si.green_to_commit_distance(path), (2, 12))
+
+    def test_distance_on_prompt_commit_session(self):
+        dist = getattr(si, "green_to_commit_distance", None)
+        self.assertTrue(
+            callable(dist), "green_to_commit_distance mechanism absent (CMT-002)"
+        )
+        # GREEN at 2, adjacent gate at 3, commit at 4 (K=2) - prompt commit
+        path = self._write(["red", "green", "filler", "commit"])
+        self.assertEqual(si.green_to_commit_distance(path), (2, 4))
+
+    def test_pre_red_green_is_not_the_anchor(self):
+        dist = getattr(si, "green_to_commit_distance", None)
+        self.assertTrue(
+            callable(dist), "green_to_commit_distance mechanism absent (CMT-002)"
+        )
+        # a pre-RED baseline green at call 1 must not anchor the distance:
+        # the meaningful GREEN is the one after the session's first RED
+        path = self._write(["green", "red", "green", "filler", "commit"])
+        self.assertEqual(si.green_to_commit_distance(path), (3, 5))
+
+    def test_heredoc_output_is_not_a_gate(self):
+        dist = getattr(si, "green_to_commit_distance", None)
+        self.assertTrue(
+            callable(dist), "green_to_commit_distance mechanism absent (CMT-002)"
+        )
+        # a heredoc script ABOUT test commands whose output echoes green
+        # markers (the recorded dd0c0e1e call-32 false-gate class) must not
+        # count as the session's GREEN gate
+        path = self._write(["red", "heredoc", "green", "filler", "filler", "filler", "commit"])
+        self.assertEqual(si.green_to_commit_distance(path), (3, 7))
+
+    def test_no_red_falls_back_to_first_green(self):
+        dist = getattr(si, "green_to_commit_distance", None)
+        self.assertTrue(
+            callable(dist), "green_to_commit_distance mechanism absent (CMT-002)"
+        )
+        path = self._write(["green", "filler", "commit"])
+        self.assertEqual(si.green_to_commit_distance(path), (1, 3))
+
+    def test_pre_green_commit_and_errored_commit_are_skipped(self):
+        dist = getattr(si, "green_to_commit_distance", None)
+        self.assertTrue(
+            callable(dist), "green_to_commit_distance mechanism absent (CMT-002)"
+        )
+        # a commit BEFORE the green (e.g. a pre-work docs commit) is not
+        # the measured commit; an is_error-flagged commit result (trailing
+        # grep, recorded 848f609 class) is not a successful commit either
+        path = self._write(["commit", "red", "green", "commit_err", "filler", "commit"])
+        self.assertEqual(si.green_to_commit_distance(path), (3, 6))
+
+
+class CommitDelayScriptedCycleTest(unittest.TestCase):
+    def _run_cycle(self, tmp, kinds):
+        sessions_dir = Path(tmp) / "sessions"
+        sessions_dir.mkdir()
+        logs_dir = Path(tmp) / "logs"
+        logs_dir.mkdir()
+        write_delay_session(sessions_dir / "worker-session.jsonl", kinds)
+        queue_path = Path(tmp) / "queue.jsonl"
+        queue_path.write_text(
+            json.dumps(
+                {
+                    "id": "TEST-001",
+                    "title": "scripted commit-delay cycle",
+                    "kind": "loop-defect",
+                    "status": "open",
+                    "added_at": "2026-09-25T11:00:00",
+                    "payload": {"evidence": "x", "deliverables": "y"},
+                }
+            )
+            + "\n"
+        )
+        prompts = []
+
+        def scripted_session(prompt, max_turns, log_path, model, max_cost):
+            prompts.append(prompt)
+            with open(log_path, "w") as fh:
+                if "CRITIC instance" in prompt:
+                    fh.write("===FINDINGS-START===\n[]\n===FINDINGS-END===\n")
+                elif "READING ANALYST" in prompt:
+                    fh.write("no waste block\n")
+                else:
+                    fh.write("scripted worker final text\n")
+            return 0, 5.0  # NORMAL exit
+
+        heads = ["a" * 40, "b" * 40]  # head changes across the worker: committed
+        argv = ["self_improve.py", "--cycles", "1", "--queue", str(queue_path)]
+        with mock.patch.object(si, "run_pragma", scripted_session), mock.patch.object(
+            si, "git_head", lambda: heads.pop(0)
+        ), mock.patch.object(si, "last_session_cost", lambda: None), mock.patch.object(
+            si, "LOGDIR", str(logs_dir)
+        ), mock.patch.object(
+            si, "SESSIONS_DIR", str(sessions_dir), create=True
+        ), mock.patch.object(
+            si.subprocess, "run", scripted_subprocess_run
+        ), mock.patch.object(
+            sys, "argv", argv
+        ):
+            self.assertEqual(si.main(), 0)
+        return prompts, queue_path
+
+    def test_delayed_commit_on_normal_exit_is_flagged_in_item(self):
+        threshold = getattr(si, "COMMIT_DELAY_THRESHOLD", None)
+        self.assertIsNotNone(threshold, "COMMIT_DELAY_THRESHOLD absent (CMT-002)")
+        with tempfile.TemporaryDirectory() as tmp:
+            # GREEN at call 2, first git commit at call 12 - K=10 > threshold
+            prompts, queue_path = self._run_cycle(
+                tmp, ["red", "green"] + ["filler"] * 9 + ["commit"]
+            )
+            self.assertEqual(len(prompts), 3, "worker + critic + reader dispatches")
+            self.assertIn(si.WORKER_MARKER, prompts[0])
+            items = si.load_queue(str(queue_path))
+            item = next(i for i in items if i["id"] == "TEST-001")
+            # the flag is a note: the cycle still completes normally
+            self.assertEqual(item.get("status"), "done")
+            delay = item.get("commit_delay")
+            self.assertIsNotNone(
+                delay,
+                "a normal-exit commit %d calls after GREEN must be flagged in "
+                "the item (CMT-002: PACT-001/MM-001/CMT-001 all exited normally "
+                "and none of them tripped the rc!=0 near-miss branch)" % 10,
+            )
+            self.assertEqual(delay.get("first_green_call"), 2)
+            self.assertEqual(delay.get("commit_call"), 12)
+            self.assertEqual(delay.get("calls"), 10)
+            self.assertEqual(delay.get("threshold"), si.COMMIT_DELAY_THRESHOLD)
+
+    def test_prompt_commit_on_normal_exit_is_not_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # GREEN at call 2, adjacent gate at 3, commit at 4 - K=2, prompt
+            prompts, queue_path = self._run_cycle(
+                tmp, ["red", "green", "filler", "commit"]
+            )
+            items = si.load_queue(str(queue_path))
+            item = next(i for i in items if i["id"] == "TEST-001")
+            self.assertEqual(item.get("status"), "done")
+            self.assertIsNone(
+                item.get("commit_delay"),
+                "a prompt commit (K=2) must not be flagged",
+            )
 
 
 if __name__ == "__main__":
