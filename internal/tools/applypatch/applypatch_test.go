@@ -204,3 +204,128 @@ func TestExtractShellApplyPatch(t *testing.T) {
 		t.Fatalf("patch = %q", patch)
 	}
 }
+
+// PACT-001: count-bearing hunk headers (@@ -29,6 +29,18 @@) were silently
+// ignored by the parser. A header/body count disagreement surfaced as a
+// misleading "did not match current file content" error (recorded failing
+// input: session 729e2564, 2026-09-24, calc.go) or silently applied when the
+// body happened to match, instead of a preflight patch-format error.
+func TestApplyPatchPreflightRejectsHunkHeaderCountMismatch(t *testing.T) {
+	// Wire-recorded failing input: session 729e2564, apply_patch call 17
+	// (2026-09-24), calc.go. The hunk header states 6 old / 18 new lines
+	// while the body carries 4 old lines (context: return, }, blank, func
+	// main) and 19 new lines (4 context + 15 added).
+	recordedPatch := "*** Begin Patch\n" +
+		"*** Update File: calc.go\n" +
+		"@@\n" +
+		"@@ -29,6 +29,18 @@\n" +
+		" \treturn total / float64(len(scores))\n" +
+		" }\n" +
+		"\n" +
+		"+func NormalizeName(name string) string {\n" +
+		"+\tname = strings.TrimSpace(name)\n" +
+		"+\tname = strings.ToLower(name)\n" +
+		"+\tname = regexp.MustCompile(`\\s+`).ReplaceAllString(name, \"-\")\n" +
+		"+\treturn name\n" +
+		"+}\n" +
+		"+\n" +
+		"+func Score(name string) int {\n" +
+		"+\tnormalized := NormalizeName(name)\n" +
+		"+\tif strings.HasPrefix(normalized, \"bad\") || len(normalized) < 3 {\n" +
+		"+\t\treturn 0\n" +
+		"+\t}\n" +
+		"+\treturn len(normalized)\n" +
+		"+}\n" +
+		"+\n" +
+		" func main() {\n" +
+		"*** End Patch"
+
+	t.Run("misleading content error", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "calc.go")
+		// No blank line between } and func main: the recorded hunk's
+		// context cannot match the file, reproducing the recorded
+		// misleading "did not match current file content" failure.
+		original := "package main\n\nfunc average(scores []float64) float64 {\n\ttotal := 0.0\n\tfor _, s := range scores {\n\t\ttotal += s\n\t}\n\treturn total / float64(len(scores))\n}\nfunc main() {\n}\n"
+		if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ApplyPatchText(context.Background(), recordedPatch, dir)
+		if err == nil {
+			t.Fatal("expected preflight hunk-header count mismatch error, got success")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "hunk header") {
+			t.Fatalf("error does not diagnose the hunk header: %q", msg)
+		}
+		for _, want := range []string{"-29,6 +29,18", "6 old and 18 new", "4 old and 19 new"} {
+			if !strings.Contains(msg, want) {
+				t.Fatalf("error %q does not contain %q", msg, want)
+			}
+		}
+		if strings.Contains(msg, "did not match current file content") {
+			t.Fatalf("error blames file content instead of the patch's own header/body mismatch: %q", msg)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if got := string(data); got != original {
+			t.Fatalf("file mutated by rejected patch:\n%s", got)
+		}
+	})
+
+	t.Run("silent acceptance when body matches", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "calc.go")
+		// Blank line between } and func main: the recorded hunk's
+		// context matches, so the unchanged harness silently applied
+		// the patch despite the disagreeing header counts.
+		original := "package main\n\nfunc average(scores []float64) float64 {\n\ttotal := 0.0\n\tfor _, s := range scores {\n\t\ttotal += s\n\t}\n\treturn total / float64(len(scores))\n}\n\nfunc main() {\n}\n"
+		if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ApplyPatchText(context.Background(), recordedPatch, dir)
+		if err == nil {
+			t.Fatal("expected preflight hunk-header count mismatch error even when body matches file, got success")
+		}
+		if !strings.Contains(err.Error(), "hunk header") {
+			t.Fatalf("error does not diagnose the hunk header: %q", err.Error())
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if got := string(data); got != original {
+			t.Fatalf("file mutated by rejected patch:\n%s", got)
+		}
+	})
+}
+
+func TestApplyPatchPreflightAcceptsMatchingHunkHeaderCounts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "calc.go")
+	original := "package main\n\nimport \"fmt\"\n\nfunc average(scores []float64) float64 {\n\ttotal := 0.0\n\tfor _, s := range scores {\n\t\ttotal += s\n\t}\n\treturn total / float64(len(scores))\n}\n"
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+	patch := `*** Begin Patch
+*** Update File: calc.go
+@@
+@@ -8,3 +8,4 @@
+ func average(scores []float64) float64 {
+ 	total := 0.0
++	if len(scores) == 0 {
+ 	for _, s := range scores {
+*** End Patch`
+	if _, err := ApplyPatchText(context.Background(), patch, dir); err != nil {
+		t.Fatalf("matching header counts must still apply: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "if len(scores) == 0 {") {
+		t.Fatalf("patched content = %q", string(data))
+	}
+}

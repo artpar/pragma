@@ -130,6 +130,17 @@ type Chunk struct {
 	New []string
 }
 
+// hunkHeader captures the unified-diff counts carried on a "@@" separator
+// line (e.g. "@@ -29,6 +29,18 @@") so they can be validated against the
+// hunk body before any file is read (PACT-001 preflight).
+type hunkHeader struct {
+	raw       string
+	statedOld int
+	statedNew int
+	line      int
+	hasCounts bool
+}
+
 func Parse(input string) (Patch, error) {
 	observe.GlobalTrace("enter")
 	defer observe.GlobalTrace("exit")
@@ -203,18 +214,34 @@ func Parse(input string) (Patch, error) {
 			op := Operation{Kind: "update", Path: path}
 			i++
 			var chunk Chunk
-			flush := func() {
+			var pendingHeader hunkHeader
+			flush := func() error {
 				if len(chunk.Old) > 0 || len(chunk.New) > 0 {
+					if err := validateHunkHeaderCounts(pendingHeader, chunk, path); err != nil {
+						return err
+					}
 					op.Chunks = append(op.Chunks, chunk)
 				}
 				chunk = Chunk{}
+				return nil
 			}
 			for i < len(lines)-1 && !strings.HasPrefix(strings.TrimSpace(lines[i]), "*** ") {
 				raw := lines[i]
 				trimmed := strings.TrimSpace(raw)
 				if trimmed == "@@" || strings.HasPrefix(trimmed, "@@ ") {
 					observe.GlobalTrace("if: trimmed == \"@@\" || strings.HasPrefix(trimmed, \"@@ \")")
-					flush()
+					header, headerErr := parseHunkHeaderLine(trimmed, i+1)
+					if headerErr != nil {
+						observe.GlobalTrace("if: headerErr != nil")
+						observe.GlobalTrace("return: Patch{}, headerErr")
+						return Patch{}, headerErr
+					}
+					if err := flush(); err != nil {
+						observe.GlobalTrace("if: err := flush(); err != nil")
+						observe.GlobalTrace("return: Patch{}, err")
+						return Patch{}, err
+					}
+					pendingHeader = header
 					i++
 					continue
 				}
@@ -243,7 +270,11 @@ func Parse(input string) (Patch, error) {
 				}
 				i++
 			}
-			flush()
+			if err := flush(); err != nil {
+				observe.GlobalTrace("if: err := flush(); err != nil")
+				observe.GlobalTrace("return: Patch{}, err")
+				return Patch{}, err
+			}
 			if len(op.Chunks) == 0 {
 				observe.GlobalTrace("return: Patch{}, fmt.Errorf(\"update hunk for %s is empty\", path)")
 				return Patch{}, fmt.Errorf("update hunk for %s is empty", path)
@@ -273,6 +304,152 @@ func malformedUpdateLine(path string, lineNo int, line string) error {
 	}
 	observe.GlobalTrace("return: fmt.Errorf(\"update hunk for %s line %d is malformed: %q\\nEvery update hunk li...")
 	return fmt.Errorf("update hunk for %s line %d is malformed: %q\nEvery update hunk line must start with ' ', '+', '-', or '@@'. Unchanged context lines need a leading space. Remove stray '***' lines inside update hunks and reread the target range before retrying", path, lineNo, display)
+}
+
+// parseHunkHeaderLine classifies a "@@" separator line inside an update
+// hunk. Bare "@@" and non-count content keep separator semantics (no
+// counts). A line shaped like unified-diff counts ("-<n>[,<m>] +<n>[,<m>]"
+// with an optional trailing "@@ context") is parsed for preflight
+// validation; a count-shaped but malformed line is rejected with an
+// actionable error.
+func parseHunkHeaderLine(trimmed string, lineNo int) (hunkHeader, error) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if !strings.HasPrefix(trimmed, "@@ ") {
+		observe.GlobalTrace("if: !strings.HasPrefix(trimmed, \"@@ \")")
+		observe.GlobalTrace("return: hunkHeader{line: lineNo}, nil")
+		return hunkHeader{line: lineNo}, nil
+	}
+	body := trimmed[3:]
+	if idx := strings.Index(body, "@@"); idx >= 0 {
+		observe.GlobalTrace("if: idx := strings.Index(body, \"@@\"); idx >= 0")
+		body = strings.TrimSpace(body[:idx])
+	}
+	if !isCountShaped(body) {
+		observe.GlobalTrace("if: !isCountShaped(body)")
+		observe.GlobalTrace("return: hunkHeader{line: lineNo}, nil")
+		return hunkHeader{line: lineNo}, nil
+	}
+	oldToken, newToken, ok := splitHunkHeaderCounts(body)
+	if !ok {
+		observe.GlobalTrace("if: !ok")
+		observe.GlobalTrace("return: hunkHeader{}, malformedHunkHeaderError(trimmed, lineNo)")
+		return hunkHeader{}, malformedHunkHeaderError(trimmed, lineNo)
+	}
+	statedOld, oldOK := countTokenValue(oldToken)
+	statedNew, newOK := countTokenValue(newToken)
+	if !oldOK || !newOK {
+		observe.GlobalTrace("if: !oldOK || !newOK")
+		observe.GlobalTrace("return: hunkHeader{}, malformedHunkHeaderError(trimmed, lineNo)")
+		return hunkHeader{}, malformedHunkHeaderError(trimmed, lineNo)
+	}
+	observe.GlobalTrace("return: hunkHeader{raw: trimmed, statedOld: statedOld, statedNew: statedNew, line: lineNo, hasCounts: true}, nil")
+	return hunkHeader{raw: trimmed, statedOld: statedOld, statedNew: statedNew, line: lineNo, hasCounts: true}, nil
+}
+
+// isCountShaped reports whether separator content looks like unified-diff
+// counts: it starts with "-<digit>" and contains a " +" new-count token.
+func isCountShaped(body string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: len(body) >= 2 && body[0] == '-' && body[1] >= '0' && body[1] <= '9' && strings.Contains(body, \" +\")")
+	return len(body) >= 2 && body[0] == '-' && body[1] >= '0' && body[1] <= '9' && strings.Contains(body, " +")
+}
+
+func splitHunkHeaderCounts(body string) (string, string, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	parts := strings.Split(body, " ")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		observe.GlobalTrace("if: len(parts) != 2 || parts[0] == \"\" || parts[1] == \"\"")
+		observe.GlobalTrace("return: \"\", \"\", false")
+		return "", "", false
+	}
+	observe.GlobalTrace("return: parts[0], parts[1], true")
+	return parts[0], parts[1], true
+}
+
+// countTokenValue parses one side of a count header token ("-12,7" or
+// "+12,8"); the start line is ignored and an omitted count means one line.
+func countTokenValue(token string) (int, bool) {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	token = strings.TrimPrefix(strings.TrimPrefix(token, "-"), "+")
+	count := 1
+	if comma := strings.Index(token, ","); comma >= 0 {
+		observe.GlobalTrace("if: comma := strings.Index(token, \",\"); comma >= 0")
+		startPart, countPart := token[:comma], token[comma+1:]
+		if startPart == "" || !allDigits(startPart) || !allDigits(countPart) {
+			observe.GlobalTrace("if: startPart == \"\" || !allDigits(startPart) || !allDigits(countPart)")
+			observe.GlobalTrace("return: 0, false")
+			return 0, false
+		}
+		count = atoi(countPart)
+	} else if token == "" || !allDigits(token) {
+		observe.GlobalTrace("} else if token == \"\" || !allDigits(token)")
+		observe.GlobalTrace("return: 0, false")
+		return 0, false
+	}
+	observe.GlobalTrace("return: count, true")
+	return count, true
+}
+
+func allDigits(s string) bool {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if s == "" {
+		observe.GlobalTrace("if: s == \"\"")
+		observe.GlobalTrace("return: false")
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		observe.GlobalTrace("for: i < len(s)")
+		if s[i] < '0' || s[i] > '9' {
+			observe.GlobalTrace("if: s[i] < '0' || s[i] > '9'")
+			observe.GlobalTrace("return: false")
+			return false
+		}
+	}
+	observe.GlobalTrace("return: true")
+	return true
+}
+
+func atoi(s string) int {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	value := 0
+	for i := 0; i < len(s); i++ {
+		observe.GlobalTrace("for: i < len(s)")
+		value = value*10 + int(s[i]-'0')
+	}
+	observe.GlobalTrace("return: value")
+	return value
+}
+
+func malformedHunkHeaderError(header string, lineNo int) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	observe.GlobalTrace("return: fmt.Errorf(\"hunk header at line %d is malformed: %q\\nUse a bare @@ separator, or unified-diff counts like @@ -12,7 +12,8 @@ where old counts context plus removed lines and new counts context plus added lines\", lineNo, header)")
+	return fmt.Errorf("hunk header at line %d is malformed: %q\nUse a bare @@ separator, or unified-diff counts like @@ -12,7 +12,8 @@ where old counts context plus removed lines and new counts context plus added lines", lineNo, header)
+}
+
+// validateHunkHeaderCounts enforces the PACT-001 preflight: a count-bearing
+// hunk header must agree with its hunk body before any file is read.
+func validateHunkHeaderCounts(header hunkHeader, chunk Chunk, path string) error {
+	observe.GlobalTrace("enter")
+	defer observe.GlobalTrace("exit")
+	if !header.hasCounts {
+		observe.GlobalTrace("if: !header.hasCounts")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	if header.statedOld == len(chunk.Old) && header.statedNew == len(chunk.New) {
+		observe.GlobalTrace("if: header.statedOld == len(chunk.Old) && header.statedNew == len(chunk.New)")
+		observe.GlobalTrace("return: nil")
+		return nil
+	}
+	observe.GlobalTrace("return: fmt.Errorf(\"update hunk for %s line %d: hunk header %q states %d old and %d new lines, but the hunk body has %d old and %d new lines\\nMake the header counts match the hunk body (old = context plus removed lines; new = context plus added lines), or drop the counts and use a bare @@; header counts are validated before any file is read\", path, header.line, header.raw, header.statedOld, header.statedNew, len(chunk.Old), len(chunk.New))")
+	return fmt.Errorf("update hunk for %s line %d: hunk header %q states %d old and %d new lines, but the hunk body has %d old and %d new lines\nMake the header counts match the hunk body (old = context plus removed lines; new = context plus added lines), or drop the counts and use a bare @@; header counts are validated before any file is read", path, header.line, header.raw, header.statedOld, header.statedNew, len(chunk.Old), len(chunk.New))
 }
 
 type verifiedChange struct {
