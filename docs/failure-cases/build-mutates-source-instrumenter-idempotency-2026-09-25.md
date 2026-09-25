@@ -180,6 +180,11 @@ Real-production verification (stronger than fixtures):
   model/stop, several *_test.go — flagged by `gofmt -l ./internal/`)
   are NOT instrumenter output and are untouched here; separate hygiene
   work.
+- Full-suite `go test ./...` after the fix: one pre-existing failure,
+  `cmd/pragma` `TestProviderToolsCLIContract` ("stdout did not contain
+  final answer") — reproduced on a detached worktree at `848f609`
+  (pre-fix HEAD) with the identical signature; not an INST-001
+  regression, left for its own case.
 - Follow-up item for the queue (not done — the tree is no longer
   dirty): instrument to a temp overlay instead of in-tree so builds
   never touch source at all, removing the fixed-point requirement.
