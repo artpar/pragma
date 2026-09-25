@@ -35,6 +35,25 @@ SESSIONS_DIR = os.path.join(os.path.expanduser("~"), ".pragma", "sessions")
 WORKER_MARKER = "You are a WORKER instance in pragma's self-improvement loop"
 MAX_MISTAKES = 12
 
+# CMT-001: test-gate recognition for "uncommitted GREEN" detection.
+# Recorded cap-deaths with finished work (MASTER-BLINDSPOTS B.3) ended on
+# a passing gate whose tool result looks like
+# "Exit code: 0\nok  \tgithub.com/...\t2.319s\n" (go) or an "OK" line
+# (python unittest) - verified in sessions 06f603fb, f4ff3ebb and
+# de57a18f. dbab3dbf is the documented miss: its final action was a
+# full-suite sweep red from pre-existing failures (case record CMT-001).
+TEST_CMD_RE = re.compile(r"\b(?:go test|python3? -m unittest)\b")
+GREEN_GATE_RE = re.compile(r"^ok\s|--- PASS:|^OK$", re.MULTILINE)
+RED_GATE_RE = re.compile(r"^(?:FAIL|--- FAIL:)", re.MULTILINE)
+
+NEAR_MISS_HINT = (
+    "NEAR-MISS - uncommitted GREEN: the prior attempt's last recorded test "
+    "gate PASSED but it died before committing. The finished work is likely "
+    "sitting UNCOMMITTED in the shared tree - re-run its gates FIRST; if "
+    "GREEN, commit IMMEDIATELY before any other work (doctrine rule 2: the "
+    "deliverable is the commit, not the working tree)."
+)
+
 # v1.5: cap-deaths burned ~$32 (37% of today spend) on 4 dead attempts;
 # successful big builds used 60-90 turns - give headroom to 110.
 WORKER_MAX_TURNS = 110
@@ -296,6 +315,45 @@ def extract_tool_errors(session_path, limit=8):
     return errors[-limit:]
 
 
+def last_test_gate_passed(session_path):
+    """True iff the session's LAST test-run tool result was a passing gate:
+    the paired tool_call ran a test command (go test / python unittest),
+    the result is not an is_error, its content carries a green marker
+    (a `ok <pkg>` line, `--- PASS:`, or a lone `OK`) and no FAIL marker.
+    This is the recorded signature of the B.3 uncommitted-GREEN
+    cap-deaths (06f603fb, f4ff3ebb, de57a18f): work finished with the
+    gate green, session killed at the turn cap, nothing committed.
+    Returns None when the session records no test gate."""
+    calls = {}
+    last_green = None
+    with open(session_path) as fh:
+        for line in fh:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if entry.get("kind") != "message":
+                continue
+            data = entry.get("data", {})
+            for part in data.get("content", []):
+                pdata = part.get("data", {})
+                if part.get("type") == "tool_call":
+                    cmd = pdata.get("input", {}).get("cmd")
+                    calls[pdata.get("id")] = cmd if isinstance(cmd, str) else ""
+                elif part.get("type") == "tool_result":
+                    cmd = calls.get(pdata.get("tool_call_id"), "")
+                    if not TEST_CMD_RE.search(cmd):
+                        continue
+                    content = pdata.get("content", "")
+                    last_green = (
+                        not pdata.get("is_error")
+                        and isinstance(content, str)
+                        and bool(GREEN_GATE_RE.search(content))
+                        and not RED_GATE_RE.search(content)
+                    )
+    return last_green
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cycles", type=int, default=1)
@@ -374,6 +432,11 @@ def main():
             # retry prompt verbatim. The bg worker log only ever carries
             # final text — grepping it never fired on a real cap death and
             # matched only narrative prose (see case record MM-001).
+            # CMT-001: an "uncommitted GREEN" is an abnormal exit, not a
+            # scratch failure - if the worker's last recorded test gate
+            # PASSED, the finished fix is sitting uncommitted in the shared
+            # tree and the retry is a cheap verify-and-commit, not a redo.
+            near_miss = False
             try:
                 sess = find_worker_session(SESSIONS_DIR, worker_started, REPO, item["id"])
                 if sess:
@@ -381,16 +444,39 @@ def main():
                     for err in extract_tool_errors(sess):
                         if err not in item_mistakes:
                             item_mistakes.append(err)
-                    if len(item_mistakes) > MAX_MISTAKES:
-                        item["mistakes"] = item_mistakes[-MAX_MISTAKES:]
+                    near_miss = bool(last_test_gate_passed(sess))
             except Exception as exc:
                 print("  mistake-memory extraction failed: %r" % exc)
+            if near_miss:
+                item["near_miss"] = True
+                item["last_error"] = (
+                    "worker exit %d (attempt %d, uncommitted GREEN near-miss)"
+                    % (rc, attempts)
+                )
+                item_mistakes = item.setdefault("mistakes", [])
+                if NEAR_MISS_HINT not in item_mistakes:
+                    item_mistakes.insert(0, NEAR_MISS_HINT)
+            if "mistakes" in item and len(item["mistakes"]) > MAX_MISTAKES:
+                # keep the near-miss hint (index 0) plus the newest mistakes
+                kept = item["mistakes"]
+                item["mistakes"] = kept[:1] + kept[1 - MAX_MISTAKES:]
             if attempts >= 3:
                 item["status"] = "needs_attention"
             else:
                 item["status"] = "open"
+            if near_miss:
+                # requeue with priority: the next cycle must dispatch the
+                # cheap commit-the-existing-work retry ahead of every other
+                # open item, instead of the plain generic requeue.
+                queue.insert(0, queue.pop(idx))
+                print(
+                    "  worker died after a green gate without commit (attempt %d)"
+                    " - UNCOMMITTED GREEN near-miss - requeued with priority"
+                    % attempts
+                )
+            else:
+                print("  worker died without commit (attempt %d) - requeued" % attempts)
             save_queue(args.queue, queue)
-            print("  worker died without commit (attempt %d) - requeued" % attempts)
             continue
 
         item["status"] = "worker_done" if committed else "no_change"
