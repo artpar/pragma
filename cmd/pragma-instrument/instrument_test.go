@@ -76,6 +76,21 @@ func eligible(disabled bool, failures, turnsSince int) bool {
 		!(turnsSince < minTurnsCooldown)
 }
 
+// classify mirrors internal/metaobserve/digest.go's digest switch: one
+// case body holds only a comment, which must not split the injected
+// case-trace selector expression (observed pre-anchor-fix:
+// "observe." <comment> "GlobalTrace(...)").
+func classify(kind string, ts string) string {
+	switch kind {
+	case "keepalive":
+		// periodic keepalive: no digest value.
+	case "error":
+		return ts + " error"
+	default:
+		return ts + " " + kind
+	}
+}
+
 var _ = strings.TrimSpace
 `
 
@@ -127,6 +142,7 @@ func TestInstrumenterIdempotentAndCommentPreserving(t *testing.T) {
 		"// rationale-if: the disabled short-circuit.",
 		"// rationale-for: the cooldown drain loop.",
 		"// rationale-return: the multi-line conjunction",
+		"// periodic keepalive: no digest value.",
 	} {
 		if !strings.Contains(first, comment) {
 			t.Errorf("first run dropped the block comment %q", comment)
@@ -139,6 +155,15 @@ func TestInstrumenterIdempotentAndCommentPreserving(t *testing.T) {
 	}
 	if !strings.Contains(first, `observe.GlobalTrace("enter")`) {
 		t.Errorf("first run did not instrument the function entry")
+	}
+	if strings.Contains(first, "observe.\n") {
+		t.Errorf("injected trace selector was split across lines:\n%s", first)
+	}
+	if i := strings.Index(first, "case \"keepalive\":"); i != -1 {
+		kSlice := first[i:]
+		if cIdx, tIdx := strings.Index(kSlice, "// periodic keepalive"), strings.Index(kSlice, "GlobalTrace(\"case: \\\"keepalive\\\""); cIdx > tIdx {
+			t.Errorf("keepalive case comment no longer sits with its case clause")
+		}
 	}
 	dupIdx := strings.Count(first, "observe.GlobalTrace(")
 	if dupIdx == 0 {

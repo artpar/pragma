@@ -284,7 +284,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 			inst.instrumentBlock(s.Body, funcName, hasCtx)
 
 		case *ast.SwitchStmt:
-			for _, clause := range s.Body.List {
+			for i, clause := range s.Body.List {
 				cc, ok := clause.(*ast.CaseClause)
 				if !ok {
 					continue
@@ -297,7 +297,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 					label = "case: " + inst.exprListString(cc.List)
 				}
 				if !stmtListHasTrace(cc.Body, 0) {
-					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon))
+					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon, clauseAnchorNext(s.Body.List, i, s.Body.Rbrace)))
 					cc.Body = append([]ast.Stmt{traceStmt}, cc.Body...)
 					inst.instrPoints++
 					modified = true
@@ -306,7 +306,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 			}
 
 		case *ast.TypeSwitchStmt:
-			for _, clause := range s.Body.List {
+			for i, clause := range s.Body.List {
 				cc, ok := clause.(*ast.CaseClause)
 				if !ok {
 					continue
@@ -319,7 +319,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 					label = "typecase: " + inst.exprListString(cc.List)
 				}
 				if !stmtListHasTrace(cc.Body, 0) {
-					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon))
+					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon, clauseAnchorNext(s.Body.List, i, s.Body.Rbrace)))
 					cc.Body = append([]ast.Stmt{traceStmt}, cc.Body...)
 					inst.instrPoints++
 					modified = true
@@ -353,7 +353,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 			inst.instrumentBlock(s.Body, funcName, hasCtx)
 
 		case *ast.SelectStmt:
-			for _, clause := range s.Body.List {
+			for i, clause := range s.Body.List {
 				cc, ok := clause.(*ast.CommClause)
 				if !ok {
 					continue
@@ -366,7 +366,7 @@ func (inst *instrumenter) instrumentBlock(block *ast.BlockStmt, funcName string,
 					label = "select: " + inst.stmtString(cc.Comm)
 				}
 				if !stmtListHasTrace(cc.Body, 0) {
-					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon))
+					traceStmt := inst.makeTraceStmtAt(hasCtx, inst.pkgName, funcName, label, clauseAnchor(cc.Body, cc.Colon, clauseAnchorNext(s.Body.List, i, s.Body.Rbrace)))
 					cc.Body = append([]ast.Stmt{traceStmt}, cc.Body...)
 					inst.instrPoints++
 					modified = true
@@ -487,6 +487,7 @@ func setExprPos(expr ast.Expr, pos token.Pos) {
 		}
 	case *ast.SelectorExpr:
 		setExprPos(e.X, pos)
+		e.Sel.NamePos = pos
 	case *ast.Ident:
 		e.NamePos = pos
 	case *ast.BasicLit:
@@ -525,12 +526,29 @@ func blockAnchor(b *ast.BlockStmt) token.Pos {
 	return b.List[0].Pos()
 }
 
-// clauseAnchor is blockAnchor for case/comm clause bodies.
-func clauseAnchor(body []ast.Stmt, colon token.Pos) token.Pos {
+// clauseAnchor is blockAnchor for case/comm clause bodies: the first
+// statement when present. For an empty clause body (comments only), the
+// anchor is the NEXT clause — or the enclosing switch/select closing
+// brace — so a comment sitting in the empty clause flushes ahead of the
+// injected trace instead of splitting the trace's selector expression
+// (observed: `observe.` <comment> `GlobalTrace(...)`).
+func clauseAnchor(body []ast.Stmt, colon, next token.Pos) token.Pos {
 	if len(body) > 0 {
 		return body[0].Pos()
 	}
+	if next.IsValid() {
+		return next
+	}
 	return colon
+}
+
+// clauseAnchorNext is the position of the clause following clause i, or
+// the switch/select closing brace after the last clause.
+func clauseAnchorNext(clauses []ast.Stmt, i int, rbrace token.Pos) token.Pos {
+	if i+1 < len(clauses) {
+		return clauses[i+1].Pos()
+	}
+	return rbrace
 }
 
 func (inst *instrumenter) exprString(expr ast.Expr) string {
